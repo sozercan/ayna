@@ -234,38 +234,40 @@ class OpenAIService: ObservableObject {
                     return
                 }
 
-                var buffer = ""
+                var buffer = Data()
 
                 for try await byte in bytes {
-                    let character = Character(UnicodeScalar(byte))
-                    buffer.append(character)
+                    buffer.append(byte)
 
-                    // Process complete lines
-                    if character == "\n" {
-                        let line = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                        buffer = ""
+                    // Check if we have a newline (UTF-8: 0x0A)
+                    if byte == 0x0A {
+                        // Convert buffer to string
+                        if let line = String(data: buffer, encoding: .utf8) {
+                            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                        if line.hasPrefix("data: ") {
-                            let jsonString = String(line.dropFirst(6))
+                            if trimmedLine.hasPrefix("data: ") {
+                                let jsonString = String(trimmedLine.dropFirst(6))
 
-                            if jsonString == "[DONE]" {
-                                await MainActor.run {
-                                    onComplete()
+                                if jsonString == "[DONE]" {
+                                    await MainActor.run {
+                                        onComplete()
+                                    }
+                                    return
                                 }
-                                return
-                            }
 
-                            if let jsonData = jsonString.data(using: .utf8),
-                               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                               let choices = json["choices"] as? [[String: Any]],
-                               let firstChoice = choices.first,
-                               let delta = firstChoice["delta"] as? [String: Any],
-                               let content = delta["content"] as? String {
-                                await MainActor.run {
-                                    onChunk(content)
+                                if let jsonData = jsonString.data(using: .utf8),
+                                   let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                                   let choices = json["choices"] as? [[String: Any]],
+                                   let firstChoice = choices.first,
+                                   let delta = firstChoice["delta"] as? [String: Any],
+                                   let content = delta["content"] as? String {
+                                    await MainActor.run {
+                                        onChunk(content)
+                                    }
                                 }
                             }
                         }
+                        buffer.removeAll()
                     }
                 }
 
