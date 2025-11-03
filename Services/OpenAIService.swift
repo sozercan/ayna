@@ -214,54 +214,71 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void
     ) {
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("❌ Network error: \(error.localizedDescription)")
-                    onError(error)
+        Task {
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    await MainActor.run {
+                        onError(OpenAIError.invalidResponse)
+                    }
                     return
                 }
 
-                if let httpResponse = response as? HTTPURLResponse {
-                    print("📡 HTTP Status: \(httpResponse.statusCode)")
-                }
+                print("📡 HTTP Status: \(httpResponse.statusCode)")
 
-                guard let data = data else {
-                    print("❌ No data received")
-                    onError(OpenAIError.invalidResponse)
+                guard httpResponse.statusCode == 200 else {
+                    await MainActor.run {
+                        onError(OpenAIError.apiError("HTTP \(httpResponse.statusCode)"))
+                    }
                     return
                 }
 
-                print("📦 Received \(data.count) bytes")
+                var buffer = ""
 
-                let dataString = String(data: data, encoding: .utf8) ?? ""
-                let lines = dataString.components(separatedBy: "\n")
+                for try await byte in bytes {
+                    let character = Character(UnicodeScalar(byte))
+                    buffer.append(character)
 
-                for line in lines {
-                    if line.hasPrefix("data: ") {
-                        let jsonString = String(line.dropFirst(6))
+                    // Process complete lines
+                    if character == "\n" {
+                        let line = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        buffer = ""
 
-                        if jsonString.trimmingCharacters(in: .whitespaces) == "[DONE]" {
-                            onComplete()
-                            return
-                        }
+                        if line.hasPrefix("data: ") {
+                            let jsonString = String(line.dropFirst(6))
 
-                        if let jsonData = jsonString.data(using: .utf8),
-                           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let choices = json["choices"] as? [[String: Any]],
-                           let firstChoice = choices.first,
-                           let delta = firstChoice["delta"] as? [String: Any],
-                           let content = delta["content"] as? String {
-                            onChunk(content)
+                            if jsonString == "[DONE]" {
+                                await MainActor.run {
+                                    onComplete()
+                                }
+                                return
+                            }
+
+                            if let jsonData = jsonString.data(using: .utf8),
+                               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                               let choices = json["choices"] as? [[String: Any]],
+                               let firstChoice = choices.first,
+                               let delta = firstChoice["delta"] as? [String: Any],
+                               let content = delta["content"] as? String {
+                                await MainActor.run {
+                                    onChunk(content)
+                                }
+                            }
                         }
                     }
                 }
 
-                onComplete()
+                await MainActor.run {
+                    onComplete()
+                }
+            } catch {
+                print("❌ Streaming error: \(error.localizedDescription)")
+                await MainActor.run {
+                    onError(error)
+                }
             }
         }
-
-        task.resume()
     }
 
     private func nonStreamResponse(

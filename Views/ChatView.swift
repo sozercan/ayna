@@ -56,34 +56,6 @@ struct ChatView: View {
                                 MessageView(message: message)
                                     .id(message.id)
                             }
-
-                            if isGenerating {
-                                HStack(alignment: .top, spacing: 16) {
-                                    // Avatar
-                                    Circle()
-                                        .fill(Color.green.opacity(0.15))
-                                        .frame(width: 30, height: 30)
-                                        .overlay(
-                                            Image(systemName: "sparkles")
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundStyle(Color.green)
-                                        )
-
-                                    // Thinking indicator
-                                    HStack(spacing: 8) {
-                                        ProgressView()
-                                            .scaleEffect(0.7)
-                                            .controlSize(.small)
-                                        Text("Thinking...")
-                                            .font(.system(size: 15))
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                            }
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 24)
@@ -97,23 +69,15 @@ struct ChatView: View {
                     }
                 }
                 .onAppear {
-                    // Scroll to bottom when conversation is first loaded
+                    // Start at bottom when conversation is first loaded
                     if let lastMessage = conversation.messages.last {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            }
-                        }
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
                 .onChange(of: conversation.id) { _, _ in
-                    // Scroll to bottom when switching conversations
+                    // Start at bottom when switching conversations
                     if let lastMessage = conversation.messages.last {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            withAnimation {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            }
-                        }
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
             }
