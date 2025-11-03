@@ -35,13 +35,6 @@ class ConversationManager: ObservableObject {
         }
     }
 
-    func toggleFavorite(_ conversation: Conversation) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversations[index].isFavorite.toggle()
-            saveConversations()
-        }
-    }
-
     func renameConversation(_ conversation: Conversation, newTitle: String) {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].title = newTitle
@@ -116,9 +109,5 @@ class ConversationManager: ObservableObject {
                 message.content.localizedCaseInsensitiveContains(query)
             }
         }
-    }
-
-    func favoriteConversations() -> [Conversation] {
-        conversations.filter { $0.isFavorite }
     }
 }

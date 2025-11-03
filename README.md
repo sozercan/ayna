@@ -9,7 +9,7 @@ A native macOS ChatGPT client built with SwiftUI.
 
 - 💬 Native macOS chat interface with streaming responses
 - ☁️ Support for OpenAI and Azure OpenAI
-- 🗂️ Conversation management with search and favorites
+- 🗂️ Conversation management with search
 - 🎨 Clean, modern design with keyboard shortcuts
 - � Local data storage
 

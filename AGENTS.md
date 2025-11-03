@@ -37,18 +37,18 @@ Models → ViewModels → Views → Services
 **Models** (`Models/Conversation.swift`, `Models/Message.swift`)
 - Pure data structures conforming to `Codable` for persistence
 - All models use `UUID` for identification
-- `Conversation` contains array of `Message` objects and metadata (title, timestamps, model settings, favorite status)
+- - `Conversation` contains array of `Message` objects and metadata (title, timestamps, model settings)
 
 **ViewModels** (`ViewModels/ConversationManager.swift`)
 - `ConversationManager`: Single source of truth for all conversation state
-- Manages CRUD operations, favorites, search, and persistence
+- - Manages CRUD operations, search, and persistence
 - Uses `@Published` properties for reactive UI updates
 - Automatically generates conversation titles from first user message
 - Persists to `UserDefaults` using JSON encoding
 
 **Views** (`ContentView.swift`, `Views/SidebarView.swift`, `Views/ChatView.swift`, `Views/MessageView.swift`, `Views/SettingsView.swift`)
 - `ContentView`: Root view with `NavigationSplitView` (sidebar + detail)
-- `SidebarView`: Conversation list with search, favorites filter, and context menu actions
+- `SidebarView`: Conversation list with search and context menu actions
 - `ChatView`: Clean chat interface with message history, dynamic text editor, and send button
 - `MessageView`: Individual message bubble with avatar, copy/like actions
 - `SettingsView`: 4-tab settings (General, Model, API, About)

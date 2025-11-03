@@ -16,7 +16,6 @@ struct Conversation: Identifiable, Codable {
     var model: String
     var systemPrompt: String?
     var temperature: Double
-    var isFavorite: Bool
 
     init(
         id: UUID = UUID(),
@@ -26,8 +25,7 @@ struct Conversation: Identifiable, Codable {
         updatedAt: Date = Date(),
         model: String = "gpt-4o",
         systemPrompt: String? = nil,
-        temperature: Double = 0.7,
-        isFavorite: Bool = false
+        temperature: Double = 0.7
     ) {
         self.id = id
         self.title = title
@@ -37,7 +35,6 @@ struct Conversation: Identifiable, Codable {
         self.model = model
         self.systemPrompt = systemPrompt
         self.temperature = temperature
-        self.isFavorite = isFavorite
     }
 
     mutating func addMessage(_ message: Message) {
