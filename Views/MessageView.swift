@@ -72,11 +72,36 @@ struct MessageView: View {
         let lines = content.components(separatedBy: .newlines)
         var currentText = ""
         var currentCode = ""
+        var currentToolResult = ""
         var inCodeBlock = false
+        var inToolBlock = false
         var codeLanguage = ""
+        var toolName = ""
 
         for line in lines {
-            if line.hasPrefix("```") {
+            // Check for tool call markers
+            if line.hasPrefix("[Tool:") && line.hasSuffix("]") {
+                // Save any pending text
+                if !currentText.isEmpty {
+                    blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
+                    currentText = ""
+                }
+                // Extract tool name
+                let toolNameStart = line.index(line.startIndex, offsetBy: 6)
+                let toolNameEnd = line.index(line.endIndex, offsetBy: -1)
+                toolName = String(line[toolNameStart..<toolNameEnd]).trimmingCharacters(in: .whitespaces)
+                inToolBlock = true
+            } else if inToolBlock && line.isEmpty {
+                // End of tool block (empty line after tool result)
+                if !currentToolResult.isEmpty {
+                    blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
+                    currentToolResult = ""
+                    toolName = ""
+                }
+                inToolBlock = false
+            } else if inToolBlock {
+                currentToolResult += line + "\n"
+            } else if line.hasPrefix("```") {
                 if inCodeBlock {
                     // End of code block
                     if !currentCode.isEmpty {
@@ -101,9 +126,12 @@ struct MessageView: View {
             }
         }
 
-        // Add remaining text
+        // Add remaining content
         if !currentText.isEmpty {
             blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
+        }
+        if !currentToolResult.isEmpty {
+            blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
         }
 
         return blocks
@@ -117,6 +145,7 @@ struct ContentBlock: Identifiable {
     enum BlockType {
         case text(String)
         case code(String, String) // code, language
+        case tool(String, String) // tool name, result
     }
 
     @ViewBuilder
@@ -199,6 +228,64 @@ struct ContentBlock: Identifiable {
                     .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .tool(let name, let result):
+            VStack(alignment: .leading, spacing: 0) {
+                // Tool header
+                HStack(spacing: 8) {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Tool")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        Text(name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.green)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.08))
+
+                Divider()
+
+                // Tool result
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(result)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 200)
+            }
+            .background(Color.blue.opacity(0.03))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 1.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .shadow(color: Color.blue.opacity(0.1), radius: 4, x: 0, y: 2)
         }
     }
 }

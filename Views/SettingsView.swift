@@ -28,12 +28,17 @@ struct SettingsView: View {
                     Label("API", systemImage: "key")
                 }
 
+            MCPSettingsView()
+                .tabItem {
+                    Label("MCP Tools", systemImage: "wrench.and.screwdriver")
+                }
+
             AboutView()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 550, height: 400)
+        .frame(width: 650, height: 500)
     }
 }
 
@@ -109,25 +114,6 @@ struct ModelSettingsView: View {
                 } header: {
                     Text("OpenAI Model")
                 }
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Temperature")
-                        Spacer()
-                        Text(String(format: "%.1f", openAIService.temperature))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Slider(value: $openAIService.temperature, in: 0...2, step: 0.1)
-
-                    Text("Higher values make output more random, lower values more focused")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Temperature")
             }
 
             Section {

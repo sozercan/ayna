@@ -11,6 +11,13 @@ import SwiftUI
 struct aynaApp: App {
     @StateObject private var conversationManager = ConversationManager()
 
+    init() {
+        // Initialize MCP servers on app launch
+        Task {
+            await MCPServerManager.shared.connectToAllEnabledServers()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
