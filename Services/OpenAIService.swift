@@ -71,8 +71,11 @@ class OpenAIService: ObservableObject {
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
     let availableModels = [
+        "gpt-5",
         "gpt-4o",
         "gpt-4o-mini",
+        "o3",
+        "o4-mini",
         "o1",
         "o1-mini",
         "o1-preview",
@@ -82,7 +85,11 @@ class OpenAIService: ObservableObject {
     ]
 
     let azureAPIVersions = [
+        "2025-04-01-preview",
+        "2025-03-01-preview",
+        "2025-02-01-preview",
         "2025-01-01-preview",
+        "2024-12-01-preview",
         "2024-10-21",
         "2024-10-01-preview",
         "2024-08-01-preview",
@@ -178,7 +185,9 @@ class OpenAIService: ObservableObject {
         case .openai:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         case .azure:
-            request.setValue(apiKey, forHTTPHeaderField: "api-key")
+            // Azure can use either api-key header OR Bearer token
+            // Using Bearer token to match the working curl command
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
 
         let messagePayloads = messages.map { message in
@@ -190,14 +199,11 @@ class OpenAIService: ObservableObject {
 
         var body: [String: Any] = [
             "messages": messagePayloads,
-            "temperature": requestTemp,
             "stream": stream
         ]
 
-        // OpenAI requires model in body, Azure uses deployment name in URL
-        if provider == .openai {
-            body["model"] = requestModel
-        }
+        // Both OpenAI and Azure require model in body
+        body["model"] = requestModel
 
         // Add tools if provided
         if let tools = tools, !tools.isEmpty {
@@ -206,6 +212,28 @@ class OpenAIService: ObservableObject {
         }
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        // Debug: Print request details
+        print("📤 REQUEST DEBUG:")
+        print("   URL: \(url.absoluteString)")
+        print("   Method: POST")
+        print("   Provider: \(provider.displayName)")
+        if let headers = request.allHTTPHeaderFields {
+            print("   Headers:")
+            for (key, value) in headers {
+                if key == "Authorization" || key == "api-key" {
+                    // Mask the actual key for security
+                    let maskedValue = value.prefix(10) + "..." + value.suffix(4)
+                    print("      \(key): \(maskedValue)")
+                } else {
+                    print("      \(key): \(value)")
+                }
+            }
+        }
+        if let bodyData = request.httpBody,
+           let bodyString = String(data: bodyData, encoding: .utf8) {
+            print("   Body: \(bodyString)")
+        }
 
         if stream {
             streamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError, onToolCall: onToolCall)
@@ -221,6 +249,13 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
+        // Capture values for async context
+        let currentProvider = provider
+        let currentModel = selectedModel
+        let currentAzureDeployment = azureDeploymentName
+        let currentAzureAPIVersion = azureAPIVersion
+        let currentAzureEndpoint = azureEndpoint
+
         Task {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -232,11 +267,52 @@ class OpenAIService: ObservableObject {
                     return
                 }
 
-                print("📡 HTTP Status: \(httpResponse.statusCode)")
+                print("� RESPONSE DEBUG:")
+                print("   Status: \(httpResponse.statusCode)")
+                if let headers = httpResponse.allHeaderFields as? [String: Any] {
+                    print("   Headers:")
+                    for (key, value) in headers {
+                        print("      \(key): \(value)")
+                    }
+                }
 
                 guard httpResponse.statusCode == 200 else {
+                    // Provide helpful error messages
+                    var errorMessage = "HTTP \(httpResponse.statusCode)"
+                    if httpResponse.statusCode == 400 {
+                        if currentProvider == .azure {
+                            errorMessage += " - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
+                        } else {
+                            errorMessage += " - Invalid request. Check your model name and parameters."
+                        }
+                        print("❌ 400 Bad Request")
+                        print("   Provider: \(currentProvider.displayName)")
+                        if currentProvider == .azure {
+                            print("   Deployment: \(currentAzureDeployment)")
+                            print("   API Version: \(currentAzureAPIVersion)")
+                            print("   Endpoint: \(currentAzureEndpoint)")
+                        } else {
+                            print("   Model: \(currentModel)")
+                        }
+                    }
+
+                    // Try to read error response body
+                    do {
+                        var errorBody = ""
+                        for try await byte in bytes {
+                            if let char = String(data: Data([byte]), encoding: .utf8) {
+                                errorBody += char
+                            }
+                        }
+                        if !errorBody.isEmpty {
+                            print("   Error Response Body: \(errorBody)")
+                        }
+                    } catch {
+                        print("   Could not read error body: \(error)")
+                    }
+
                     await MainActor.run {
-                        onError(OpenAIError.apiError("HTTP \(httpResponse.statusCode)"))
+                        onError(OpenAIError.apiError(errorMessage))
                     }
                     return
                 }
