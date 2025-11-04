@@ -19,7 +19,7 @@ struct aynaApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup {   
             ContentView()
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 600)

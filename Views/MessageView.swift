@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MessageView: View {
     let message: Message
+    var modelName: String?
     @State private var isHovered = false
 
     var body: some View {
@@ -26,6 +27,14 @@ struct MessageView: View {
 
                 // Content with markdown support
                 VStack(alignment: .leading, spacing: 8) {
+                    // Show model name for assistant messages
+                    if message.role == .assistant, let model = modelName {
+                        Text(model)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 4)
+                    }
+
                     ForEach(parseMessageContent(message.content), id: \.id) { block in
                         block.view
                     }

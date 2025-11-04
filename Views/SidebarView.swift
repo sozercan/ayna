@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @StateObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
 
@@ -39,20 +40,37 @@ struct SidebarView: View {
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                             .contextMenu {
-                                Button(role: .destructive, action: {
-                                    conversationManager.deleteConversation(conversation)
-                                    if selectedConversationId == conversation.id {
-                                        selectedConversationId = nil
+                                Menu("Change Model") {
+                                    ForEach(openAIService.customModels, id: \.self) { model in
+                                        Button(action: {
+                                            conversationManager.updateModel(for: conversation, model: model)
+                                        }) {
+                                            HStack {
+                                                Text(model)
+                                                if conversation.model == model {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
                                     }
-                                }) {
-                                    Label("Delete", systemImage: "trash")
                                 }
+
+                                Divider()
 
                                 if selectedConversations.count > 1 {
                                     Button(role: .destructive, action: {
                                         deleteSelectedConversations()
                                     }) {
                                         Label("Delete \(selectedConversations.count) Conversations", systemImage: "trash")
+                                    }
+                                } else {
+                                    Button(role: .destructive, action: {
+                                        conversationManager.deleteConversation(conversation)
+                                        if selectedConversationId == conversation.id {
+                                            selectedConversationId = nil
+                                        }
+                                    }) {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                             }
@@ -102,16 +120,28 @@ struct ConversationRow: View {
     let conversation: Conversation
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "message")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "message")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
 
-            Text(conversation.title)
-                .font(.system(size: 13, weight: .regular))
-                .lineLimit(1)
+                Text(conversation.title)
+                    .font(.system(size: 13, weight: .regular))
+                    .lineLimit(1)
 
-            Spacer()
+                Spacer()
+            }
+
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Text(conversation.model)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

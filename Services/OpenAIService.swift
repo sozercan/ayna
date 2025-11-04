@@ -70,19 +70,18 @@ class OpenAIService: ObservableObject {
 
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
-    let availableModels = [
-        "gpt-5",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "o3",
-        "o4-mini",
-        "o1",
-        "o1-mini",
-        "o1-preview",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo"
-    ]
+    @Published var customModels: [String] {
+        didSet {
+            UserDefaults.standard.set(customModels, forKey: "customModels")
+        }
+    }
+
+    @Published var modelProviders: [String: AIProvider] {
+        didSet {
+            let encodedDict = modelProviders.mapValues { $0.rawValue }
+            UserDefaults.standard.set(encodedDict, forKey: "modelProviders")
+        }
+    }
 
     let azureAPIVersions = [
         "2025-04-01-preview",
@@ -100,9 +99,35 @@ class OpenAIService: ObservableObject {
     ]
 
     init() {
-        self.apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
-        self.selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
+        // Load custom models first
+        let loadedCustomModels: [String]
+        if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String], !savedModels.isEmpty {
+            loadedCustomModels = savedModels
+        } else {
+            loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1"]
+        }
+        self.customModels = loadedCustomModels
 
+        // Load model providers mapping
+        if let savedProviders = UserDefaults.standard.dictionary(forKey: "modelProviders") as? [String: String] {
+            self.modelProviders = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
+        } else {
+            // Default all initial models to OpenAI
+            self.modelProviders = Dictionary(uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) })
+        }
+
+        // Load selected model, ensure it exists in custom models
+        let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
+        if loadedCustomModels.contains(savedSelectedModel) {
+            self.selectedModel = savedSelectedModel
+        } else {
+            self.selectedModel = loadedCustomModels.first ?? "gpt-4o"
+        }
+
+        // Initialize API key
+        self.apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
+
+        // Initialize provider
         if let providerString = UserDefaults.standard.string(forKey: "aiProvider"),
            let savedProvider = AIProvider(rawValue: providerString) {
             self.provider = savedProvider
@@ -110,6 +135,7 @@ class OpenAIService: ObservableObject {
             self.provider = .openai
         }
 
+        // Initialize Azure settings
         self.azureEndpoint = (UserDefaults.standard.string(forKey: "azureEndpoint") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureDeploymentName = (UserDefaults.standard.string(forKey: "azureDeploymentName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureAPIVersion = (UserDefaults.standard.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview").trimmingCharacters(in: .whitespacesAndNewlines)

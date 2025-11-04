@@ -53,7 +53,7 @@ struct ChatView: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(conversation.messages.filter { $0.role != .system && !$0.content.isEmpty }) { message in
-                                MessageView(message: message)
+                                MessageView(message: message, modelName: message.model)
                                     .id(message.id)
                             }
                         }
@@ -167,8 +167,8 @@ struct ChatView: View {
         }
         let currentMessages = updatedConversation.messages
 
-        // Add empty assistant message
-        let assistantMessage = Message(role: .assistant, content: "")
+        // Add empty assistant message with current model
+        let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Get available MCP tools
