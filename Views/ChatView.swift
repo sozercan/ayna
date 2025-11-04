@@ -157,6 +157,7 @@ struct ChatView: View {
         let userMessage = Message(role: .user, content: messageText)
         conversationManager.addMessage(to: conversation, message: userMessage)
 
+        let promptText = messageText
         messageText = ""
         errorMessage = nil
         isGenerating = true
@@ -165,6 +166,16 @@ struct ChatView: View {
         guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
             return
         }
+        
+        // Check if current model is for image generation
+        let modelCapability = openAIService.getModelCapability(updatedConversation.model)
+        
+        if modelCapability == .imageGeneration {
+            // Image generation flow
+            generateImage(prompt: promptText, model: updatedConversation.model)
+            return
+        }
+        
         let currentMessages = updatedConversation.messages
 
         // Add empty assistant message with current model
@@ -215,6 +226,59 @@ struct ChatView: View {
                     return result
                 } catch {
                     return "Error executing tool: \(error.localizedDescription)"
+                }
+            }
+        )
+    }
+    
+    private func generateImage(prompt: String, model: String) {
+        // Create placeholder assistant message with a known ID
+        let messageId = UUID()
+        let placeholderMessage = Message(
+            id: messageId,
+            role: .assistant,
+            content: "Generating image...",
+            model: model,
+            mediaType: .image
+        )
+        conversationManager.addMessage(to: conversation, message: placeholderMessage)
+        
+        print("🖼️ Created placeholder message with ID: \(messageId)")
+        
+        openAIService.generateImage(
+            prompt: prompt,
+            model: model,
+            onComplete: { imageData in
+                print("🖼️ Image data received, size: \(imageData.count) bytes")
+                
+                // Update the placeholder message with actual image
+                if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    if let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) {
+                        print("🖼️ Found message at index \(msgIndex), updating with image data")
+                        
+                        conversationManager.conversations[convIndex].messages[msgIndex].content = ""
+                        conversationManager.conversations[convIndex].messages[msgIndex].imageData = imageData
+                        conversationManager.saveConversations()
+                        
+                        print("✅ Message updated and saved")
+                    } else {
+                        print("❌ Could not find message with ID: \(messageId)")
+                        print("Available message IDs: \(conversationManager.conversations[convIndex].messages.map { $0.id })")
+                    }
+                } else {
+                    print("❌ Could not find conversation")
+                }
+                
+                isGenerating = false
+            },
+            onError: { error in
+                print("❌ Image generation error: \(error.localizedDescription)")
+                isGenerating = false
+                errorMessage = error.localizedDescription
+                
+                // Remove the placeholder message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversationManager.conversations[index].messages.removeLast()
                 }
             }
         )

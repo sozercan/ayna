@@ -15,6 +15,14 @@ struct Message: Identifiable, Codable, Equatable {
     var isLiked: Bool
     var toolCalls: [MCPToolCall]?
     var model: String? // Track which model generated this message
+    
+    // Image generation support
+    var mediaType: MediaType?
+    var imageData: Data?
+    
+    enum MediaType: String, Codable {
+        case image
+    }
 
     enum Role: String, Codable {
         case system
@@ -30,7 +38,9 @@ struct Message: Identifiable, Codable, Equatable {
         timestamp: Date = Date(),
         isLiked: Bool = false,
         toolCalls: [MCPToolCall]? = nil,
-        model: String? = nil
+        model: String? = nil,
+        mediaType: MediaType? = nil,
+        imageData: Data? = nil
     ) {
         self.id = id
         self.role = role
@@ -39,5 +49,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.isLiked = isLiked
         self.toolCalls = toolCalls
         self.model = model
+        self.mediaType = mediaType
+        self.imageData = imageData
     }
 }

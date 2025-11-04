@@ -41,6 +41,7 @@ struct GeneralSettingsView: View {
     @AppStorage("streamResponse") private var streamResponse = true
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @AppStorage("showTokenCount") private var showTokenCount = false
+    @StateObject private var openAIService = OpenAIService.shared
 
     var body: some View {
         Form {
@@ -55,6 +56,47 @@ struct GeneralSettingsView: View {
                     .help("Display token usage information")
             } header: {
                 Text("Behavior")
+            }
+            
+            Section {
+                Picker("Image Size", selection: $openAIService.imageSize) {
+                    Text("1024×1024 (Square)").tag("1024x1024")
+                    Text("1024×1536 (Portrait)").tag("1024x1536")
+                    Text("1536×1024 (Landscape)").tag("1536x1024")
+                }
+                .help("Resolution for generated images")
+                
+                Picker("Image Quality", selection: $openAIService.imageQuality) {
+                    Text("Low").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("High").tag("high")
+                }
+                .help("Quality level affects generation time and cost")
+                
+                Picker("Output Format", selection: $openAIService.outputFormat) {
+                    Text("PNG").tag("png")
+                    Text("JPEG").tag("jpeg")
+                }
+                .help("Image file format")
+                
+                HStack {
+                    Text("Compression")
+                    Spacer()
+                    Slider(value: Binding(
+                        get: { Double(openAIService.outputCompression) },
+                        set: { openAIService.outputCompression = Int($0) }
+                    ), in: 0...100, step: 10)
+                    .frame(width: 150)
+                    Text("\(openAIService.outputCompression)%")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 45, alignment: .trailing)
+                }
+                .help("Image compression level (100 = no compression)")
+            } header: {
+                Text("Image Generation (gpt-image-1)")
+            } footer: {
+                Text("These settings apply when using image generation models like gpt-image-1")
+                    .font(.caption)
             }
 
             Section {

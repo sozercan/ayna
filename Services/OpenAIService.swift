@@ -97,6 +97,36 @@ class OpenAIService: ObservableObject {
         "2024-02-01",
         "2023-12-01-preview"
     ]
+    
+    // Image generation settings
+    @Published var imageSize: String {
+        didSet {
+            UserDefaults.standard.set(imageSize, forKey: "imageSize")
+        }
+    }
+    
+    @Published var imageQuality: String {
+        didSet {
+            UserDefaults.standard.set(imageQuality, forKey: "imageQuality")
+        }
+    }
+    
+    @Published var outputFormat: String {
+        didSet {
+            UserDefaults.standard.set(outputFormat, forKey: "outputFormat")
+        }
+    }
+    
+    @Published var outputCompression: Int {
+        didSet {
+            UserDefaults.standard.set(outputCompression, forKey: "outputCompression")
+        }
+    }
+    
+    enum ModelCapability {
+        case chat
+        case imageGeneration
+    }
 
     init() {
         // Load custom models first
@@ -104,7 +134,7 @@ class OpenAIService: ObservableObject {
         if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String], !savedModels.isEmpty {
             loadedCustomModels = savedModels
         } else {
-            loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1"]
+            loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1", "gpt-image-1"]
         }
         self.customModels = loadedCustomModels
 
@@ -139,6 +169,12 @@ class OpenAIService: ObservableObject {
         self.azureEndpoint = (UserDefaults.standard.string(forKey: "azureEndpoint") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureDeploymentName = (UserDefaults.standard.string(forKey: "azureDeploymentName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureAPIVersion = (UserDefaults.standard.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview").trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Initialize image generation settings
+        self.imageSize = UserDefaults.standard.string(forKey: "imageSize") ?? "1024x1024"
+        self.imageQuality = UserDefaults.standard.string(forKey: "imageQuality") ?? "medium"
+        self.outputFormat = UserDefaults.standard.string(forKey: "outputFormat") ?? "png"
+        self.outputCompression = UserDefaults.standard.integer(forKey: "outputCompression") == 0 ? 100 : UserDefaults.standard.integer(forKey: "outputCompression")
     }
 
     private func saveAPIKey() {
@@ -156,6 +192,137 @@ class OpenAIService: ObservableObject {
             let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
             return "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
         }
+    }
+    
+    func getModelCapability(_ model: String) -> ModelCapability {
+        let lowercaseModel = model.lowercased()
+        if lowercaseModel.contains("gpt-image") || lowercaseModel.contains("dall-e") {
+            return .imageGeneration
+        }
+        return .chat
+    }
+    
+    func generateImage(
+        prompt: String,
+        model: String? = nil,
+        onComplete: @escaping (Data) -> Void,
+        onError: @escaping (Error) -> Void
+    ) {
+        print("🖼️ generateImage called - Model: \(model ?? selectedModel)")
+        
+        guard !apiKey.isEmpty else {
+            print("❌ Missing API key")
+            onError(OpenAIError.missingAPIKey)
+            return
+        }
+        
+        guard provider == .azure else {
+            print("❌ Image generation only supported on Azure provider")
+            onError(OpenAIError.unsupportedProvider)
+            return
+        }
+        
+        guard !azureEndpoint.isEmpty else {
+            print("❌ Missing Azure endpoint")
+            onError(OpenAIError.missingAzureEndpoint)
+            return
+        }
+        
+        let requestModel = model ?? selectedModel
+        
+        // Image generation endpoint: {endpoint}/openai/deployments/{model}/images/generations?api-version={version}
+        let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let imageURL = "\(cleanEndpoint)/openai/deployments/\(requestModel)/images/generations?api-version=\(cleanVersion)"
+        
+        guard let url = URL(string: imageURL) else {
+            print("❌ Invalid URL: \(imageURL)")
+            onError(OpenAIError.invalidURL)
+            return
+        }
+        
+        print("✅ Sending image generation request to: \(url.absoluteString)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        let body: [String: Any] = [
+            "prompt": prompt,
+            "size": imageSize,
+            "quality": imageQuality,
+            "output_format": outputFormat,
+            "output_compression": outputCompression,
+            "n": 1
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            onError(error)
+            return
+        }
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    onError(error)
+                }
+                return
+            }
+            
+            guard let data = data else {
+                print("❌ No data received")
+                DispatchQueue.main.async {
+                    onError(OpenAIError.noData)
+                }
+                return
+            }
+            
+            // Parse response
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    // Check for error response
+                    if let errorDict = json["error"] as? [String: Any],
+                       let code = errorDict["code"] as? String,
+                       let message = errorDict["message"] as? String {
+                        print("❌ API error: \(code) - \(message)")
+                        DispatchQueue.main.async {
+                            if code == "contentFilter" {
+                                onError(OpenAIError.contentFiltered(message))
+                            } else {
+                                onError(OpenAIError.apiError(message))
+                            }
+                        }
+                        return
+                    }
+                    
+                    // Parse successful response: { "data": [{ "b64_json": "..." }] }
+                    if let dataArray = json["data"] as? [[String: Any]],
+                       let firstItem = dataArray.first,
+                       let b64String = firstItem["b64_json"] as? String,
+                       let imageData = Data(base64Encoded: b64String) {
+                        print("✅ Image generated successfully, size: \(imageData.count) bytes")
+                        DispatchQueue.main.async {
+                            onComplete(imageData)
+                        }
+                    } else {
+                        print("❌ Invalid response format")
+                        DispatchQueue.main.async {
+                            onError(OpenAIError.invalidResponse)
+                        }
+                    }
+                }
+            } catch {
+                print("❌ JSON parsing error: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    onError(error)
+                }
+            }
+        }.resume()
     }
 
     func sendMessage(
@@ -515,6 +682,9 @@ class OpenAIService: ObservableObject {
         case invalidURL
         case missingAzureEndpoint
         case missingAzureDeployment
+        case unsupportedProvider
+        case noData
+        case contentFiltered(String)
 
         var errorDescription: String? {
             switch self {
@@ -530,6 +700,12 @@ class OpenAIService: ObservableObject {
                 return "Please configure Azure OpenAI endpoint in Settings"
             case .missingAzureDeployment:
                 return "Please configure Azure deployment name in Settings"
+            case .unsupportedProvider:
+                return "Image generation is only supported with Azure OpenAI provider"
+            case .noData:
+                return "No data received from API"
+            case .contentFiltered(let message):
+                return "Content filtered: \(message)"
             }
         }
     }
