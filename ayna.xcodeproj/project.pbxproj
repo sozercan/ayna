@@ -18,6 +18,10 @@
 		01000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000009 /* SettingsView.swift */; };
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
+		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
+		C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */; };
+		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
+		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +38,10 @@
 		02000012 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
 		03000001 /* ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
+		C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
+		C8E86EFD2EB9281300D601B5 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
+		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
+		C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +81,7 @@
 		06000004 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */,
 				02000007 /* ChatView.swift */,
 				02000008 /* SidebarView.swift */,
 				02000009 /* SettingsView.swift */,
@@ -84,6 +93,7 @@
 		06000005 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				C8E86F002EB928F200D601B5 /* MCPModels.swift */,
 				02000004 /* Conversation.swift */,
 				02000005 /* Message.swift */,
 			);
@@ -93,6 +103,8 @@
 		06000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
+				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
 				02000006 /* OpenAIService.swift */,
 			);
 			path = Services;
@@ -181,10 +193,14 @@
 				01000005 /* Message.swift in Sources */,
 				01000006 /* OpenAIService.swift in Sources */,
 				01000007 /* ChatView.swift in Sources */,
+				C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */,
 				01000008 /* SidebarView.swift in Sources */,
 				01000009 /* SettingsView.swift in Sources */,
 				01000010 /* ConversationManager.swift in Sources */,
 				01000012 /* MessageView.swift in Sources */,
+				C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */,
+				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
+				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -317,13 +333,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = ayna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -348,13 +365,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = ayna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;

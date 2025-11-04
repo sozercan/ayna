@@ -171,10 +171,22 @@ struct ChatView: View {
         let assistantMessage = Message(role: .assistant, content: "")
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
+        // Get available MCP tools
+        let mcpManager = MCPServerManager.shared
+        let enabledTools = mcpManager.getEnabledTools()
+        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+
+        if !enabledTools.isEmpty {
+            print("🔧 Available MCP tools: \(enabledTools.map { $0.name }.joined(separator: ", "))")
+        } else {
+            print("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools")
+        }
+
         openAIService.sendMessage(
             messages: currentMessages,
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
+            tools: tools,
             onChunk: { chunk in
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                    var lastMessage = conversationManager.conversations[index].messages.last,
@@ -194,6 +206,15 @@ struct ChatView: View {
                 // Remove the empty assistant message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
                     conversationManager.conversations[index].messages.removeLast()
+                }
+            },
+            onToolCall: { callId, toolName, arguments in
+                // Execute the MCP tool
+                do {
+                    let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
+                    return result
+                } catch {
+                    return "Error executing tool: \(error.localizedDescription)"
                 }
             }
         )

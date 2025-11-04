@@ -29,11 +29,7 @@ class OpenAIService: ObservableObject {
         }
     }
 
-    @Published var temperature: Double {
-        didSet {
-            UserDefaults.standard.set(temperature, forKey: "temperature")
-        }
-    }
+    let temperature: Double = 0.7
 
     @Published var provider: AIProvider {
         didSet {
@@ -75,16 +71,27 @@ class OpenAIService: ObservableObject {
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
     let availableModels = [
+        "gpt-5",
         "gpt-4o",
         "gpt-4o-mini",
+        "o3",
+        "o4-mini",
+        "o1",
+        "o1-mini",
+        "o1-preview",
         "gpt-4-turbo",
         "gpt-4",
-        "gpt-3.5-turbo",
-        "o1-preview",
-        "o1-mini"
+        "gpt-3.5-turbo"
     ]
 
     let azureAPIVersions = [
+        "2025-04-01-preview",
+        "2025-03-01-preview",
+        "2025-02-01-preview",
+        "2025-01-01-preview",
+        "2024-12-01-preview",
+        "2024-10-21",
+        "2024-10-01-preview",
         "2024-08-01-preview",
         "2024-06-01",
         "2024-05-01-preview",
@@ -95,8 +102,6 @@ class OpenAIService: ObservableObject {
     init() {
         self.apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
         self.selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
-        self.temperature = UserDefaults.standard.double(forKey: "temperature") != 0 ?
-            UserDefaults.standard.double(forKey: "temperature") : 0.7
 
         if let providerString = UserDefaults.standard.string(forKey: "aiProvider"),
            let savedProvider = AIProvider(rawValue: providerString) {
@@ -132,9 +137,11 @@ class OpenAIService: ObservableObject {
         model: String? = nil,
         temperature: Double? = nil,
         stream: Bool = true,
+        tools: [[String: Any]]? = nil,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
+        onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
         print("🔵 sendMessage called - Provider: \(provider.displayName)")
 
@@ -178,7 +185,9 @@ class OpenAIService: ObservableObject {
         case .openai:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         case .azure:
-            request.setValue(apiKey, forHTTPHeaderField: "api-key")
+            // Azure can use either api-key header OR Bearer token
+            // Using Bearer token to match the working curl command
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
 
         let messagePayloads = messages.map { message in
@@ -190,21 +199,46 @@ class OpenAIService: ObservableObject {
 
         var body: [String: Any] = [
             "messages": messagePayloads,
-            "temperature": requestTemp,
             "stream": stream
         ]
 
-        // OpenAI requires model in body, Azure uses deployment name in URL
-        if provider == .openai {
-            body["model"] = requestModel
+        // Both OpenAI and Azure require model in body
+        body["model"] = requestModel
+
+        // Add tools if provided
+        if let tools = tools, !tools.isEmpty {
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
         }
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
+        // Debug: Print request details
+        print("📤 REQUEST DEBUG:")
+        print("   URL: \(url.absoluteString)")
+        print("   Method: POST")
+        print("   Provider: \(provider.displayName)")
+        if let headers = request.allHTTPHeaderFields {
+            print("   Headers:")
+            for (key, value) in headers {
+                if key == "Authorization" || key == "api-key" {
+                    // Mask the actual key for security
+                    let maskedValue = value.prefix(10) + "..." + value.suffix(4)
+                    print("      \(key): \(maskedValue)")
+                } else {
+                    print("      \(key): \(value)")
+                }
+            }
+        }
+        if let bodyData = request.httpBody,
+           let bodyString = String(data: bodyData, encoding: .utf8) {
+            print("   Body: \(bodyString)")
+        }
+
         if stream {
-            streamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError)
+            streamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError, onToolCall: onToolCall)
         } else {
-            nonStreamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError)
+            nonStreamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError, onToolCall: onToolCall)
         }
     }
 
@@ -212,8 +246,16 @@ class OpenAIService: ObservableObject {
         request: URLRequest,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
+        onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
+        // Capture values for async context
+        let currentProvider = provider
+        let currentModel = selectedModel
+        let currentAzureDeployment = azureDeploymentName
+        let currentAzureAPIVersion = azureAPIVersion
+        let currentAzureEndpoint = azureEndpoint
+
         Task {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -225,16 +267,59 @@ class OpenAIService: ObservableObject {
                     return
                 }
 
-                print("📡 HTTP Status: \(httpResponse.statusCode)")
+                print("� RESPONSE DEBUG:")
+                print("   Status: \(httpResponse.statusCode)")
+                if let headers = httpResponse.allHeaderFields as? [String: Any] {
+                    print("   Headers:")
+                    for (key, value) in headers {
+                        print("      \(key): \(value)")
+                    }
+                }
 
                 guard httpResponse.statusCode == 200 else {
+                    // Provide helpful error messages
+                    var errorMessage = "HTTP \(httpResponse.statusCode)"
+                    if httpResponse.statusCode == 400 {
+                        if currentProvider == .azure {
+                            errorMessage += " - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
+                        } else {
+                            errorMessage += " - Invalid request. Check your model name and parameters."
+                        }
+                        print("❌ 400 Bad Request")
+                        print("   Provider: \(currentProvider.displayName)")
+                        if currentProvider == .azure {
+                            print("   Deployment: \(currentAzureDeployment)")
+                            print("   API Version: \(currentAzureAPIVersion)")
+                            print("   Endpoint: \(currentAzureEndpoint)")
+                        } else {
+                            print("   Model: \(currentModel)")
+                        }
+                    }
+
+                    // Try to read error response body
+                    do {
+                        var errorBody = ""
+                        for try await byte in bytes {
+                            if let char = String(data: Data([byte]), encoding: .utf8) {
+                                errorBody += char
+                            }
+                        }
+                        if !errorBody.isEmpty {
+                            print("   Error Response Body: \(errorBody)")
+                        }
+                    } catch {
+                        print("   Could not read error body: \(error)")
+                    }
+
                     await MainActor.run {
-                        onError(OpenAIError.apiError("HTTP \(httpResponse.statusCode)"))
+                        onError(OpenAIError.apiError(errorMessage))
                     }
                     return
                 }
 
                 var buffer = Data()
+                var toolCallBuffer: [String: Any] = [:]
+                var toolCallId = ""
 
                 for try await byte in bytes {
                     buffer.append(byte)
@@ -259,10 +344,49 @@ class OpenAIService: ObservableObject {
                                    let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                                    let choices = json["choices"] as? [[String: Any]],
                                    let firstChoice = choices.first,
-                                   let delta = firstChoice["delta"] as? [String: Any],
-                                   let content = delta["content"] as? String {
-                                    await MainActor.run {
-                                        onChunk(content)
+                                   let delta = firstChoice["delta"] as? [String: Any] {
+
+                                    // Handle regular content
+                                    if let content = delta["content"] as? String {
+                                        await MainActor.run {
+                                            onChunk(content)
+                                        }
+                                    }
+
+                                    // Handle tool calls
+                                    if let toolCalls = delta["tool_calls"] as? [[String: Any]],
+                                       let toolCall = toolCalls.first {
+                                        if let id = toolCall["id"] as? String {
+                                            toolCallId = id
+                                        }
+                                        if let function = toolCall["function"] as? [String: Any] {
+                                            if let name = function["name"] as? String {
+                                                toolCallBuffer["name"] = name
+                                            }
+                                            if let argsChunk = function["arguments"] as? String {
+                                                let currentArgs = toolCallBuffer["arguments"] as? String ?? ""
+                                                toolCallBuffer["arguments"] = currentArgs + argsChunk
+                                            }
+                                        }
+                                    }
+
+                                    // Check if tool call is complete
+                                    if let finishReason = firstChoice["finish_reason"] as? String,
+                                       finishReason == "tool_calls",
+                                       let toolName = toolCallBuffer["name"] as? String,
+                                       let argsString = toolCallBuffer["arguments"] as? String,
+                                       let argsData = argsString.data(using: .utf8),
+                                       let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any],
+                                       let onToolCall = onToolCall {
+
+                                        let result = await onToolCall(toolCallId, toolName, arguments)
+                                        await MainActor.run {
+                                            onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+                                        }
+
+                                        // Clear buffer for next tool call
+                                        toolCallBuffer = [:]
+                                        toolCallId = ""
                                     }
                                 }
                             }
@@ -287,7 +411,8 @@ class OpenAIService: ObservableObject {
         request: URLRequest,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
+        onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
@@ -312,9 +437,38 @@ class OpenAIService: ObservableObject {
 
                     if let choices = json?["choices"] as? [[String: Any]],
                        let firstChoice = choices.first,
-                       let message = firstChoice["message"] as? [String: Any],
-                       let content = message["content"] as? String {
-                        onChunk(content)
+                       let message = firstChoice["message"] as? [String: Any] {
+
+                        // Handle regular content
+                        if let content = message["content"] as? String {
+                            onChunk(content)
+                        }
+
+                        // Handle tool calls
+                        if let toolCalls = message["tool_calls"] as? [[String: Any]],
+                           let onToolCall = onToolCall {
+                            Task {
+                                for toolCall in toolCalls {
+                                    if let id = toolCall["id"] as? String,
+                                       let function = toolCall["function"] as? [String: Any],
+                                       let name = function["name"] as? String,
+                                       let argsString = function["arguments"] as? String,
+                                       let argsData = argsString.data(using: .utf8),
+                                       let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
+
+                                        let result = await onToolCall(id, name, arguments)
+                                        await MainActor.run {
+                                            onChunk("\n\n[Tool: \(name)]\n\(result)\n")
+                                        }
+                                    }
+                                }
+                                await MainActor.run {
+                                    onComplete()
+                                }
+                            }
+                            return
+                        }
+
                         onComplete()
                     } else {
                         onError(OpenAIError.invalidResponse)
