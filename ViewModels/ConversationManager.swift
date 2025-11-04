@@ -18,7 +18,8 @@ class ConversationManager: ObservableObject {
     }
 
     func createNewConversation(title: String = "New Conversation") {
-        let conversation = Conversation(title: title)
+        let defaultModel = OpenAIService.shared.selectedModel
+        let conversation = Conversation(title: title, model: defaultModel)
         conversations.insert(conversation, at: 0)
         saveConversations()
     }
@@ -72,6 +73,14 @@ class ConversationManager: ObservableObject {
         }
     }
 
+    func updateModel(for conversation: Conversation, model: String) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].model = model
+            conversations[index].updatedAt = Date()
+            saveConversations()
+        }
+    }
+
     private func generateTitle(for conversation: Conversation) {
         guard let firstMessage = conversation.messages.first(where: { $0.role == .user }) else {
             return
@@ -93,8 +102,27 @@ class ConversationManager: ObservableObject {
 
     private func loadConversations() {
         if let data = UserDefaults.standard.data(forKey: conversationsKey),
-           let decoded = try? JSONDecoder().decode([Conversation].self, from: data) {
+           var decoded = try? JSONDecoder().decode([Conversation].self, from: data) {
+
+            // Validate and fix models that no longer exist
+            let availableModels = OpenAIService.shared.customModels
+            let defaultModel = OpenAIService.shared.selectedModel
+            var needsSave = false
+
+            for index in decoded.indices {
+                if !availableModels.contains(decoded[index].model) {
+                    // Model no longer exists, update to default
+                    decoded[index].model = defaultModel
+                    needsSave = true
+                }
+            }
+
             conversations = decoded
+
+            // Save if any models were updated
+            if needsSave {
+                saveConversations()
+            }
         }
     }
 

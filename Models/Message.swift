@@ -14,6 +14,7 @@ struct Message: Identifiable, Codable, Equatable {
     let timestamp: Date
     var isLiked: Bool
     var toolCalls: [MCPToolCall]?
+    var model: String? // Track which model generated this message
 
     enum Role: String, Codable {
         case system
@@ -28,7 +29,8 @@ struct Message: Identifiable, Codable, Equatable {
         content: String,
         timestamp: Date = Date(),
         isLiked: Bool = false,
-        toolCalls: [MCPToolCall]? = nil
+        toolCalls: [MCPToolCall]? = nil,
+        model: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -36,5 +38,6 @@ struct Message: Identifiable, Codable, Equatable {
         self.timestamp = timestamp
         self.isLiked = isLiked
         self.toolCalls = toolCalls
+        self.model = model
     }
 }

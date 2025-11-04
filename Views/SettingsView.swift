@@ -106,49 +106,68 @@ struct ModelSettingsView: View {
             } else {
                 // OpenAI model selection
                 Section {
-                    Picker("Model", selection: $openAIService.selectedModel) {
-                        ForEach(openAIService.availableModels, id: \.self) { model in
-                            Text(model).tag(model)
+                    if openAIService.customModels.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("No models configured")
+                                .foregroundStyle(.red)
+                            Text("Go to the API tab to add models")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Picker("Default Model", selection: $openAIService.selectedModel) {
+                            ForEach(openAIService.customModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
                         }
                     }
                 } header: {
-                    Text("OpenAI Model")
-                }
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(openAIService.provider == .azure ? "Azure Deployment Info" : "Model Information")
-                        .font(.headline)
-
-                    if openAIService.provider == .azure {
-                        Text("Your Azure deployment determines which model is used:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("• Check Azure Portal for your deployed model")
-                            Text("• Each deployment can use different models")
-                            Text("• Model capabilities depend on your deployment")
-                        }
+                    Text("Default Model for New Conversations")
+                } footer: {
+                    Text("This model will be used when creating new conversations. Manage models in the API tab.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    if openAIService.customModels.isEmpty {
+                        Text("No models available. Add models in the API tab.")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                     } else {
-                        Text("Different models have different capabilities and pricing:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("• GPT-4o: Most capable, vision support")
-                            Text("• GPT-4o Mini: Fast and efficient")
-                            Text("• o1-Preview: Advanced reasoning")
+                        ForEach(openAIService.customModels, id: \.self) { model in
+                            HStack {
+                                Image(systemName: "cpu")
+                                    .foregroundStyle(.blue)
+                                    .font(.system(size: 14))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model)
+                                        .font(.system(size: 13, weight: .medium))
+                                    if let description = model.modelDescription {
+                                        Text(description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if model == openAIService.selectedModel {
+                                    Text("Default")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.blue.opacity(0.1))
+                                        .cornerRadius(4)
+                                }
+                            }
+                            .padding(.vertical, 4)
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("Your Models")
+                } footer: {
+                    Text("Each conversation can use a different model. Change a conversation's model by right-clicking it in the sidebar.")
+                        .font(.caption)
                 }
-            } header: {
-                Text("About \(openAIService.provider == .azure ? "Deployments" : "Models")")
             }
         }
         .formStyle(.grouped)
@@ -156,15 +175,149 @@ struct ModelSettingsView: View {
     }
 }
 
+// Model information helper
+extension String {
+    var modelDescription: String? {
+        switch self {
+        case "gpt-5":
+            return "Most advanced reasoning model"
+        case "gpt-4o":
+            return "Best for everyday tasks"
+        case "gpt-4o-mini":
+            return "Fast and efficient for simple tasks"
+        case "o3":
+            return "Deep reasoning capabilities"
+        case "o4-mini":
+            return "Quick reasoning for simple problems"
+        case "o1":
+            return "Advanced reasoning model"
+        case "o1-mini":
+            return "Faster reasoning for simpler tasks"
+        case "o1-preview":
+            return "Preview of reasoning capabilities"
+        case "gpt-4-turbo":
+            return "Fast, powerful multimodal model"
+        case "gpt-4":
+            return "Reliable general-purpose model"
+        case "gpt-3.5-turbo":
+            return "Fast responses at lower cost"
+        default:
+            return nil
+        }
+    }
+}
+
 struct APISettingsView: View {
     @StateObject private var openAIService = OpenAIService.shared
     @State private var showAPIKey = false
     @State private var tempAPIKey = ""
+    @State private var tempEndpoint = ""
     @State private var tempAzureEndpoint = ""
     @State private var tempAzureDeployment = ""
+    @State private var tempModelName = ""
+    @State private var selectedModelName: String?
 
     var body: some View {
-        Form {
+        HSplitView {
+            // Left panel - Model Management
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Models")
+                                .font(.headline)
+                            Text("Add and manage your AI models")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button(action: createNewModel) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add new model")
+                    }
+                }
+                .padding()
+
+                Divider()
+
+                // Model list
+                ScrollView {
+                    if openAIService.customModels.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.tertiary)
+                            Text("No models added")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(openAIService.customModels, id: \.self) { model in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(model)
+                                            .font(.system(size: 13))
+                                        HStack(spacing: 4) {
+                                            if let provider = openAIService.modelProviders[model] {
+                                                Text(provider == .openai ? "OpenAI" : "Azure")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            if model == openAIService.selectedModel {
+                                                Text("•")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.secondary)
+                                                Text("Default")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.blue)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Button(action: {
+                                        removeModel(model)
+                                    }) {
+                                        Image(systemName: "trash")
+                                            .foregroundStyle(.red)
+                                            .font(.system(size: 12))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove model")
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    selectedModelName == model ? Color.blue.opacity(0.1) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 6)
+                                )
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    selectedModelName = model
+                                    loadModelConfig(model)
+                                }
+                            }
+                        }
+                        .padding(8)
+                    }
+                }
+            }
+            .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
+            .background(Color(nsColor: .controlBackgroundColor))
+
+            // Right panel - API Configuration
+            Form {
             Section {
                 Picker("Provider", selection: $openAIService.provider) {
                     ForEach(AIProvider.allCases, id: \.self) { provider in
@@ -177,12 +330,18 @@ struct APISettingsView: View {
 
             if openAIService.provider == .openai {
                 Section {
+                    TextField("Model Name (e.g., gpt-4o)", text: $tempModelName)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Endpoint URL", text: $tempEndpoint)
+                        .textFieldStyle(.roundedBorder)
+
                     HStack {
                         if showAPIKey {
-                            TextField("sk-...", text: $tempAPIKey)
+                            TextField("API Key", text: $tempAPIKey)
                                 .textFieldStyle(.roundedBorder)
                         } else {
-                            SecureField("sk-...", text: $tempAPIKey)
+                            SecureField("API Key", text: $tempAPIKey)
                                 .textFieldStyle(.roundedBorder)
                         }
 
@@ -195,38 +354,38 @@ struct APISettingsView: View {
                     }
 
                     HStack {
-                        Button("Save API Key") {
+                        Spacer()
+                        Button("Add Model") {
                             openAIService.apiKey = tempAPIKey
-                        }
-                        .disabled(tempAPIKey.isEmpty)
 
-                        Button("Clear") {
-                            tempAPIKey = ""
-                            openAIService.apiKey = ""
+                            // Add model to custom models list if provided
+                            let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
+                                openAIService.customModels.append(modelName)
+                                // Store that this model uses OpenAI provider
+                                openAIService.modelProviders[modelName] = .openai
+                                // Set as default if no models exist
+                                if openAIService.customModels.count == 1 {
+                                    openAIService.selectedModel = modelName
+                                }
+                                // Select the newly added model in the left panel
+                                selectedModelName = modelName
+                            }
                         }
-                        .foregroundStyle(.red)
+                        .disabled(tempAPIKey.isEmpty || tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tempEndpoint.isEmpty)
+                        Spacer()
                     }
                 } header: {
-                    Text("OpenAI API Key")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your API key is stored securely in macOS Keychain")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Link("Get your API key from OpenAI →",
-                             destination: URL(string: "https://platform.openai.com/api-keys")!)
-                            .font(.caption)
-                    }
+                    Text("OpenAI Configuration")
                 }
             } else if openAIService.provider == .azure {
                 Section {
                     HStack {
                         if showAPIKey {
-                            TextField("Azure API Key", text: $tempAPIKey)
+                            TextField("API Key", text: $tempAPIKey)
                                 .textFieldStyle(.roundedBorder)
                         } else {
-                            SecureField("Azure API Key", text: $tempAPIKey)
+                            SecureField("API Key", text: $tempAPIKey)
                                 .textFieldStyle(.roundedBorder)
                         }
 
@@ -251,39 +410,31 @@ struct APISettingsView: View {
                     }
 
                     HStack {
-                        Button("Save Configuration") {
+                        Spacer()
+                        Button("Add Model") {
                             openAIService.apiKey = tempAPIKey
                             openAIService.azureEndpoint = tempAzureEndpoint
                             openAIService.azureDeploymentName = tempAzureDeployment
+
+                            // Use deployment name as model name
+                            let modelName = tempAzureDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
+                                openAIService.customModels.append(modelName)
+                                // Store that this model uses Azure provider
+                                openAIService.modelProviders[modelName] = .azure
+                                // Set as default if no models exist
+                                if openAIService.customModels.count == 1 {
+                                    openAIService.selectedModel = modelName
+                                }
+                                // Select the newly added model in the left panel
+                                selectedModelName = modelName
+                            }
                         }
                         .disabled(tempAPIKey.isEmpty || tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-
-                        Button("Clear") {
-                            tempAPIKey = ""
-                            tempAzureEndpoint = ""
-                            tempAzureDeployment = ""
-                            openAIService.apiKey = ""
-                            openAIService.azureEndpoint = ""
-                            openAIService.azureDeploymentName = ""
-                        }
-                        .foregroundStyle(.red)
+                        Spacer()
                     }
                 } header: {
                     Text("Azure OpenAI Configuration")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your API key is stored securely in macOS Keychain")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text("Endpoint example: https://your-resource.openai.azure.com")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Link("Learn more about Azure OpenAI →",
-                             destination: URL(string: "https://azure.microsoft.com/en-us/products/ai-services/openai-service")!)
-                            .font(.caption)
-                    }
                 }
             }
 
@@ -303,8 +454,107 @@ struct APISettingsView: View {
         .padding()
         .onAppear {
             tempAPIKey = openAIService.apiKey
+            tempEndpoint = "https://api.openai.com/"
             tempAzureEndpoint = openAIService.azureEndpoint
             tempAzureDeployment = openAIService.azureDeploymentName
+        }
+        }
+    }
+
+    private func createNewModel() {
+        // Clear all fields and deselect - complete clean slate
+        selectedModelName = nil
+        tempModelName = ""
+        tempAPIKey = ""
+        tempEndpoint = "https://api.openai.com/"
+        tempAzureEndpoint = ""
+        tempAzureDeployment = ""
+    }
+
+    private func loadModelConfig(_ model: String) {
+        // Switch to the correct provider for this model
+        if let modelProvider = openAIService.modelProviders[model] {
+            openAIService.provider = modelProvider
+        }
+
+        tempModelName = model
+        tempAPIKey = openAIService.apiKey
+
+        if openAIService.provider == .openai {
+            tempEndpoint = "https://api.openai.com/"
+        } else {
+            tempAzureDeployment = model
+            tempAzureEndpoint = openAIService.azureEndpoint
+        }
+    }
+
+    private func removeModel(_ model: String) {
+        openAIService.customModels.removeAll { $0 == model }
+        // Also remove from provider mapping
+        openAIService.modelProviders.removeValue(forKey: model)
+
+        // If we removed the selected default model, pick a new one
+        if openAIService.selectedModel == model && !openAIService.customModels.isEmpty {
+            openAIService.selectedModel = openAIService.customModels[0]
+        }
+
+        if selectedModelName == model {
+            selectedModelName = nil
+            tempModelName = ""
+            tempEndpoint = "https://api.openai.com/"
+            tempAzureDeployment = ""
+        }
+    }
+}
+
+// Flow layout for quick add buttons
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(
+            in: proposal.replacingUnspecifiedDimensions().width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(
+            in: bounds.width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.frames[index].minX, y: bounds.minY + result.frames[index].minY), proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var frames: [CGRect] = []
+        var size: CGSize = .zero
+
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var currentX: CGFloat = 0
+            var currentY: CGFloat = 0
+            var lineHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+
+                if currentX + size.width > maxWidth && currentX > 0 {
+                    currentX = 0
+                    currentY += lineHeight + spacing
+                    lineHeight = 0
+                }
+
+                frames.append(CGRect(x: currentX, y: currentY, width: size.width, height: size.height))
+                lineHeight = max(lineHeight, size.height)
+                currentX += size.width + spacing
+            }
+
+            self.size = CGSize(width: maxWidth, height: currentY + lineHeight)
         }
     }
 }
