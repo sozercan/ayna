@@ -769,8 +769,7 @@ struct APISettingsView: View {
                 let testPayload: [String: Any] = [
                     "messages": [
                         ["role": "user", "content": "test"]
-                    ],
-                    "max_tokens": 1
+                    ]
                 ]
 
                 request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
