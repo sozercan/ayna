@@ -11,6 +11,7 @@ struct MessageView: View {
     let message: Message
     var modelName: String?
     @State private var isHovered = false
+    @State private var showReasoning = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -61,6 +62,47 @@ struct MessageView: View {
                     // Show typing indicator for empty assistant messages
                     if message.role == .assistant && message.content.isEmpty && message.mediaType != .image {
                         TypingIndicatorView()
+                    }
+
+                    // Show reasoning toggle if reasoning exists
+                    if let reasoning = message.reasoning, !reasoning.isEmpty {
+                        Button(action: {
+                            withAnimation {
+                                showReasoning.toggle()
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text("Thinking")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(reasoning.count) chars")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .foregroundStyle(.blue)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10)
+                            .background(Color.blue.opacity(0.08))
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+
+                        if showReasoning {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(parseMessageContent(reasoning), id: \.id) { block in
+                                    block.view
+                                }
+                            }
+                            .padding(12)
+                            .background(Color.secondary.opacity(0.05))
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                            )
+                        }
                     }
 
                     ForEach(parseMessageContent(message.content), id: \.id) { block in

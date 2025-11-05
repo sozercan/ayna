@@ -334,7 +334,6 @@ class MCPService: ObservableObject {
             }
         } catch {
             print("Failed to decode MCP response: \(error)")
-            print("JSON: \(json)")
         }
     }
 

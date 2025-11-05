@@ -15,11 +15,14 @@ struct Message: Identifiable, Codable, Equatable {
     var isLiked: Bool
     var toolCalls: [MCPToolCall]?
     var model: String? // Track which model generated this message
-    
+
     // Image generation support
     var mediaType: MediaType?
     var imageData: Data?
-    
+
+    // Reasoning/thinking support for o1/o3 models
+    var reasoning: String?
+
     enum MediaType: String, Codable {
         case image
     }
@@ -40,7 +43,8 @@ struct Message: Identifiable, Codable, Equatable {
         toolCalls: [MCPToolCall]? = nil,
         model: String? = nil,
         mediaType: MediaType? = nil,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        reasoning: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -51,5 +55,6 @@ struct Message: Identifiable, Codable, Equatable {
         self.model = model
         self.mediaType = mediaType
         self.imageData = imageData
+        self.reasoning = reasoning
     }
 }

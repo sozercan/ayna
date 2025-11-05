@@ -164,6 +164,7 @@ struct ChatView: View {
 
         if isGenerating {
             // Stop generation
+            OpenAIService.shared.cancelCurrentRequest()
             isGenerating = false
             return
         }
@@ -240,6 +241,16 @@ struct ChatView: View {
                     return result
                 } catch {
                     return "Error executing tool: \(error.localizedDescription)"
+                }
+            },
+            onReasoning: { reasoning in
+                // Append reasoning content to the last assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    let currentReasoning = lastMessage.reasoning ?? ""
+                    lastMessage.reasoning = currentReasoning + reasoning
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
                 }
             }
         )
