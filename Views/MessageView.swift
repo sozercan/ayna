@@ -203,12 +203,7 @@ struct MessageView: View {
                 currentToolResult += line + "\n"
             } else if line.hasPrefix("```") {
                 if inCodeBlock {
-                    // End of code block
-                    if !currentCode.isEmpty {
-                        blocks.append(ContentBlock(type: .code(currentCode.trimmingCharacters(in: .newlines), codeLanguage)))
-                        currentCode = ""
-                        codeLanguage = ""
-                    }
+                    // End of code block - just mark it as ended
                     inCodeBlock = false
                 } else {
                     // Start of code block
@@ -218,9 +213,18 @@ struct MessageView: View {
                     }
                     inCodeBlock = true
                     codeLanguage = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    // Immediately add the code block (even if empty) so it appears during streaming
+                    blocks.append(ContentBlock(type: .code(currentCode, codeLanguage)))
                 }
             } else if inCodeBlock {
                 currentCode += line + "\n"
+                // Update the last code block with new content
+                if let lastIndex = blocks.lastIndex(where: { 
+                    if case .code = $0.type { return true }
+                    return false
+                }) {
+                    blocks[lastIndex] = ContentBlock(type: .code(currentCode, codeLanguage))
+                }
             } else {
                 currentText += line + "\n"
             }
@@ -232,6 +236,13 @@ struct MessageView: View {
         }
         if !currentToolResult.isEmpty {
             blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
+        }
+        // Handle unclosed code block (still streaming)
+        if inCodeBlock && !blocks.contains(where: { 
+            if case .code = $0.type { return true }
+            return false
+        }) {
+            blocks.append(ContentBlock(type: .code(currentCode, codeLanguage)))
         }
 
         return blocks
@@ -312,14 +323,12 @@ struct ContentBlock: Identifiable {
 
                 Divider()
 
-                // Code content
+                // Code content with syntax highlighting
                 ScrollView(.horizontal, showsIndicators: false) {
-                    Text(code)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
+                    SyntaxHighlightedCodeView(code: code, language: language)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
@@ -466,6 +475,210 @@ struct ImageGeneratingView: View {
         .cornerRadius(12)
         .onAppear {
             isAnimating = true
+        }
+    }
+}
+
+// Syntax highlighted code view
+struct SyntaxHighlightedCodeView: View {
+    let code: String
+    let language: String
+    
+    var body: some View {
+        Text(AttributedString(highlightedCode()))
+            .font(.system(size: 13, design: .monospaced))
+            .textSelection(.enabled)
+    }
+    
+    private func highlightedCode() -> NSAttributedString {
+        let attributedString = NSMutableAttributedString(string: code)
+        let fullRange = NSRange(location: 0, length: code.utf16.count)
+        
+        // Base styling
+        let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let baseColor = NSColor.labelColor
+        attributedString.addAttribute(.font, value: baseFont, range: fullRange)
+        attributedString.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
+        
+        // Apply syntax highlighting based on language
+        let normalizedLang = language.lowercased()
+        
+        switch normalizedLang {
+        case "swift":
+            highlightSwift(attributedString)
+        case "python", "py":
+            highlightPython(attributedString)
+        case "javascript", "js", "typescript", "ts":
+            highlightJavaScript(attributedString)
+        case "bash", "sh", "shell", "zsh":
+            highlightBash(attributedString)
+        case "json":
+            highlightJSON(attributedString)
+        case "html", "xml":
+            highlightHTML(attributedString)
+        case "css", "scss", "sass":
+            highlightCSS(attributedString)
+        case "rust", "rs":
+            highlightRust(attributedString)
+        case "go":
+            highlightGo(attributedString)
+        case "java", "kotlin":
+            highlightJava(attributedString)
+        case "c", "cpp", "c++", "objc":
+            highlightC(attributedString)
+        case "ruby", "rb":
+            highlightRuby(attributedString)
+        case "php":
+            highlightPHP(attributedString)
+        default:
+            highlightGeneric(attributedString)
+        }
+        
+        return attributedString
+    }
+    
+    private func highlightSwift(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["func", "var", "let", "if", "else", "for", "while", "return", "import", "class", "struct", "enum", "protocol", "extension", "public", "private", "internal", "static", "override", "init", "self", "super", "nil", "true", "false", "guard", "switch", "case", "default", "break", "continue", "in", "where", "as", "is", "try", "catch", "throw", "throws", "async", "await", "actor"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightPython(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "try", "except", "finally", "with", "lambda", "yield", "async", "await", "pass", "break", "continue", "and", "or", "not", "in", "is", "None", "True", "False", "self"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightJavaScript(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["function", "const", "let", "var", "if", "else", "for", "while", "return", "import", "export", "class", "extends", "constructor", "this", "super", "async", "await", "try", "catch", "throw", "new", "typeof", "instanceof", "null", "undefined", "true", "false", "switch", "case", "default", "break", "continue"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightBash(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "function", "return", "echo", "exit", "export", "source", "cd", "ls", "cp", "mv", "rm", "mkdir", "chmod", "sudo", "apt", "brew", "npm", "pip", "git"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
+        highlightPattern(attributedString, pattern: "\\$[a-zA-Z_][a-zA-Z0-9_]*", color: .systemCyan) // Variables
+    }
+    
+    private func highlightJSON(_ attributedString: NSMutableAttributedString) {
+        highlightPattern(attributedString, pattern: "\"[^\"]*\"\\s*:", color: .systemBlue) // Keys
+        highlightStrings(attributedString, color: .systemRed)
+        highlightPattern(attributedString, pattern: "\\b(true|false|null)\\b", color: .systemPink)
+        highlightNumbers(attributedString, color: .systemOrange)
+    }
+    
+    private func highlightHTML(_ attributedString: NSMutableAttributedString) {
+        highlightPattern(attributedString, pattern: "<[^>]+>", color: .systemPink) // Tags
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen, pattern: "<!--.*?-->")
+    }
+    
+    private func highlightCSS(_ attributedString: NSMutableAttributedString) {
+        highlightPattern(attributedString, pattern: "[.#][a-zA-Z][a-zA-Z0-9_-]*", color: .systemBlue) // Selectors
+        highlightPattern(attributedString, pattern: "[a-zA-Z-]+(?=\\s*:)", color: .systemCyan) // Properties
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen, pattern: "/\\*.*?\\*/")
+        highlightNumbers(attributedString, color: .systemOrange)
+    }
+    
+    private func highlightRust(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["fn", "let", "mut", "if", "else", "for", "while", "loop", "return", "use", "mod", "pub", "struct", "enum", "impl", "trait", "type", "where", "match", "self", "Self", "true", "false", "const", "static", "async", "await", "move"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightGo(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["func", "var", "const", "if", "else", "for", "range", "return", "import", "package", "type", "struct", "interface", "map", "chan", "go", "defer", "select", "switch", "case", "default", "break", "continue", "nil", "true", "false"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightJava(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["public", "private", "protected", "class", "interface", "extends", "implements", "if", "else", "for", "while", "return", "import", "package", "new", "this", "super", "static", "final", "void", "int", "String", "boolean", "true", "false", "null", "try", "catch", "throw", "throws"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightC(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["if", "else", "for", "while", "return", "void", "int", "char", "float", "double", "struct", "typedef", "enum", "union", "static", "const", "sizeof", "break", "continue", "switch", "case", "default", "#include", "#define", "NULL"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightRuby(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["def", "end", "class", "module", "if", "elsif", "else", "unless", "case", "when", "for", "while", "until", "do", "return", "yield", "self", "super", "nil", "true", "false", "and", "or", "not", "begin", "rescue", "ensure"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightPHP(_ attributedString: NSMutableAttributedString) {
+        let keywords = ["function", "class", "if", "else", "elseif", "for", "foreach", "while", "return", "public", "private", "protected", "static", "new", "this", "self", "parent", "try", "catch", "throw", "null", "true", "false", "echo", "print", "require", "include"]
+        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightPattern(attributedString, pattern: "\\$[a-zA-Z_][a-zA-Z0-9_]*", color: .systemCyan) // Variables
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    private func highlightGeneric(_ attributedString: NSMutableAttributedString) {
+        highlightStrings(attributedString, color: .systemRed)
+        highlightComments(attributedString, color: .systemGreen)
+        highlightNumbers(attributedString, color: .systemBlue)
+    }
+    
+    // Helper methods
+    private func highlightKeywords(_ attributedString: NSMutableAttributedString, keywords: [String], color: NSColor) {
+        for keyword in keywords {
+            let pattern = "\\b\(keyword)\\b"
+            highlightPattern(attributedString, pattern: pattern, color: color)
+        }
+    }
+    
+    private func highlightStrings(_ attributedString: NSMutableAttributedString, color: NSColor) {
+        // Double quotes
+        highlightPattern(attributedString, pattern: "\"(?:[^\"\\\\]|\\\\.)*\"", color: color)
+        // Single quotes
+        highlightPattern(attributedString, pattern: "'(?:[^'\\\\]|\\\\.)*'", color: color)
+        // Backticks (template literals)
+        highlightPattern(attributedString, pattern: "`(?:[^`\\\\]|\\\\.)*`", color: color)
+    }
+    
+    private func highlightComments(_ attributedString: NSMutableAttributedString, color: NSColor, pattern: String = "//.*") {
+        highlightPattern(attributedString, pattern: pattern, color: color)
+        // Multi-line comments
+        highlightPattern(attributedString, pattern: "/\\*[\\s\\S]*?\\*/", color: color)
+    }
+    
+    private func highlightNumbers(_ attributedString: NSMutableAttributedString, color: NSColor) {
+        highlightPattern(attributedString, pattern: "\\b\\d+\\.?\\d*\\b", color: color)
+    }
+    
+    private func highlightPattern(_ attributedString: NSMutableAttributedString, pattern: String, color: NSColor) {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        let range = NSRange(location: 0, length: attributedString.length)
+        let matches = regex.matches(in: attributedString.string, options: [], range: range)
+        
+        for match in matches {
+            attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
         }
     }
 }
