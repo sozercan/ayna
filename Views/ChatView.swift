@@ -15,7 +15,7 @@ struct ChatView: View {
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
-    
+
     // Get the current conversation from the manager to ensure we have the latest data
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
@@ -57,7 +57,16 @@ struct ChatView: View {
                         .frame(minHeight: 400)
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(currentConversation.messages.filter { $0.role != .system }) { message in
+                            ForEach(currentConversation.messages.filter { message in
+                                // Hide system messages
+                                guard message.role != .system else { return false }
+
+                                // Show if: has content, has image data, is generating image, or is empty assistant (shows typing indicator)
+                                return !message.content.isEmpty ||
+                                       message.imageData != nil ||
+                                       message.mediaType == .image ||
+                                       message.role == .assistant
+                            }) { message in
                                 MessageView(message: message, modelName: message.model)
                                     .id(message.id)
                             }
@@ -248,25 +257,19 @@ struct ChatView: View {
         )
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
-        print("🖼️ Created placeholder message with ID: \(messageId)")
-
         openAIService.generateImage(
             prompt: prompt,
             model: model,
             onComplete: { imageData in
-                print("🖼️ Image data received, size: \(imageData.count) bytes")
-
                 // Update the placeholder message with actual image using the proper method
                 conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
                     message.content = ""
                     message.imageData = imageData
                 }
 
-                print("✅ Message updated and saved")
                 isGenerating = false
             },
             onError: { error in
-                print("❌ Image generation error: \(error.localizedDescription)")
                 isGenerating = false
                 errorMessage = error.localizedDescription
 

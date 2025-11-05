@@ -69,15 +69,10 @@ class ConversationManager: ObservableObject {
         if let convIndex = conversations.firstIndex(where: { $0.id == conversation.id }),
            let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) {
             var message = conversations[convIndex].messages[msgIndex]
-            print("🔄 Before update - mediaType: \(message.mediaType?.rawValue ?? "nil"), imageData: \(message.imageData != nil ? "\(message.imageData!.count) bytes" : "nil")")
             update(&message)
-            print("🔄 After update - mediaType: \(message.mediaType?.rawValue ?? "nil"), imageData: \(message.imageData != nil ? "\(message.imageData!.count) bytes" : "nil")")
             conversations[convIndex].messages[msgIndex] = message
             conversations[convIndex].updatedAt = Date()
             saveConversations()
-            print("💾 Message saved and conversations updated")
-        } else {
-            print("❌ Could not find conversation or message to update")
         }
     }
 

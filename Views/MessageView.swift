@@ -36,10 +36,8 @@ struct MessageView: View {
                     }
 
                     // Show generated image if present
-                    if message.mediaType == .image, let imageData = message.imageData {
-                        let _ = print("🖼️ MessageView: Rendering image for message \(message.id), data size: \(imageData.count) bytes")
-                        if let nsImage = NSImage(data: imageData) {
-                            let _ = print("✅ NSImage created successfully, size: \(nsImage.size)")
+                    if message.mediaType == .image {
+                        if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
                             Image(nsImage: nsImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
@@ -55,13 +53,14 @@ struct MessageView: View {
                                     }
                                 }
                         } else {
-                            let _ = print("❌ Failed to create NSImage from data")
-                            Text("Failed to load image")
-                                .foregroundStyle(.red)
-                                .font(.caption)
+                            // Show loading animation while generating
+                            ImageGeneratingView()
                         }
-                    } else {
-                        let _ = print("🖼️ MessageView: Message \(message.id) - mediaType: \(message.mediaType?.rawValue ?? "nil"), imageData: \(message.imageData != nil ? "\(message.imageData!.count) bytes" : "nil")")
+                    }
+
+                    // Show typing indicator for empty assistant messages
+                    if message.role == .assistant && message.content.isEmpty && message.mediaType != .image {
+                        TypingIndicatorView()
                     }
 
                     ForEach(parseMessageContent(message.content), id: \.id) { block in
@@ -378,4 +377,76 @@ struct ContentBlock: Identifiable {
     }
     .padding()
     .frame(width: 600)
+}
+
+// Loading animation for image generation
+struct ImageGeneratingView: View {
+    @State private var isAnimating = false
+    @State private var dotCount = 0
+
+    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Animated sparkles icon
+            ZStack {
+                ForEach(0..<3) { index in
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.blue.opacity(0.6))
+                        .scaleEffect(isAnimating ? 1.2 : 0.8)
+                        .opacity(isAnimating ? 0.3 : 1.0)
+                        .rotationEffect(.degrees(Double(index) * 120))
+                        .animation(
+                            Animation.easeInOut(duration: 1.5)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.2),
+                            value: isAnimating
+                        )
+                }
+
+                Image(systemName: "photo")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.blue)
+            }
+            .frame(width: 60, height: 60)
+
+            // Animated text
+            Text("Generating image" + String(repeating: ".", count: dotCount))
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .onReceive(timer) { _ in
+                    dotCount = (dotCount + 1) % 4
+                }
+        }
+        .frame(width: 512, height: 200)
+        .background(Color.secondary.opacity(0.05))
+        .cornerRadius(12)
+        .onAppear {
+            isAnimating = true
+        }
+    }
+}
+
+// Typing indicator for text responses
+struct TypingIndicatorView: View {
+    @State private var animatingDot = 0
+
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
+                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+            }
+        }
+        .padding(.vertical, 8)
+        .onReceive(timer) { _ in
+            animatingDot = (animatingDot + 1) % 3
+        }
+    }
 }

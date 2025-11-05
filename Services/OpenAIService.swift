@@ -70,6 +70,14 @@ class OpenAIService: ObservableObject {
 
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
+    // Custom URLSession with longer timeout for slow models
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120 // 2 minutes
+        config.timeoutIntervalForResource = 300 // 5 minutes
+        return URLSession(configuration: config)
+    }()
+
     @Published var customModels: [String] {
         didSet {
             UserDefaults.standard.set(customModels, forKey: "customModels")
@@ -209,22 +217,17 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping (Data) -> Void,
         onError: @escaping (Error) -> Void
     ) {
-        print("🖼️ generateImage called - Model: \(model ?? selectedModel)")
-
         guard !apiKey.isEmpty else {
-            print("❌ Missing API key")
             onError(OpenAIError.missingAPIKey)
             return
         }
 
         guard provider == .azure else {
-            print("❌ Image generation only supported on Azure provider")
             onError(OpenAIError.unsupportedProvider)
             return
         }
 
         guard !azureEndpoint.isEmpty else {
-            print("❌ Missing Azure endpoint")
             onError(OpenAIError.missingAzureEndpoint)
             return
         }
@@ -238,12 +241,9 @@ class OpenAIService: ObservableObject {
         let imageURL = "\(cleanEndpoint)/openai/deployments/\(requestModel)/images/generations?api-version=\(cleanVersion)"
 
         guard let url = URL(string: imageURL) else {
-            print("❌ Invalid URL: \(imageURL)")
             onError(OpenAIError.invalidURL)
             return
         }
-
-        print("✅ Sending image generation request to: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -266,9 +266,8 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Network error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     onError(error)
                 }
@@ -306,19 +305,16 @@ class OpenAIService: ObservableObject {
                        let firstItem = dataArray.first,
                        let b64String = firstItem["b64_json"] as? String,
                        let imageData = Data(base64Encoded: b64String) {
-                        print("✅ Image generated successfully, size: \(imageData.count) bytes")
                         DispatchQueue.main.async {
                             onComplete(imageData)
                         }
                     } else {
-                        print("❌ Invalid response format")
                         DispatchQueue.main.async {
                             onError(OpenAIError.invalidResponse)
                         }
                     }
                 }
             } catch {
-                print("❌ JSON parsing error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     onError(error)
                 }
@@ -337,10 +333,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
-        print("🔵 sendMessage called - Provider: \(provider.displayName)")
-
         guard !apiKey.isEmpty else {
-            print("❌ Missing API key")
             onError(OpenAIError.missingAPIKey)
             return
         }
@@ -348,12 +341,10 @@ class OpenAIService: ObservableObject {
         // Validate Azure settings if using Azure
         if provider == .azure {
             guard !azureEndpoint.isEmpty else {
-                print("❌ Missing Azure endpoint")
                 onError(OpenAIError.missingAzureEndpoint)
                 return
             }
             guard !azureDeploymentName.isEmpty else {
-                print("❌ Missing Azure deployment")
                 onError(OpenAIError.missingAzureDeployment)
                 return
             }
@@ -366,12 +357,9 @@ class OpenAIService: ObservableObject {
         let apiURL = provider == .azure ? getAPIURL(deploymentName: requestModel) : getAPIURL()
 
         guard let url = URL(string: apiURL) else {
-            print("❌ Invalid URL: \(apiURL)")
             onError(OpenAIError.invalidURL)
             return
         }
-
-        print("✅ Sending request to: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -410,28 +398,6 @@ class OpenAIService: ObservableObject {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        // Debug: Print request details
-        print("📤 REQUEST DEBUG:")
-        print("   URL: \(url.absoluteString)")
-        print("   Method: POST")
-        print("   Provider: \(provider.displayName)")
-        if let headers = request.allHTTPHeaderFields {
-            print("   Headers:")
-            for (key, value) in headers {
-                if key == "Authorization" || key == "api-key" {
-                    // Mask the actual key for security
-                    let maskedValue = value.prefix(10) + "..." + value.suffix(4)
-                    print("      \(key): \(maskedValue)")
-                } else {
-                    print("      \(key): \(value)")
-                }
-            }
-        }
-        if let bodyData = request.httpBody,
-           let bodyString = String(data: bodyData, encoding: .utf8) {
-            print("   Body: \(bodyString)")
-        }
-
         if stream {
             streamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError, onToolCall: onToolCall)
         } else {
@@ -455,22 +421,13 @@ class OpenAIService: ObservableObject {
 
         Task {
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                let (bytes, response) = try await urlSession.bytes(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     await MainActor.run {
                         onError(OpenAIError.invalidResponse)
                     }
                     return
-                }
-
-                print("� RESPONSE DEBUG:")
-                print("   Status: \(httpResponse.statusCode)")
-                if let headers = httpResponse.allHeaderFields as? [String: Any] {
-                    print("   Headers:")
-                    for (key, value) in headers {
-                        print("      \(key): \(value)")
-                    }
                 }
 
                 guard httpResponse.statusCode == 200 else {
@@ -482,30 +439,6 @@ class OpenAIService: ObservableObject {
                         } else {
                             errorMessage += " - Invalid request. Check your model name and parameters."
                         }
-                        print("❌ 400 Bad Request")
-                        print("   Provider: \(currentProvider.displayName)")
-                        if currentProvider == .azure {
-                            print("   Deployment: \(currentAzureDeployment)")
-                            print("   API Version: \(currentAzureAPIVersion)")
-                            print("   Endpoint: \(currentAzureEndpoint)")
-                        } else {
-                            print("   Model: \(currentModel)")
-                        }
-                    }
-
-                    // Try to read error response body
-                    do {
-                        var errorBody = ""
-                        for try await byte in bytes {
-                            if let char = String(data: Data([byte]), encoding: .utf8) {
-                                errorBody += char
-                            }
-                        }
-                        if !errorBody.isEmpty {
-                            print("   Error Response Body: \(errorBody)")
-                        }
-                    } catch {
-                        print("   Could not read error body: \(error)")
                     }
 
                     await MainActor.run {
@@ -596,9 +529,15 @@ class OpenAIService: ObservableObject {
                     onComplete()
                 }
             } catch {
-                print("❌ Streaming error: \(error.localizedDescription)")
                 await MainActor.run {
-                    onError(error)
+                    // Check if it's a timeout error and provide a better message
+                    if let urlError = error as? URLError, urlError.code == .timedOut {
+                        onError(OpenAIError.apiError("Request timed out. The model may be slow or overloaded. Please try again."))
+                    } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
+                        onError(OpenAIError.apiError("Network connection was lost. The server may have rejected the request."))
+                    } else {
+                        onError(error)
+                    }
                 }
             }
         }
@@ -611,7 +550,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        let task = urlSession.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 if let error = error {
                     onError(error)
