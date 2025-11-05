@@ -145,14 +145,15 @@ class OpenAIService: ObservableObject {
         UserDefaults.standard.set(apiKey, forKey: "openai_api_key")
     }
 
-    private func getAPIURL() -> String {
+    private func getAPIURL(deploymentName: String? = nil) -> String {
         switch provider {
         case .openai:
             return openAIURL
         case .azure:
             // Azure OpenAI URL format: https://{endpoint}/openai/deployments/{deployment-name}/chat/completions?api-version={version}
             let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let cleanDeployment = azureDeploymentName.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Use the provided deployment name (from conversation model) or fall back to the global setting
+            let cleanDeployment = (deploymentName ?? azureDeploymentName).trimmingCharacters(in: .whitespacesAndNewlines)
             let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
             return "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
         }
@@ -194,8 +195,11 @@ class OpenAIService: ObservableObject {
         let requestModel = model ?? selectedModel
         let requestTemp = temperature ?? self.temperature
 
-        guard let url = URL(string: getAPIURL()) else {
-            print("❌ Invalid URL: \(getAPIURL())")
+        // For Azure, use the conversation's model as the deployment name
+        let apiURL = provider == .azure ? getAPIURL(deploymentName: requestModel) : getAPIURL()
+        
+        guard let url = URL(string: apiURL) else {
+            print("❌ Invalid URL: \(apiURL)")
             onError(OpenAIError.invalidURL)
             return
         }
