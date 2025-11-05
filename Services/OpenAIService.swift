@@ -97,32 +97,32 @@ class OpenAIService: ObservableObject {
         "2024-02-01",
         "2023-12-01-preview"
     ]
-    
+
     // Image generation settings
     @Published var imageSize: String {
         didSet {
             UserDefaults.standard.set(imageSize, forKey: "imageSize")
         }
     }
-    
+
     @Published var imageQuality: String {
         didSet {
             UserDefaults.standard.set(imageQuality, forKey: "imageQuality")
         }
     }
-    
+
     @Published var outputFormat: String {
         didSet {
             UserDefaults.standard.set(outputFormat, forKey: "outputFormat")
         }
     }
-    
+
     @Published var outputCompression: Int {
         didSet {
             UserDefaults.standard.set(outputCompression, forKey: "outputCompression")
         }
     }
-    
+
     enum ModelCapability {
         case chat
         case imageGeneration
@@ -169,7 +169,7 @@ class OpenAIService: ObservableObject {
         self.azureEndpoint = (UserDefaults.standard.string(forKey: "azureEndpoint") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureDeploymentName = (UserDefaults.standard.string(forKey: "azureDeploymentName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureAPIVersion = (UserDefaults.standard.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview").trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         // Initialize image generation settings
         self.imageSize = UserDefaults.standard.string(forKey: "imageSize") ?? "1024x1024"
         self.imageQuality = UserDefaults.standard.string(forKey: "imageQuality") ?? "medium"
@@ -194,7 +194,7 @@ class OpenAIService: ObservableObject {
             return "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
         }
     }
-    
+
     func getModelCapability(_ model: String) -> ModelCapability {
         let lowercaseModel = model.lowercased()
         if lowercaseModel.contains("gpt-image") || lowercaseModel.contains("dall-e") {
@@ -202,7 +202,7 @@ class OpenAIService: ObservableObject {
         }
         return .chat
     }
-    
+
     func generateImage(
         prompt: String,
         model: String? = nil,
@@ -210,46 +210,46 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void
     ) {
         print("🖼️ generateImage called - Model: \(model ?? selectedModel)")
-        
+
         guard !apiKey.isEmpty else {
             print("❌ Missing API key")
             onError(OpenAIError.missingAPIKey)
             return
         }
-        
+
         guard provider == .azure else {
             print("❌ Image generation only supported on Azure provider")
             onError(OpenAIError.unsupportedProvider)
             return
         }
-        
+
         guard !azureEndpoint.isEmpty else {
             print("❌ Missing Azure endpoint")
             onError(OpenAIError.missingAzureEndpoint)
             return
         }
-        
+
         let requestModel = model ?? selectedModel
-        
+
         // Image generation endpoint: {endpoint}/openai/deployments/{model}/images/generations?api-version={version}
         let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         let imageURL = "\(cleanEndpoint)/openai/deployments/\(requestModel)/images/generations?api-version=\(cleanVersion)"
-        
+
         guard let url = URL(string: imageURL) else {
             print("❌ Invalid URL: \(imageURL)")
             onError(OpenAIError.invalidURL)
             return
         }
-        
+
         print("✅ Sending image generation request to: \(url.absoluteString)")
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        
+
         let body: [String: Any] = [
             "prompt": prompt,
             "size": imageSize,
@@ -258,14 +258,14 @@ class OpenAIService: ObservableObject {
             "output_compression": outputCompression,
             "n": 1
         ]
-        
+
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
             onError(error)
             return
         }
-        
+
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 print("❌ Network error: \(error.localizedDescription)")
@@ -274,7 +274,7 @@ class OpenAIService: ObservableObject {
                 }
                 return
             }
-            
+
             guard let data = data else {
                 print("❌ No data received")
                 DispatchQueue.main.async {
@@ -282,7 +282,7 @@ class OpenAIService: ObservableObject {
                 }
                 return
             }
-            
+
             // Parse response
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -300,7 +300,7 @@ class OpenAIService: ObservableObject {
                         }
                         return
                     }
-                    
+
                     // Parse successful response: { "data": [{ "b64_json": "..." }] }
                     if let dataArray = json["data"] as? [[String: Any]],
                        let firstItem = dataArray.first,
@@ -364,7 +364,7 @@ class OpenAIService: ObservableObject {
 
         // For Azure, use the conversation's model as the deployment name
         let apiURL = provider == .azure ? getAPIURL(deploymentName: requestModel) : getAPIURL()
-        
+
         guard let url = URL(string: apiURL) else {
             print("❌ Invalid URL: \(apiURL)")
             onError(OpenAIError.invalidURL)

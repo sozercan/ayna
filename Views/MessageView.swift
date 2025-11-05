@@ -34,10 +34,12 @@ struct MessageView: View {
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 4)
                     }
-                    
+
                     // Show generated image if present
                     if message.mediaType == .image, let imageData = message.imageData {
+                        let _ = print("🖼️ MessageView: Rendering image for message \(message.id), data size: \(imageData.count) bytes")
                         if let nsImage = NSImage(data: imageData) {
+                            let _ = print("✅ NSImage created successfully, size: \(nsImage.size)")
                             Image(nsImage: nsImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
@@ -53,10 +55,13 @@ struct MessageView: View {
                                     }
                                 }
                         } else {
+                            let _ = print("❌ Failed to create NSImage from data")
                             Text("Failed to load image")
                                 .foregroundStyle(.red)
                                 .font(.caption)
                         }
+                    } else {
+                        let _ = print("🖼️ MessageView: Message \(message.id) - mediaType: \(message.mediaType?.rawValue ?? "nil"), imageData: \(message.imageData != nil ? "\(message.imageData!.count) bytes" : "nil")")
                     }
 
                     ForEach(parseMessageContent(message.content), id: \.id) { block in
@@ -99,12 +104,12 @@ struct MessageView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
-    
+
     private func saveImage(_ image: NSImage) {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png, .jpeg]
         savePanel.nameFieldStringValue = "generated-image.png"
-        
+
         savePanel.begin { response in
             if response == .OK, let url = savePanel.url {
                 if let tiffData = image.tiffRepresentation,
@@ -115,7 +120,7 @@ struct MessageView: View {
             }
         }
     }
-    
+
     private func copyImage(_ image: NSImage) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])

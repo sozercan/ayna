@@ -57,7 +57,7 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Behavior")
             }
-            
+
             Section {
                 Picker("Image Size", selection: $openAIService.imageSize) {
                     Text("1024×1024 (Square)").tag("1024x1024")
@@ -65,20 +65,20 @@ struct GeneralSettingsView: View {
                     Text("1536×1024 (Landscape)").tag("1536x1024")
                 }
                 .help("Resolution for generated images")
-                
+
                 Picker("Image Quality", selection: $openAIService.imageQuality) {
                     Text("Low").tag("low")
                     Text("Medium").tag("medium")
                     Text("High").tag("high")
                 }
                 .help("Quality level affects generation time and cost")
-                
+
                 Picker("Output Format", selection: $openAIService.outputFormat) {
                     Text("PNG").tag("png")
                     Text("JPEG").tag("jpeg")
                 }
                 .help("Image file format")
-                
+
                 HStack {
                     Text("Compression")
                     Spacer()
@@ -258,7 +258,7 @@ struct APISettingsView: View {
                         Label("AI Provider", systemImage: "cloud.fill")
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        
+
                         Picker("", selection: $openAIService.provider) {
                             ForEach(AIProvider.allCases, id: \.self) { provider in
                                 HStack {
@@ -280,7 +280,7 @@ struct APISettingsView: View {
                             Label("OpenAI Configuration", systemImage: "key.fill")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                            
+
                             VStack(alignment: .leading, spacing: 16) {
                                 // Model Name
                                 VStack(alignment: .leading, spacing: 6) {
@@ -306,7 +306,7 @@ struct APISettingsView: View {
                                         .font(.caption)
                                         .foregroundStyle(.tertiary)
                                 }
-                                
+
                                 // Endpoint URL
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack {
@@ -379,7 +379,7 @@ struct APISettingsView: View {
                             .padding(16)
                             .background(Color(nsColor: .controlBackgroundColor))
                             .cornerRadius(8)
-                            
+
                             // Action Buttons
                             HStack(spacing: 12) {
                                 Button {
@@ -395,7 +395,7 @@ struct APISettingsView: View {
                                 }
                                 .disabled(tempAPIKey.isEmpty || tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                 .controlSize(.large)
-                                
+
                                 Button {
                                     openAIService.apiKey = tempAPIKey
 
@@ -428,7 +428,7 @@ struct APISettingsView: View {
                             Label("Azure OpenAI Configuration", systemImage: "cloud.fill")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                            
+
                             VStack(alignment: .leading, spacing: 16) {
                                 // API Key
                                 VStack(alignment: .leading, spacing: 6) {
@@ -546,7 +546,7 @@ struct APISettingsView: View {
                             .padding(16)
                             .background(Color(nsColor: .controlBackgroundColor))
                             .cornerRadius(8)
-                            
+
                             // Action Buttons
                             HStack(spacing: 12) {
                                 Button {
@@ -598,7 +598,7 @@ struct APISettingsView: View {
                         Label("Validation Status", systemImage: "checkmark.seal.fill")
                             .font(.headline)
                             .foregroundStyle(.primary)
-                        
+
                         HStack(spacing: 12) {
                             switch validationStatus {
                             case .notChecked:
