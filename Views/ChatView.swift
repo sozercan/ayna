@@ -16,6 +16,11 @@ struct ChatView: View {
     @State private var isGenerating = false
     @State private var errorMessage: String?
 
+    // Get the current conversation from the manager to ensure we have the latest data
+    private var currentConversation: Conversation {
+        conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
+    }
+
     var body: some View {
         ZStack {
             // Chat background with subtle gradient
@@ -33,7 +38,7 @@ struct ChatView: View {
                 // Messages
                 ScrollViewReader { proxy in
                     ScrollView {
-                    if conversation.messages.isEmpty {
+                    if currentConversation.messages.isEmpty {
                         // Empty state
                         VStack(spacing: 16) {
                             Spacer()
@@ -52,7 +57,16 @@ struct ChatView: View {
                         .frame(minHeight: 400)
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(conversation.messages.filter { $0.role != .system && !$0.content.isEmpty }) { message in
+                            ForEach(currentConversation.messages.filter { message in
+                                // Hide system messages
+                                guard message.role != .system else { return false }
+
+                                // Show if: has content, has image data, is generating image, or is empty assistant (shows typing indicator)
+                                return !message.content.isEmpty ||
+                                       message.imageData != nil ||
+                                       message.mediaType == .image ||
+                                       message.role == .assistant
+                            }) { message in
                                 MessageView(message: message, modelName: message.model)
                                     .id(message.id)
                             }
@@ -61,8 +75,8 @@ struct ChatView: View {
                         .padding(.vertical, 24)
                     }
                 }
-                .onChange(of: conversation.messages.count) { _, _ in
-                    if let lastMessage = conversation.messages.last {
+                .onChange(of: currentConversation.messages.count) { _, _ in
+                    if let lastMessage = currentConversation.messages.last {
                         withAnimation {
                             proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
@@ -70,13 +84,13 @@ struct ChatView: View {
                 }
                 .onAppear {
                     // Start at bottom when conversation is first loaded
-                    if let lastMessage = conversation.messages.last {
+                    if let lastMessage = currentConversation.messages.last {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
                 .onChange(of: conversation.id) { _, _ in
                     // Start at bottom when switching conversations
-                    if let lastMessage = conversation.messages.last {
+                    if let lastMessage = currentConversation.messages.last {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
@@ -157,6 +171,7 @@ struct ChatView: View {
         let userMessage = Message(role: .user, content: messageText)
         conversationManager.addMessage(to: conversation, message: userMessage)
 
+        let promptText = messageText
         messageText = ""
         errorMessage = nil
         isGenerating = true
@@ -165,6 +180,16 @@ struct ChatView: View {
         guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
             return
         }
+
+        // Check if current model is for image generation
+        let modelCapability = openAIService.getModelCapability(updatedConversation.model)
+
+        if modelCapability == .imageGeneration {
+            // Image generation flow
+            generateImage(prompt: promptText, model: updatedConversation.model)
+            return
+        }
+
         let currentMessages = updatedConversation.messages
 
         // Add empty assistant message with current model
@@ -215,6 +240,42 @@ struct ChatView: View {
                     return result
                 } catch {
                     return "Error executing tool: \(error.localizedDescription)"
+                }
+            }
+        )
+    }
+
+    private func generateImage(prompt: String, model: String) {
+        // Create placeholder assistant message with a known ID
+        let messageId = UUID()
+        let placeholderMessage = Message(
+            id: messageId,
+            role: .assistant,
+            content: "Generating image...",
+            model: model,
+            mediaType: .image
+        )
+        conversationManager.addMessage(to: conversation, message: placeholderMessage)
+
+        openAIService.generateImage(
+            prompt: prompt,
+            model: model,
+            onComplete: { imageData in
+                // Update the placeholder message with actual image using the proper method
+                conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                    message.content = ""
+                    message.imageData = imageData
+                }
+
+                isGenerating = false
+            },
+            onError: { error in
+                isGenerating = false
+                errorMessage = error.localizedDescription
+
+                // Remove the placeholder message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversationManager.conversations[index].messages.removeLast()
                 }
             }
         )

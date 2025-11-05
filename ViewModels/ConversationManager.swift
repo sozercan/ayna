@@ -65,6 +65,17 @@ class ConversationManager: ObservableObject {
         }
     }
 
+    func updateMessage(in conversation: Conversation, messageId: UUID, update: (inout Message) -> Void) {
+        if let convIndex = conversations.firstIndex(where: { $0.id == conversation.id }),
+           let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) {
+            var message = conversations[convIndex].messages[msgIndex]
+            update(&message)
+            conversations[convIndex].messages[msgIndex] = message
+            conversations[convIndex].updatedAt = Date()
+            saveConversations()
+        }
+    }
+
     func clearMessages(in conversation: Conversation) {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].messages.removeAll()

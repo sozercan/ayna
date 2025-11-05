@@ -35,6 +35,34 @@ struct MessageView: View {
                             .padding(.bottom, 4)
                     }
 
+                    // Show generated image if present
+                    if message.mediaType == .image {
+                        if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: 512)
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                .contextMenu {
+                                    Button("Save Image...") {
+                                        saveImage(nsImage)
+                                    }
+                                    Button("Copy Image") {
+                                        copyImage(nsImage)
+                                    }
+                                }
+                        } else {
+                            // Show loading animation while generating
+                            ImageGeneratingView()
+                        }
+                    }
+
+                    // Show typing indicator for empty assistant messages
+                    if message.role == .assistant && message.content.isEmpty && message.mediaType != .image {
+                        TypingIndicatorView()
+                    }
+
                     ForEach(parseMessageContent(message.content), id: \.id) { block in
                         block.view
                     }
@@ -74,6 +102,27 @@ struct MessageView: View {
     private func copyToClipboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func saveImage(_ image: NSImage) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.png, .jpeg]
+        savePanel.nameFieldStringValue = "generated-image.png"
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                if let tiffData = image.tiffRepresentation,
+                   let bitmapImage = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                    try? pngData.write(to: url)
+                }
+            }
+        }
+    }
+
+    private func copyImage(_ image: NSImage) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
     }
 
     private func parseMessageContent(_ content: String) -> [ContentBlock] {
@@ -328,4 +377,76 @@ struct ContentBlock: Identifiable {
     }
     .padding()
     .frame(width: 600)
+}
+
+// Loading animation for image generation
+struct ImageGeneratingView: View {
+    @State private var isAnimating = false
+    @State private var dotCount = 0
+
+    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Animated sparkles icon
+            ZStack {
+                ForEach(0..<3) { index in
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.blue.opacity(0.6))
+                        .scaleEffect(isAnimating ? 1.2 : 0.8)
+                        .opacity(isAnimating ? 0.3 : 1.0)
+                        .rotationEffect(.degrees(Double(index) * 120))
+                        .animation(
+                            Animation.easeInOut(duration: 1.5)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.2),
+                            value: isAnimating
+                        )
+                }
+
+                Image(systemName: "photo")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.blue)
+            }
+            .frame(width: 60, height: 60)
+
+            // Animated text
+            Text("Generating image" + String(repeating: ".", count: dotCount))
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .onReceive(timer) { _ in
+                    dotCount = (dotCount + 1) % 4
+                }
+        }
+        .frame(width: 512, height: 200)
+        .background(Color.secondary.opacity(0.05))
+        .cornerRadius(12)
+        .onAppear {
+            isAnimating = true
+        }
+    }
+}
+
+// Typing indicator for text responses
+struct TypingIndicatorView: View {
+    @State private var animatingDot = 0
+
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
+                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+            }
+        }
+        .padding(.vertical, 8)
+        .onReceive(timer) { _ in
+            animatingDot = (animatingDot + 1) % 3
+        }
+    }
 }

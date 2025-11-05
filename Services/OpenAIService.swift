@@ -70,6 +70,14 @@ class OpenAIService: ObservableObject {
 
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
+    // Custom URLSession with longer timeout for slow models
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120 // 2 minutes
+        config.timeoutIntervalForResource = 300 // 5 minutes
+        return URLSession(configuration: config)
+    }()
+
     @Published var customModels: [String] {
         didSet {
             UserDefaults.standard.set(customModels, forKey: "customModels")
@@ -98,13 +106,43 @@ class OpenAIService: ObservableObject {
         "2023-12-01-preview"
     ]
 
+    // Image generation settings
+    @Published var imageSize: String {
+        didSet {
+            UserDefaults.standard.set(imageSize, forKey: "imageSize")
+        }
+    }
+
+    @Published var imageQuality: String {
+        didSet {
+            UserDefaults.standard.set(imageQuality, forKey: "imageQuality")
+        }
+    }
+
+    @Published var outputFormat: String {
+        didSet {
+            UserDefaults.standard.set(outputFormat, forKey: "outputFormat")
+        }
+    }
+
+    @Published var outputCompression: Int {
+        didSet {
+            UserDefaults.standard.set(outputCompression, forKey: "outputCompression")
+        }
+    }
+
+    enum ModelCapability {
+        case chat
+        case imageGeneration
+    }
+
     init() {
         // Load custom models first
         let loadedCustomModels: [String]
         if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String], !savedModels.isEmpty {
             loadedCustomModels = savedModels
         } else {
-            loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1"]
+            loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1", "gpt-image-1"]
         }
         self.customModels = loadedCustomModels
 
@@ -139,6 +177,12 @@ class OpenAIService: ObservableObject {
         self.azureEndpoint = (UserDefaults.standard.string(forKey: "azureEndpoint") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureDeploymentName = (UserDefaults.standard.string(forKey: "azureDeploymentName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         self.azureAPIVersion = (UserDefaults.standard.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Initialize image generation settings
+        self.imageSize = UserDefaults.standard.string(forKey: "imageSize") ?? "1024x1024"
+        self.imageQuality = UserDefaults.standard.string(forKey: "imageQuality") ?? "medium"
+        self.outputFormat = UserDefaults.standard.string(forKey: "outputFormat") ?? "png"
+        self.outputCompression = UserDefaults.standard.integer(forKey: "outputCompression") == 0 ? 100 : UserDefaults.standard.integer(forKey: "outputCompression")
     }
 
     private func saveAPIKey() {
@@ -159,6 +203,125 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    func getModelCapability(_ model: String) -> ModelCapability {
+        let lowercaseModel = model.lowercased()
+        if lowercaseModel.contains("gpt-image") || lowercaseModel.contains("dall-e") {
+            return .imageGeneration
+        }
+        return .chat
+    }
+
+    func generateImage(
+        prompt: String,
+        model: String? = nil,
+        onComplete: @escaping (Data) -> Void,
+        onError: @escaping (Error) -> Void
+    ) {
+        guard !apiKey.isEmpty else {
+            onError(OpenAIError.missingAPIKey)
+            return
+        }
+
+        guard provider == .azure else {
+            onError(OpenAIError.unsupportedProvider)
+            return
+        }
+
+        guard !azureEndpoint.isEmpty else {
+            onError(OpenAIError.missingAzureEndpoint)
+            return
+        }
+
+        let requestModel = model ?? selectedModel
+
+        // Image generation endpoint: {endpoint}/openai/deployments/{model}/images/generations?api-version={version}
+        let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let imageURL = "\(cleanEndpoint)/openai/deployments/\(requestModel)/images/generations?api-version=\(cleanVersion)"
+
+        guard let url = URL(string: imageURL) else {
+            onError(OpenAIError.invalidURL)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let body: [String: Any] = [
+            "prompt": prompt,
+            "size": imageSize,
+            "quality": imageQuality,
+            "output_format": outputFormat,
+            "output_compression": outputCompression,
+            "n": 1
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            onError(error)
+            return
+        }
+
+        urlSession.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    onError(error)
+                }
+                return
+            }
+
+            guard let data = data else {
+                print("❌ No data received")
+                DispatchQueue.main.async {
+                    onError(OpenAIError.noData)
+                }
+                return
+            }
+
+            // Parse response
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    // Check for error response
+                    if let errorDict = json["error"] as? [String: Any],
+                       let code = errorDict["code"] as? String,
+                       let message = errorDict["message"] as? String {
+                        print("❌ API error: \(code) - \(message)")
+                        DispatchQueue.main.async {
+                            if code == "contentFilter" {
+                                onError(OpenAIError.contentFiltered(message))
+                            } else {
+                                onError(OpenAIError.apiError(message))
+                            }
+                        }
+                        return
+                    }
+
+                    // Parse successful response: { "data": [{ "b64_json": "..." }] }
+                    if let dataArray = json["data"] as? [[String: Any]],
+                       let firstItem = dataArray.first,
+                       let b64String = firstItem["b64_json"] as? String,
+                       let imageData = Data(base64Encoded: b64String) {
+                        DispatchQueue.main.async {
+                            onComplete(imageData)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            onError(OpenAIError.invalidResponse)
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    onError(error)
+                }
+            }
+        }.resume()
+    }
+
     func sendMessage(
         messages: [Message],
         model: String? = nil,
@@ -170,10 +333,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
-        print("🔵 sendMessage called - Provider: \(provider.displayName)")
-
         guard !apiKey.isEmpty else {
-            print("❌ Missing API key")
             onError(OpenAIError.missingAPIKey)
             return
         }
@@ -181,12 +341,10 @@ class OpenAIService: ObservableObject {
         // Validate Azure settings if using Azure
         if provider == .azure {
             guard !azureEndpoint.isEmpty else {
-                print("❌ Missing Azure endpoint")
                 onError(OpenAIError.missingAzureEndpoint)
                 return
             }
             guard !azureDeploymentName.isEmpty else {
-                print("❌ Missing Azure deployment")
                 onError(OpenAIError.missingAzureDeployment)
                 return
             }
@@ -197,14 +355,11 @@ class OpenAIService: ObservableObject {
 
         // For Azure, use the conversation's model as the deployment name
         let apiURL = provider == .azure ? getAPIURL(deploymentName: requestModel) : getAPIURL()
-        
+
         guard let url = URL(string: apiURL) else {
-            print("❌ Invalid URL: \(apiURL)")
             onError(OpenAIError.invalidURL)
             return
         }
-
-        print("✅ Sending request to: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -243,28 +398,6 @@ class OpenAIService: ObservableObject {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        // Debug: Print request details
-        print("📤 REQUEST DEBUG:")
-        print("   URL: \(url.absoluteString)")
-        print("   Method: POST")
-        print("   Provider: \(provider.displayName)")
-        if let headers = request.allHTTPHeaderFields {
-            print("   Headers:")
-            for (key, value) in headers {
-                if key == "Authorization" || key == "api-key" {
-                    // Mask the actual key for security
-                    let maskedValue = value.prefix(10) + "..." + value.suffix(4)
-                    print("      \(key): \(maskedValue)")
-                } else {
-                    print("      \(key): \(value)")
-                }
-            }
-        }
-        if let bodyData = request.httpBody,
-           let bodyString = String(data: bodyData, encoding: .utf8) {
-            print("   Body: \(bodyString)")
-        }
-
         if stream {
             streamResponse(request: request, onChunk: onChunk, onComplete: onComplete, onError: onError, onToolCall: onToolCall)
         } else {
@@ -288,22 +421,13 @@ class OpenAIService: ObservableObject {
 
         Task {
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                let (bytes, response) = try await urlSession.bytes(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     await MainActor.run {
                         onError(OpenAIError.invalidResponse)
                     }
                     return
-                }
-
-                print("� RESPONSE DEBUG:")
-                print("   Status: \(httpResponse.statusCode)")
-                if let headers = httpResponse.allHeaderFields as? [String: Any] {
-                    print("   Headers:")
-                    for (key, value) in headers {
-                        print("      \(key): \(value)")
-                    }
                 }
 
                 guard httpResponse.statusCode == 200 else {
@@ -315,30 +439,6 @@ class OpenAIService: ObservableObject {
                         } else {
                             errorMessage += " - Invalid request. Check your model name and parameters."
                         }
-                        print("❌ 400 Bad Request")
-                        print("   Provider: \(currentProvider.displayName)")
-                        if currentProvider == .azure {
-                            print("   Deployment: \(currentAzureDeployment)")
-                            print("   API Version: \(currentAzureAPIVersion)")
-                            print("   Endpoint: \(currentAzureEndpoint)")
-                        } else {
-                            print("   Model: \(currentModel)")
-                        }
-                    }
-
-                    // Try to read error response body
-                    do {
-                        var errorBody = ""
-                        for try await byte in bytes {
-                            if let char = String(data: Data([byte]), encoding: .utf8) {
-                                errorBody += char
-                            }
-                        }
-                        if !errorBody.isEmpty {
-                            print("   Error Response Body: \(errorBody)")
-                        }
-                    } catch {
-                        print("   Could not read error body: \(error)")
                     }
 
                     await MainActor.run {
@@ -429,9 +529,15 @@ class OpenAIService: ObservableObject {
                     onComplete()
                 }
             } catch {
-                print("❌ Streaming error: \(error.localizedDescription)")
                 await MainActor.run {
-                    onError(error)
+                    // Check if it's a timeout error and provide a better message
+                    if let urlError = error as? URLError, urlError.code == .timedOut {
+                        onError(OpenAIError.apiError("Request timed out. The model may be slow or overloaded. Please try again."))
+                    } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
+                        onError(OpenAIError.apiError("Network connection was lost. The server may have rejected the request."))
+                    } else {
+                        onError(error)
+                    }
                 }
             }
         }
@@ -444,7 +550,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil
     ) {
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        let task = urlSession.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 if let error = error {
                     onError(error)
@@ -519,6 +625,9 @@ class OpenAIService: ObservableObject {
         case invalidURL
         case missingAzureEndpoint
         case missingAzureDeployment
+        case unsupportedProvider
+        case noData
+        case contentFiltered(String)
 
         var errorDescription: String? {
             switch self {
@@ -534,6 +643,12 @@ class OpenAIService: ObservableObject {
                 return "Please configure Azure OpenAI endpoint in Settings"
             case .missingAzureDeployment:
                 return "Please configure Azure deployment name in Settings"
+            case .unsupportedProvider:
+                return "Image generation is only supported with Azure OpenAI provider"
+            case .noData:
+                return "No data received from API"
+            case .contentFiltered(let message):
+                return "Content filtered: \(message)"
             }
         }
     }
