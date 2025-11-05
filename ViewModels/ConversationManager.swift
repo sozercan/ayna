@@ -49,8 +49,14 @@ class ConversationManager: ObservableObject {
             conversations[index].addMessage(message)
 
             // Auto-generate title from first user message
-            if conversations[index].messages.filter({ $0.role == .user }).count == 1
-                && conversations[index].title == "New Conversation" {
+            let autoGenerateTitle = UserDefaults.standard.object(forKey: "autoGenerateTitle") as? Bool ?? true
+            let userMessageCount = conversations[index].messages.filter({ $0.role == .user }).count
+            let currentTitle = conversations[index].title
+            
+            if autoGenerateTitle
+                && userMessageCount == 1
+                && currentTitle == "New Conversation"
+                && message.role == .user {
                 generateTitle(for: conversations[index])
             }
 
@@ -97,10 +103,45 @@ class ConversationManager: ObservableObject {
             return
         }
 
-        // Simple title generation - take first 50 chars
         let content = firstMessage.content
-        let title = String(content.prefix(50))
-        renameConversation(conversation, newTitle: title + (content.count > 50 ? "..." : ""))
+        
+        // Use AI to generate a concise title using the same model as the conversation
+        let titlePrompt = "Generate a very short title (3-5 words maximum) for a conversation that starts with: \"\(content.prefix(200))\". Only respond with the title, nothing else."
+        
+        let titleMessage = Message(role: .user, content: titlePrompt)
+        
+        var generatedTitle = ""
+        
+        OpenAIService.shared.sendMessage(
+            messages: [titleMessage],
+            model: conversation.model,
+            stream: false,
+            onChunk: { chunk in
+                generatedTitle += chunk
+            },
+            onComplete: { [weak self] in
+                // Use the AI-generated title, trimmed and cleaned
+                let cleanTitle = generatedTitle
+                    .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    .replacingOccurrences(of: "\"", with: "")
+                    .replacingOccurrences(of: "\n", with: " ")
+                
+                if !cleanTitle.isEmpty {
+                    self?.renameConversation(conversation, newTitle: cleanTitle)
+                } else {
+                    // Fallback to simple title if empty
+                    let fallbackTitle = String(content.prefix(50))
+                    self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+                }
+            },
+            onError: { [weak self] error in
+                // Fallback to simple title if AI fails
+                print("⚠️ Failed to generate AI title: \(error.localizedDescription)")
+                let fallbackTitle = String(content.prefix(50))
+                self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+            },
+            onReasoning: nil
+        )
     }
 
     // MARK: - Persistence

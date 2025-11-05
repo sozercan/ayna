@@ -14,6 +14,14 @@ enum AIProvider: String, CaseIterable, Codable {
   var displayName: String { rawValue }
 }
 
+enum APIEndpointType: String, CaseIterable, Codable {
+  case chatCompletions = "Chat Completions"
+  case responses = "Responses"
+  case imageGeneration = "Image Generation"
+
+  var displayName: String { rawValue }
+}
+
 class OpenAIService: ObservableObject {
   static let shared = OpenAIService()
 
@@ -94,6 +102,13 @@ class OpenAIService: ObservableObject {
     }
   }
 
+  @Published var modelEndpointTypes: [String: APIEndpointType] {
+    didSet {
+      let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
+      UserDefaults.standard.set(encodedDict, forKey: "modelEndpointTypes")
+    }
+  }
+
   let azureAPIVersions = [
     "2025-04-01-preview",
     "2025-03-01-preview",
@@ -160,6 +175,17 @@ class OpenAIService: ObservableObject {
       // Default all initial models to OpenAI
       self.modelProviders = Dictionary(
         uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) })
+    }
+
+    // Load model endpoint types mapping
+    if let savedEndpointTypes = UserDefaults.standard.dictionary(forKey: "modelEndpointTypes")
+      as? [String: String]
+    {
+      self.modelEndpointTypes = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
+    } else {
+      // Default all models to Chat Completions
+      self.modelEndpointTypes = Dictionary(
+        uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) })
     }
 
     // Load selected model, ensure it exists in custom models
@@ -234,10 +260,16 @@ class OpenAIService: ObservableObject {
   }
 
   func getModelCapability(_ model: String) -> ModelCapability {
-    let lowercaseModel = model.lowercased()
-    if lowercaseModel.contains("gpt-image") || lowercaseModel.contains("dall-e") {
-      return .imageGeneration
+    // Check the endpoint type setting for this model
+    if let endpointType = modelEndpointTypes[model] {
+      switch endpointType {
+      case .imageGeneration:
+        return .imageGeneration
+      case .chatCompletions, .responses:
+        return .chat
+      }
     }
+    // Default to chat if no setting found
     return .chat
   }
 
@@ -392,12 +424,11 @@ class OpenAIService: ObservableObject {
     let requestModel = model ?? selectedModel
     let requestTemp = temperature ?? self.temperature
 
-    // For reasoning models (o1, o3), use the responses API
-    let modelLower = requestModel.lowercased()
-    let isReasoningModel = modelLower.contains("o1") || modelLower.contains("o3")
+    // Check if this model should use the responses API based on endpoint type setting
+    let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
 
-    if isReasoningModel {
-      // Use responses API for reasoning models
+    if endpointType == .responses {
+      // Use responses API
       responsesAPIRequest(
         messages: messages,
         model: requestModel,

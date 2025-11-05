@@ -38,22 +38,14 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
-    @AppStorage("streamResponse") private var streamResponse = true
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
-    @AppStorage("showTokenCount") private var showTokenCount = false
     @StateObject private var openAIService = OpenAIService.shared
 
     var body: some View {
         Form {
             Section {
-                Toggle("Stream Responses", isOn: $streamResponse)
-                    .help("Show responses as they are generated")
-
                 Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                     .help("Automatically generate conversation titles from first message")
-
-                Toggle("Show Token Count", isOn: $showTokenCount)
-                    .help("Display token usage information")
             } header: {
                 Text("Behavior")
             }
@@ -273,6 +265,32 @@ struct APISettingsView: View {
                         }
                     }
                     .padding(.horizontal)
+
+                    Divider()
+
+                    // API Endpoint Type Selection
+                    if let modelName = selectedModelName {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("API Endpoint", systemImage: "arrow.left.arrow.right")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+
+                            Picker("", selection: Binding(
+                                get: { openAIService.modelEndpointTypes[modelName] ?? .chatCompletions },
+                                set: { openAIService.modelEndpointTypes[modelName] = $0 }
+                            )) {
+                                ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
+                                    Text(endpointType.displayName).tag(endpointType)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            Text("Choose which API endpoint to use for this model")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal)
+                    }
 
                     if openAIService.provider == .openai {
                         // OpenAI Configuration
