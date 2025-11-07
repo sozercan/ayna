@@ -13,6 +13,7 @@
 		01000004 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000004 /* Conversation.swift */; };
 		01000005 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000005 /* Message.swift */; };
 		01000006 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* OpenAIService.swift */; };
+		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
 		01000007 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000007 /* ChatView.swift */; };
 		01000008 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000008 /* SidebarView.swift */; };
 		01000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000009 /* SettingsView.swift */; };
@@ -31,6 +32,7 @@
 		02000004 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		02000005 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		02000006 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
+		02000013 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		02000007 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		02000008 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		02000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 		06000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				02000013 /* AppleIntelligenceService.swift */,
 				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
 				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
 				02000006 /* OpenAIService.swift */,
@@ -192,6 +195,7 @@
 				01000004 /* Conversation.swift in Sources */,
 				01000005 /* Message.swift in Sources */,
 				01000006 /* OpenAIService.swift in Sources */,
+				01000013 /* AppleIntelligenceService.swift in Sources */,
 				01000007 /* ChatView.swift in Sources */,
 				C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */,
 				01000008 /* SidebarView.swift in Sources */,

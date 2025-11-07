@@ -213,6 +213,7 @@ struct ChatView: View {
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
+            conversationId: conversation.id,
             onChunk: { chunk in
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                    var lastMessage = conversationManager.conversations[index].messages.last,

@@ -10,6 +10,7 @@ import Foundation
 enum AIProvider: String, CaseIterable, Codable {
   case openai = "OpenAI"
   case azure = "Azure OpenAI"
+  case appleIntelligence = "Apple Intelligence"
 
   var displayName: String { rawValue }
 }
@@ -244,6 +245,8 @@ class OpenAIService: ObservableObject {
       let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
       return
         "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
+    case .appleIntelligence:
+      return "" // Not used for Apple Intelligence
     }
   }
 
@@ -256,6 +259,8 @@ class OpenAIService: ObservableObject {
       let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
       return "\(cleanEndpoint)/openai/v1/responses"
+    case .appleIntelligence:
+      return "" // Not used for Apple Intelligence
     }
   }
 
@@ -398,12 +403,32 @@ class OpenAIService: ObservableObject {
     temperature: Double? = nil,
     stream: Bool = true,
     tools: [[String: Any]]? = nil,
+    conversationId: UUID? = nil,
     onChunk: @escaping (String) -> Void,
     onComplete: @escaping () -> Void,
     onError: @escaping (Error) -> Void,
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
+    // Handle Apple Intelligence separately
+    if provider == .appleIntelligence {
+      if #available(macOS 26.0, *) {
+        handleAppleIntelligenceRequest(
+          messages: messages,
+          temperature: temperature,
+          stream: stream,
+          conversationId: conversationId,
+          onChunk: onChunk,
+          onComplete: onComplete,
+          onError: onError
+        )
+      } else {
+        onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or later"))
+      }
+      return
+    }
+    
+    // Skip API key check for Apple Intelligence (handled above)
     guard !apiKey.isEmpty else {
       onError(OpenAIError.missingAPIKey)
       return
@@ -460,6 +485,8 @@ class OpenAIService: ObservableObject {
       // Azure can use either api-key header OR Bearer token
       // Using Bearer token to match the working curl command
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    case .appleIntelligence:
+      break // No authentication needed for Apple Intelligence
     }
 
     let messagePayloads = messages.map { message in
@@ -874,6 +901,74 @@ class OpenAIService: ObservableObject {
     }
 
     task.resume()
+  }
+
+  @available(macOS 26.0, *)
+  private func handleAppleIntelligenceRequest(
+    messages: [Message],
+    temperature: Double?,
+    stream: Bool,
+    conversationId: UUID?,
+    onChunk: @escaping (String) -> Void,
+    onComplete: @escaping () -> Void,
+    onError: @escaping (Error) -> Void
+  ) {
+    let service = AppleIntelligenceService.shared
+    
+    // Check availability
+    guard service.isAvailable else {
+      onError(OpenAIError.apiError(service.availabilityDescription()))
+      return
+    }
+    
+    // Extract system instructions (first system message if any)
+    let systemInstructions = messages.first(where: { $0.role == .system })?.content 
+      ?? "You are a helpful assistant."
+    
+    // Get the last user message as the prompt
+    guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
+      onError(OpenAIError.apiError("No user message found"))
+      return
+    }
+    
+    // Use the provided conversation ID or a default
+    let convId = conversationId?.uuidString ?? "default"
+    
+    let requestTemp = temperature ?? self.temperature
+    
+    Task {
+      if stream {
+        await service.streamResponse(
+          conversationId: convId,
+          prompt: lastUserMessage.content,
+          systemInstructions: systemInstructions,
+          temperature: requestTemp,
+          onChunk: { chunk in
+            onChunk(chunk)
+          },
+          onComplete: {
+            onComplete()
+          },
+          onError: { error in
+            onError(error)
+          }
+        )
+      } else {
+        await service.generateResponse(
+          conversationId: convId,
+          prompt: lastUserMessage.content,
+          systemInstructions: systemInstructions,
+          temperature: requestTemp,
+          onComplete: { response in
+            onChunk(response)
+            onComplete()
+          },
+          onError: { error in
+            onError(error)
+          }
+        )
+      }
+    }
   }
 
   enum OpenAIError: LocalizedError {
