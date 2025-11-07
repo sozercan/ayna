@@ -427,7 +427,7 @@ class OpenAIService: ObservableObject {
       }
       return
     }
-    
+
     // Skip API key check for Apple Intelligence (handled above)
     guard !apiKey.isEmpty else {
       onError(OpenAIError.missingAPIKey)
@@ -914,28 +914,29 @@ class OpenAIService: ObservableObject {
     onError: @escaping (Error) -> Void
   ) {
     let service = AppleIntelligenceService.shared
-    
+
     // Check availability
     guard service.isAvailable else {
       onError(OpenAIError.apiError(service.availabilityDescription()))
       return
     }
-    
+
     // Extract system instructions (first system message if any)
-    let systemInstructions = messages.first(where: { $0.role == .system })?.content 
+    let systemInstructions =
+      messages.first(where: { $0.role == .system })?.content
       ?? "You are a helpful assistant."
-    
+
     // Get the last user message as the prompt
     guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
       onError(OpenAIError.apiError("No user message found"))
       return
     }
-    
+
     // Use the provided conversation ID or a default
     let convId = conversationId?.uuidString ?? "default"
-    
+
     let requestTemp = temperature ?? self.temperature
-    
+
     Task {
       if stream {
         await service.streamResponse(

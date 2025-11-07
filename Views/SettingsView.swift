@@ -198,7 +198,7 @@ struct APISettingsView: View {
                                         }
                                         .buttonStyle(.plain)
                                         .help(model == openAIService.selectedModel ? "Default model" : "Set as default")
-                                        
+
                                         Button(action: {
                                             removeModel(model)
                                         }) {
@@ -621,13 +621,13 @@ struct APISettingsView: View {
                             VStack(alignment: .leading, spacing: 16) {
                                 if #available(macOS 26.0, *) {
                                     let service = AppleIntelligenceService.shared
-                                    
+
                                     // Availability Status
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text("Availability")
                                             .font(.subheadline)
                                             .fontWeight(.medium)
-                                        
+
                                         HStack(spacing: 8) {
                                             Image(systemName: service.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                                                 .foregroundStyle(service.isAvailable ? .green : .orange)
@@ -638,14 +638,14 @@ struct APISettingsView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(Color(nsColor: .controlBackgroundColor))
                                         .cornerRadius(6)
-                                        
+
                                         if !service.isAvailable {
                                             Text("Apple Intelligence must be enabled in System Settings → Apple Intelligence & Siri")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
-                                    
+
                                     // Model Name
                                     VStack(alignment: .leading, spacing: 6) {
                                         HStack {
@@ -673,10 +673,10 @@ struct APISettingsView: View {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .font(.system(size: 48))
                                             .foregroundStyle(.orange)
-                                        
+
                                         Text("macOS 26.0 or later required")
                                             .font(.headline)
-                                        
+
                                         Text("Apple Intelligence requires macOS Sequoia 26.0 or later with Apple Intelligence support.")
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
@@ -698,7 +698,7 @@ struct APISettingsView: View {
                                     Button {
                                         let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                                         let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
-                                        
+
                                         if !openAIService.customModels.contains(finalModelName) {
                                             openAIService.customModels.append(finalModelName)
                                             openAIService.modelProviders[finalModelName] = .appleIntelligence

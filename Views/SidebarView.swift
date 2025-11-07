@@ -12,30 +12,30 @@ struct SidebarView: View {
     @StateObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
+    @State private var searchText = ""
+    
+    private var filteredConversations: [Conversation] {
+        conversationManager.searchConversations(query: searchText)
+    }
 
     var body: some View {
-        ZStack {
-            // Sidebar background with material
-            Color.clear
-                .background(.ultraThinMaterial)
-
-            VStack(spacing: 0) {
-                // Conversation List
-                if conversationManager.conversations.isEmpty {
+        Group {
+            // Conversation List
+            if filteredConversations.isEmpty {
                 Spacer()
                 VStack(spacing: 12) {
-                    Image(systemName: "message")
+                    Image(systemName: searchText.isEmpty ? "message" : "magnifyingglass")
                         .font(.system(size: 40))
                         .foregroundStyle(.tertiary)
 
-                    Text("No conversations yet")
+                    Text(searchText.isEmpty ? "No conversations yet" : "No results found")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
             } else {
                 List(selection: $selectedConversations) {
-                    ForEach(conversationManager.conversations) { conversation in
+                    ForEach(filteredConversations) { conversation in
                         ConversationRow(conversation: conversation)
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
@@ -84,7 +84,36 @@ struct SidebarView: View {
                     }
                 }
             }
+        }
+        .safeAreaInset(edge: .top) {
+            // Search Box
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(6)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {

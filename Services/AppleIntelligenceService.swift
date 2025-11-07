@@ -15,7 +15,7 @@ enum AppleIntelligenceError: LocalizedError {
     case unavailable(String)
     case sessionCreationFailed
     case generationFailed(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .deviceNotEligible:
@@ -37,21 +37,21 @@ enum AppleIntelligenceError: LocalizedError {
 @available(macOS 26.0, iOS 26.0, *)
 class AppleIntelligenceService: ObservableObject {
     static let shared = AppleIntelligenceService()
-    
+
     @Published var model = SystemLanguageModel.default
     private var sessions: [String: LanguageModelSession] = [:]
-    
+
     private init() {}
-    
+
     // Check if Apple Intelligence is available on this device
     var isAvailable: Bool {
         return model.isAvailable
     }
-    
+
     var availability: SystemLanguageModel.Availability {
         return model.availability
     }
-    
+
     func availabilityDescription() -> String {
         switch availability {
         case .available:
@@ -71,7 +71,7 @@ class AppleIntelligenceService: ObservableObject {
             return "Unknown availability status"
         }
     }
-    
+
     // Get or create a session for a conversation
     private func getSession(
         conversationId: String,
@@ -80,22 +80,22 @@ class AppleIntelligenceService: ObservableObject {
         if let existingSession = sessions[conversationId] {
             return existingSession
         }
-        
+
         let newSession = LanguageModelSession(instructions: systemInstructions)
         sessions[conversationId] = newSession
         return newSession
     }
-    
+
     // Clear session for a conversation
     func clearSession(conversationId: String) {
         sessions.removeValue(forKey: conversationId)
     }
-    
+
     // Clear all sessions
     func clearAllSessions() {
         sessions.removeAll()
     }
-    
+
     // Stream response
     func streamResponse(
         conversationId: String,
@@ -111,20 +111,20 @@ class AppleIntelligenceService: ObservableObject {
             onError(getAvailabilityError())
             return
         }
-        
+
         // Get or create session
         let session = getSession(
             conversationId: conversationId,
             systemInstructions: systemInstructions
         )
-        
+
         // Create generation options
         let options = GenerationOptions(temperature: temperature)
-        
+
         do {
             // Stream the response
             let stream = session.streamResponse(to: prompt, options: options)
-            
+
             var previousContent = ""
             for try await snapshot in stream {
                 await MainActor.run {
@@ -143,7 +143,7 @@ class AppleIntelligenceService: ObservableObject {
                     previousContent = currentContent
                 }
             }
-            
+
             await MainActor.run {
                 onComplete()
             }
@@ -153,7 +153,7 @@ class AppleIntelligenceService: ObservableObject {
             }
         }
     }
-    
+
     // Non-streaming response
     func generateResponse(
         conversationId: String,
@@ -168,20 +168,20 @@ class AppleIntelligenceService: ObservableObject {
             onError(getAvailabilityError())
             return
         }
-        
+
         // Get or create session
         let session = getSession(
             conversationId: conversationId,
             systemInstructions: systemInstructions
         )
-        
+
         // Create generation options
         let options = GenerationOptions(temperature: temperature)
-        
+
         do {
             // Generate the response
             let response = try await session.respond(to: prompt, options: options)
-            
+
             await MainActor.run {
                 onComplete(response.content)
             }
@@ -191,7 +191,7 @@ class AppleIntelligenceService: ObservableObject {
             }
         }
     }
-    
+
     private func getAvailabilityError() -> Error {
         switch availability {
         case .available:
