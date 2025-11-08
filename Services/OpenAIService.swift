@@ -11,6 +11,7 @@ enum AIProvider: String, CaseIterable, Codable {
   case openai = "OpenAI"
   case azure = "Azure OpenAI"
   case appleIntelligence = "Apple Intelligence"
+  case aikit = "AIKit"
 
   var displayName: String { rawValue }
 }
@@ -247,6 +248,9 @@ class OpenAIService: ObservableObject {
         "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
     case .appleIntelligence:
       return "" // Not used for Apple Intelligence
+    case .aikit:
+      // AIKit provides OpenAI-compatible endpoint on localhost
+      return "http://localhost:8080/v1/chat/completions"
     }
   }
 
@@ -261,6 +265,9 @@ class OpenAIService: ObservableObject {
       return "\(cleanEndpoint)/openai/v1/responses"
     case .appleIntelligence:
       return "" // Not used for Apple Intelligence
+    case .aikit:
+      // AIKit provides OpenAI-compatible endpoint on localhost
+      return "http://localhost:8080/v1/responses"
     }
   }
 
@@ -487,6 +494,8 @@ class OpenAIService: ObservableObject {
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     case .appleIntelligence:
       break // No authentication needed for Apple Intelligence
+    case .aikit:
+      break  // No authentication needed for local AIKit containers
     }
 
     let messagePayloads = messages.map { message in

@@ -23,7 +23,7 @@ struct SettingsView: View {
                     Label("Models", systemImage: "cpu")
                 }
 
-            MCPSettingsView()
+      MCPSettingsView()
                 .tabItem {
                     Label("MCP Tools", systemImage: "wrench.and.screwdriver")
                 }
@@ -721,10 +721,17 @@ struct APISettingsView: View {
                             }
                         }
                         .padding(.horizontal)
+                    } else if openAIService.provider == .aikit {
+                        // AIKit Configuration
+                        AIKitConfigurationView(
+                            tempModelName: $tempModelName,
+                            selectedModelName: $selectedModelName
+                        )
+                        .padding(.horizontal)
                     }
 
                     // Status Section
-                    if openAIService.provider != .appleIntelligence {
+                    if openAIService.provider != .appleIntelligence && openAIService.provider != .aikit {
                         VStack(alignment: .leading, spacing: 16) {
                             Label("Validation Status", systemImage: "checkmark.seal.fill")
                                 .font(.headline)
@@ -1114,6 +1121,212 @@ struct InfoRow: View {
             Text(value)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - AIKit Configuration View
+struct AIKitConfigurationView: View {
+    @StateObject private var aikitService = AIKitService.shared
+    @StateObject private var openAIService = OpenAIService.shared
+    @Binding var tempModelName: String
+    @Binding var selectedModelName: String?
+    
+    @State private var isPulling = false
+    @State private var isRunning = false
+    @State private var errorMessage: String?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("AIKit Configuration", systemImage: "shippingbox.fill")
+                .font(.headline)
+                .foregroundStyle(.primary)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                // Info section
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.blue)
+                    Text("AIKit runs AI models locally using containers")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                // Model Selection
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Select Model")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Picker("", selection: $aikitService.selectedModelId) {
+                        ForEach(aikitService.availableModels) { model in
+                            Text("\(model.displayName) (\(model.size))").tag(model.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .onChange(of: aikitService.selectedModelId) { _, _ in
+                        aikitService.updateContainerStatus()
+                    }
+                    
+                    if let model = aikitService.selectedModel {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Image: \(model.imageURL)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text("License: \(model.license)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                
+                // Container Status
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Container Status")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 8, height: 8)
+                        Text(aikitService.statusMessage.isEmpty ? aikitService.containerStatus.rawValue : aikitService.statusMessage)
+                            .font(.caption)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+                    
+                    if let error = errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+                
+                // Container Management Buttons
+                VStack(spacing: 8) {
+                    if aikitService.containerStatus == .running {
+                        Button(action: stopContainer) {
+                            HStack {
+                                if isRunning {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                                Text(isRunning ? "Stopping..." : "Stop Container")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(isRunning)
+                        .controlSize(.large)
+                        .tint(.red)
+                    } else {
+                        Button(action: pullAndRunModel) {
+                            HStack {
+                                if isRunning {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                                Text(isRunning ? "Starting..." : "Pull & Run Model")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(isRunning)
+                        .controlSize(.large)
+                    }
+                    
+                    Text(aikitService.containerStatus == .running ? "Container is running on http://localhost:8080" : "This will pull the model image and run it on http://localhost:8080")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+            
+            // Add Model Button
+            Button {
+                if let model = aikitService.selectedModel {
+                    let modelName = model.name
+                    if !openAIService.customModels.contains(modelName) {
+                        openAIService.customModels.append(modelName)
+                        openAIService.modelProviders[modelName] = .aikit
+                        if openAIService.customModels.count == 1 {
+                            openAIService.selectedModel = modelName
+                        }
+                        selectedModelName = modelName
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add Model to List")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+    
+    private var statusColor: Color {
+        switch aikitService.containerStatus {
+        case .notPulled, .stopped:
+            return .gray
+        case .pulling, .starting, .stopping:
+            return .orange
+        case .pulled:
+            return .yellow
+        case .running:
+            return .green
+        case .error, .notSupported:
+            return .red
+        }
+    }
+    
+    private func pullAndRunModel() {
+        isRunning = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                // Pull the model
+                try await aikitService.pullModel()
+                
+                // Run the container
+                try await aikitService.runContainer()
+                
+                await MainActor.run {
+                    isRunning = false
+                }
+            } catch {
+                await MainActor.run {
+                    isRunning = false
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+    
+    private func stopContainer() {
+        isRunning = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                // Stop the container
+                try await aikitService.stopContainer()
+                
+                await MainActor.run {
+                    isRunning = false
+                }
+            } catch {
+                await MainActor.run {
+                    isRunning = false
+                    errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 }
