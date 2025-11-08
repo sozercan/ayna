@@ -19,8 +19,6 @@
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
-		C8831AF52EBDC9E500C5703C /* Containerization in Frameworks */ = {isa = PBXBuildFile; productRef = C8831AF42EBDC9E500C5703C /* Containerization */; };
-		C8831AF72EBDC9E500C5703C /* ContainerizationOCI in Frameworks */ = {isa = PBXBuildFile; productRef = C8831AF62EBDC9E500C5703C /* ContainerizationOCI */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
 		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
@@ -57,8 +55,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C8831AF52EBDC9E500C5703C /* Containerization in Frameworks */,
-				C8831AF72EBDC9E500C5703C /* ContainerizationOCI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -176,7 +172,6 @@
 			);
 			mainGroup = 06000001;
 			packageReferences = (
-				C8831AF32EBDC9E500C5703C /* XCRemoteSwiftPackageReference "containerization" */,
 			);
 			productRefGroup = 06000003 /* Products */;
 			projectDirPath = "";
@@ -436,30 +431,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		C8831AF32EBDC9E500C5703C /* XCRemoteSwiftPackageReference "containerization" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/apple/containerization";
-			requirement = {
-				kind = exactVersion;
-				version = 0.13.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		C8831AF42EBDC9E500C5703C /* Containerization */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C8831AF32EBDC9E500C5703C /* XCRemoteSwiftPackageReference "containerization" */;
-			productName = Containerization;
-		};
-		C8831AF62EBDC9E500C5703C /* ContainerizationOCI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C8831AF32EBDC9E500C5703C /* XCRemoteSwiftPackageReference "containerization" */;
-			productName = ContainerizationOCI;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 11000001 /* Project object */;
 }

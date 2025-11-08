@@ -115,12 +115,13 @@ struct ChatView: View {
             }
 
             // Input Area
-            HStack(alignment: .bottom, spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
                 DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
                     .frame(height: calculateTextHeight())
                     .font(.system(size: 15))
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 14)
+                    .padding(.leading, 14)
+                    .padding(.trailing, 48) // Extra padding on right for button
                     .padding(.vertical, 12)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(
@@ -128,15 +129,18 @@ struct ChatView: View {
                             .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
                     )
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-
+                
+                // Send button inside the text box
                 Button(action: sendMessage) {
                     Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(messageText.isEmpty && !isGenerating ? Color.secondary : Color.blue)
+                        .font(.system(size: 24))
+                        .foregroundStyle(messageText.isEmpty && !isGenerating ? Color.secondary.opacity(0.5) : Color.accentColor)
                         .symbolEffect(.bounce, value: isGenerating)
                 }
                 .buttonStyle(.plain)
                 .disabled(messageText.isEmpty && !isGenerating)
+                .padding(.trailing, 8)
+                .padding(.bottom, 8)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
@@ -146,15 +150,13 @@ struct ChatView: View {
     }
 
     private func calculateTextHeight() -> CGFloat {
-        if messageText.isEmpty {
-            return 20
-        }
-
-        let lineCount = messageText.components(separatedBy: .newlines).count
-        let lineHeight: CGFloat = 20
+        let lineCount = max(1, messageText.components(separatedBy: .newlines).count)
+        let lineHeight: CGFloat = 22
+        let baseHeight: CGFloat = 22 // Single line height
         let calculatedHeight = CGFloat(lineCount) * lineHeight
-
-        return min(max(calculatedHeight, 20), 176) // Min 20, max 176 (about 8 lines)
+        
+        // Min height for single line (22), max height for about 10 lines (220)
+        return min(max(calculatedHeight, baseHeight), 220)
     }
 
     private func sendMessage() {
@@ -318,7 +320,8 @@ struct DynamicTextEditor: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
 
         // Configure scroll view
-        scrollView.hasVerticalScroller = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder

@@ -19,11 +19,40 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            // Search Box
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(6)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            
             // Conversation List
             if filteredConversations.isEmpty {
-                Spacer()
                 VStack(spacing: 12) {
+                    Spacer()
                     Image(systemName: searchText.isEmpty ? "message" : "magnifyingglass")
                         .font(.system(size: 40))
                         .foregroundStyle(.tertiary)
@@ -31,8 +60,9 @@ struct SidebarView: View {
                     Text(searchText.isEmpty ? "No conversations yet" : "No results found")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $selectedConversations) {
                     ForEach(filteredConversations) { conversation in
@@ -77,43 +107,33 @@ struct SidebarView: View {
                     }
                 }
                 .listStyle(.sidebar)
-                .onChange(of: selectedConversations) { _, newSelection in
+                .onChange(of: selectedConversations) { oldValue, newSelection in
                     // Keep single selection in sync for chat view
-                    if let firstId = newSelection.first, newSelection.count == 1 {
-                        selectedConversationId = firstId
+                    if let firstId = newSelection.first {
+                        if selectedConversationId != firstId {
+                            selectedConversationId = firstId
+                        }
+                    } else if !newSelection.isEmpty {
+                        // Multiple selections - keep the selectedConversationId as is
+                    } else {
+                        selectedConversationId = nil
+                    }
+                }
+                .onChange(of: selectedConversationId) { oldValue, newId in
+                    // Keep list selection in sync with conversation selection
+                    if let newId = newId, !selectedConversations.contains(newId) {
+                        selectedConversations = [newId]
+                    } else if newId == nil {
+                        selectedConversations.removeAll()
+                    }
+                }
+                .onAppear {
+                    // Initialize selection on appear
+                    if let selectedId = selectedConversationId {
+                        selectedConversations = [selectedId]
                     }
                 }
             }
-        }
-        .safeAreaInset(edge: .top) {
-            // Search Box
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 14))
-                
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                
-                if !searchText.isEmpty {
-                    Button(action: {
-                        searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(6)
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -121,7 +141,6 @@ struct SidebarView: View {
                     conversationManager.createNewConversation()
                     if let newConversation = conversationManager.conversations.first {
                         selectedConversationId = newConversation.id
-                        selectedConversations = [newConversation.id]
                     }
                 }) {
                     Image(systemName: "square.and.pencil")
