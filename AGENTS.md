@@ -81,14 +81,14 @@ The app supports multiple AI providers via the `AIProvider` enum:
 - Requires: endpoint URL, deployment name, API version
 - Settings auto-trim whitespace from all Azure configuration fields
 
-**AIKit**: Local containerized AI models
+**AIKit**: Local containerized AI models via Podman
 - Endpoint: `http://localhost:8080/v1/chat/completions` (OpenAI-compatible)
 - Auth: None required (local endpoint)
-- Uses Apple Containerization framework to run Docker containers
-- Requires: macOS 26+, Apple Silicon
+- Uses Podman to run container images
+- Requires: Podman installed, and GPU access configured (recommended)
 - Models pulled from ghcr.io/kaito-project/aikit registry
 - Container lifecycle managed through `AIKitService`
-- Hard-coded list of CPU models (11 models from Llama, Mixtral, Phi, Gemma, QwQ, Codestral, GPT-OSS)
+- 11 models available: Llama, Mixtral, Phi, Gemma, QwQ, Codestral, GPT-OSS
 - Settings UI in `AIKitSettingsView` for pulling/running/stopping containers
 
 When adding new providers, extend `AIProvider` enum and update `OpenAIService.getAPIURL()` and authentication logic.
@@ -212,7 +212,6 @@ The README outlines features ready for implementation due to extensible architec
 - `AGENTS.md` - This file - development guide for AI assistants
 - `CLAUDE.md` - Symlink to AGENTS.md
 - `.github/copilot-instructions.md` - Symlink to AGENTS.md for GitHub Copilot
-- `AIKIT_SETUP.md` - Instructions for adding Apple Containerization package dependency
 - `LICENSE` - MIT License
 
 ### Assets

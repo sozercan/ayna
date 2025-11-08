@@ -8,10 +8,10 @@ A native macOS ChatGPT client built with SwiftUI.
 ## Features
 
 - 💬 Native macOS chat interface with streaming responses
-- ☁️ Support for OpenAI and Azure OpenAI
+- ☁️ Support for OpenAI, Azure OpenAI, and AIKit (local models via Podman)
 - 🗂️ Conversation management with search
 - 🎨 Clean, modern design with keyboard shortcuts
-- � Local data storage
+- 💾 Local data storage
 
 ## Requirements
 
@@ -31,11 +31,17 @@ Build and run with Cmd+R.
 
 ## Getting Started
 
+### Cloud Providers (OpenAI/Azure OpenAI)
 1. Launch the app
 2. Go to Settings (Cmd+,) → API tab
-3. Select your provider (OpenAI or Azure OpenAI)
-4. Enter your API credentials
-5. Start chatting with Cmd+N
+3. Select your provider and enter API credentials
+4. Start chatting with Cmd+N
+
+### Local Models ([AIKit](https://kaito-project.github.io/aikit/docs))
+1. Install [Podman](https://podman-desktop.io/docs/installation)
+2. Set up [GPU access](https://podman-desktop.io/docs/podman/gpu) (recommended for performance)
+3. Go to Settings → Models → New Model → AIKit tab
+4. Select a model and click "Pull & Run Model"
 
 ## Keyboard Shortcuts
 
