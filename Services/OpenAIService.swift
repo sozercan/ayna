@@ -36,6 +36,10 @@ class OpenAIService: ObservableObject {
   @Published var selectedModel: String {
     didSet {
       UserDefaults.standard.set(selectedModel, forKey: "selectedModel")
+      // Sync with AIKitService if this is an AIKit model
+      if modelProviders[selectedModel] == .aikit {
+        AIKitService.shared.selectModelByName(selectedModel)
+      }
     }
   }
 

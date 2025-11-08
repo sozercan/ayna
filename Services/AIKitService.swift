@@ -46,6 +46,8 @@ class AIKitService: ObservableObject {
   @Published var selectedModelId: String {
     didSet {
       UserDefaults.standard.set(selectedModelId, forKey: "aikit_selected_model")
+      loadResourceSettingsForCurrentModel()
+      updateContainerStatus()
     }
   }
 
@@ -53,6 +55,34 @@ class AIKitService: ObservableObject {
   @Published var statusMessage: String = ""
   @Published var pulledImages: Set<String> = []
   @Published var isContainerizationAvailable: Bool = false
+  
+  // System resource limits
+  let maxCPUCores: Int
+  let maxMemoryGB: Int
+  
+  // Per-model resource settings stored as [modelId: [cpuCores, memoryGB]]
+  private var modelResourceSettings: [String: [Int]] {
+    didSet {
+      // Save to UserDefaults
+      let dict = modelResourceSettings.mapValues { values in
+        ["cpu": values[0], "memory": values[1]]
+      }
+      UserDefaults.standard.set(dict, forKey: "aikit_model_resources")
+    }
+  }
+  
+  // Container resource settings for currently selected model
+  @Published var cpuCores: Int {
+    didSet {
+      saveResourceSettingsForCurrentModel()
+    }
+  }
+  
+  @Published var memoryGB: Int {
+    didSet {
+      saveResourceSettingsForCurrentModel()
+    }
+  }
 
   // Hard-coded CPU models from AIKit (excluding Apple Silicon)
   let availableModels: [AIKitModel] = [
@@ -150,6 +180,27 @@ class AIKitService: ObservableObject {
   private var containerName: String?
 
   init() {
+    // Detect system resources
+    self.maxCPUCores = ProcessInfo.processInfo.activeProcessorCount
+    
+    // Get physical memory in bytes and convert to GB
+    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+    self.maxMemoryGB = Int(physicalMemory / (1024 * 1024 * 1024))
+    
+    // Load per-model resource settings
+    if let savedDict = UserDefaults.standard.dictionary(forKey: "aikit_model_resources") as? [String: [String: Int]] {
+      self.modelResourceSettings = savedDict.compactMapValues { dict in
+        guard let cpu = dict["cpu"], let memory = dict["memory"] else { return nil }
+        return [cpu, memory]
+      }
+    } else {
+      self.modelResourceSettings = [:]
+    }
+    
+    // Initialize with default values (will be overwritten by loadResourceSettingsForCurrentModel)
+    self.cpuCores = min(4, maxCPUCores)
+    self.memoryGB = min(8, maxMemoryGB)
+    
     // Load selected model
     let savedModel = UserDefaults.standard.string(forKey: "aikit_selected_model") ?? "llama-3.1-8b"
     self.selectedModelId = savedModel
@@ -158,12 +209,33 @@ class AIKitService: ObservableObject {
     if let savedPulled = UserDefaults.standard.array(forKey: "aikit_pulled_images") as? [String] {
       self.pulledImages = Set(savedPulled)
     }
+    
+    // Load resource settings for the selected model
+    loadResourceSettingsForCurrentModel()
 
     // Check if Containerization framework is available
     checkContainerizationAvailability()
 
     // Update initial status
     updateContainerStatus()
+  }
+  
+  // Load resource settings for the currently selected model
+  private func loadResourceSettingsForCurrentModel() {
+    if let settings = modelResourceSettings[selectedModelId] {
+      // Load saved settings for this model
+      cpuCores = min(settings[0], maxCPUCores)
+      memoryGB = min(settings[1], maxMemoryGB)
+    } else {
+      // Use default settings for new model
+      cpuCores = min(4, maxCPUCores)
+      memoryGB = min(8, maxMemoryGB)
+    }
+  }
+  
+  // Save current resource settings for the currently selected model
+  private func saveResourceSettingsForCurrentModel() {
+    modelResourceSettings[selectedModelId] = [cpuCores, memoryGB]
   }
 
   func checkContainerizationAvailability() {
@@ -185,6 +257,13 @@ class AIKitService: ObservableObject {
 
   var selectedModel: AIKitModel? {
     availableModels.first { $0.id == selectedModelId }
+  }
+  
+  // Find and select a model by its name (used when selecting from the main model list)
+  func selectModelByName(_ name: String) {
+    if let model = availableModels.first(where: { $0.name == name }) {
+      selectedModelId = model.id
+    }
   }
 
   func updateContainerStatus() {
@@ -354,10 +433,10 @@ class AIKitService: ObservableObject {
           "-d",                    // Detached mode
           "--rm",                  // Auto-remove when stopped
           "--name", containerName, // Container name
-          "-c", "4",              // 4 CPUs
-          "-m", "8G",             // 8GB memory
-          "-p", "8080:8080",      // Port mapping
-          model.imageURL          // Image reference
+          "-c", "\(cpuCores)",     // CPU cores from settings
+          "-m", "\(memoryGB)G",    // Memory from settings
+          "-p", "8080:8080",       // Port mapping
+          model.imageURL           // Image reference
         ]
         
         let outputPipe = Pipe()

@@ -958,6 +958,11 @@ struct APISettingsView: View {
         // Switch to the correct provider for this model
         if let modelProvider = openAIService.modelProviders[model] {
             openAIService.provider = modelProvider
+            
+            // Sync with AIKitService if this is an AIKit model
+            if modelProvider == .aikit {
+                AIKitService.shared.selectModelByName(model)
+            }
         }
 
         tempModelName = model
@@ -1178,6 +1183,49 @@ struct AIKitConfigurationView: View {
                                 .foregroundStyle(.tertiary)
                         }
                     }
+                }
+                
+                // Resource Settings
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Resource Allocation")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    // CPU Cores Slider
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("CPU Cores:")
+                                .font(.caption)
+                            Spacer()
+                            Text("\(aikitService.cpuCores) / \(aikitService.maxCPUCores)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: Binding(
+                            get: { Double(aikitService.cpuCores) },
+                            set: { aikitService.cpuCores = Int($0) }
+                        ), in: 1...Double(aikitService.maxCPUCores), step: 1)
+                    }
+                    
+                    // Memory Slider
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Memory:")
+                                .font(.caption)
+                            Spacer()
+                            Text("\(aikitService.memoryGB) / \(aikitService.maxMemoryGB) GB")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: Binding(
+                            get: { Double(aikitService.memoryGB) },
+                            set: { aikitService.memoryGB = Int($0) }
+                        ), in: 1...Double(aikitService.maxMemoryGB), step: 1)
+                    }
+                    
+                    Text("Restart container for changes to take effect")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
                 
                 // Container Status
