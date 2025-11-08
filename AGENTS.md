@@ -67,7 +67,7 @@ Models → ViewModels → Views → Services
 - All state mutations go through `ConversationManager` methods
 
 ### Multi-Provider Support
-The app supports two AI providers via the `AIProvider` enum:
+The app supports multiple AI providers via the `AIProvider` enum:
 
 **OpenAI**: Standard OpenAI API
 - Endpoint: `https://api.openai.com/v1/chat/completions`
@@ -80,6 +80,16 @@ The app supports two AI providers via the `AIProvider` enum:
 - Model determined by deployment name in URL
 - Requires: endpoint URL, deployment name, API version
 - Settings auto-trim whitespace from all Azure configuration fields
+
+**AIKit**: Local containerized AI models via Podman
+- Endpoint: `http://localhost:8080/v1/chat/completions` (OpenAI-compatible)
+- Auth: None required (local endpoint)
+- Uses Podman to run container images
+- Requires: Podman installed, and GPU access configured (recommended)
+- Models pulled from ghcr.io/kaito-project/aikit registry
+- Container lifecycle managed through `AIKitService`
+- 11 models available: Llama, Mixtral, Phi, Gemma, QwQ, Codestral, GPT-OSS
+- Settings UI in `AIKitSettingsView` for pulling/running/stopping containers
 
 When adding new providers, extend `AIProvider` enum and update `OpenAIService.getAPIURL()` and authentication logic.
 
