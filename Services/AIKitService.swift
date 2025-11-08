@@ -6,10 +6,6 @@
 //
 
 import Foundation
-#if canImport(Containerization)
-import Containerization
-import ContainerizationOCI
-#endif
 
 // AIKit Model Definition
 struct AIKitModel: Identifiable, Codable {
@@ -18,7 +14,6 @@ struct AIKitModel: Identifiable, Codable {
   let displayName: String
   let size: String
   let imagePath: String
-  let license: String
 
   var imageURL: String {
     "ghcr.io/kaito-project/aikit/\(imagePath)"
@@ -46,7 +41,6 @@ class AIKitService: ObservableObject {
   @Published var selectedModelId: String {
     didSet {
       UserDefaults.standard.set(selectedModelId, forKey: "aikit_selected_model")
-      loadResourceSettingsForCurrentModel()
       updateContainerStatus()
     }
   }
@@ -54,35 +48,7 @@ class AIKitService: ObservableObject {
   @Published var containerStatus: ContainerStatus = .notPulled
   @Published var statusMessage: String = ""
   @Published var pulledImages: Set<String> = []
-  @Published var isContainerizationAvailable: Bool = false
-  
-  // System resource limits
-  let maxCPUCores: Int
-  let maxMemoryGB: Int
-  
-  // Per-model resource settings stored as [modelId: [cpuCores, memoryGB]]
-  private var modelResourceSettings: [String: [Int]] {
-    didSet {
-      // Save to UserDefaults
-      let dict = modelResourceSettings.mapValues { values in
-        ["cpu": values[0], "memory": values[1]]
-      }
-      UserDefaults.standard.set(dict, forKey: "aikit_model_resources")
-    }
-  }
-  
-  // Container resource settings for currently selected model
-  @Published var cpuCores: Int {
-    didSet {
-      saveResourceSettingsForCurrentModel()
-    }
-  }
-  
-  @Published var memoryGB: Int {
-    didSet {
-      saveResourceSettingsForCurrentModel()
-    }
-  }
+  @Published var isPodmanAvailable: Bool = false
 
   // Hard-coded CPU models from AIKit (excluding Apple Silicon)
   let availableModels: [AIKitModel] = [
@@ -91,88 +57,77 @@ class AIKitService: ObservableObject {
       name: "llama-3.2-1b-instruct",
       displayName: "🦙 Llama 3.2 1B Instruct",
       size: "1B",
-      imagePath: "llama3.2:1b",
-      license: "Llama"
+      imagePath: "llama3.2:1b"
     ),
     AIKitModel(
       id: "llama-3.2-3b",
       name: "llama-3.2-3b-instruct",
       displayName: "🦙 Llama 3.2 3B Instruct",
       size: "3B",
-      imagePath: "llama3.2:3b",
-      license: "Llama"
+      imagePath: "llama3.2:3b"
     ),
     AIKitModel(
       id: "llama-3.1-8b",
       name: "llama-3.1-8b-instruct",
       displayName: "🦙 Llama 3.1 8B Instruct",
       size: "8B",
-      imagePath: "llama3.1:8b",
-      license: "Llama"
+      imagePath: "llama3.1:8b"
     ),
     AIKitModel(
       id: "llama-3.3-70b",
       name: "llama-3.3-70b-instruct",
       displayName: "🦙 Llama 3.3 70B Instruct",
       size: "70B",
-      imagePath: "llama3.3:70b",
-      license: "Llama"
+      imagePath: "llama3.3:70b"
     ),
     AIKitModel(
       id: "mixtral-8x7b",
       name: "mixtral-8x7b-instruct",
       displayName: "Ⓜ️ Mixtral 8x7B Instruct",
       size: "8x7B",
-      imagePath: "mixtral:8x7b",
-      license: "Apache"
+      imagePath: "mixtral:8x7b"
     ),
     AIKitModel(
       id: "phi-4-14b",
       name: "phi-4-14b-instruct",
       displayName: "🅿️ Phi 4 14B Instruct",
       size: "14B",
-      imagePath: "phi4:14b",
-      license: "MIT"
+      imagePath: "phi4:14b"
     ),
     AIKitModel(
       id: "gemma-2-2b",
       name: "gemma-2-2b-instruct",
       displayName: "🔡 Gemma 2 2B Instruct",
       size: "2B",
-      imagePath: "gemma2:2b",
-      license: "Gemma"
+      imagePath: "gemma2:2b"
     ),
     AIKitModel(
       id: "qwq-32b",
       name: "qwq-32b",
       displayName: "QwQ 32B",
       size: "32B",
-      imagePath: "qwq:32b",
-      license: "Apache 2.0"
+      imagePath: "qwq:32b"
     ),
     AIKitModel(
       id: "codestral-22b",
       name: "codestral-22b",
       displayName: "⌨️ Codestral 22B",
       size: "22B",
-      imagePath: "codestral:22b",
-      license: "MNLP"
+      imagePath: "codestral:22b"
     ),
     AIKitModel(
       id: "gpt-oss-20b",
       name: "gpt-oss-20b",
       displayName: "🤖 GPT-OSS 20B",
       size: "20B",
-      imagePath: "gpt-oss:20b",
-      license: "Apache 2.0"
+      imagePath: "gpt-oss:20b"
     ),
     AIKitModel(
       id: "gpt-oss-120b",
       name: "gpt-oss-120b",
       displayName: "🤖 GPT-OSS 120B",
       size: "120B",
-      imagePath: "gpt-oss:120b",
-      license: "Apache 2.0"
+      imagePath: "gpt-oss:120b"
     )
   ]
 
@@ -180,85 +135,76 @@ class AIKitService: ObservableObject {
   private var containerName: String?
 
   init() {
-    // Detect system resources
-    self.maxCPUCores = ProcessInfo.processInfo.activeProcessorCount
-    
-    // Get physical memory in bytes and convert to GB
-    let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    self.maxMemoryGB = Int(physicalMemory / (1024 * 1024 * 1024))
-    
-    // Load per-model resource settings
-    if let savedDict = UserDefaults.standard.dictionary(forKey: "aikit_model_resources") as? [String: [String: Int]] {
-      self.modelResourceSettings = savedDict.compactMapValues { dict in
-        guard let cpu = dict["cpu"], let memory = dict["memory"] else { return nil }
-        return [cpu, memory]
-      }
-    } else {
-      self.modelResourceSettings = [:]
-    }
-    
-    // Initialize with default values (will be overwritten by loadResourceSettingsForCurrentModel)
-    self.cpuCores = min(4, maxCPUCores)
-    self.memoryGB = min(8, maxMemoryGB)
-    
     // Load selected model
     let savedModel = UserDefaults.standard.string(forKey: "aikit_selected_model") ?? "llama-3.1-8b"
     self.selectedModelId = savedModel
 
     // Load pulled images
     if let savedPulled = UserDefaults.standard.array(forKey: "aikit_pulled_images") as? [String] {
-      self.pulledImages = Set(savedPulled)
+      self.pulledImages  = Set(savedPulled)
     }
-    
-    // Load resource settings for the selected model
-    loadResourceSettingsForCurrentModel()
 
-    // Check if Containerization framework is available
-    checkContainerizationAvailability()
+    // Check if Podman is available
+    checkPodmanAvailability()
 
     // Update initial status
     updateContainerStatus()
   }
-  
-  // Load resource settings for the currently selected model
-  private func loadResourceSettingsForCurrentModel() {
-    if let settings = modelResourceSettings[selectedModelId] {
-      // Load saved settings for this model
-      cpuCores = min(settings[0], maxCPUCores)
-      memoryGB = min(settings[1], maxMemoryGB)
-    } else {
-      // Use default settings for new model
-      cpuCores = min(4, maxCPUCores)
-      memoryGB = min(8, maxMemoryGB)
-    }
-  }
-  
-  // Save current resource settings for the currently selected model
-  private func saveResourceSettingsForCurrentModel() {
-    modelResourceSettings[selectedModelId] = [cpuCores, memoryGB]
-  }
 
-  func checkContainerizationAvailability() {
-    #if canImport(Containerization)
-    // Check if running on macOS 26+ and Apple Silicon
-    if #available(macOS 26, *) {
-      #if arch(arm64)
-      isContainerizationAvailable = true
-      #else
-      isContainerizationAvailable = false
-      #endif
-    } else {
-      isContainerizationAvailable = false
+  // Cached path to podman binary
+  private var podmanPath: String?
+
+  func checkPodmanAvailability() {
+    // Check common installation paths for podman
+    let commonPaths = [
+      "/opt/podman/bin/podman",
+      "/usr/local/bin/podman",
+      "/opt/homebrew/bin/podman",
+      "/usr/bin/podman",
+    ]
+
+    for path in commonPaths {
+      if FileManager.default.isExecutableFile(atPath: path) {
+        podmanPath = path
+        isPodmanAvailable = true
+        return
+      }
     }
-    #else
-    isContainerizationAvailable = false
-    #endif
+
+    // Fall back to checking PATH using which
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = ["podman"]
+    let outputPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = Pipe()
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+
+      if process.terminationStatus == 0 {
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        if let path = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
+          in: .whitespacesAndNewlines),
+          !path.isEmpty
+        {
+          podmanPath = path
+          isPodmanAvailable = true
+          return
+        }
+      }
+    } catch {
+      isPodmanAvailable = false
+    }
+
+    isPodmanAvailable = false
   }
 
   var selectedModel: AIKitModel? {
     availableModels.first { $0.id == selectedModelId }
   }
-  
+
   // Find and select a model by its name (used when selecting from the main model list)
   func selectModelByName(_ name: String) {
     if let model = availableModels.first(where: { $0.name == name }) {
@@ -273,9 +219,9 @@ class AIKitService: ObservableObject {
       return
     }
 
-    if !isContainerizationAvailable {
+    if !isPodmanAvailable {
       containerStatus = .notSupported
-      statusMessage = "Requires macOS 26+ with Apple Silicon"
+      statusMessage = "Podman not found. Install with: brew install podman"
       return
     }
 
@@ -288,7 +234,7 @@ class AIKitService: ObservableObject {
         }
         return
       }
-      
+
       // Otherwise check if image is pulled
       await MainActor.run {
         if pulledImages.contains(model.id) {
@@ -301,33 +247,33 @@ class AIKitService: ObservableObject {
       }
     }
   }
-  
+
   private func isContainerRunning(modelId: String) async -> Bool {
     let containerName = "aikit-\(modelId)"
-    
+
+    guard let podmanPath = podmanPath else { return false }
+
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/local/bin/container")
-    process.arguments = ["list", "-a"]
-    
+    process.executableURL = URL(fileURLWithPath: podmanPath)
+    process.arguments = [
+      "ps", "--filter", "name=\(containerName)", "--format", "{{.Names}}"]
+
     let outputPipe = Pipe()
     process.standardOutput = outputPipe
     process.standardError = Pipe()
-    
+
     do {
       try process.run()
       process.waitUntilExit()
-      
+
       if process.terminationStatus == 0 {
         let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
         if let output = String(data: outputData, encoding: .utf8) {
-          // Check if the container name appears in the output and is running
-          let lines = output.components(separatedBy: .newlines)
-          for line in lines {
-            if line.contains(containerName) && line.contains("running") {
-              // Store the container name for future operations
-              self.containerName = containerName
-              return true
-            }
+          let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !trimmedOutput.isEmpty && trimmedOutput == containerName {
+            // Store the container name for future operations
+            self.containerName = containerName
+            return true
           }
         }
       }
@@ -335,7 +281,7 @@ class AIKitService: ObservableObject {
       // If we can't check, assume not running
       return false
     }
-    
+
     return false
   }
 
@@ -346,8 +292,8 @@ class AIKitService: ObservableObject {
       throw AIKitError.noModelSelected
     }
 
-    guard isContainerizationAvailable else {
-      throw AIKitError.containerizationNotSupported
+    guard isPodmanAvailable else {
+      throw AIKitError.podmanNotAvailable
     }
 
     await MainActor.run {
@@ -355,17 +301,32 @@ class AIKitService: ObservableObject {
       statusMessage = "Pulling \(model.displayName)..."
     }
 
-    #if canImport(Containerization)
-    do {
-      // Use the default ImageStore for pulling images
-      let store = ImageStore.default
+    guard let podmanPath = podmanPath else {
+      throw AIKitError.podmanNotAvailable
+    }
 
-      // Pull the image from the AIKit registry
-      // The pull method will download the image for the current platform
-      _ = try await store.pull(
-        reference: model.imageURL,
-        platform: .current
-      )
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: podmanPath)
+    process.arguments = ["pull", model.imageURL]
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+
+      if process.terminationStatus != 0 {
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+        await MainActor.run {
+          containerStatus = .error
+          statusMessage = "Failed to pull: \(errorMessage)"
+        }
+        throw AIKitError.imagePullFailed(errorMessage)
+      }
 
       await MainActor.run {
         pulledImages.insert(model.id)
@@ -373,6 +334,8 @@ class AIKitService: ObservableObject {
         containerStatus = .pulled
         statusMessage = "Model pulled successfully"
       }
+    } catch let error as AIKitError {
+      throw error
     } catch {
       await MainActor.run {
         containerStatus = .error
@@ -380,9 +343,6 @@ class AIKitService: ObservableObject {
       }
       throw error
     }
-    #else
-    throw AIKitError.containerizationNotSupported
-    #endif
   }
 
   func runContainer() async throws {
@@ -393,7 +353,7 @@ class AIKitService: ObservableObject {
     guard pulledImages.contains(model.id) else {
       throw AIKitError.modelNotPulled
     }
-    
+
     // Check if container is already running
     if await isContainerRunning(modelId: model.id) {
       await MainActor.run {
@@ -408,112 +368,119 @@ class AIKitService: ObservableObject {
       statusMessage = "Starting container..."
     }
 
-    #if canImport(Containerization)
-    if #available(macOS 26, *) {
-      do {
-        // Use the container CLI to run the container
-        // This is equivalent to: container run -d --rm --name aikit-MODEL -p 8080:8080 -c 4 -m 8G IMAGE
-        let containerName = "aikit-\(model.id)"
-        
-        // First, try to remove any existing stopped container with the same name
-        let removeProcess = Process()
-        removeProcess.executableURL = URL(fileURLWithPath: "/usr/local/bin/container")
-        removeProcess.arguments = ["rm", containerName]
-        removeProcess.standardOutput = Pipe()
-        removeProcess.standardError = Pipe()
-        try? removeProcess.run()
-        removeProcess.waitUntilExit()
-        // Ignore errors - container may not exist
-        
-        // Now run the container
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/local/bin/container")
-        process.arguments = [
-          "run",
-          "-d",                    // Detached mode
-          "--rm",                  // Auto-remove when stopped
-          "--name", containerName, // Container name
-          "-c", "\(cpuCores)",     // CPU cores from settings
-          "-m", "\(memoryGB)G",    // Memory from settings
-          "-p", "8080:8080",       // Port mapping
-          model.imageURL           // Image reference
-        ]
-        
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        try process.run()
-        process.waitUntilExit()
-        
-        if process.terminationStatus != 0 {
-          let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-          let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-          throw AIKitError.containerStartFailed(errorMessage)
-        }
-        
-        // Get the container ID from output
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        if let containerId = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-          self.containerName = containerId
-        }
-        
-        await MainActor.run {
-          containerStatus = .running
-          statusMessage = "Container running on \(defaultEndpoint)"
-        }
-      } catch {
+    let containerName = "aikit-\(model.id)"
+
+    guard let podmanPath = podmanPath else {
+      throw AIKitError.podmanNotAvailable
+    }
+
+    // First, try to remove any existing stopped container with the same name
+    let removeProcess = Process()
+    removeProcess.executableURL = URL(fileURLWithPath: podmanPath)
+    removeProcess.arguments = ["rm", "-f", containerName]
+    removeProcess.standardOutput = Pipe()
+    removeProcess.standardError = Pipe()
+    try? removeProcess.run()
+    removeProcess.waitUntilExit()
+    // Ignore errors - container may not exist
+
+    // Now run the container
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: podmanPath)
+    process.arguments = [
+      "run",
+      "-d",  // Detached mode
+      "--rm",  // Auto-remove when stopped
+      "--name", containerName,  // Container name
+      "-p", "8080:8080",  // Port mapping
+      model.imageURL,  // Image reference
+    ]
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+
+      if process.terminationStatus != 0 {
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
         await MainActor.run {
           containerStatus = .error
-          statusMessage = "Failed to start: \(error.localizedDescription)"
+          statusMessage = "Failed to start: \(errorMessage)"
         }
-        throw error
+        throw AIKitError.containerStartFailed(errorMessage)
       }
-    } else {
-      throw AIKitError.containerizationNotSupported
+
+      // Get the container ID from output
+      let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+      if let containerId = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
+        in: .whitespacesAndNewlines)
+      {
+        self.containerName = containerId
+      }
+
+      await MainActor.run {
+        containerStatus = .running
+        statusMessage = "Container running on \(defaultEndpoint)"
+      }
+    } catch let error as AIKitError {
+      throw error
+    } catch {
+      await MainActor.run {
+        containerStatus = .error
+        statusMessage = "Failed to start: \(error.localizedDescription)"
+      }
+      throw error
     }
-    #else
-    throw AIKitError.containerizationNotSupported
-    #endif
   }
 
   func stopContainer() async throws {
-    #if canImport(Containerization)
     guard let containerName = containerName else {
       throw AIKitError.noContainerRunning
     }
-    
+
+    guard let podmanPath = podmanPath else {
+      throw AIKitError.podmanNotAvailable
+    }
+
     await MainActor.run {
       containerStatus = .stopping
       statusMessage = "Stopping container..."
     }
-    
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: podmanPath)
+    process.arguments = ["stop", containerName]
+
+    let errorPipe = Pipe()
+    process.standardError = errorPipe
+
     do {
-      // Use the container CLI to stop the container
-      // This is equivalent to: container stop CONTAINER_ID
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/local/bin/container")
-      process.arguments = ["stop", containerName]
-      
-      let errorPipe = Pipe()
-      process.standardError = errorPipe
-      
       try process.run()
       process.waitUntilExit()
-      
+
       if process.terminationStatus != 0 {
         let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
         let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+        await MainActor.run {
+          containerStatus = .error
+          statusMessage = "Failed to stop: \(errorMessage)"
+        }
         throw AIKitError.containerStopFailed(errorMessage)
       }
-      
+
       self.containerName = nil
-      
+
       await MainActor.run {
         containerStatus = .stopped
         statusMessage = "Container stopped"
       }
+    } catch let error as AIKitError {
+      throw error
     } catch {
       await MainActor.run {
         containerStatus = .error
@@ -521,9 +488,6 @@ class AIKitService: ObservableObject {
       }
       throw error
     }
-    #else
-    throw AIKitError.containerizationNotSupported
-    #endif
   }
 
   func deleteImage() async throws {
@@ -551,7 +515,8 @@ enum AIKitError: LocalizedError {
   case noModelSelected
   case modelNotPulled
   case noContainerRunning
-  case containerizationNotSupported
+  case podmanNotAvailable
+  case imagePullFailed(String)
   case containerStartFailed(String)
   case containerStopFailed(String)
 
@@ -563,8 +528,10 @@ enum AIKitError: LocalizedError {
       return "Model needs to be pulled first"
     case .noContainerRunning:
       return "No container is currently running"
-    case .containerizationNotSupported:
-      return "Containerization is only supported on macOS 26+ with Apple Silicon. Install the Container CLI: https://github.com/apple/container"
+    case .podmanNotAvailable:
+      return "Podman is not installed. Install with: brew install podman"
+    case .imagePullFailed(let message):
+      return "Failed to pull image: \(message)"
     case .containerStartFailed(let message):
       return "Failed to start container: \(message)"
     case .containerStopFailed(let message):

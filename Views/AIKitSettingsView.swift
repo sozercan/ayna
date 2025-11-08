@@ -22,12 +22,12 @@ struct AIKitSettingsView: View {
         // Debug: Show model count
         Text("Available Models: \(aikitService.availableModels.count)")
           .font(.headline)
-        
+
         // About Section
         VStack(alignment: .leading, spacing: 12) {
           Text("About AIKit")
             .font(.headline)
-          
+
           Text("AIKit runs AI models locally using containers")
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -35,17 +35,17 @@ struct AIKitSettingsView: View {
           HStack(spacing: 4) {
             Image(systemName: "info.circle")
               .foregroundStyle(.blue)
-            Text("Requires macOS 26+ with Apple Silicon and Apple Containerization framework")
+            Text("Requires Podman to run local AI models")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
 
-          if !aikitService.isContainerizationAvailable {
+          if !aikitService.isPodmanAvailable {
             VStack(alignment: .leading, spacing: 8) {
               HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle")
                   .foregroundStyle(.orange)
-                Text("Containerization framework not available")
+                Text("Podman not found")
                   .font(.caption)
                   .foregroundStyle(.orange)
               }
@@ -58,18 +58,18 @@ struct AIKitSettingsView: View {
             .padding(.top, 8)
           }
         }
-        
+
         Divider()
-        
+
         // Model Selection Section
         VStack(alignment: .leading, spacing: 12) {
           Text("Model Selection")
             .font(.headline)
-          
+
           Text("Select Model")
             .font(.caption)
             .foregroundStyle(.secondary)
-          
+
           Picker("", selection: $aikitService.selectedModelId) {
             ForEach(aikitService.availableModels) { model in
               Text("\(model.displayName) (\(model.size))").tag(model.id)
@@ -100,24 +100,16 @@ struct AIKitSettingsView: View {
                 .font(.caption)
                 .textSelection(.enabled)
             }
-            
-            HStack {
-              Text("License:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(model.license)
-                .font(.caption)
-            }
           }
         }
-        
+
         Divider()
-        
+
         // Container Status Section
         VStack(alignment: .leading, spacing: 12) {
           Text("Container Status")
             .font(.headline)
-          
+
           HStack {
             StatusIndicator(status: aikitService.containerStatus)
             Text(aikitService.statusMessage.isEmpty ? aikitService.containerStatus.rawValue : aikitService.statusMessage)
@@ -131,16 +123,16 @@ struct AIKitSettingsView: View {
               .foregroundStyle(.red)
           }
         }
-        
+
         Divider()
 
       Divider()
-        
+
         // Container Management Section
         VStack(alignment: .leading, spacing: 12) {
           Text("Container Management")
             .font(.headline)
-          
+
           // Pull button
           Button(action: pullModel) {
             HStack {
@@ -154,9 +146,8 @@ struct AIKitSettingsView: View {
             .frame(maxWidth: .infinity)
           }
           .disabled(
-            !aikitService.isContainerizationAvailable ||
-            isPulling || 
-            aikitService.containerStatus == .running || 
+            !aikitService.isPodmanAvailable || isPulling || aikitService.containerStatus == .running
+              ||
             aikitService.containerStatus == .notSupported ||
             aikitService.pulledImages.contains(aikitService.selectedModelId)
           )
@@ -175,7 +166,7 @@ struct AIKitSettingsView: View {
               .frame(maxWidth: .infinity)
             }
             .disabled(
-              !aikitService.isContainerizationAvailable ||
+              !aikitService.isPodmanAvailable ||
               isRunning ||
               aikitService.containerStatus == .running ||
               aikitService.containerStatus == .notPulled ||
@@ -204,7 +195,7 @@ struct AIKitSettingsView: View {
               .frame(maxWidth: .infinity)
           }
           .disabled(!aikitService.pulledImages.contains(aikitService.selectedModelId))
-          
+
           // Instructions
           VStack(alignment: .leading, spacing: 8) {
             Text("Steps:")
@@ -227,12 +218,12 @@ struct AIKitSettingsView: View {
         }
 
         Divider()
-        
+
         // Configuration Section
         VStack(alignment: .leading, spacing: 12) {
           Text("Configuration")
             .font(.headline)
-          
+
           HStack {
             Text("Endpoint:")
               .font(.caption)
@@ -386,9 +377,8 @@ struct InstallationInstructionsView: View {
           VStack(alignment: .leading, spacing: 8) {
             Text("System Requirements")
               .font(.headline)
-            Text("• macOS 26 (Sequoia) or later")
-            Text("• Apple Silicon (M1/M2/M3/M4)")
-            Text("• Xcode 16.0 or later with Containerization framework")
+            Text("• macOS 14 (Sonoma) or later")
+            Text("• Podman installed")
           }
 
           Divider()
@@ -396,43 +386,61 @@ struct InstallationInstructionsView: View {
           VStack(alignment: .leading, spacing: 8) {
             Text("Installation Steps")
               .font(.headline)
-            
-            Text("1. Update to macOS 26+")
+
+            Text("1. Install Podman")
               .fontWeight(.medium)
-            Text("   Ensure your system is running macOS 26 (Sequoia) or later")
+            Text("   Install Podman using Homebrew:")
               .font(.caption)
               .foregroundStyle(.secondary)
 
-            Text("2. Install Xcode 16+")
+            Text("brew install podman")
+              .font(.system(.caption, design: .monospaced))
+              .padding(8)
+              .background(Color(.textBackgroundColor))
+              .cornerRadius(6)
+
+            Text("2. Initialize Podman Machine (first time only)")
               .fontWeight(.medium)
-            Text("   Download Xcode 16.0 or later from the Mac App Store")
+            Text("   Create and start the Podman virtual machine:")
               .font(.caption)
               .foregroundStyle(.secondary)
 
-            Text("3. Add Containerization Framework")
+            Text(
+              """
+              podman machine init
+              podman machine start
+              """
+            )
+            .font(.system(.caption, design: .monospaced))
+            .padding(8)
+            .background(Color(.textBackgroundColor))
+            .cornerRadius(6)
+
+            Text("3. Verify Installation")
               .fontWeight(.medium)
-            Text("   The Apple Containerization framework is included in Xcode 16+")
+            Text("   Check that Podman is working:")
               .font(.caption)
               .foregroundStyle(.secondary)
 
-            Text("4. Rebuild the App")
-              .fontWeight(.medium)
-            Text("   After installing the required components, rebuild ayna")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            Text("podman --version")
+              .font(.system(.caption, design: .monospaced))
+              .padding(8)
+              .background(Color(.textBackgroundColor))
+              .cornerRadius(6)
           }
 
           Divider()
 
           VStack(alignment: .leading, spacing: 8) {
-            Text("Alternative: Use Docker/Podman")
+            Text("Manual Alternative")
               .font(.headline)
-            Text("If you cannot use Apple Containerization, you can run AIKit models directly with Docker or Podman:")
+            Text("You can also run AIKit models manually with Podman:")
               .font(.caption)
               .foregroundStyle(.secondary)
 
-            Text("""
-              docker run -d --rm -p 8080:8080 \\
+            Text(
+              """
+              podman run -d --rm -p 8080:8080 \\
                 ghcr.io/kaito-project/aikit/llama3.1:8b
               """)
               .font(.system(.caption, design: .monospaced))
@@ -440,7 +448,7 @@ struct InstallationInstructionsView: View {
               .background(Color(.textBackgroundColor))
               .cornerRadius(6)
 
-            Text("Then configure ayna to use AIKit provider with endpoint http://localhost:8080")
+            Text("Then select AIKit provider in settings")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
@@ -451,8 +459,7 @@ struct InstallationInstructionsView: View {
             Text("More Information")
               .font(.headline)
             Link("AIKit Documentation", destination: URL(string: "https://kaito-project.github.io/aikit/")!)
-            Link("Apple Containerization Framework", destination: URL(string: "https://developer.apple.com/documentation/containerization")!)
-            Link("Setup Guide (AIKIT_SETUP.md)", destination: URL(string: "https://github.com/sozercan/ayna/blob/main/AIKIT_SETUP.md")!)
+            Link("Podman Documentation", destination: URL(string: "https://podman.io/docs")!)
           }
         }
         .padding()

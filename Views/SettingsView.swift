@@ -958,7 +958,7 @@ struct APISettingsView: View {
         // Switch to the correct provider for this model
         if let modelProvider = openAIService.modelProviders[model] {
             openAIService.provider = modelProvider
-            
+
             // Sync with AIKitService if this is an AIKit model
             if modelProvider == .aikit {
                 AIKitService.shared.selectModelByName(model)
@@ -1136,17 +1136,17 @@ struct AIKitConfigurationView: View {
     @StateObject private var openAIService = OpenAIService.shared
     @Binding var tempModelName: String
     @Binding var selectedModelName: String?
-    
+
     @State private var isPulling = false
     @State private var isRunning = false
     @State private var errorMessage: String?
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("AIKit Configuration", systemImage: "shippingbox.fill")
                 .font(.headline)
                 .foregroundStyle(.primary)
-            
+
             VStack(alignment: .leading, spacing: 16) {
                 // Info section
                 HStack(spacing: 8) {
@@ -1156,13 +1156,13 @@ struct AIKitConfigurationView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
+
                 // Model Selection
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Select Model")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    
+
                     Picker("", selection: $aikitService.selectedModelId) {
                         ForEach(aikitService.availableModels) { model in
                             Text("\(model.displayName) (\(model.size))").tag(model.id)
@@ -1172,68 +1172,22 @@ struct AIKitConfigurationView: View {
                     .onChange(of: aikitService.selectedModelId) { _, _ in
                         aikitService.updateContainerStatus()
                     }
-                    
+
                     if let model = aikitService.selectedModel {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Image: \(model.imageURL)")
                                 .font(.caption)
-                                .foregroundStyle(.tertiary)
-                            Text("License: \(model.license)")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
+                .foregroundStyle(.tertiary)
+            }
+          }
                 }
-                
-                // Resource Settings
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Resource Allocation")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    // CPU Cores Slider
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("CPU Cores:")
-                                .font(.caption)
-                            Spacer()
-                            Text("\(aikitService.cpuCores) / \(aikitService.maxCPUCores)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: Binding(
-                            get: { Double(aikitService.cpuCores) },
-                            set: { aikitService.cpuCores = Int($0) }
-                        ), in: 1...Double(aikitService.maxCPUCores), step: 1)
-                    }
-                    
-                    // Memory Slider
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Memory:")
-                                .font(.caption)
-                            Spacer()
-                            Text("\(aikitService.memoryGB) / \(aikitService.maxMemoryGB) GB")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: Binding(
-                            get: { Double(aikitService.memoryGB) },
-                            set: { aikitService.memoryGB = Int($0) }
-                        ), in: 1...Double(aikitService.maxMemoryGB), step: 1)
-                    }
-                    
-                    Text("Restart container for changes to take effect")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                
+
                 // Container Status
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Container Status")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    
+
                     HStack(spacing: 8) {
                         Circle()
                             .fill(statusColor)
@@ -1245,14 +1199,14 @@ struct AIKitConfigurationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .cornerRadius(6)
-                    
+
                     if let error = errorMessage {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.red)
                     }
                 }
-                
+
                 // Container Management Buttons
                 VStack(spacing: 8) {
                     if aikitService.containerStatus == .running {
@@ -1283,7 +1237,7 @@ struct AIKitConfigurationView: View {
                         .disabled(isRunning)
                         .controlSize(.large)
                     }
-                    
+
                     Text(aikitService.containerStatus == .running ? "Container is running on http://localhost:8080" : "This will pull the model image and run it on http://localhost:8080")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1292,7 +1246,7 @@ struct AIKitConfigurationView: View {
             .padding(16)
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(8)
-            
+
             // Add Model Button
             Button {
                 if let model = aikitService.selectedModel {
@@ -1317,7 +1271,7 @@ struct AIKitConfigurationView: View {
             .controlSize(.large)
         }
     }
-    
+
     private var statusColor: Color {
         switch aikitService.containerStatus {
         case .notPulled, .stopped:
@@ -1332,19 +1286,19 @@ struct AIKitConfigurationView: View {
             return .red
         }
     }
-    
+
     private func pullAndRunModel() {
         isRunning = true
         errorMessage = nil
-        
+
         Task {
             do {
                 // Pull the model
                 try await aikitService.pullModel()
-                
+
                 // Run the container
                 try await aikitService.runContainer()
-                
+
                 await MainActor.run {
                     isRunning = false
                 }
@@ -1356,16 +1310,16 @@ struct AIKitConfigurationView: View {
             }
         }
     }
-    
+
     private func stopContainer() {
         isRunning = true
         errorMessage = nil
-        
+
         Task {
             do {
                 // Stop the container
                 try await aikitService.stopContainer()
-                
+
                 await MainActor.run {
                     isRunning = false
                 }
