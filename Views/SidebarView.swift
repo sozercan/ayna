@@ -13,7 +13,7 @@ struct SidebarView: View {
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
-    
+
     private var filteredConversations: [Conversation] {
         conversationManager.searchConversations(query: searchText)
     }
@@ -25,11 +25,11 @@ struct SidebarView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 14))
-                
+
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
-                
+
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
@@ -48,7 +48,7 @@ struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 8)
-            
+
             // Conversation List
             if filteredConversations.isEmpty {
                 VStack(spacing: 12) {
@@ -65,7 +65,13 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $selectedConversations) {
-                    ForEach(filteredConversations) { conversation in
+          // Add spacer at top to prevent first item from being cut off
+          Color.clear
+            .frame(height: 1)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+          ForEach(filteredConversations) { conversation in
                         ConversationRow(conversation: conversation)
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
@@ -107,30 +113,11 @@ struct SidebarView: View {
                     }
                 }
                 .listStyle(.sidebar)
-                .onChange(of: selectedConversations) { oldValue, newSelection in
+        .scrollContentBackground(.hidden)
+        .onChange(of: selectedConversations) { _, newSelection in
                     // Keep single selection in sync for chat view
-                    if let firstId = newSelection.first {
-                        if selectedConversationId != firstId {
-                            selectedConversationId = firstId
-                        }
-                    } else if !newSelection.isEmpty {
-                        // Multiple selections - keep the selectedConversationId as is
-                    } else {
-                        selectedConversationId = nil
-                    }
-                }
-                .onChange(of: selectedConversationId) { oldValue, newId in
-                    // Keep list selection in sync with conversation selection
-                    if let newId = newId, !selectedConversations.contains(newId) {
-                        selectedConversations = [newId]
-                    } else if newId == nil {
-                        selectedConversations.removeAll()
-                    }
-                }
-                .onAppear {
-                    // Initialize selection on appear
-                    if let selectedId = selectedConversationId {
-                        selectedConversations = [selectedId]
+          if let firstId = newSelection.first, newSelection.count == 1 {
+            selectedConversationId = firstId
                     }
                 }
             }
@@ -141,6 +128,7 @@ struct SidebarView: View {
                     conversationManager.createNewConversation()
                     if let newConversation = conversationManager.conversations.first {
                         selectedConversationId = newConversation.id
+            selectedConversations = [newConversation.id]
                     }
                 }) {
                     Image(systemName: "square.and.pencil")

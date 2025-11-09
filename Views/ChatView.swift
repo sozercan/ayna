@@ -129,7 +129,7 @@ struct ChatView: View {
                             .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
                     )
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-                
+
                 // Send button inside the text box
                 Button(action: sendMessage) {
                     Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
@@ -154,7 +154,7 @@ struct ChatView: View {
         let lineHeight: CGFloat = 22
         let baseHeight: CGFloat = 22 // Single line height
         let calculatedHeight = CGFloat(lineCount) * lineHeight
-        
+
         // Min height for single line (22), max height for about 10 lines (220)
         return min(max(calculatedHeight, baseHeight), 220)
     }
