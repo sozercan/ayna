@@ -1,0 +1,77 @@
+# SwiftLint Configuration for ayna
+
+# Paths to exclude from linting
+excluded:
+  - ayna.xcodeproj
+  - .build
+  - .swiftpm
+  - Packages
+  - .github
+
+# Paths to include in linting (optional, defaults to all Swift files)
+included:
+  - Models
+  - Services
+  - ViewModels
+  - Views
+  - aynaApp.swift
+  - ContentView.swift
+
+# Disable some rules that may be too strict
+disabled_rules:
+  - trailing_whitespace # Allow trailing whitespace
+  - line_length # Don't enforce line length limits
+  - multiple_closures_with_trailing_closure # Allow SwiftUI patterns
+  - todo # Allow TODO comments
+
+# Opt-in rules to enable
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - redundant_nil_coalescing
+  - unused_optional_binding
+
+# Configure specific rules
+file_length:
+  warning: 1400
+  error: 1600
+
+type_body_length:
+  warning: 800
+  error: 1000
+
+function_body_length:
+  warning: 120
+  error: 200
+
+function_parameter_count:
+  warning: 7
+  error: 10
+
+# Cyclomatic complexity
+cyclomatic_complexity:
+  warning: 25
+  error: 35
+
+# Identifier naming rules
+identifier_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 60
+    error: 100
+  excluded:
+    - id
+    - URL
+    - url
+
+# Type name rules
+type_name:
+  min_length: 3
+  max_length:
+    warning: 40
+    error: 50
+  excluded:
+    - aynaApp # Allow app name convention
+
+reporter: "xcode" # Use xcode reporter for better integration

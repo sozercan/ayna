@@ -127,7 +127,7 @@ class OpenAIService: ObservableObject {
     "2024-06-01",
     "2024-05-01-preview",
     "2024-02-01",
-    "2023-12-01-preview",
+    "2023-12-01-preview"
   ]
 
   // Image generation settings
@@ -164,8 +164,7 @@ class OpenAIService: ObservableObject {
     // Load custom models first
     let loadedCustomModels: [String]
     if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String],
-      !savedModels.isEmpty
-    {
+      !savedModels.isEmpty {
       loadedCustomModels = savedModels
     } else {
       loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1", "gpt-image-1"]
@@ -174,8 +173,7 @@ class OpenAIService: ObservableObject {
 
     // Load model providers mapping
     if let savedProviders = UserDefaults.standard.dictionary(forKey: "modelProviders")
-      as? [String: String]
-    {
+      as? [String: String] {
       self.modelProviders = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
     } else {
       // Default all initial models to OpenAI
@@ -185,8 +183,7 @@ class OpenAIService: ObservableObject {
 
     // Load model endpoint types mapping
     if let savedEndpointTypes = UserDefaults.standard.dictionary(forKey: "modelEndpointTypes")
-      as? [String: String]
-    {
+      as? [String: String] {
       self.modelEndpointTypes = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
     } else {
       // Default all models to Chat Completions
@@ -207,8 +204,7 @@ class OpenAIService: ObservableObject {
 
     // Initialize provider
     if let providerString = UserDefaults.standard.string(forKey: "aiProvider"),
-      let savedProvider = AIProvider(rawValue: providerString)
-    {
+      let savedProvider = AIProvider(rawValue: providerString) {
       self.provider = savedProvider
     } else {
       self.provider = .openai
@@ -340,7 +336,7 @@ class OpenAIService: ObservableObject {
       "quality": imageQuality,
       "output_format": outputFormat,
       "output_compression": outputCompression,
-      "n": 1,
+      "n": 1
     ]
 
     do {
@@ -350,7 +346,7 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    urlSession.dataTask(with: request) { data, response, error in
+    urlSession.dataTask(with: request) { data, _, error in
       if let error = error {
         DispatchQueue.main.async {
           onError(error)
@@ -372,8 +368,7 @@ class OpenAIService: ObservableObject {
           // Check for error response
           if let errorDict = json["error"] as? [String: Any],
             let code = errorDict["code"] as? String,
-            let message = errorDict["message"] as? String
-          {
+            let message = errorDict["message"] as? String {
             print("❌ API error: \(code) - \(message)")
             DispatchQueue.main.async {
               if code == "contentFilter" {
@@ -389,8 +384,7 @@ class OpenAIService: ObservableObject {
           if let dataArray = json["data"] as? [[String: Any]],
             let firstItem = dataArray.first,
             let b64String = firstItem["b64_json"] as? String,
-            let imageData = Data(base64Encoded: b64String)
-          {
+            let imageData = Data(base64Encoded: b64String) {
             DispatchQueue.main.async {
               onComplete(imageData)
             }
@@ -505,13 +499,13 @@ class OpenAIService: ObservableObject {
     let messagePayloads = messages.map { message in
       [
         "role": message.role.rawValue,
-        "content": message.content,
+        "content": message.content
       ]
     }
 
     var body: [String: Any] = [
       "messages": messagePayloads,
-      "stream": stream,
+      "stream": stream
     ]
 
     // Both OpenAI and Azure require model in body
@@ -567,7 +561,7 @@ class OpenAIService: ObservableObject {
       "model": model,
       "input": conversationText,
       "reasoning": ["summary": "auto"],
-      "text": ["verbosity": "medium"],
+      "text": ["verbosity": "medium"]
     ]
 
     do {
@@ -577,7 +571,7 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
+    let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
       DispatchQueue.main.async {
         // Clear the task reference
         self?.currentTask = nil
@@ -600,8 +594,7 @@ class OpenAIService: ObservableObject {
           let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
           if let errorDict = json?["error"] as? [String: Any],
-            let message = errorDict["message"] as? String
-          {
+            let message = errorDict["message"] as? String {
             onError(OpenAIError.apiError(message))
             return
           }
@@ -617,13 +610,11 @@ class OpenAIService: ObservableObject {
               // Handle reasoning items - summary is an array of content parts
               if itemType == "reasoning" {
                 if let summaryArray = outputItem["summary"] as? [[String: Any]],
-                  let onReasoning = onReasoning
-                {
+                  let onReasoning = onReasoning {
                   for summaryPart in summaryArray {
                     if let type = summaryPart["type"] as? String,
                       type == "summary_text",
-                      let text = summaryPart["text"] as? String
-                    {
+                      let text = summaryPart["text"] as? String {
                       onReasoning(text)
                     }
                   }
@@ -634,8 +625,7 @@ class OpenAIService: ObservableObject {
                 if let content = outputItem["content"] as? [[String: Any]] {
                   for contentPart in content {
                     if let type = contentPart["type"] as? String, type == "output_text",
-                      let text = contentPart["text"] as? String
-                    {
+                      let text = contentPart["text"] as? String {
                       onChunk(text)
                     }
                   }
@@ -727,8 +717,7 @@ class OpenAIService: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let firstChoice = choices.first,
-                  let delta = firstChoice["delta"] as? [String: Any]
-                {
+                  let delta = firstChoice["delta"] as? [String: Any] {
 
                   // Handle regular content
                   if let content = delta["content"] as? String {
@@ -751,8 +740,7 @@ class OpenAIService: ObservableObject {
 
                   // Handle tool calls
                   if let toolCalls = delta["tool_calls"] as? [[String: Any]],
-                    let toolCall = toolCalls.first
-                  {
+                    let toolCall = toolCalls.first {
                     if let id = toolCall["id"] as? String {
                       toolCallId = id
                     }
@@ -775,8 +763,7 @@ class OpenAIService: ObservableObject {
                     let argsData = argsString.data(using: .utf8),
                     let arguments = try? JSONSerialization.jsonObject(with: argsData)
                       as? [String: Any],
-                    let onToolCall = onToolCall
-                  {
+                    let onToolCall = onToolCall {
 
                     let result = await onToolCall(toolCallId, toolName, arguments)
                     await MainActor.run {
@@ -824,7 +811,7 @@ class OpenAIService: ObservableObject {
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
-    let task = urlSession.dataTask(with: request) { data, response, error in
+    let task = urlSession.dataTask(with: request) { data, _, error in
       DispatchQueue.main.async {
         if let error = error {
           onError(error)
@@ -840,16 +827,14 @@ class OpenAIService: ObservableObject {
           let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
           if let errorDict = json?["error"] as? [String: Any],
-            let message = errorDict["message"] as? String
-          {
+            let message = errorDict["message"] as? String {
             onError(OpenAIError.apiError(message))
             return
           }
 
           if let choices = json?["choices"] as? [[String: Any]],
             let firstChoice = choices.first,
-            let message = firstChoice["message"] as? [String: Any]
-          {
+            let message = firstChoice["message"] as? [String: Any] {
 
             // Check for reasoning in various possible locations
             var foundReasoning: String?
@@ -859,8 +844,7 @@ class OpenAIService: ObservableObject {
               foundReasoning = reasoning
             } else if let usage = json?["usage"] as? [String: Any],
               let details = usage["completion_tokens_details"] as? [String: Any],
-              let reasoningTokens = details["reasoning_tokens"] as? Int, reasoningTokens > 0
-            {
+              let reasoningTokens = details["reasoning_tokens"] as? Int, reasoningTokens > 0 {
               // Show reasoning token count
               foundReasoning = "💭 Reasoning tokens used: \(reasoningTokens)"
             }
@@ -877,8 +861,7 @@ class OpenAIService: ObservableObject {
 
             // Handle tool calls
             if let toolCalls = message["tool_calls"] as? [[String: Any]],
-              let onToolCall = onToolCall
-            {
+              let onToolCall = onToolCall {
               Task {
                 for toolCall in toolCalls {
                   if let id = toolCall["id"] as? String,
@@ -887,8 +870,7 @@ class OpenAIService: ObservableObject {
                     let argsString = function["arguments"] as? String,
                     let argsData = argsString.data(using: .utf8),
                     let arguments = try? JSONSerialization.jsonObject(with: argsData)
-                      as? [String: Any]
-                  {
+                      as? [String: Any] {
 
                     let result = await onToolCall(id, name, arguments)
                     await MainActor.run {

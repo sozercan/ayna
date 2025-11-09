@@ -160,15 +160,13 @@ class AIKitService: ObservableObject {
       "/opt/podman/bin/podman",
       "/usr/local/bin/podman",
       "/opt/homebrew/bin/podman",
-      "/usr/bin/podman",
+      "/usr/bin/podman"
     ]
 
-    for path in commonPaths {
-      if FileManager.default.isExecutableFile(atPath: path) {
-        podmanPath = path
-        isPodmanAvailable = true
-        return
-      }
+    for path in commonPaths where FileManager.default.isExecutableFile(atPath: path) {
+      podmanPath = path
+      isPodmanAvailable = true
+      return
     }
 
     // Fall back to checking PATH using which
@@ -187,8 +185,7 @@ class AIKitService: ObservableObject {
         let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
         if let path = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
           in: .whitespacesAndNewlines),
-          !path.isEmpty
-        {
+          !path.isEmpty {
           podmanPath = path
           isPodmanAvailable = true
           return
@@ -393,7 +390,7 @@ class AIKitService: ObservableObject {
       "--rm",  // Auto-remove when stopped
       "--name", containerName,  // Container name
       "-p", "8080:8080",  // Port mapping
-      model.imageURL,  // Image reference
+      model.imageURL  // Image reference
     ]
 
     let outputPipe = Pipe()
@@ -418,8 +415,7 @@ class AIKitService: ObservableObject {
       // Get the container ID from output
       let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
       if let containerId = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
-        in: .whitespacesAndNewlines)
-      {
+        in: .whitespacesAndNewlines) {
         self.containerName = containerId
       }
 

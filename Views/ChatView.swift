@@ -152,26 +152,26 @@ struct ChatView: View {
     private func calculateTextHeight() -> CGFloat {
         let baseHeight: CGFloat = 22 // Single line height
         let maxHeight: CGFloat = 220 // Max height (about 10 lines)
-        
+
         if messageText.isEmpty {
             return baseHeight
         }
-        
+
         // Calculate the width available for text (accounting for padding and button)
         // Approximate available width in the text view
         let availableWidth: CGFloat = 600 // Approximate - will be constrained by actual view width
-        
+
         let font = NSFont.systemFont(ofSize: 15)
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
-        
+
         let boundingRect = (messageText as NSString).boundingRect(
             with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes
         )
-        
+
         let calculatedHeight = ceil(boundingRect.height) + 4 // Add small padding
-        
+
         // Clamp between min and max heights
         return min(max(calculatedHeight, baseHeight), maxHeight)
     }
@@ -254,7 +254,7 @@ struct ChatView: View {
                     conversationManager.conversations[index].messages.removeLast()
                 }
             },
-            onToolCall: { callId, toolName, arguments in
+            onToolCall: { _, toolName, arguments in
                 // Execute the MCP tool
                 do {
                     let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
@@ -320,7 +320,9 @@ struct DynamicTextEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return scrollView
+        }
 
         textView.delegate = context.coordinator
         textView.isRichText = false
@@ -347,7 +349,9 @@ struct DynamicTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
 
         if textView.string != text {
             textView.string = text
@@ -377,7 +381,7 @@ struct DynamicTextEditor: NSViewRepresentable {
             // Handle Enter (without modifiers) to send
             if commandSelector == #selector(NSTextView.insertNewline(_:)) {
                 let event = NSApp.currentEvent
-                if event?.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty ?? true {
+                if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
                     onSubmit?()
                     return true
                 }

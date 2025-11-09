@@ -161,12 +161,10 @@ class ConversationManager: ObservableObject {
             let defaultModel = OpenAIService.shared.selectedModel
             var needsSave = false
 
-            for index in decoded.indices {
-                if !availableModels.contains(decoded[index].model) {
-                    // Model no longer exists, update to default
-                    decoded[index].model = defaultModel
-                    needsSave = true
-                }
+            for index in decoded.indices where !availableModels.contains(decoded[index].model) {
+                // Model no longer exists, update to default
+                decoded[index].model = defaultModel
+                needsSave = true
             }
 
             conversations = decoded

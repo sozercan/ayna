@@ -181,7 +181,7 @@ struct ServerConfigRow: View {
                 // Toggle
                 Toggle("", isOn: $isEnabled)
                     .labelsHidden()
-                    .onChange(of: isEnabled) { oldValue, newValue in
+                    .onChange(of: isEnabled) { _, _ in
                         onToggle()
                     }
 
