@@ -150,13 +150,30 @@ struct ChatView: View {
     }
 
     private func calculateTextHeight() -> CGFloat {
-        let lineCount = max(1, messageText.components(separatedBy: .newlines).count)
-        let lineHeight: CGFloat = 22
         let baseHeight: CGFloat = 22 // Single line height
-        let calculatedHeight = CGFloat(lineCount) * lineHeight
-
-        // Min height for single line (22), max height for about 10 lines (220)
-        return min(max(calculatedHeight, baseHeight), 220)
+        let maxHeight: CGFloat = 220 // Max height (about 10 lines)
+        
+        if messageText.isEmpty {
+            return baseHeight
+        }
+        
+        // Calculate the width available for text (accounting for padding and button)
+        // Approximate available width in the text view
+        let availableWidth: CGFloat = 600 // Approximate - will be constrained by actual view width
+        
+        let font = NSFont.systemFont(ofSize: 15)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        
+        let boundingRect = (messageText as NSString).boundingRect(
+            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes
+        )
+        
+        let calculatedHeight = ceil(boundingRect.height) + 4 // Add small padding
+        
+        // Clamp between min and max heights
+        return min(max(calculatedHeight, baseHeight), maxHeight)
     }
 
     private func sendMessage() {
@@ -265,7 +282,7 @@ struct ChatView: View {
         let placeholderMessage = Message(
             id: messageId,
             role: .assistant,
-            content: "Generating image...",
+            content: "",
             model: model,
             mediaType: .image
         )
