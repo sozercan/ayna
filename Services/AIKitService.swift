@@ -166,14 +166,12 @@ class AIKitService: ObservableObject {
     ]
 
     // First check if any of the common paths exist
-    for path in commonPaths {
-      if FileManager.default.isExecutableFile(atPath: path) {
-        await MainActor.run {
-          self.podmanPath = path
-          self.isPodmanAvailable = true
-        }
-        return
+    for path in commonPaths where FileManager.default.isExecutableFile(atPath: path) {
+      await MainActor.run {
+        self.podmanPath = path
+        self.isPodmanAvailable = true
       }
+      return
     }
 
     // Fall back to checking PATH using which
