@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
+  @State private var attachedFiles: [URL] = []
 
     // Get the current conversation from the manager to ensure we have the latest data
     private var currentConversation: Conversation {
@@ -115,34 +116,97 @@ struct ChatView: View {
             }
 
             // Input Area
-            ZStack(alignment: .bottomTrailing) {
-                DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
-                    .frame(height: calculateTextHeight())
-                    .font(.system(size: 15))
-                    .scrollContentBackground(.hidden)
-                    .padding(.leading, 14)
-                    .padding(.trailing, 48) // Extra padding on right for button
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-
-                // Send button inside the text box
-                Button(action: sendMessage) {
-                    Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(messageText.isEmpty && !isGenerating ? Color.secondary.opacity(0.5) : Color.accentColor)
-                        .symbolEffect(.bounce, value: isGenerating)
+        VStack(spacing: 8) {
+          // Attached files preview
+          if !attachedFiles.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack(spacing: 8) {
+                ForEach(attachedFiles, id: \.self) { fileURL in
+                  HStack(spacing: 8) {
+                    // Show image thumbnail if it's an image file
+                    if let image = NSImage(contentsOf: fileURL) {
+                      Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                      Image(systemName: "doc.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, height: 48)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                      Text(fileURL.lastPathComponent)
+                        .font(.caption)
+                        .lineLimit(1)
+                      if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file))
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                    }
+                    
+                    Button(action: { removeFile(fileURL) }) {
+                      Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                  }
+                  .padding(8)
+                  .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.plain)
-                .disabled(messageText.isEmpty && !isGenerating)
-                .padding(.trailing, 8)
-                .padding(.bottom, 8)
+              }
+              .padding(.horizontal, 24)
             }
-            .padding(.horizontal, 24)
+          }
+
+          ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .bottomLeading) {
+              DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
+                .frame(height: calculateTextHeight())
+                .font(.system(size: 15))
+                .scrollContentBackground(.hidden)
+                .padding(.leading, 48)  // Extra padding on left for attach button
+                .padding(.trailing, 48)  // Extra padding on right for send button
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                  RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+
+              // Attach file button inside the text box (left side)
+              Button(action: attachFile) {
+                Image(systemName: "plus.circle.fill")
+                  .font(.system(size: 24))
+                  .foregroundStyle(Color.secondary.opacity(0.7))
+              }
+              .buttonStyle(.plain)
+              .padding(.leading, 8)
+              .padding(.bottom, 8)
+            }
+
+            // Send button inside the text box (right side)
+            Button(action: sendMessage) {
+              Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(
+                  messageText.isEmpty && !isGenerating
+                    ? Color.secondary.opacity(0.5) : Color.accentColor
+                )
+                .symbolEffect(.bounce, value: isGenerating)
+            }
+            .buttonStyle(.plain)
+            .disabled(messageText.isEmpty && !isGenerating)
+            .padding(.trailing, 8)
+            .padding(.bottom, 8)
+          }
+          .padding(.horizontal, 24)
+        }
             .padding(.vertical, 20)
             .background(.ultraThinMaterial)
             }
@@ -176,7 +240,49 @@ struct ChatView: View {
         return min(max(calculatedHeight, baseHeight), maxHeight)
     }
 
-    private func sendMessage() {
+  private func attachFile() {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = true
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.message = "Select files to attach"
+
+    panel.begin { response in
+      if response == .OK {
+        attachedFiles.append(contentsOf: panel.urls)
+      }
+    }
+  }
+
+  private func removeFile(_ fileURL: URL) {
+    attachedFiles.removeAll { $0 == fileURL }
+  }
+
+  private func getMimeType(for url: URL) -> String {
+    let pathExtension = url.pathExtension.lowercased()
+    switch pathExtension {
+    case "jpg", "jpeg":
+      return "image/jpeg"
+    case "png":
+      return "image/png"
+    case "gif":
+      return "image/gif"
+    case "webp":
+      return "image/webp"
+    case "pdf":
+      return "application/pdf"
+    case "txt":
+      return "text/plain"
+    case "json":
+      return "application/json"
+    case "xml":
+      return "application/xml"
+    default:
+      return "application/octet-stream"
+    }
+  }
+
+  private func sendMessage() {
         guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
@@ -188,12 +294,34 @@ struct ChatView: View {
             return
         }
 
-        let userMessage = Message(role: .user, content: messageText)
+    // Build file attachments
+    var attachments: [Message.FileAttachment] = []
+    for fileURL in attachedFiles {
+      if let fileData = try? Data(contentsOf: fileURL) {
+        let mimeType = getMimeType(for: fileURL)
+        let attachment = Message.FileAttachment(
+          fileName: fileURL.lastPathComponent,
+          mimeType: mimeType,
+          data: fileData
+        )
+        attachments.append(attachment)
+        print(
+          "📎 Attached file: \(fileURL.lastPathComponent) (\(mimeType), \(fileData.count) bytes)")
+      }
+    }
+
+    let userMessage = Message(
+      role: .user,
+      content: messageText,
+      attachments: attachments.isEmpty ? nil : attachments
+    )
+    print("📨 Creating message with \(attachments.count) attachments")
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         let promptText = messageText
         messageText = ""
-        errorMessage = nil
+    attachedFiles = []  // Clear attached files after sending
+    errorMessage = nil
         isGenerating = true
 
         // Get updated messages after adding user message

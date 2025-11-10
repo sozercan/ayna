@@ -36,6 +36,35 @@ struct MessageView: View {
                             .padding(.bottom, 4)
                     }
 
+                    // Show attached images for user messages
+                    if let attachments = message.attachments, !attachments.isEmpty {
+                        ForEach(attachments.indices, id: \.self) { index in
+                            let attachment = attachments[index]
+                            if attachment.mimeType.starts(with: "image/"),
+                               let nsImage = NSImage(data: attachment.data) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(maxWidth: 400)
+                                        .cornerRadius(8)
+                                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                        .contextMenu {
+                                            Button("Save Image...") {
+                                                saveImage(nsImage)
+                                            }
+                                            Button("Copy Image") {
+                                                copyImage(nsImage)
+                                            }
+                                        }
+                                    Text(attachment.fileName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
                     // Show generated image if present
                     if message.mediaType == .image {
                         if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
