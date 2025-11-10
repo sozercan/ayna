@@ -162,7 +162,7 @@ struct MessageView: View {
                         .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 }
                 .buttonStyle(.plain)
-                
+
                 // Menu button for assistant messages
                 if message.role == .assistant {
                     Menu {
@@ -170,15 +170,15 @@ struct MessageView: View {
                             Text("Used \(modelName ?? message.model ?? "Unknown Model")")
                                 .font(.system(size: 12))
                         }
-                        
+
                         Divider()
-                        
+
                         if let onRetry = onRetry {
                             Button(action: onRetry) {
                                 Label("Try Again", systemImage: "arrow.clockwise")
                             }
                         }
-                        
+
                         Menu {
                             ForEach(openAIService.customModels, id: \.self) { model in
                                 Button(action: {
@@ -186,7 +186,8 @@ struct MessageView: View {
                                 }) {
                                     HStack {
                                         Text(model)
-                                        if model == openAIService.selectedModel {
+                                        // Check if this model was used for this message
+                                        if model == modelName || model == message.model {
                                             Image(systemName: "checkmark")
                                         }
                                     }
