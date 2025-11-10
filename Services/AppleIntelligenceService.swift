@@ -40,6 +40,7 @@ class AppleIntelligenceService: ObservableObject {
 
     @Published var model = SystemLanguageModel.default
     private var sessions: [String: LanguageModelSession] = [:]
+  private let sessionsLock = NSLock()
 
     private init() {}
 
@@ -77,7 +78,10 @@ class AppleIntelligenceService: ObservableObject {
         conversationId: String,
         systemInstructions: String
     ) -> LanguageModelSession {
-        if let existingSession = sessions[conversationId] {
+    sessionsLock.lock()
+    defer { sessionsLock.unlock() }
+
+    if let existingSession = sessions[conversationId] {
             return existingSession
         }
 
@@ -88,11 +92,15 @@ class AppleIntelligenceService: ObservableObject {
 
     // Clear session for a conversation
     func clearSession(conversationId: String) {
+    sessionsLock.lock()
+    defer { sessionsLock.unlock() }
         sessions.removeValue(forKey: conversationId)
     }
 
     // Clear all sessions
     func clearAllSessions() {
+    sessionsLock.lock()
+    defer { sessionsLock.unlock() }
         sessions.removeAll()
     }
 

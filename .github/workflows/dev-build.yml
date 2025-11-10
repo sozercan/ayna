@@ -1,0 +1,64 @@
+name: Dev Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Build app
+      run: |
+        xcodebuild -project ayna.xcodeproj \
+          -scheme ayna \
+          -configuration Release \
+          -derivedDataPath ./build \
+          -destination 'platform=macOS' \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Create DMG
+      run: |
+        # Find the built app
+        APP_PATH=$(find ./build/Build/Products/Release -name "*.app" -type d | head -n 1)
+
+        if [ -z "$APP_PATH" ]; then
+          echo "Error: Could not find built app"
+          exit 1
+        fi
+
+        echo "Found app at: $APP_PATH"
+
+        # Create a temporary directory for DMG contents
+        mkdir -p dmg_contents
+        cp -R "$APP_PATH" dmg_contents/
+
+        # Create DMG
+        hdiutil create -volname "ayna-dev" \
+          -srcfolder dmg_contents \
+          -ov -format UDZO \
+          ayna-dev.dmg
+
+    - name: Get short SHA
+      id: slug
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Upload DMG
+      uses: actions/upload-artifact@v4
+      with:
+        name: ayna-dev-${{ steps.slug.outputs.sha_short }}
+        path: ayna-dev.dmg
+        retention-days: 30

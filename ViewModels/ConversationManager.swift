@@ -52,7 +52,7 @@ class ConversationManager: ObservableObject {
             let autoGenerateTitle = UserDefaults.standard.object(forKey: "autoGenerateTitle") as? Bool ?? true
             let userMessageCount = conversations[index].messages.filter({ $0.role == .user }).count
             let currentTitle = conversations[index].title
-            
+
             if autoGenerateTitle
                 && userMessageCount == 1
                 && currentTitle == "New Conversation"
@@ -104,14 +104,14 @@ class ConversationManager: ObservableObject {
         }
 
         let content = firstMessage.content
-        
+
         // Use AI to generate a concise title using the same model as the conversation
         let titlePrompt = "Generate a very short title (3-5 words maximum) for a conversation that starts with: \"\(content.prefix(200))\". Only respond with the title, nothing else."
-        
+
         let titleMessage = Message(role: .user, content: titlePrompt)
-        
+
         var generatedTitle = ""
-        
+
         OpenAIService.shared.sendMessage(
             messages: [titleMessage],
             model: conversation.model,
@@ -125,7 +125,7 @@ class ConversationManager: ObservableObject {
                     .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     .replacingOccurrences(of: "\"", with: "")
                     .replacingOccurrences(of: "\n", with: " ")
-                
+
                 if !cleanTitle.isEmpty {
                     self?.renameConversation(conversation, newTitle: cleanTitle)
                 } else {

@@ -41,7 +41,9 @@ class AIKitService: ObservableObject {
   @Published var selectedModelId: String {
     didSet {
       UserDefaults.standard.set(selectedModelId, forKey: "aikit_selected_model")
-      updateContainerStatus()
+      Task {
+        await updateContainerStatus()
+      }
     }
   }
 
@@ -141,61 +143,75 @@ class AIKitService: ObservableObject {
 
     // Load pulled images
     if let savedPulled = UserDefaults.standard.array(forKey: "aikit_pulled_images") as? [String] {
-      self.pulledImages  = Set(savedPulled)
+      self.pulledImages = Set(savedPulled)
     }
 
-    // Check if Podman is available
-    checkPodmanAvailability()
-
-    // Update initial status
-    updateContainerStatus()
+    // Check if Podman is available (async to avoid blocking init)
+    Task {
+      await checkPodmanAvailability()
+      await updateContainerStatus()
+    }
   }
 
   // Cached path to podman binary
   private var podmanPath: String?
 
-  func checkPodmanAvailability() {
+  func checkPodmanAvailability() async {
     // Check common installation paths for podman
     let commonPaths = [
       "/opt/podman/bin/podman",
       "/usr/local/bin/podman",
       "/opt/homebrew/bin/podman",
-      "/usr/bin/podman"
+      "/usr/bin/podman",
     ]
 
-    for path in commonPaths where FileManager.default.isExecutableFile(atPath: path) {
-      podmanPath = path
-      isPodmanAvailable = true
-      return
+    // First check if any of the common paths exist
+    for path in commonPaths {
+      if FileManager.default.isExecutableFile(atPath: path) {
+        await MainActor.run {
+          self.podmanPath = path
+          self.isPodmanAvailable = true
+        }
+        return
+      }
     }
 
     // Fall back to checking PATH using which
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-    process.arguments = ["podman"]
-    let outputPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = Pipe()
+    await Task.detached { [weak self] in
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+      process.arguments = ["podman"]
+      let outputPipe = Pipe()
+      process.standardOutput = outputPipe
+      process.standardError = Pipe()
 
-    do {
-      try process.run()
-      process.waitUntilExit()
+      do {
+        try process.run()
+        process.waitUntilExit()
 
-      if process.terminationStatus == 0 {
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        if let path = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
-          in: .whitespacesAndNewlines),
-          !path.isEmpty {
-          podmanPath = path
-          isPodmanAvailable = true
-          return
+        if process.terminationStatus == 0 {
+          let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+          if let path = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
+            in: .whitespacesAndNewlines),
+            !path.isEmpty
+          {
+            await MainActor.run {
+              self?.podmanPath = path
+              self?.isPodmanAvailable = true
+            }
+            return
+          }
+        }
+      } catch {
+        await MainActor.run {
+          self?.isPodmanAvailable  = false
         }
       }
-    } catch {
-      isPodmanAvailable = false
-    }
 
-    isPodmanAvailable = false
+      await MainActor.run {
+        self?.isPodmanAvailable = false
+      }
+    }.value
   }
 
   var selectedModel: AIKitModel? {
@@ -209,38 +225,40 @@ class AIKitService: ObservableObject {
     }
   }
 
-  func updateContainerStatus() {
+  func updateContainerStatus() async {
     guard let model = selectedModel else {
-      containerStatus = .notPulled
-      statusMessage = "No model selected"
+      await MainActor.run {
+        containerStatus = .notPulled
+        statusMessage = "No model selected"
+      }
       return
     }
 
     if !isPodmanAvailable {
-      containerStatus = .notSupported
-      statusMessage = "Podman not found. Install with: brew install podman"
+      await MainActor.run {
+        containerStatus = .notSupported
+        statusMessage = "Podman not found. Install with: brew install podman"
+      }
       return
     }
 
     // Check if container is already running
-    Task {
-      if await isContainerRunning(modelId: model.id) {
-        await MainActor.run {
-          containerStatus = .running
-          statusMessage = "Container running on \(defaultEndpoint)"
-        }
-        return
-      }
-
-      // Otherwise check if image is pulled
+    if await isContainerRunning(modelId: model.id) {
       await MainActor.run {
-        if pulledImages.contains(model.id) {
-          containerStatus = .pulled
-          statusMessage = "Model ready to run"
-        } else {
-          containerStatus = .notPulled
-          statusMessage = "Model not pulled"
-        }
+        containerStatus = .running
+        statusMessage = "Container running on \(defaultEndpoint)"
+      }
+      return
+    }
+
+    // Otherwise check if image is pulled
+    await MainActor.run {
+      if pulledImages.contains(model.id) {
+        containerStatus = .pulled
+        statusMessage = "Model ready to run"
+      } else {
+        containerStatus = .notPulled
+        statusMessage = "Model not pulled"
       }
     }
   }
@@ -500,8 +518,9 @@ class AIKitService: ObservableObject {
     await MainActor.run {
       pulledImages.remove(model.id)
       UserDefaults.standard.set(Array(pulledImages), forKey: "aikit_pulled_images")
-      updateContainerStatus()
     }
+
+    await updateContainerStatus()
   }
 }
 

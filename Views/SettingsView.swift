@@ -1132,8 +1132,8 @@ struct InfoRow: View {
 
 // MARK: - AIKit Configuration View
 struct AIKitConfigurationView: View {
-    @StateObject private var aikitService = AIKitService.shared
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var aikitService = AIKitService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var tempModelName: String
     @Binding var selectedModelName: String?
 
@@ -1170,7 +1170,9 @@ struct AIKitConfigurationView: View {
                     }
                     .labelsHidden()
                     .onChange(of: aikitService.selectedModelId) { _, _ in
-                        aikitService.updateContainerStatus()
+            Task {
+              await aikitService.updateContainerStatus()
+            }
                     }
 
                     if let model = aikitService.selectedModel {
@@ -1269,7 +1271,12 @@ struct AIKitConfigurationView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-        }
+    }
+    .task {
+      let service = AIKitService.shared
+      await service.checkPodmanAvailability()
+      await service.updateContainerStatus()
+    }
     }
 
     private var statusColor: Color {

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct AIKitSettingsView: View {
-  @StateObject private var aikitService = AIKitService.shared
+  @ObservedObject private var aikitService = AIKitService.shared
   @State private var isPulling = false
   @State private var isRunning = false
   @State private var isStopping = false
@@ -77,7 +77,9 @@ struct AIKitSettingsView: View {
           }
           .labelsHidden()
           .onChange(of: aikitService.selectedModelId) { _, _ in
-            aikitService.updateContainerStatus()
+            Task {
+              await aikitService.updateContainerStatus()
+            }
           }
         }
 
@@ -467,6 +469,11 @@ struct InstallationInstructionsView: View {
     }
     .padding()
     .frame(width: 600, height: 500)
+    .task {
+      let service = AIKitService.shared
+      await service.checkPodmanAvailability()
+      await service.updateContainerStatus()
+    }
   }
 }
 

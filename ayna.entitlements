@@ -3,12 +3,28 @@
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<false/>
+	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/opt/podman/bin/podman</string>
+		<string>/usr/local/bin/podman</string>
+		<string>/opt/homebrew/bin/podman</string>
+		<string>/usr/bin/podman</string>
+		<string>/usr/bin/which</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/opt/homebrew/bin/npm</string>
+		<string>/opt/homebrew/bin/npx</string>
+		<string>/usr/local/bin/node</string>
+		<string>/usr/local/bin/npm</string>
+		<string>/usr/local/bin/npx</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
+	<array>
+		<string>/tmp/</string>
+	</array>
 </dict>
 </plist>
