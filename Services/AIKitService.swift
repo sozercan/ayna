@@ -162,7 +162,7 @@ class AIKitService: ObservableObject {
       "/opt/podman/bin/podman",
       "/usr/local/bin/podman",
       "/opt/homebrew/bin/podman",
-      "/usr/bin/podman",
+      "/usr/bin/podman"
     ]
 
     // First check if any of the common paths exist
@@ -193,8 +193,7 @@ class AIKitService: ObservableObject {
           let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
           if let path = String(data: outputData, encoding: .utf8)?.trimmingCharacters(
             in: .whitespacesAndNewlines),
-            !path.isEmpty
-          {
+            !path.isEmpty {
             await MainActor.run {
               self?.podmanPath = path
               self?.isPodmanAvailable = true
