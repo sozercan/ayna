@@ -232,8 +232,9 @@ class OpenAIService: ObservableObject {
     UserDefaults.standard.set(apiKey, forKey: "openai_api_key")
   }
 
-  private func getAPIURL(deploymentName: String? = nil) -> String {
-    switch provider {
+  private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
+    let effectiveProvider = provider ?? self.provider
+    switch effectiveProvider {
     case .openai:
       return openAIURL
     case .azure:
@@ -254,8 +255,9 @@ class OpenAIService: ObservableObject {
     }
   }
 
-  private func getResponsesAPIURL(deploymentName: String? = nil) -> String {
-    switch provider {
+  private func getResponsesAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
+    let effectiveProvider = provider ?? self.provider
+    switch effectiveProvider {
     case .openai:
       return "https://api.openai.com/v1/responses"
     case .azure:
@@ -415,8 +417,13 @@ class OpenAIService: ObservableObject {
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
+    let requestModel = model ?? selectedModel
+    
+    // Check if this specific model has a provider override
+    let effectiveProvider = modelProviders[requestModel] ?? provider
+    
     // Handle Apple Intelligence separately
-    if provider == .appleIntelligence {
+    if effectiveProvider == .appleIntelligence {
       if #available(macOS 26.0, *) {
         handleAppleIntelligenceRequest(
           messages: messages,
@@ -433,14 +440,16 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    // Skip API key check for Apple Intelligence (handled above)
-    guard !apiKey.isEmpty else {
-      onError(OpenAIError.missingAPIKey)
-      return
+    // Skip API key check for Apple Intelligence (handled above) and AIKit (local)
+    if effectiveProvider != .aikit {
+      guard !apiKey.isEmpty else {
+        onError(OpenAIError.missingAPIKey)
+        return
+      }
     }
 
     // Validate Azure settings if using Azure
-    if provider == .azure {
+    if effectiveProvider == .azure {
       guard !azureEndpoint.isEmpty else {
         onError(OpenAIError.missingAzureEndpoint)
         return
@@ -451,7 +460,6 @@ class OpenAIService: ObservableObject {
       }
     }
 
-    let requestModel = model ?? selectedModel
     let requestTemp = temperature ?? self.temperature
 
     // Check if this model should use the responses API based on endpoint type setting
@@ -471,7 +479,7 @@ class OpenAIService: ObservableObject {
     }
 
     // For Azure, use the conversation's model as the deployment name
-    let apiURL = provider == .azure ? getAPIURL(deploymentName: requestModel) : getAPIURL()
+    let apiURL = effectiveProvider == .azure ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider) : getAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
       onError(OpenAIError.invalidURL)
@@ -483,7 +491,7 @@ class OpenAIService: ObservableObject {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
     // Set authentication header based on provider
-    switch provider {
+    switch effectiveProvider {
     case .openai:
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     case .azure:
@@ -566,7 +574,16 @@ class OpenAIService: ObservableObject {
     onError: @escaping (Error) -> Void,
     onReasoning: ((String) -> Void)? = nil
   ) {
-    let apiURL = getResponsesAPIURL()
+    // Check if this model has a provider override
+    let effectiveProvider = modelProviders[model] ?? provider
+    
+    // Apple Intelligence doesn't support the responses API
+    if effectiveProvider == .appleIntelligence {
+      onError(OpenAIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
+      return
+    }
+    
+    let apiURL = getResponsesAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
       onError(OpenAIError.invalidURL)
