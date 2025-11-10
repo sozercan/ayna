@@ -496,11 +496,39 @@ class OpenAIService: ObservableObject {
       break  // No authentication needed for local AIKit containers
     }
 
-    let messagePayloads = messages.map { message in
-      [
-        "role": message.role.rawValue,
-        "content": message.content
-      ]
+    let messagePayloads: [[String: Any]] = messages.map { message in
+      var payload: [String: Any] = ["role": message.role.rawValue]
+
+      // Check if message has attachments (multimodal content)
+      if let attachments = message.attachments, !attachments.isEmpty {
+        var contentArray: [[String: Any]] = []
+
+        // Add text content if present
+        if !message.content.isEmpty {
+          contentArray.append([
+            "type": "text",
+            "text": message.content
+          ])
+        }
+
+        // Add image attachments
+        for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+          let base64Image = attachment.data.base64EncodedString()
+          contentArray.append([
+            "type": "image_url",
+            "image_url": [
+              "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+            ]
+          ])
+        }
+
+        payload["content"] = contentArray
+      } else {
+        // Simple text content
+        payload["content"] = message.content
+      }
+
+      return payload
     }
 
     var body: [String: Any] = [
@@ -550,16 +578,54 @@ class OpenAIService: ObservableObject {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-    // Convert conversation messages to a single input prompt
-    // Format: "User: message\nAssistant: response\nUser: message..."
-    let conversationText = messages.map { message -> String in
-      let role = message.role == .user ? "User" : "Assistant"
-      return "\(role): \(message.content)"
-    }.joined(separator: "\n\n")
+    // Build input array with proper multimodal support
+    var inputArray: [[String: Any]] = []
+
+    for message in messages {
+      // Skip system messages or handle them as instructions
+      if message.role == .system {
+        continue
+      }
+
+      // Create message item in Responses API format
+      // Format for user: { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "..." }, { "type": "input_image", "image_url": "..." }] }
+      // Format for assistant: { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "..." }] }
+      var messageItem: [String: Any] = [
+        "type": "message",
+        "role": message.role.rawValue
+      ]
+
+      var contentArray: [[String: Any]] = []
+
+      // Add text content if present
+      // Use correct content type based on role: input_text for user, output_text for assistant
+      if !message.content.isEmpty {
+        let contentType = message.role == .user ? "input_text" : "output_text"
+        contentArray.append([
+          "type": contentType,
+          "text": message.content
+        ])
+      }
+
+      // Add image attachments with proper format for Responses API
+      // Note: Images are only valid for user messages in the Responses API
+      if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
+        for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+          let base64Data = attachment.data.base64EncodedString()
+          contentArray.append([
+            "type": "input_image",
+            "image_url": "data:\(attachment.mimeType);base64,\(base64Data)"
+          ])
+        }
+      }
+
+      messageItem["content"] = contentArray
+      inputArray.append(messageItem)
+    }
 
     var body: [String: Any] = [
       "model": model,
-      "input": conversationText,
+      "input": inputArray,
       "reasoning": ["summary": "auto"],
       "text": ["verbosity": "medium"]
     ]

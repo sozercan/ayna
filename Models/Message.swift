@@ -20,14 +20,23 @@ struct Message: Identifiable, Codable, Equatable {
     var mediaType: MediaType?
     var imageData: Data?
 
-    // Reasoning/thinking support for o1/o3 models
+  // File attachments for vision/multimodal support
+  var attachments: [FileAttachment]?
+
+  // Reasoning/thinking support for o1/o3 models
     var reasoning: String?
 
     enum MediaType: String, Codable {
         case image
     }
 
-    enum Role: String, Codable {
+  struct FileAttachment: Codable, Equatable {
+    let fileName: String
+    let mimeType: String
+    let data: Data
+  }
+
+  enum Role: String, Codable {
         case system
         case user
         case assistant
@@ -44,6 +53,7 @@ struct Message: Identifiable, Codable, Equatable {
         model: String? = nil,
         mediaType: MediaType? = nil,
         imageData: Data? = nil,
+    attachments: [FileAttachment]? = nil,
         reasoning: String? = nil
     ) {
         self.id = id
@@ -55,6 +65,7 @@ struct Message: Identifiable, Codable, Equatable {
         self.model = model
         self.mediaType = mediaType
         self.imageData = imageData
+    self.attachments = attachments
         self.reasoning = reasoning
     }
 }
