@@ -580,32 +580,36 @@ class OpenAIService: ObservableObject {
 
     // Build input array with proper multimodal support
     var inputArray: [[String: Any]] = []
-    
+
     for message in messages {
       // Skip system messages or handle them as instructions
       if message.role == .system {
         continue
       }
-      
+
       // Create message item in Responses API format
-      // Format: { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "..." }, { "type": "input_image", "image_url": "..." }] }
+      // Format for user: { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "..." }, { "type": "input_image", "image_url": "..." }] }
+      // Format for assistant: { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "..." }] }
       var messageItem: [String: Any] = [
         "type": "message",
         "role": message.role.rawValue
       ]
-      
+
       var contentArray: [[String: Any]] = []
-      
+
       // Add text content if present
+      // Use correct content type based on role: input_text for user, output_text for assistant
       if !message.content.isEmpty {
+        let contentType = message.role == .user ? "input_text" : "output_text"
         contentArray.append([
-          "type": "input_text",
+          "type": contentType,
           "text": message.content
         ])
       }
-      
+
       // Add image attachments with proper format for Responses API
-      if let attachments = message.attachments, !attachments.isEmpty {
+      // Note: Images are only valid for user messages in the Responses API
+      if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
         for attachment in attachments where attachment.mimeType.starts(with: "image/") {
           let base64Data = attachment.data.base64EncodedString()
           contentArray.append([
@@ -614,7 +618,7 @@ class OpenAIService: ObservableObject {
           ])
         }
       }
-      
+
       messageItem["content"] = contentArray
       inputArray.append(messageItem)
     }

@@ -136,7 +136,7 @@ struct ChatView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 48, height: 48)
                     }
-                    
+
                     VStack(alignment: .leading, spacing: 2) {
                       Text(fileURL.lastPathComponent)
                         .font(.caption)
@@ -147,7 +147,7 @@ struct ChatView: View {
                           .foregroundStyle(.secondary)
                       }
                     }
-                    
+
                     Button(action: { removeFile(fileURL) }) {
                       Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
