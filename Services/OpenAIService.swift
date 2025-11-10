@@ -418,10 +418,10 @@ class OpenAIService: ObservableObject {
     onReasoning: ((String) -> Void)? = nil
   ) {
     let requestModel = model ?? selectedModel
-    
+
     // Check if this specific model has a provider override
     let effectiveProvider = modelProviders[requestModel] ?? provider
-    
+
     // Handle Apple Intelligence separately
     if effectiveProvider == .appleIntelligence {
       if #available(macOS 26.0, *) {
@@ -576,13 +576,13 @@ class OpenAIService: ObservableObject {
   ) {
     // Check if this model has a provider override
     let effectiveProvider = modelProviders[model] ?? provider
-    
+
     // Apple Intelligence doesn't support the responses API
     if effectiveProvider == .appleIntelligence {
       onError(OpenAIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
       return
     }
-    
+
     let apiURL = getResponsesAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
