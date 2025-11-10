@@ -22,7 +22,7 @@ jobs:
     - name: Build app
       run: |
         xcodebuild -project ayna.xcodeproj \
-          -scheme ayna \
+          -scheme Ayna \
           -configuration Release \
           -derivedDataPath ./build \
           -destination 'platform=macOS' \
@@ -47,10 +47,10 @@ jobs:
         cp -R "$APP_PATH" dmg_contents/
 
         # Create DMG
-        hdiutil create -volname "ayna-dev" \
+        hdiutil create -volname "Ayna-dev" \
           -srcfolder dmg_contents \
           -ov -format UDZO \
-          ayna-dev.dmg
+          ayna.dmg
 
     - name: Get short SHA
       id: slug
