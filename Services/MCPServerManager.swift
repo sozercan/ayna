@@ -66,10 +66,14 @@ class MCPServerManager: ObservableObject {
     }
 
     private func loadServerConfigs() {
-        // Always reload fresh defaults for now to avoid migration issues
-        // TODO: Implement proper config persistence
-        serverConfigs = defaultServerConfigs()
-        saveServerConfigs()
+        if let data = UserDefaults.standard.data(forKey: "mcp_server_configs"),
+           let decoded = try? JSONDecoder().decode([MCPServerConfig].self, from: data) {
+            serverConfigs = decoded
+        } else {
+            // First launch: use default configs
+            serverConfigs = defaultServerConfigs()
+            saveServerConfigs()
+        }
     }
 
     private func defaultServerConfigs() -> [MCPServerConfig] {

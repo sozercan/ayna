@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
     @State private var showAPIKeyInfo = false
 
     var body: some View {
@@ -39,7 +39,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
 
     var body: some View {
         Form {
@@ -111,7 +111,7 @@ struct GeneralSettingsView: View {
 }
 
 struct APISettingsView: View {
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
     @State private var showAPIKey = false
     @State private var tempAPIKey = ""
     @State private var tempEndpoint = ""
@@ -281,7 +281,7 @@ struct APISettingsView: View {
                                 .foregroundStyle(.primary)
 
                             Picker("", selection: Binding(
-                                get: { 
+                    get: {
                                     if let modelName = selectedModelName {
                                         return openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
                                     } else {

@@ -9,11 +9,10 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @State private var selectedConversationId: UUID?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+  @State private var selectedConversationId: UUID?
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+    NavigationSplitView {
             SidebarView(selectedConversationId: $selectedConversationId)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {

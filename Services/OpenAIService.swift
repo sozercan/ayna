@@ -44,8 +44,6 @@ class OpenAIService: ObservableObject {
     }
   }
 
-  let temperature: Double = 0.7
-
   // Track current task for cancellation
   private var currentTask: URLSessionDataTask?
 
@@ -461,8 +459,6 @@ class OpenAIService: ObservableObject {
       }
     }
 
-    let requestTemp = temperature ?? self.temperature
-
     // Check if this model should use the responses API based on endpoint type setting
     let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
 
@@ -540,21 +536,21 @@ class OpenAIService: ObservableObject {
       return payload
     }
 
-    var body: [String: Any] = [
+    let body: [String: Any] = [
       "messages": messagePayloads,
+      "model": requestModel,
       "stream": stream
     ]
 
-    // Both OpenAI and Azure require model in body
-    body["model"] = requestModel
+    var finalBody = body
 
     // Add tools if provided
     if let tools = tools, !tools.isEmpty {
-      body["tools"] = tools
-      body["tool_choice"] = "auto"
+      finalBody["tools"] = tools
+      finalBody["tool_choice"] = "auto"
     }
 
-    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    request.httpBody = try? JSONSerialization.data(withJSONObject: finalBody)
 
     if stream {
       streamResponse(
@@ -641,7 +637,7 @@ class OpenAIService: ObservableObject {
       inputArray.append(messageItem)
     }
 
-    var body: [String: Any] = [
+    let body: [String: Any] = [
       "model": model,
       "input": inputArray,
       "reasoning": ["summary": "auto"],
@@ -740,10 +736,8 @@ class OpenAIService: ObservableObject {
   ) {
     // Capture values for async context
     let currentProvider = provider
-    let currentModel = selectedModel
     let currentAzureDeployment = azureDeploymentName
     let currentAzureAPIVersion = azureAPIVersion
-    let currentAzureEndpoint = azureEndpoint
 
     Task {
       do {
@@ -758,14 +752,15 @@ class OpenAIService: ObservableObject {
 
         guard httpResponse.statusCode == 200 else {
           // Provide helpful error messages
-          var errorMessage = "HTTP \(httpResponse.statusCode)"
+          let errorMessage: String
           if httpResponse.statusCode == 400 {
             if currentProvider == .azure {
-              errorMessage +=
-                " - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
+              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
             } else {
-              errorMessage += " - Invalid request. Check your model name and parameters."
+              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid request. Check your model name and parameters."
             }
+          } else {
+            errorMessage = "HTTP \(httpResponse.statusCode)"
           }
 
           await MainActor.run {
@@ -1014,7 +1009,7 @@ class OpenAIService: ObservableObject {
     // Use the provided conversation ID or a default
     let convId = conversationId?.uuidString ?? "default"
 
-    let requestTemp = temperature ?? self.temperature
+    let requestTemp = temperature ?? 0.7
 
     Task {
       if stream {

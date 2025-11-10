@@ -10,19 +10,30 @@ import SwiftUI
 struct ChatView: View {
     let conversation: Conversation
     @EnvironmentObject var conversationManager: ConversationManager
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
 
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
   @State private var attachedFiles: [URL] = []
 
-    // Get the current conversation from the manager to ensure we have the latest data
+  // Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
     }
 
-    var body: some View {
+  // Pre-filter messages once for the view body
+  private var visibleMessages: [Message] {
+    currentConversation.messages.filter { message in
+      // Hide system messages
+      guard message.role != .system else { return false }
+      // Show if: has content, has image data, is generating image, or is empty assistant (shows typing indicator)
+      return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+        || message.role == .assistant
+    }
+  }
+
+  var body: some View {
         ZStack {
             // Chat background with subtle gradient
             LinearGradient(
@@ -58,16 +69,7 @@ struct ChatView: View {
                         .frame(minHeight: 400)
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(currentConversation.messages.filter { message in
-                                // Hide system messages
-                                guard message.role != .system else { return false }
-
-                                // Show if: has content, has image data, is generating image, or is empty assistant (shows typing indicator)
-                                return !message.content.isEmpty ||
-                                       message.imageData != nil ||
-                                       message.mediaType == .image ||
-                                       message.role == .assistant
-                            }) { message in
+                ForEach(visibleMessages) { message in
                                 MessageView(
                     message: message,
                                     modelName: message.model,
@@ -640,8 +642,8 @@ struct ChatView: View {
                 }
             },
             onComplete: {
-                isGenerating = false
-                conversationManager.saveConversations()
+        isGenerating = false
+        // Save is already called by addMessage, no need to call again
             },
             onError: { error in
                 isGenerating = false
