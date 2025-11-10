@@ -24,6 +24,7 @@ enum APIEndpointType: String, CaseIterable, Codable {
   var displayName: String { rawValue }
 }
 
+// swiftlint:disable:next type_body_length
 class OpenAIService: ObservableObject {
   static let shared = OpenAIService()
 

@@ -461,11 +461,9 @@ struct ChatView: View {
 
         // Find the last user message before this assistant message
         var userMessageIndex: Int?
-        for i in (0..<assistantIndex).reversed() {
-            if currentConversation.messages[i].role == .user {
-                userMessageIndex = i
-                break
-      }
+        for index in (0..<assistantIndex).reversed() where currentConversation.messages[index].role == .user {
+            userMessageIndex = index
+            break
         }
 
         guard let userIndex = userMessageIndex else { return }
@@ -500,11 +498,9 @@ struct ChatView: View {
 
         // Find the last user message before this assistant message
         var userMessageIndex: Int?
-        for i in (0..<assistantIndex).reversed() {
-            if currentConversation.messages[i].role == .user {
-                userMessageIndex = i
-                break
-            }
+        for index in (0..<assistantIndex).reversed() where currentConversation.messages[index].role == .user {
+            userMessageIndex = index
+            break
         }
 
         guard let userIndex = userMessageIndex else { return }

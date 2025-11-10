@@ -53,7 +53,7 @@ struct Message: Identifiable, Codable, Equatable {
         model: String? = nil,
         mediaType: MediaType? = nil,
         imageData: Data? = nil,
-    attachments: [FileAttachment]? = nil,
+        attachments: [FileAttachment]? = nil,
         reasoning: String? = nil
     ) {
         self.id = id
