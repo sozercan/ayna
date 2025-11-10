@@ -10,8 +10,13 @@ import SwiftUI
 struct MessageView: View {
     let message: Message
     var modelName: String?
+    var onRetry: (() -> Void)?
+    var onSwitchModel: ((String) -> Void)?
     @State private var isHovered = false
     @State private var showReasoning = false
+    @State private var showModelMenu = false
+    @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject private var openAIService = OpenAIService.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -143,21 +148,69 @@ struct MessageView: View {
 
             Spacer()
 
-            // Copy button with fixed space
-            Button(action: {
-                copyToClipboard(message.content)
-            }) {
-                Image(systemName: "doc.on.doc")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .padding(6)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+            // Action buttons
+            HStack(spacing: 8) {
+                // Copy button
+                Button(action: {
+                    copyToClipboard(message.content)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                }
+                .buttonStyle(.plain)
+                
+                // Menu button for assistant messages
+                if message.role == .assistant {
+                    Menu {
+                        Section {
+                            Text("Used \(modelName ?? message.model ?? "Unknown Model")")
+                                .font(.system(size: 12))
+                        }
+                        
+                        Divider()
+                        
+                        if let onRetry = onRetry {
+                            Button(action: onRetry) {
+                                Label("Try Again", systemImage: "arrow.clockwise")
+                            }
+                        }
+                        
+                        Menu {
+                            ForEach(openAIService.customModels, id: \.self) { model in
+                                Button(action: {
+                                    onSwitchModel?(model)
+                                }) {
+                                    HStack {
+                                        Text(model)
+                                        if model == openAIService.selectedModel {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Switch Model", systemImage: "arrow.left.arrow.right")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .padding(6)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                }
             }
-            .buttonStyle(.plain)
             .opacity(isHovered ? 1 : 0)
             .animation(.easeInOut(duration: 0.15), value: isHovered)
-            .frame(width: 32)
+            .frame(width: message.role == .assistant ? 72 : 32)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

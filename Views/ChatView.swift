@@ -68,7 +68,16 @@ struct ChatView: View {
                                        message.mediaType == .image ||
                                        message.role == .assistant
                             }) { message in
-                                MessageView(message: message, modelName: message.model)
+                                MessageView(
+                                    message: message, 
+                                    modelName: message.model,
+                                    onRetry: message.role == .assistant ? {
+                                        retryLastMessage(beforeMessage: message)
+                                    } : nil,
+                                    onSwitchModel: message.role == .assistant ? { newModel in
+                                        switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                    } : nil
+                                )
                                     .id(message.id)
                             }
                         }
@@ -435,6 +444,129 @@ struct ChatView: View {
                 // Remove the placeholder message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
                     conversationManager.conversations[index].messages.removeLast()
+                }
+            }
+        )
+    }
+    
+    // Retry the message that came before the specified assistant message
+    private func retryLastMessage(beforeMessage: Message) {
+        guard !isGenerating else { return }
+        
+        // Find the user message that came before this assistant message
+        guard let assistantIndex = currentConversation.messages.firstIndex(where: { $0.id == beforeMessage.id }),
+              assistantIndex > 0 else {
+            return
+        }
+        
+        // Find the last user message before this assistant message
+        var userMessageIndex: Int?
+        for i in (0..<assistantIndex).reversed() {
+            if currentConversation.messages[i].role == .user {
+                userMessageIndex = i
+                break
+            }
+        }
+        
+        guard let userIndex = userMessageIndex else { return }
+        let userMessage = currentConversation.messages[userIndex]
+        
+        // Remove all messages from the assistant message onwards
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversationManager.conversations[convIndex].messages.removeSubrange(assistantIndex...)
+            conversationManager.saveConversations()
+        }
+        
+        // Resend the user message
+        resendMessage(userMessage)
+    }
+    
+    // Switch model and retry
+    private func switchModelAndRetry(beforeMessage: Message, newModel: String) {
+        // Update the conversation model
+        conversationManager.updateModel(for: conversation, model: newModel)
+        
+        // Also update the global selected model
+        openAIService.selectedModel = newModel
+        
+        // Retry with the new model
+        retryLastMessage(beforeMessage: beforeMessage)
+    }
+    
+    // Resend a message
+    private func resendMessage(_ message: Message) {
+        errorMessage = nil
+        isGenerating = true
+        
+        // Get updated messages
+        guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
+            return
+        }
+        
+        // Check if current model is for image generation
+        let modelCapability = openAIService.getModelCapability(updatedConversation.model)
+        
+        if modelCapability == .imageGeneration {
+            // Image generation flow
+            generateImage(prompt: message.content, model: updatedConversation.model)
+            return
+        }
+        
+        let currentMessages = updatedConversation.messages
+        
+        // Add empty assistant message with current model
+        let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+        
+        // Get available MCP tools
+        let mcpManager = MCPServerManager.shared
+        let enabledTools = mcpManager.getEnabledTools()
+        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        
+        openAIService.sendMessage(
+            messages: currentMessages,
+            model: updatedConversation.model,
+            temperature: updatedConversation.temperature,
+            tools: tools,
+            conversationId: conversation.id,
+            onChunk: { chunk in
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    lastMessage.content += chunk
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
+                }
+            },
+            onComplete: {
+                isGenerating = false
+                conversationManager.saveConversations()
+            },
+            onError: { error in
+                isGenerating = false
+                errorMessage = error.localizedDescription
+                
+                // Remove the empty assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversationManager.conversations[index].messages.removeLast()
+                }
+            },
+            onToolCall: { _, toolName, arguments in
+                // Execute the MCP tool
+                do {
+                    let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
+                    return result
+                } catch {
+                    return "Error executing tool: \(error.localizedDescription)"
+                }
+            },
+            onReasoning: { reasoning in
+                // Append reasoning content to the last assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    let currentReasoning = lastMessage.reasoning ?? ""
+                    lastMessage.reasoning = currentReasoning + reasoning
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
                 }
             }
         )
