@@ -119,6 +119,7 @@ struct APISettingsView: View {
     @State private var tempAzureDeployment = ""
     @State private var tempModelName = ""
     @State private var selectedModelName: String?
+    @State private var tempEndpointType: APIEndpointType = .chatCompletions
     @State private var isValidating = false
     @State private var validationStatus: ValidationStatus = .notChecked
 
@@ -230,22 +231,19 @@ struct APISettingsView: View {
             .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
             .background(Color(nsColor: .controlBackgroundColor))
 
-            // Right panel - API Configuration
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+      // Right panel - API Configuration
+      VStack(spacing: 0) {
+        // Provider Selection - Fixed at top
+        VStack(alignment: .leading, spacing: 20) {
                     // Header
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Model Configuration")
                             .font(.title2)
                             .fontWeight(.semibold)
                         Text("Configure AI provider settings and add models")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal)
-                    .padding(.top)
-
-                    Divider()
+          }
 
                     // Provider Selection
                     VStack(alignment: .leading, spacing: 12) {
@@ -254,32 +252,49 @@ struct APISettingsView: View {
                             .foregroundStyle(.primary)
 
                         Picker("", selection: $openAIService.provider) {
-                            ForEach(AIProvider.allCases, id: \.self) { provider in
-                                HStack {
-                                    Text(provider.displayName)
-                                }
-                                .tag(provider)
+              ForEach(AIProvider.allCases, id: \.self) { provider  in
+                Text(provider.displayName)
+                  .tag(provider)
                             }
                         }
                         .pickerStyle(.segmented)
                         .onChange(of: openAIService.provider) { _, _ in
                             validationStatus = .notChecked
                         }
-                    }
-                    .padding(.horizontal)
+          }
+        }
+        .padding(20)
+        .background(Color(nsColor: .windowBackgroundColor))
 
-                    Divider()
+        Divider()
+            .padding(.bottom, 16)
 
-                    // API Endpoint Type Selection (not applicable for Apple Intelligence)
-                    if openAIService.provider != .appleIntelligence, let modelName = selectedModelName {
+        // Scrollable configuration area
+        ScrollView {
+          VStack(alignment: .leading, spacing: 24) {
+
+                    // API Endpoint Type Selection (not applicable for Apple Intelligence or AIKit)
+                    if openAIService.provider != .appleIntelligence && openAIService.provider != .aikit {
                         VStack(alignment: .leading, spacing: 12) {
                             Label("API Endpoint", systemImage: "arrow.left.arrow.right")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
 
                             Picker("", selection: Binding(
-                                get: { openAIService.modelEndpointTypes[modelName] ?? .chatCompletions },
-                                set: { openAIService.modelEndpointTypes[modelName] = $0 }
+                                get: { 
+                                    if let modelName = selectedModelName {
+                                        return openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
+                                    } else {
+                                        return tempEndpointType
+                                    }
+                                },
+                                set: { newValue in
+                                    if let modelName = selectedModelName {
+                                        openAIService.modelEndpointTypes[modelName] = newValue
+                                    } else {
+                                        tempEndpointType = newValue
+                                    }
+                                }
                             )) {
                                 ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
                                     Text(endpointType.displayName).tag(endpointType)
@@ -423,6 +438,7 @@ struct APISettingsView: View {
                                     if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
                                         openAIService.customModels.append(modelName)
                                         openAIService.modelProviders[modelName] = .openai
+                                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
                                         if openAIService.customModels.count == 1 {
                                             openAIService.selectedModel = modelName
                                         }
@@ -592,6 +608,7 @@ struct APISettingsView: View {
                                     if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
                                         openAIService.customModels.append(modelName)
                                         openAIService.modelProviders[modelName] = .azure
+                                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
                                         if openAIService.customModels.count == 1 {
                                             openAIService.selectedModel = modelName
                                         }
@@ -802,8 +819,9 @@ struct APISettingsView: View {
                         .padding(.bottom)
                     }
                 }
-            }
         }
+      }  // End of outer VStack wrapping provider selection and scroll view
+    }
         .onAppear {
             tempAPIKey = openAIService.apiKey
             tempEndpoint = "https://api.openai.com/"
@@ -820,6 +838,7 @@ struct APISettingsView: View {
         tempEndpoint = "https://api.openai.com/"
         tempAzureEndpoint = ""
         tempAzureDeployment = ""
+        tempEndpointType = .chatCompletions
         validationStatus = .notChecked
     }
 
@@ -967,6 +986,7 @@ struct APISettingsView: View {
 
         tempModelName = model
         tempAPIKey = openAIService.apiKey
+        tempEndpointType = openAIService.modelEndpointTypes[model] ?? .chatCompletions
 
         if openAIService.provider == .openai {
             tempEndpoint = "https://api.openai.com/"
