@@ -334,6 +334,7 @@ class MCPService: ObservableObject {
             }
         } catch {
             print("Failed to decode MCP response: \(error)")
+      print("JSON: \(json)")
         }
     }
 
@@ -403,15 +404,12 @@ class MCPService: ObservableObject {
     // MARK: - Helper Methods
 
     private func findExecutable(_ command: String) throws -> String {
-        // If command is already an absolute path, check if it exists
+    // If command is already an absolute path, validate it exists
         if command.hasPrefix("/") {
-            // In sandboxed environment, isExecutableFile may return false even for valid executables
-            // So we check if file exists first
-            if FileManager.default.fileExists(atPath: command) {
-                print("✅ Using provided executable path: \(command)")
-                return command
-            }
-            throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
+      guard FileManager.default.isExecutableFile(atPath: command) else {
+        throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
+      }
+      return command
         }
 
         // Common locations to search for executables
@@ -427,9 +425,10 @@ class MCPService: ObservableObject {
             let fullPath = "\(path)/\(command)"
             print("🔍 Checking: \(fullPath)")
             let exists = FileManager.default.fileExists(atPath: fullPath)
-            print("   exists: \(exists)")
+      let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
+      print("   exists: \(exists), isExecutable: \(isExecutable)")
 
-            if exists {
+      if isExecutable {
                 print("✅ Found executable '\(command)' at: \(fullPath)")
                 return fullPath
             }
