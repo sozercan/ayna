@@ -37,22 +37,26 @@ class MCPServerManager: ObservableObject {
     }
 
     func updateServerConfig(_ config: MCPServerConfig) {
-        if let index = serverConfigs.firstIndex(where: { $0.id == config.id }) {
-            let wasEnabled = serverConfigs[index].enabled
-            serverConfigs[index] = config
-            saveServerConfigs()
+        guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
+        
+        let wasEnabled = serverConfigs[index].enabled
+        serverConfigs[index] = config
+        saveServerConfigs()
 
-            // Handle connection state changes
-            if wasEnabled && !config.enabled {
+        // Handle connection state changes
+        if wasEnabled && !config.enabled {
+            // Disconnect in the background
+            Task { @MainActor in
                 disconnectServer(config.name)
-            } else if !wasEnabled && config.enabled {
-                Task {
-                    await connectToServer(config)
-                }
+            }
+        } else if !wasEnabled && config.enabled {
+            Task {
+                await connectToServer(config)
             }
         }
     }
 
+    @MainActor
     func removeServerConfig(_ config: MCPServerConfig) {
         disconnectServer(config.name)
         serverConfigs.removeAll { $0.id == config.id }
@@ -132,15 +136,14 @@ class MCPServerManager: ObservableObject {
         }
     }
 
+    @MainActor
     func disconnectServer(_ serverName: String) {
         services[serverName]?.disconnect()
         services.removeValue(forKey: serverName)
 
         // Remove tools from this server
-        DispatchQueue.main.async {
-            self.availableTools.removeAll { $0.serverName == serverName }
-            self.availableResources.removeAll { $0.serverName == serverName }
-        }
+        availableTools.removeAll { $0.serverName == serverName }
+        availableResources.removeAll { $0.serverName == serverName }
     }
 
     func connectToAllEnabledServers() async {
@@ -153,6 +156,7 @@ class MCPServerManager: ObservableObject {
         }
     }
 
+    @MainActor
     func disconnectAllServers() {
         for serverName in services.keys {
             disconnectServer(serverName)
@@ -166,13 +170,10 @@ class MCPServerManager: ObservableObject {
             isDiscovering = true
         }
 
-        var allTools: [MCPTool] = []
-        var allResources: [MCPResource] = []
-
         // Capture services snapshot to avoid concurrency issues
         let servicesSnapshot = services
 
-        await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
+        let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
             for (serverName, service) in servicesSnapshot where service.isConnected {
                 group.addTask {
                     let tools = (try? await service.listTools()) ?? []
@@ -181,16 +182,21 @@ class MCPServerManager: ObservableObject {
                 }
             }
 
+            var allTools: [MCPTool] = []
+            var allResources: [MCPResource] = []
+            
             for await (serverName, tools, resources) in group {
                 print("Discovered \(tools.count) tools from \(serverName)")
                 allTools.append(contentsOf: tools)
                 allResources.append(contentsOf: resources)
             }
+            
+            return (allTools, allResources)
         }
 
         await MainActor.run {
-            self.availableTools = allTools
-            self.availableResources = allResources
+            self.availableTools = results.0
+            self.availableResources = results.1
             self.isDiscovering = false
         }
     }
