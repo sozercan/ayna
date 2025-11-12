@@ -19,6 +19,7 @@
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
+		01000014 /* AppleIntelligenceTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000014 /* AppleIntelligenceTools.swift */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
 		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
@@ -40,6 +41,7 @@
 		02000010 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
 		02000012 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
 		02000013 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		02000014 /* AppleIntelligenceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceTools.swift; sourceTree = "<group>"; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
 		C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
@@ -112,6 +114,7 @@
 			children = (
 				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
 				02000013 /* AppleIntelligenceService.swift */,
+				02000014 /* AppleIntelligenceTools.swift */,
 				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
 				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
 				02000006 /* OpenAIService.swift */,
@@ -206,6 +209,7 @@
 				C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */,
 				01000006 /* OpenAIService.swift in Sources */,
 				01000013 /* AppleIntelligenceService.swift in Sources */,
+				01000014 /* AppleIntelligenceTools.swift in Sources */,
 				01000007 /* ChatView.swift in Sources */,
 				C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */,
 				01000008 /* SidebarView.swift in Sources */,

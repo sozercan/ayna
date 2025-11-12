@@ -661,7 +661,75 @@ struct APISettingsView: View {
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
-                                    }
+                    }
+
+                    // Tool Calling Settings
+                    if AppleIntelligenceToolsCompat.isAvailable(),
+                      let registry = AppleIntelligenceToolsCompat.shared
+                        as? AppleIntelligenceToolRegistry
+                    {
+                      VStack(alignment: .leading, spacing: 6) {
+                        Text("Tool Calling")
+                          .font(.subheadline)
+                          .fontWeight(.medium)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                          Toggle(
+                            "Enable MCP Tools",
+                            isOn: Binding(
+                              get: { registry.enabledForAppleIntelligence },
+                              set: { registry.enabledForAppleIntelligence = $0 }
+                            )
+                          )
+                          .help("Allow Apple Intelligence to use MCP tools")
+
+                          if registry.enabledForAppleIntelligence {
+                            HStack {
+                              Text("Max Tools")
+                              Spacer()
+                              Stepper(
+                                value: Binding(
+                                  get: { registry.maxToolCount },
+                                  set: { registry.maxToolCount = $0 }
+                                ), in: 1...10
+                              ) {
+                                Text("\(registry.maxToolCount)")
+                                  .frame(width: 30, alignment: .trailing)
+                              }
+                            }
+                            .help("Maximum number of tools to provide (3-5 recommended)")
+
+                            let toolStatus = registry.validateToolAvailability()
+                            HStack(spacing: 8) {
+                              Image(
+                                systemName: toolStatus.available
+                                  ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                              )
+                              .foregroundStyle(toolStatus.available ? .green : .orange)
+                              Text(toolStatus.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+
+                            if !toolStatus.available {
+                              Text("Configure MCP servers in the 'MCP Tools' tab")
+                                .font(.caption2)
+                                .foregroundStyle(.blue)
+                                .padding(.top, 4)
+                            }
+                          }
+                        }
+                        .padding(12)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(6)
+
+                        Text(
+                          "MCP tools allow Apple Intelligence to interact with external services like search and file systems. Tools are automatically discovered from enabled MCP servers."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                      }
+                    }
 
                                     // Model Name
                                     VStack(alignment: .leading, spacing: 6) {
