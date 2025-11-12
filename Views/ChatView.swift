@@ -402,7 +402,8 @@ struct ChatView: View {
             }
         }
         
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        // Use cached OpenAI function format for better performance
+        let tools = enabledTools.isEmpty ? nil : MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
 
         if !enabledTools.isEmpty {
             print("🔧 Available MCP tools: \(enabledTools.map { $0.name }.joined(separator: ", "))")
@@ -705,10 +706,10 @@ struct ChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
+        // Get available MCP tools (using cached OpenAI format for performance)
         let mcpManager = MCPServerManager.shared
         let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
         // Reset tool call depth
         toolCallDepth = 0
@@ -747,10 +748,10 @@ struct ChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
+        // Get available MCP tools (using cached OpenAI format for performance)
         let mcpManager = MCPServerManager.shared
         let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
         // Reset tool call depth
         toolCallDepth = 0

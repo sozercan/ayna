@@ -18,6 +18,12 @@ class MCPServerManager: ObservableObject {
 
     private var services: [String: MCPService] = [:] // serverName -> service
     private let queue = DispatchQueue(label: "com.ayna.mcp.manager")
+    
+    // Optimization: Cache enabled tools and their OpenAI function format
+    private var cachedEnabledTools: [MCPTool] = []
+    private var cachedOpenAIFunctions: [[String: Any]] = []
+    private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
+    private var cacheVersion = 0
 
     private init() {
         loadServerConfigs()
@@ -42,6 +48,10 @@ class MCPServerManager: ObservableObject {
         let wasEnabled = serverConfigs[index].enabled
         serverConfigs[index] = config
         saveServerConfigs()
+        
+        // Invalidate cache when server configs change
+        cachedEnabledTools = []
+        cachedOpenAIFunctions = []
 
         // Handle connection state changes
         if wasEnabled && !config.enabled {
@@ -233,6 +243,9 @@ class MCPServerManager: ObservableObject {
             self.availableTools = results.0
             self.availableResources = results.1
             self.isDiscovering = false
+            // Invalidate cache when tools change
+            self.cachedEnabledTools = []
+            self.cachedOpenAIFunctions = []
         }
     }
 
@@ -280,16 +293,25 @@ class MCPServerManager: ObservableObject {
     // MARK: - Tool Execution
 
     func executeTool(name: String, arguments: [String: Any]) async throws -> String {
-        // Find which server provides this tool
-        guard let tool = availableTools.first(where: { $0.name == name }),
-              let service = services[tool.serverName],
-              service.isConnected else {
+        // Optimization: Use O(1) lookup instead of linear search
+        guard let tool = toolLookup[name] ?? availableTools.first(where: { $0.name == name }) else {
+            throw MCPManagerError.toolNotFound(name)
+        }
+        
+        // Thread-safe access to services dictionary
+        let service = await MainActor.run { services[tool.serverName] }
+        guard let service = service, service.isConnected else {
             throw MCPManagerError.toolNotFound(name)
         }
 
         do {
-            let result = try await service.callTool(name: name, arguments: arguments)
+            // Add timeout to prevent hanging tool calls
+            let result = try await withTimeout(seconds: 30) {
+                try await service.callTool(name: name, arguments: arguments)
+            }
             return result
+        } catch MCPServiceError.timeout {
+            throw MCPManagerError.executionFailed(name, "Tool execution timed out after 30 seconds")
         } catch {
             throw MCPManagerError.executionFailed(name, error.localizedDescription)
         }
@@ -315,10 +337,31 @@ class MCPServerManager: ObservableObject {
         Dictionary(grouping: availableTools) { $0.serverName }
     }
 
+    /// Returns all tools from enabled servers (cached for performance)
     func getEnabledTools() -> [MCPTool] {
-        return availableTools.filter { tool in
+        if cachedEnabledTools.isEmpty {
+            refreshToolCache()
+        }
+        return cachedEnabledTools
+    }
+    
+    /// Returns enabled tools in OpenAI function format (cached for performance)
+    func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
+        if cachedOpenAIFunctions.isEmpty {
+            refreshToolCache()
+            cachedOpenAIFunctions = cachedEnabledTools.map { $0.toOpenAIFunction() }
+        }
+        return cachedOpenAIFunctions
+    }
+    
+    /// Refresh the enabled tools cache
+    private func refreshToolCache() {
+        cachedEnabledTools = availableTools.filter { tool in
             serverConfigs.first(where: { $0.name == tool.serverName })?.enabled ?? false
         }
+        toolLookup = Dictionary(uniqueKeysWithValues: cachedEnabledTools.map { ($0.name, $0) })
+        cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
+        cacheVersion += 1
     }
 }
 
