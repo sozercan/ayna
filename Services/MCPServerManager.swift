@@ -117,13 +117,30 @@ class MCPServerManager: ObservableObject {
     func connectToServer(_ config: MCPServerConfig) async {
         guard config.enabled else { return }
 
-        // Don't reconnect if already connected
-        if services[config.name]?.isConnected == true {
+        // Check if already connected (thread-safe)
+        let existingService = await MainActor.run {
+            services[config.name]
+        }
+        
+        if let existingService = existingService, existingService.isConnected {
+            // Already connected - but check if we need to discover tools
+            let hasTools = await MainActor.run {
+                !availableTools.filter { $0.serverName == config.name }.isEmpty
+            }
+            
+            if !hasTools {
+                print("🔍 Server \(config.name) connected but no tools found, discovering...")
+                await discoverTools(for: config.name)
+            }
             return
         }
 
         let service = MCPService(serverConfig: config)
-        services[config.name] = service
+        
+        // Store service in dictionary on MainActor for thread safety
+        await MainActor.run {
+            services[config.name] = service
+        }
 
         do {
             try await service.connect()
@@ -160,13 +177,18 @@ class MCPServerManager: ObservableObject {
     }
 
     func connectToAllEnabledServers() async {
+        let enabledConfigs = serverConfigs.filter { $0.enabled }
+        print("🚀 Connecting to \(enabledConfigs.count) enabled MCP servers: \(enabledConfigs.map { $0.name })")
+        
         await withTaskGroup(of: Void.self) { group in
-            for config in serverConfigs where config.enabled {
+            for config in enabledConfigs {
                 group.addTask {
                     await self.connectToServer(config)
                 }
             }
         }
+        
+        print("✅ All enabled servers connected. Total tools available: \(availableTools.count)")
     }
 
     @MainActor
@@ -215,28 +237,44 @@ class MCPServerManager: ObservableObject {
     }
 
     func discoverTools(for serverName: String) async {
-        guard let service = services[serverName], service.isConnected else {
+        // Thread-safe access to services dictionary
+        let service = await MainActor.run {
+            services[serverName]
+        }
+        
+        guard let service = service, service.isConnected else {
             return
         }
 
+        // Discover tools and resources independently - don't let one failure block the other
+        var tools: [MCPTool] = []
+        var resources: [MCPResource] = []
+        
         do {
-            let tools = try await service.listTools()
-            let resources = try await service.listResources()
-
-            await MainActor.run {
-                // Remove old tools from this server
-                self.availableTools.removeAll { $0.serverName == serverName }
-                self.availableResources.removeAll { $0.serverName == serverName }
-
-                // Add new tools
-                self.availableTools.append(contentsOf: tools)
-                self.availableResources.append(contentsOf: resources)
-            }
-
-            print("Discovered \(tools.count) tools from \(serverName)")
+            tools = try await service.listTools()
+            print("📋 Discovered \(tools.count) tools from \(serverName)")
         } catch {
-            print("Failed to discover tools from \(serverName): \(error)")
+            print("⚠️ Failed to list tools from \(serverName): \(error)")
         }
+        
+        do {
+            resources = try await service.listResources()
+            print("📦 Discovered \(resources.count) resources from \(serverName)")
+        } catch {
+            print("⚠️ Failed to list resources from \(serverName): \(error)")
+        }
+
+        await MainActor.run {
+            // Remove old tools/resources from this server
+            self.availableTools.removeAll { $0.serverName == serverName }
+            self.availableResources.removeAll { $0.serverName == serverName }
+
+            // Add newly discovered items
+            self.availableTools.append(contentsOf: tools)
+            self.availableResources.append(contentsOf: resources)
+        }
+        
+        print("✅ Discovery complete for \(serverName): \(tools.count) tools, \(resources.count) resources")
     }
 
     // MARK: - Tool Execution
