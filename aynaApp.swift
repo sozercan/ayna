@@ -15,6 +15,7 @@ struct aynaApp: App {
         // Initialize MCP servers on app launch
         Task {
             await MCPServerManager.shared.connectToAllEnabledServers()
+            print("✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)")
         }
     }
 

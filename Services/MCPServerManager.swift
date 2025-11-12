@@ -38,7 +38,7 @@ class MCPServerManager: ObservableObject {
 
     func updateServerConfig(_ config: MCPServerConfig) {
         guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
-        
+
         let wasEnabled = serverConfigs[index].enabled
         serverConfigs[index] = config
         saveServerConfigs()
@@ -70,11 +70,23 @@ class MCPServerManager: ObservableObject {
     }
 
     private func loadServerConfigs() {
-        if let data = UserDefaults.standard.data(forKey: "mcp_server_configs"),
-           let decoded = try? JSONDecoder().decode([MCPServerConfig].self, from: data) {
-            serverConfigs = decoded
-        } else {
+        guard let data = UserDefaults.standard.data(forKey: "mcp_server_configs") else {
             // First launch: use default configs
+            print("No saved MCP server configs, using defaults")
+            serverConfigs = defaultServerConfigs()
+            saveServerConfigs()
+            return
+        }
+        
+        do {
+            let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
+            serverConfigs = decoded
+            print("✅ Loaded \(serverConfigs.count) MCP server configs")
+        } catch {
+            print("❌ Failed to load MCP server configs: \(error)")
+            print("⚠️ Clearing corrupted MCP config data")
+            // Clear corrupted data and use defaults
+            UserDefaults.standard.removeObject(forKey: "mcp_server_configs")
             serverConfigs = defaultServerConfigs()
             saveServerConfigs()
         }
@@ -119,6 +131,7 @@ class MCPServerManager: ObservableObject {
 
             // Auto-discover tools
             await discoverTools(for: config.name)
+            print("✅ Tool discovery complete for: \(config.name)")
         } catch {
             print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
             await MainActor.run {
@@ -184,13 +197,13 @@ class MCPServerManager: ObservableObject {
 
             var allTools: [MCPTool] = []
             var allResources: [MCPResource] = []
-            
+
             for await (serverName, tools, resources) in group {
                 print("Discovered \(tools.count) tools from \(serverName)")
                 allTools.append(contentsOf: tools)
                 allResources.append(contentsOf: resources)
             }
-            
+
             return (allTools, allResources)
         }
 

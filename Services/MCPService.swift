@@ -259,7 +259,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
                     continuation.resume(throwing: MCPServiceError.notConnected)
                     return
                 }
-                
+
                 self.requestId += 1
                 let id = self.requestId
 

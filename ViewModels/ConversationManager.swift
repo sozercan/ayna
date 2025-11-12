@@ -153,9 +153,14 @@ class ConversationManager: ObservableObject {
     }
 
     private func loadConversations() {
-        if let data = UserDefaults.standard.data(forKey: conversationsKey),
-           var decoded = try? JSONDecoder().decode([Conversation].self, from: data) {
-
+        guard let data = UserDefaults.standard.data(forKey: conversationsKey) else {
+            print("No saved conversations found")
+            return
+        }
+        
+        do {
+            var decoded = try JSONDecoder().decode([Conversation].self, from: data)
+            
             // Validate and fix models that no longer exist
             let availableModels = OpenAIService.shared.customModels
             let defaultModel = OpenAIService.shared.selectedModel
@@ -173,6 +178,14 @@ class ConversationManager: ObservableObject {
             if needsSave {
                 saveConversations()
             }
+            
+            print("✅ Loaded \(conversations.count) conversations")
+        } catch {
+            print("❌ Failed to load conversations: \(error)")
+            print("⚠️ Clearing corrupted conversation data")
+            // Clear corrupted data
+            UserDefaults.standard.removeObject(forKey: conversationsKey)
+            conversations = []
         }
     }
 

@@ -414,6 +414,7 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping () -> Void,
     onError: @escaping (Error) -> Void,
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
+    onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
     let requestModel = model ?? selectedModel
@@ -504,6 +505,55 @@ class OpenAIService: ObservableObject {
     let messagePayloads: [[String: Any]] = messages.map { message in
       var payload: [String: Any] = ["role": message.role.rawValue]
 
+      // Handle tool role messages (tool results)
+      if message.role == .tool {
+        payload["content"] = message.content
+        // Tool messages need tool_call_id from the assistant's tool call
+        if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+          payload["tool_call_id"] = firstToolCall.id
+        }
+        return payload
+      }
+
+      // Handle assistant messages with tool calls
+      if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+        // Assistant message that made tool calls
+        if !message.content.isEmpty {
+          payload["content"] = message.content
+        } else {
+          payload["content"] = ""  // Empty content when only tool calls
+        }
+        
+        // Add tool_calls array
+        let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+          // Convert AnyCodable arguments to JSON string safely
+          var argumentsDict: [String: Any] = [:]
+          for (key, anyCodable) in toolCall.arguments {
+            argumentsDict[key] = anyCodable.value
+          }
+          
+          guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+                let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
+            print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
+            return nil
+          }
+          
+          return [
+            "id": toolCall.id,
+            "type": "function",
+            "function": [
+              "name": toolCall.toolName,
+              "arguments": argumentsString
+            ]
+          ]
+        }
+        
+        if !toolCallsArray.isEmpty {
+          payload["tool_calls"] = toolCallsArray
+        }
+        return payload
+      }
+
       // Check if message has attachments (multimodal content)
       if let attachments = message.attachments, !attachments.isEmpty {
         var contentArray: [[String: Any]] = []
@@ -555,7 +605,7 @@ class OpenAIService: ObservableObject {
     if stream {
       streamResponse(
         request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-        onToolCall: onToolCall, onReasoning: onReasoning)
+        onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning)
     } else {
       nonStreamResponse(
         request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
@@ -732,6 +782,7 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping () -> Void,
     onError: @escaping (Error) -> Void,
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
+    onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
     // Capture values for async context
@@ -841,12 +892,20 @@ class OpenAIService: ObservableObject {
                     let argsString = toolCallBuffer["arguments"] as? String,
                     let argsData = argsString.data(using: .utf8),
                     let arguments = try? JSONSerialization.jsonObject(with: argsData)
-                      as? [String: Any],
-                    let onToolCall = onToolCall {
+                      as? [String: Any] {
 
-                    let result = await onToolCall(toolCallId, toolName, arguments)
-                    await MainActor.run {
-                      onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+                    // Notify about tool call request (for proper flow)
+                    if let onToolCallRequested = onToolCallRequested {
+                      await MainActor.run {
+                        onToolCallRequested(toolCallId, toolName, arguments)
+                      }
+                    }
+                    // Legacy support: still execute inline if old callback provided
+                    else if let onToolCall = onToolCall {
+                      let result = await onToolCall(toolCallId, toolName, arguments)
+                      await MainActor.run {
+                        onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+                      }
                     }
 
                     // Clear buffer for next tool call
