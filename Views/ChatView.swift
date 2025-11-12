@@ -198,21 +198,16 @@ struct ChatView: View {
             }
           }
 
-          ZStack(alignment: .bottomTrailing) {
+          HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
               DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
                 .frame(height: calculateTextHeight())
                 .font(.system(size: 15))
                 .scrollContentBackground(.hidden)
                 .padding(.leading, 48)  // Extra padding on left for attach button
-                .padding(.trailing, 48)  // Extra padding on right for send button
+                .padding(.trailing, 12)  // Reduced padding on right
                 .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                  RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                .background(.clear)
 
               // Attach file button inside the text box (left side)
               Button(action: attachFile) {
@@ -225,7 +220,42 @@ struct ChatView: View {
               .padding(.bottom, 8)
             }
 
-            // Send button inside the text box (right side)
+            // Model selector (seamlessly integrated)
+            Menu {
+              ForEach(openAIService.customModels, id: \.self) { model in
+                Button(action: {
+                  conversationManager.updateModel(for: conversation, model: model)
+                }) {
+                  HStack {
+                    Text(model)
+                    if currentConversation.model == model {
+                      Image(systemName: "checkmark")
+                    }
+                  }
+                }
+              }
+            } label: {
+              HStack(spacing: 4) {
+                Divider()
+                  .frame(height: 24)
+                  .padding(.leading, 8)
+
+                Text(currentConversation.model)
+                  .font(.system(size: 13))
+                  .foregroundStyle(.primary)
+                  .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                  .font(.system(size: 10))
+                  .foregroundStyle(.secondary)
+              }
+              .padding(.horizontal, 12)
+              .frame(height: calculateTextHeight() + 24)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+
+            // Send button on the rightmost side
             Button(action: sendMessage) {
               Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
                 .font(.system(size: 24))
@@ -237,9 +267,15 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .disabled(messageText.isEmpty && !isGenerating)
-            .padding(.trailing, 8)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 12)
+            .frame(height: calculateTextHeight() + 24)
           }
+          .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+          .overlay(
+            RoundedRectangle(cornerRadius: 12)
+              .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+          )
+          .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
           .padding(.horizontal, 24)
         }
             .padding(.vertical, 20)
@@ -465,8 +501,8 @@ struct ChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
-    isInitialRequest: Bool
-  ) {
+        isInitialRequest: Bool
+    ) {
     let maxToolCallDepth = 10  // Prevent infinite loops
     let mcpManager = MCPServerManager.shared
 

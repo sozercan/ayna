@@ -11,6 +11,7 @@ struct SidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
   @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
+  @Binding var isCreatingNew: Bool
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
 
@@ -75,24 +76,7 @@ struct SidebarView: View {
                         ConversationRow(conversation: conversation)
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                            .contextMenu {
-                                Menu("Change Model") {
-                                    ForEach(openAIService.customModels, id: \.self) { model in
-                                        Button(action: {
-                                            conversationManager.updateModel(for: conversation, model: model)
-                                        }) {
-                                            HStack {
-                                                Text(model)
-                                                if conversation.model == model {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Divider()
-
+              .contextMenu {
                                 if selectedConversations.count > 1 {
                                     Button(role: .destructive, action: {
                                         deleteSelectedConversations()
@@ -125,11 +109,10 @@ struct SidebarView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button(action: {
-                    conversationManager.createNewConversation()
-                    if let newConversation = conversationManager.conversations.first {
-                        selectedConversationId = newConversation.id
-            selectedConversations = [newConversation.id]
-                    }
+          // Enter new conversation creation mode
+          selectedConversationId = nil
+          selectedConversations.removeAll()
+          isCreatingNew = true
                 }) {
                     Image(systemName: "square.and.pencil")
                 }
@@ -186,7 +169,7 @@ struct ConversationRow: View {
 }
 
 #Preview {
-    SidebarView(selectedConversationId: .constant(nil))
+  SidebarView(selectedConversationId: .constant(nil), isCreatingNew: .constant(false))
         .environmentObject(ConversationManager())
         .frame(width: 300, height: 600)
 }

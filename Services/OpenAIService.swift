@@ -403,6 +403,111 @@ class OpenAIService: ObservableObject {
     }.resume()
   }
 
+  // MARK: - Helper Methods for sendMessage
+  
+  private func buildMessagePayload(from message: Message) -> [String: Any] {
+    var payload: [String: Any] = ["role": message.role.rawValue]
+    
+    // Handle tool role messages (tool results)
+    if message.role == .tool {
+      payload["content"] = message.content
+      // Tool messages need tool_call_id from the assistant's tool call
+      if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+        payload["tool_call_id"] = firstToolCall.id
+      }
+      return payload
+    }
+    
+    // Handle assistant messages with tool calls
+    if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+      // Assistant message that made tool calls
+      if !message.content.isEmpty {
+        payload["content"] = message.content
+      } else {
+        payload["content"] = ""  // Empty content when only tool calls
+      }
+      
+      // Add tool_calls array
+      let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+        // Convert AnyCodable arguments to JSON string safely
+        var argumentsDict: [String: Any] = [:]
+        for (key, anyCodable) in toolCall.arguments {
+          argumentsDict[key] = anyCodable.value
+        }
+        
+        guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+              let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
+          print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
+          return nil
+        }
+        
+        return [
+          "id": toolCall.id,
+          "type": "function",
+          "function": [
+            "name": toolCall.toolName,
+            "arguments": argumentsString
+          ]
+        ]
+      }
+      
+      if !toolCallsArray.isEmpty {
+        payload["tool_calls"] = toolCallsArray
+      }
+      return payload
+    }
+    
+    // Check if message has attachments (multimodal content)
+    if let attachments = message.attachments, !attachments.isEmpty {
+      var contentArray: [[String: Any]] = []
+      
+      // Add text content if present
+      if !message.content.isEmpty {
+        contentArray.append([
+          "type": "text",
+          "text": message.content
+        ])
+      }
+      
+      // Add image attachments
+      for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+        let base64Image = attachment.data.base64EncodedString()
+        contentArray.append([
+          "type": "image_url",
+          "image_url": [
+            "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+          ]
+        ])
+      }
+      
+      payload["content"] = contentArray
+    } else {
+      // Simple text content
+      payload["content"] = message.content
+    }
+    
+    return payload
+  }
+  
+  private func validateProviderSettings(for provider: AIProvider) throws {
+    // Skip API key check for Apple Intelligence and AIKit (local)
+    if provider != .appleIntelligence && provider != .aikit {
+      guard !apiKey.isEmpty else {
+        throw OpenAIError.missingAPIKey
+      }
+    }
+    
+    // Validate Azure settings if using Azure
+    if provider == .azure {
+      guard !azureEndpoint.isEmpty else {
+        throw OpenAIError.missingAzureEndpoint
+      }
+      guard !azureDeploymentName.isEmpty else {
+        throw OpenAIError.missingAzureDeployment
+      }
+    }
+  }
+
   func sendMessage(
     messages: [Message],
     model: String? = nil,
@@ -418,8 +523,6 @@ class OpenAIService: ObservableObject {
     onReasoning: ((String) -> Void)? = nil
   ) {
     let requestModel = model ?? selectedModel
-
-    // Check if this specific model has a provider override
     let effectiveProvider = modelProviders[requestModel] ?? provider
 
     // Handle Apple Intelligence separately
@@ -440,31 +543,17 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    // Skip API key check for Apple Intelligence (handled above) and AIKit (local)
-    if effectiveProvider != .aikit {
-      guard !apiKey.isEmpty else {
-        onError(OpenAIError.missingAPIKey)
-        return
-      }
+    // Validate provider settings
+    do {
+      try validateProviderSettings(for: effectiveProvider)
+    } catch {
+      onError(error)
+      return
     }
 
-    // Validate Azure settings if using Azure
-    if effectiveProvider == .azure {
-      guard !azureEndpoint.isEmpty else {
-        onError(OpenAIError.missingAzureEndpoint)
-        return
-      }
-      guard !azureDeploymentName.isEmpty else {
-        onError(OpenAIError.missingAzureDeployment)
-        return
-      }
-    }
-
-    // Check if this model should use the responses API based on endpoint type setting
+    // Check if this model should use the responses API
     let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
-
     if endpointType == .responses {
-      // Use responses API
       responsesAPIRequest(
         messages: messages,
         model: requestModel,
@@ -476,8 +565,10 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    // For Azure, use the conversation's model as the deployment name
-    let apiURL = effectiveProvider == .azure ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider) : getAPIURL(provider: effectiveProvider)
+    // Build API request
+    let apiURL = effectiveProvider == .azure 
+      ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider) 
+      : getAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
       onError(OpenAIError.invalidURL)
@@ -490,101 +581,14 @@ class OpenAIService: ObservableObject {
 
     // Set authentication header based on provider
     switch effectiveProvider {
-    case .openai:
+    case .openai, .azure:
       request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-    case .azure:
-      // Azure can use either api-key header OR Bearer token
-      // Using Bearer token to match the working curl command
-      request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-    case .appleIntelligence:
-      break // No authentication needed for Apple Intelligence
-    case .aikit:
-      break  // No authentication needed for local AIKit containers
+    case .appleIntelligence, .aikit:
+      break // No authentication needed
     }
 
-    let messagePayloads: [[String: Any]] = messages.map { message in
-      var payload: [String: Any] = ["role": message.role.rawValue]
-
-      // Handle tool role messages (tool results)
-      if message.role == .tool {
-        payload["content"] = message.content
-        // Tool messages need tool_call_id from the assistant's tool call
-        if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
-          payload["tool_call_id"] = firstToolCall.id
-        }
-        return payload
-      }
-
-      // Handle assistant messages with tool calls
-      if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-        // Assistant message that made tool calls
-        if !message.content.isEmpty {
-          payload["content"] = message.content
-        } else {
-          payload["content"] = ""  // Empty content when only tool calls
-        }
-        
-        // Add tool_calls array
-        let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
-          // Convert AnyCodable arguments to JSON string safely
-          var argumentsDict: [String: Any] = [:]
-          for (key, anyCodable) in toolCall.arguments {
-            argumentsDict[key] = anyCodable.value
-          }
-          
-          guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
-                let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
-            print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
-            return nil
-          }
-          
-          return [
-            "id": toolCall.id,
-            "type": "function",
-            "function": [
-              "name": toolCall.toolName,
-              "arguments": argumentsString
-            ]
-          ]
-        }
-        
-        if !toolCallsArray.isEmpty {
-          payload["tool_calls"] = toolCallsArray
-        }
-        return payload
-      }
-
-      // Check if message has attachments (multimodal content)
-      if let attachments = message.attachments, !attachments.isEmpty {
-        var contentArray: [[String: Any]] = []
-
-        // Add text content if present
-        if !message.content.isEmpty {
-          contentArray.append([
-            "type": "text",
-            "text": message.content
-          ])
-        }
-
-        // Add image attachments
-        for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-          let base64Image = attachment.data.base64EncodedString()
-          contentArray.append([
-            "type": "image_url",
-            "image_url": [
-              "url": "data:\(attachment.mimeType);base64,\(base64Image)"
-            ]
-          ])
-        }
-
-        payload["content"] = contentArray
-      } else {
-        // Simple text content
-        payload["content"] = message.content
-      }
-
-      return payload
-    }
+    // Build message payloads using helper method
+    let messagePayloads: [[String: Any]] = messages.map { buildMessagePayload(from: $0) }
 
     let body: [String: Any] = [
       "messages": messagePayloads,
@@ -776,6 +780,110 @@ class OpenAIService: ObservableObject {
     task.resume()
   }
 
+  // MARK: - Helper Methods for streamResponse
+  
+  private func getHTTPErrorMessage(statusCode: Int, provider: AIProvider, azureDeployment: String, azureVersion: String) -> String {
+    if statusCode == 400 {
+      if provider == .azure {
+        return "HTTP \(statusCode) - Invalid Azure deployment name '\(azureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(azureVersion)."
+      } else {
+        return "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
+      }
+    } else {
+      return "HTTP \(statusCode)"
+    }
+  }
+  
+  private func processStreamLine(
+    _ line: String,
+    toolCallBuffer: inout [String: Any],
+    toolCallId: inout String,
+    onChunk: @escaping (String) -> Void,
+    onReasoning: ((String) -> Void)?,
+    onToolCall: ((String, String, [String: Any]) async -> String)?,
+    onToolCallRequested: ((String, String, [String: Any]) -> Void)?
+  ) async -> Bool {
+    let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    if trimmedLine.hasPrefix("data: ") {
+      let jsonString = String(trimmedLine.dropFirst(6))
+      
+      if jsonString == "[DONE]" {
+        return true // Signal completion
+      }
+      
+      if let jsonData = jsonString.data(using: .utf8),
+         let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+         let choices = json["choices"] as? [[String: Any]],
+         let firstChoice = choices.first,
+         let delta = firstChoice["delta"] as? [String: Any] {
+        
+        // Handle regular content
+        if let content = delta["content"] as? String {
+          await MainActor.run {
+            onChunk(content)
+          }
+        }
+        
+        // Handle reasoning content (for o1/o3 models)
+        let reasoningContent = delta["reasoning_content"] as? String 
+          ?? delta["reasoning"] as? String 
+          ?? delta["thought"] as? String
+        
+        if let reasoning = reasoningContent, let onReasoning = onReasoning {
+          await MainActor.run {
+            onReasoning(reasoning)
+          }
+        }
+        
+        // Handle tool calls
+        if let toolCalls = delta["tool_calls"] as? [[String: Any]],
+           let toolCall = toolCalls.first {
+          if let id = toolCall["id"] as? String {
+            toolCallId = id
+          }
+          if let function = toolCall["function"] as? [String: Any] {
+            if let name = function["name"] as? String {
+              toolCallBuffer["name"] = name
+            }
+            if let argsChunk = function["arguments"] as? String {
+              let currentArgs = toolCallBuffer["arguments"] as? String ?? ""
+              toolCallBuffer["arguments"] = currentArgs + argsChunk
+            }
+          }
+        }
+        
+        // Check if tool call is complete
+        if let finishReason = firstChoice["finish_reason"] as? String,
+           finishReason == "tool_calls",
+           let toolName = toolCallBuffer["name"] as? String,
+           let argsString = toolCallBuffer["arguments"] as? String,
+           let argsData = argsString.data(using: .utf8),
+           let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
+          
+          // Notify about tool call request (for proper flow)
+          if let onToolCallRequested = onToolCallRequested {
+            await MainActor.run {
+              onToolCallRequested(toolCallId, toolName, arguments)
+            }
+          }
+          // Legacy support: still execute inline if old callback provided
+          else if let onToolCall = onToolCall {
+            let result = await onToolCall(toolCallId, toolName, arguments)
+            await MainActor.run {
+              onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+            }
+          }
+          
+          // Clear buffer for next tool call
+          toolCallBuffer = [:]
+          toolCallId = ""
+        }
+      }
+    }
+    return false // Continue processing
+  }
+
   private func streamResponse(
     request: URLRequest,
     onChunk: @escaping (String) -> Void,
@@ -802,18 +910,12 @@ class OpenAIService: ObservableObject {
         }
 
         guard httpResponse.statusCode == 200 else {
-          // Provide helpful error messages
-          let errorMessage: String
-          if httpResponse.statusCode == 400 {
-            if currentProvider == .azure {
-              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
-            } else {
-              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid request. Check your model name and parameters."
-            }
-          } else {
-            errorMessage = "HTTP \(httpResponse.statusCode)"
-          }
-
+          let errorMessage = getHTTPErrorMessage(
+            statusCode: httpResponse.statusCode,
+            provider: currentProvider,
+            azureDeployment: currentAzureDeployment,
+            azureVersion: currentAzureAPIVersion
+          )
           await MainActor.run {
             onError(OpenAIError.apiError(errorMessage))
           }
@@ -829,90 +931,22 @@ class OpenAIService: ObservableObject {
 
           // Check if we have a newline (UTF-8: 0x0A)
           if byte == 0x0A {
-            // Convert buffer to string
             if let line = String(data: buffer, encoding: .utf8) {
-              let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-
-              if trimmedLine.hasPrefix("data: ") {
-                let jsonString = String(trimmedLine.dropFirst(6))
-
-                if jsonString == "[DONE]" {
-                  await MainActor.run {
-                    onComplete()
-                  }
-                  return
+              let shouldComplete = await processStreamLine(
+                line,
+                toolCallBuffer: &toolCallBuffer,
+                toolCallId: &toolCallId,
+                onChunk: onChunk,
+                onReasoning: onReasoning,
+                onToolCall: onToolCall,
+                onToolCallRequested: onToolCallRequested
+              )
+              
+              if shouldComplete {
+                await MainActor.run {
+                  onComplete()
                 }
-
-                if let jsonData = jsonString.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let firstChoice = choices.first,
-                  let delta = firstChoice["delta"] as? [String: Any] {
-
-                  // Handle regular content
-                  if let content = delta["content"] as? String {
-                    await MainActor.run {
-                      onChunk(content)
-                    }
-                  }
-
-                  // Handle reasoning content (for o1/o3 models)
-                  // Try multiple possible field names
-                  let reasoningContent =
-                    delta["reasoning_content"] as? String ?? delta["reasoning"] as? String ?? delta[
-                      "thought"] as? String
-
-                  if let reasoning = reasoningContent, let onReasoning = onReasoning {
-                    await MainActor.run {
-                      onReasoning(reasoning)
-                    }
-                  }
-
-                  // Handle tool calls
-                  if let toolCalls = delta["tool_calls"] as? [[String: Any]],
-                    let toolCall = toolCalls.first {
-                    if let id = toolCall["id"] as? String {
-                      toolCallId = id
-                    }
-                    if let function = toolCall["function"] as? [String: Any] {
-                      if let name = function["name"] as? String {
-                        toolCallBuffer["name"] = name
-                      }
-                      if let argsChunk = function["arguments"] as? String {
-                        let currentArgs = toolCallBuffer["arguments"] as? String ?? ""
-                        toolCallBuffer["arguments"] = currentArgs + argsChunk
-                      }
-                    }
-                  }
-
-                  // Check if tool call is complete
-                  if let finishReason = firstChoice["finish_reason"] as? String,
-                    finishReason == "tool_calls",
-                    let toolName = toolCallBuffer["name"] as? String,
-                    let argsString = toolCallBuffer["arguments"] as? String,
-                    let argsData = argsString.data(using: .utf8),
-                    let arguments = try? JSONSerialization.jsonObject(with: argsData)
-                      as? [String: Any] {
-
-                    // Notify about tool call request (for proper flow)
-                    if let onToolCallRequested = onToolCallRequested {
-                      await MainActor.run {
-                        onToolCallRequested(toolCallId, toolName, arguments)
-                      }
-                    }
-                    // Legacy support: still execute inline if old callback provided
-                    else if let onToolCall = onToolCall {
-                      let result = await onToolCall(toolCallId, toolName, arguments)
-                      await MainActor.run {
-                        onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
-                      }
-                    }
-
-                    // Clear buffer for next tool call
-                    toolCallBuffer = [:]
-                    toolCallId = ""
-                  }
-                }
+                return
               }
             }
             buffer.removeAll()
