@@ -19,6 +19,10 @@ struct ChatView: View {
   @State private var toolCallDepth = 0
   @State private var currentToolName: String?
 
+  // Cached font for text height calculation (computed property to avoid lazy initialization issues)
+  private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
+  private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+
   // Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
@@ -302,13 +306,11 @@ struct ChatView: View {
         // Approximate available width in the text view
         let availableWidth: CGFloat = 600 // Approximate - will be constrained by actual view width
 
-        let font = NSFont.systemFont(ofSize: 15)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font]
-
+    // Use cached font and attributes for better performance
         let boundingRect = (messageText as NSString).boundingRect(
             with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes
+      attributes: textAttributes
         )
 
         let calculatedHeight = ceil(boundingRect.height) + 4 // Add small padding
@@ -517,6 +519,9 @@ struct ChatView: View {
     let maxToolCallDepth = 10  // Prevent infinite loops
     let mcpManager = MCPServerManager.shared
 
+    // Cache the conversation index to avoid repeated lookups in onChunk
+    let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id })
+
         openAIService.sendMessage(
             messages: messages,
             model: model,
@@ -526,10 +531,11 @@ struct ChatView: View {
             onChunk: { chunk in
                 // Clear tool execution indicator when we start receiving actual content
                 if currentToolName != nil {
-                    currentToolName = nil
-                }
+          currentToolName = nil
+        }
 
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+        // Use cached index for better performance (avoids lookup on every chunk)
+        if let index = conversationIndex,
                    var lastMessage = conversationManager.conversations[index].messages.last,
                    lastMessage.role == .assistant {
                     lastMessage.content += chunk

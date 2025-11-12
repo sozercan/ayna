@@ -60,6 +60,10 @@ struct NewChatView: View {
   @State private var isGenerating = false
   @State private var currentConversationId: UUID?
 
+  // Cached font for text height calculation (computed property to avoid lazy initialization issues)
+  private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
+  private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+
   // Get the current conversation being created
   private var currentConversation: Conversation? {
     guard let id = currentConversationId else { return nil }
@@ -292,13 +296,12 @@ struct NewChatView: View {
     }
 
     let availableWidth: CGFloat = 600
-    let font = NSFont.systemFont(ofSize: 15)
-    let attributes: [NSAttributedString.Key: Any] = [.font: font]
 
+    // Use cached font and attributes for better performance
     let boundingRect = (messageText as NSString).boundingRect(
       with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
       options: [.usesLineFragmentOrigin, .usesFontLeading],
-      attributes: attributes
+      attributes: textAttributes
     )
 
     let calculatedHeight = ceil(boundingRect.height) + 4
@@ -418,6 +421,10 @@ struct NewChatView: View {
     let enabledTools = mcpManager.getEnabledTools()
     let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
+    // Cache the conversation index to avoid repeated lookups in onChunk
+    let conversationIndex = conversationManager.conversations.firstIndex(where: {
+      $0.id == conversation.id })
+
     // Send the message using the public API
     openAIService.sendMessage(
       messages: currentMessages,
@@ -426,10 +433,8 @@ struct NewChatView: View {
       tools: tools,
       conversationId: conversation.id,
       onChunk: { chunk in
-        // Properly accumulate chunks by appending to existing content
-        if let index = self.conversationManager.conversations.firstIndex(where: {
-          $0.id == conversation.id
-        }),
+        // Properly accumulate chunks by appending to existing content (use cached index)
+        if let index = conversationIndex,
           var lastMessage = self.conversationManager.conversations[index].messages.last,
           lastMessage.role == .assistant
         {
