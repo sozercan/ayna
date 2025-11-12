@@ -46,6 +46,7 @@ class OpenAIService: ObservableObject {
 
   // Track current task for cancellation
   private var currentTask: URLSessionDataTask?
+  private var currentStreamTask: Task<Void, Never>?
 
   @Published var provider: AIProvider {
     didSet {
@@ -287,8 +288,12 @@ class OpenAIService: ObservableObject {
   }
 
   func cancelCurrentRequest() {
+    print("🛑 Canceling current request...")
     currentTask?.cancel()
     currentTask = nil
+    currentStreamTask?.cancel()
+    currentStreamTask = nil
+    print("✅ Request cancellation initiated")
   }
 
   func generateImage(
@@ -404,10 +409,10 @@ class OpenAIService: ObservableObject {
   }
 
   // MARK: - Helper Methods for sendMessage
-  
+
   private func buildMessagePayload(from message: Message) -> [String: Any] {
     var payload: [String: Any] = ["role": message.role.rawValue]
-    
+
     // Handle tool role messages (tool results)
     if message.role == .tool {
       payload["content"] = message.content
@@ -417,7 +422,7 @@ class OpenAIService: ObservableObject {
       }
       return payload
     }
-    
+
     // Handle assistant messages with tool calls
     if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
       // Assistant message that made tool calls
@@ -426,7 +431,7 @@ class OpenAIService: ObservableObject {
       } else {
         payload["content"] = ""  // Empty content when only tool calls
       }
-      
+
       // Add tool_calls array
       let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
         // Convert AnyCodable arguments to JSON string safely
@@ -434,13 +439,13 @@ class OpenAIService: ObservableObject {
         for (key, anyCodable) in toolCall.arguments {
           argumentsDict[key] = anyCodable.value
         }
-        
+
         guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
               let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
           print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
           return nil
         }
-        
+
         return [
           "id": toolCall.id,
           "type": "function",
@@ -450,17 +455,17 @@ class OpenAIService: ObservableObject {
           ]
         ]
       }
-      
+
       if !toolCallsArray.isEmpty {
         payload["tool_calls"] = toolCallsArray
       }
       return payload
     }
-    
+
     // Check if message has attachments (multimodal content)
     if let attachments = message.attachments, !attachments.isEmpty {
       var contentArray: [[String: Any]] = []
-      
+
       // Add text content if present
       if !message.content.isEmpty {
         contentArray.append([
@@ -468,7 +473,7 @@ class OpenAIService: ObservableObject {
           "text": message.content
         ])
       }
-      
+
       // Add image attachments
       for attachment in attachments where attachment.mimeType.starts(with: "image/") {
         let base64Image = attachment.data.base64EncodedString()
@@ -479,16 +484,16 @@ class OpenAIService: ObservableObject {
           ]
         ])
       }
-      
+
       payload["content"] = contentArray
     } else {
       // Simple text content
       payload["content"] = message.content
     }
-    
+
     return payload
   }
-  
+
   private func validateProviderSettings(for provider: AIProvider) throws {
     // Skip API key check for Apple Intelligence and AIKit (local)
     if provider != .appleIntelligence && provider != .aikit {
@@ -496,7 +501,7 @@ class OpenAIService: ObservableObject {
         throw OpenAIError.missingAPIKey
       }
     }
-    
+
     // Validate Azure settings if using Azure
     if provider == .azure {
       guard !azureEndpoint.isEmpty else {
@@ -566,8 +571,9 @@ class OpenAIService: ObservableObject {
     }
 
     // Build API request
-    let apiURL = effectiveProvider == .azure 
-      ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider) 
+    let apiURL =
+      effectiveProvider == .azure
+      ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
       : getAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
@@ -781,7 +787,7 @@ class OpenAIService: ObservableObject {
   }
 
   // MARK: - Helper Methods for streamResponse
-  
+
   private func getHTTPErrorMessage(statusCode: Int, provider: AIProvider, azureDeployment: String, azureVersion: String) -> String {
     if statusCode == 400 {
       if provider == .azure {
@@ -793,7 +799,7 @@ class OpenAIService: ObservableObject {
       return "HTTP \(statusCode)"
     }
   }
-  
+
   private func processStreamLine(
     _ line: String,
     toolCallBuffer: inout [String: Any],
@@ -804,38 +810,39 @@ class OpenAIService: ObservableObject {
     onToolCallRequested: ((String, String, [String: Any]) -> Void)?
   ) async -> Bool {
     let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-    
+
     if trimmedLine.hasPrefix("data: ") {
       let jsonString = String(trimmedLine.dropFirst(6))
-      
+
       if jsonString == "[DONE]" {
         return true // Signal completion
       }
-      
+
       if let jsonData = jsonString.data(using: .utf8),
          let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
          let choices = json["choices"] as? [[String: Any]],
          let firstChoice = choices.first,
          let delta = firstChoice["delta"] as? [String: Any] {
-        
+
         // Handle regular content
         if let content = delta["content"] as? String {
           await MainActor.run {
             onChunk(content)
           }
         }
-        
+
         // Handle reasoning content (for o1/o3 models)
-        let reasoningContent = delta["reasoning_content"] as? String 
-          ?? delta["reasoning"] as? String 
+        let reasoningContent =
+          delta["reasoning_content"] as? String
+          ?? delta["reasoning"] as? String
           ?? delta["thought"] as? String
-        
+
         if let reasoning = reasoningContent, let onReasoning = onReasoning {
           await MainActor.run {
             onReasoning(reasoning)
           }
         }
-        
+
         // Handle tool calls
         if let toolCalls = delta["tool_calls"] as? [[String: Any]],
            let toolCall = toolCalls.first {
@@ -852,7 +859,7 @@ class OpenAIService: ObservableObject {
             }
           }
         }
-        
+
         // Check if tool call is complete
         if let finishReason = firstChoice["finish_reason"] as? String,
            finishReason == "tool_calls",
@@ -860,7 +867,7 @@ class OpenAIService: ObservableObject {
            let argsString = toolCallBuffer["arguments"] as? String,
            let argsData = argsString.data(using: .utf8),
            let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
-          
+
           // Notify about tool call request (for proper flow)
           if let onToolCallRequested = onToolCallRequested {
             await MainActor.run {
@@ -874,7 +881,7 @@ class OpenAIService: ObservableObject {
               onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
             }
           }
-          
+
           // Clear buffer for next tool call
           toolCallBuffer = [:]
           toolCallId = ""
@@ -898,7 +905,7 @@ class OpenAIService: ObservableObject {
     let currentAzureDeployment = azureDeploymentName
     let currentAzureAPIVersion = azureAPIVersion
 
-    Task {
+    let task = Task {
       do {
         let (bytes, response) = try await urlSession.bytes(for: request)
 
@@ -927,6 +934,15 @@ class OpenAIService: ObservableObject {
         var toolCallId = ""
 
         for try await byte in bytes {
+          // Check if task was cancelled
+          if Task.isCancelled {
+            print("🛑 Stream task cancelled, stopping iteration")
+            await MainActor.run {
+              self.currentStreamTask = nil
+            }
+            return
+          }
+
           buffer.append(byte)
 
           // Check if we have a newline (UTF-8: 0x0A)
@@ -941,9 +957,10 @@ class OpenAIService: ObservableObject {
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested
               )
-              
+
               if shouldComplete {
                 await MainActor.run {
+                  self.currentStreamTask = nil
                   onComplete()
                 }
                 return
@@ -954,10 +971,12 @@ class OpenAIService: ObservableObject {
         }
 
         await MainActor.run {
+          self.currentStreamTask = nil
           onComplete()
         }
       } catch {
         await MainActor.run {
+          self.currentStreamTask = nil
           // Check if it's a timeout error and provide a better message
           if let urlError = error as? URLError, urlError.code == .timedOut {
             onError(
@@ -967,12 +986,18 @@ class OpenAIService: ObservableObject {
             onError(
               OpenAIError.apiError(
                 "Network connection was lost. The server may have rejected the request."))
+          } else if (error as? CancellationError) != nil {
+            // Task was cancelled, don't report as error
+            print("✅ Stream task was cancelled successfully")
           } else {
             onError(error)
           }
         }
       }
     }
+
+    // Store the task for cancellation
+    currentStreamTask = task
   }
 
   private func nonStreamResponse(

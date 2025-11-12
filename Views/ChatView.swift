@@ -19,6 +19,10 @@ struct ChatView: View {
   @State private var toolCallDepth = 0
   @State private var currentToolName: String?
 
+  // Cached font for text height calculation (computed property to avoid lazy initialization issues)
+  private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
+  private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+
   // Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
@@ -257,16 +261,22 @@ struct ChatView: View {
 
             // Send button on the rightmost side
             Button(action: sendMessage) {
-              Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(
-                  messageText.isEmpty && !isGenerating
-                    ? Color.secondary.opacity(0.5) : Color.accentColor
-                )
-                .symbolEffect(.bounce, value: isGenerating)
+              ZStack {
+                if isGenerating {
+                  Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.accentColor)
+                    .symbolEffect(.pulse, value: isGenerating)
+                } else {
+                  Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(
+                      messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                }
+              }
             }
             .buttonStyle(.plain)
-            .disabled(messageText.isEmpty && !isGenerating)
+            .allowsHitTesting(isGenerating || !messageText.isEmpty)
             .padding(.horizontal, 12)
             .frame(height: calculateTextHeight() + 24)
           }
@@ -296,13 +306,11 @@ struct ChatView: View {
         // Approximate available width in the text view
         let availableWidth: CGFloat = 600 // Approximate - will be constrained by actual view width
 
-        let font = NSFont.systemFont(ofSize: 15)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font]
-
+    // Use cached font and attributes for better performance
         let boundingRect = (messageText as NSString).boundingRect(
             with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes
+      attributes: textAttributes
         )
 
         let calculatedHeight = ceil(boundingRect.height) + 4 // Add small padding
@@ -354,14 +362,18 @@ struct ChatView: View {
   }
 
   private func sendMessage() {
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    if isGenerating {
+      // Stop generation immediately
+      print("🛑 Stop button clicked, cancelling...")
+      OpenAIService.shared.cancelCurrentRequest()
+      isGenerating = false
+      currentToolName = nil
+      toolCallDepth = 0
+      print("✅ isGenerating set to FALSE after stop")
             return
-        }
+    }
 
-        if isGenerating {
-            // Stop generation
-            OpenAIService.shared.cancelCurrentRequest()
-            isGenerating = false
+    guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
 
@@ -393,7 +405,8 @@ struct ChatView: View {
         messageText = ""
     attachedFiles = []  // Clear attached files after sending
     errorMessage = nil
-        isGenerating = true
+    isGenerating = true
+    print("🔄 isGenerating set to TRUE")
 
         // Get updated messages after adding user message
         guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
@@ -506,6 +519,9 @@ struct ChatView: View {
     let maxToolCallDepth = 10  // Prevent infinite loops
     let mcpManager = MCPServerManager.shared
 
+    // Cache the conversation index to avoid repeated lookups in onChunk
+    let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id })
+
         openAIService.sendMessage(
             messages: messages,
             model: model,
@@ -515,10 +531,11 @@ struct ChatView: View {
             onChunk: { chunk in
                 // Clear tool execution indicator when we start receiving actual content
                 if currentToolName != nil {
-                    currentToolName = nil
-                }
+          currentToolName = nil
+        }
 
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+        // Use cached index for better performance (avoids lookup on every chunk)
+        if let index = conversationIndex,
                    var lastMessage = conversationManager.conversations[index].messages.last,
                    lastMessage.role == .assistant {
                     lastMessage.content += chunk
@@ -526,10 +543,15 @@ struct ChatView: View {
                 }
             },
             onComplete: {
-                // Only clear state if no tool call is pending
-                // (if currentToolName is set, a tool call handler will manage the state)
-                if currentToolName == nil {
-                    isGenerating = false
+        // Only clear state if no tool call is pending
+        // If currentToolName is set, a tool call was requested and will execute
+        // The tool execution will manage the state from there
+        if currentToolName == nil {
+          print("✅ onComplete: isGenerating set to FALSE (no tool calls pending)")
+          isGenerating = false
+        } else {
+          print(
+            "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))")
                 }
                 conversationManager.saveConversations()
             },
