@@ -53,11 +53,12 @@ Models → ViewModels → Views → Services
 - `MessageView`: Individual message bubble with avatar, copy/like actions
 - `SettingsView`: 4-tab settings (General, Model, API, About)
 
-**Services** (`Services/OpenAIService.swift`)
-- `OpenAIService.shared`: Singleton managing API communication
-- Supports both OpenAI and Azure OpenAI with provider-specific authentication
-- OpenAI uses `Bearer` token, Azure uses `api-key` header
-- Streaming and non-streaming response modes
+**Services** (`Services/OpenAIService.swift`, `Services/MCPServerManager.swift`, `Services/MCPService.swift`)
+- `OpenAIService.shared`: Singleton managing API communication with OpenAI-compatible endpoints
+- Supports OpenAI, Azure OpenAI, AIKit with provider-specific authentication
+- Tool calling support via `onToolCallRequested` callback
+- `MCPServerManager.shared`: Manages MCP server connections, tool discovery, and execution with performance optimizations
+- `MCPService`: Individual MCP server communication via stdio
 - API key stored in UserDefaults (Note: Real keychain not yet implemented despite comments)
 
 ### State Management Pattern
@@ -92,6 +93,30 @@ The app supports multiple AI providers via the `AIProvider` enum:
 - Settings UI in `AIKitSettingsView` for pulling/running/stopping containers
 
 When adding new providers, extend `AIProvider` enum and update `OpenAIService.getAPIURL()` and authentication logic.
+
+### MCP (Model Context Protocol) Integration
+The app supports tool calling via MCP servers for extended functionality:
+
+**Architecture**:
+- `MCPServerManager`: Manages server connections, tool discovery, and execution
+- `MCPService`: Handles stdio communication with individual MCP servers
+- `MCPModels.swift`: Data models for tools, resources, and tool calls
+- Tool calling flow: User message → LLM requests tool → Execute via MCP → LLM processes result → Response
+
+**Supported MCP Servers**:
+- `brave-search`: Web search capabilities (requires Brave Search API key)
+- `filesystem`: File system access for reading/writing files
+
+**Tool Calling Flow**:
+1. User sends message with available tools in context
+2. LLM decides to call tool(s) and returns `tool_calls` in response
+3. App executes tools via `MCPServerManager.executeTool()`
+4. Tool results added as messages with `role: .tool`
+5. Automatic continuation sends tool results back to LLM
+6. LLM processes results and provides final answer
+7. Maximum depth of 5 tool call iterations to prevent loops
+
+**Thread Safety**: All MCP operations use `MainActor.run` for thread-safe dictionary access to services.
 
 ## Key Implementation Details
 
@@ -195,7 +220,6 @@ The README outlines features ready for implementation due to extensible architec
 ### Known Limitations
 - No actual Keychain implementation despite comments
 - No unit tests
-- No error recovery for failed messages
 - No retry logic for network failures
 - No token usage tracking or cost calculation
 - Streaming response parsing is simplistic (may fail on complex SSE formats)
@@ -212,6 +236,7 @@ The README outlines features ready for implementation due to extensible architec
 - `AGENTS.md` - This file - development guide for AI assistants
 - `CLAUDE.md` - Symlink to AGENTS.md
 - `.github/copilot-instructions.md` - Symlink to AGENTS.md for GitHub Copilot
+- `MCP_OPTIMIZATIONS.md` - Performance optimizations for MCP architecture (January 2025)
 - `LICENSE` - MIT License
 
 ### Assets

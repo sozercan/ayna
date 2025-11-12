@@ -29,14 +29,14 @@ struct ChatView: View {
     currentConversation.messages.filter { message in
       // Hide system and tool messages (tool messages are internal only)
       guard message.role != .system && message.role != .tool else { return false }
-      
+
       // Show if: has content, has image data, or is generating image
       // Don't show empty assistant messages unless we're actively generating
       if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
         // Only show empty assistant message if it's the last message and we're generating
         return message.id == currentConversation.messages.last?.id && isGenerating
       }
-      
+
       return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
     }
   }
@@ -381,12 +381,12 @@ struct ChatView: View {
 
         // Get available MCP tools
         let mcpManager = MCPServerManager.shared
-        
+
         print("📊 Total available tools in manager: \(mcpManager.availableTools.count)")
         print("📊 Enabled server configs: \(mcpManager.serverConfigs.filter { $0.enabled }.map { $0.name })")
-        
+
         var enabledTools = mcpManager.getEnabledTools()
-        
+
         // If we have enabled servers but no tools yet, wait a moment and try again
         // This handles the race condition where servers are connecting at app startup
         if enabledTools.isEmpty {
@@ -401,7 +401,7 @@ struct ChatView: View {
                 }
             }
         }
-        
+
         // Use cached OpenAI function format for better performance
         let tools = enabledTools.isEmpty ? nil : MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
 
@@ -413,7 +413,7 @@ struct ChatView: View {
 
         // Reset tool call depth for new user messages
         toolCallDepth = 0
-        
+
         sendMessageWithToolSupport(
             messages: currentMessages,
             model: updatedConversation.model,
@@ -481,7 +481,7 @@ struct ChatView: View {
                 if currentToolName != nil {
                     currentToolName = nil
                 }
-                
+
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                    var lastMessage = conversationManager.conversations[index].messages.last,
                    lastMessage.role == .assistant {
@@ -511,8 +511,8 @@ struct ChatView: View {
             onToolCallRequested: { toolCallId, toolName, arguments in
                 // Tool call was requested by the LLM
                 print("🔧 Tool call requested: \(toolName)")
-                currentToolName = toolName
-                
+        currentToolName = toolName
+
                 // Check depth limit
                 guard toolCallDepth < maxToolCallDepth else {
                     print("⚠️ Max tool call depth reached, stopping")
@@ -520,19 +520,19 @@ struct ChatView: View {
                     currentToolName = nil
                     return
                 }
-                
+
                 toolCallDepth += 1
-                
+
                 // Store the tool call in the last assistant message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                    var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    
+          lastMessage.role == .assistant {
+
                     // Convert arguments to AnyCodable
                     let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
                         result[pair.key] = AnyCodable(pair.value)
                     }
-                    
+
                     let toolCall = MCPToolCall(
                         id: toolCallId,
                         toolName: toolName,
@@ -542,20 +542,20 @@ struct ChatView: View {
                     conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
                     conversationManager.saveConversations()
                 }
-                
+
                 // Execute the tool asynchronously
                 Task {
                     do {
                         print("⚙️ Executing tool: \(toolName)")
                         let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
                         print("✅ Tool result received (\(result.count) chars)")
-                        
+
                         // Create a tool message with the result
                         await MainActor.run {
                             let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
                                 result[pair.key] = AnyCodable(pair.value)
                             }
-                            
+
                             var toolMessage = Message(
                                 role: .tool,
                                 content: result
@@ -567,21 +567,21 @@ struct ChatView: View {
                                 result: result
                             )]
                             conversationManager.addMessage(to: conversation, message: toolMessage)
-                            
+
                             // Get updated conversation with tool result
                             guard let updatedConv = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
                                 isGenerating = false
                                 currentToolName = nil
-                                return
+                return
                             }
-                            
+
                             // Add new empty assistant message for LLM response
                             let newAssistantMessage = Message(role: .assistant, content: "", model: model)
                             conversationManager.addMessage(to: conversation, message: newAssistantMessage)
-                            
+
                             print("🔄 Sending follow-up request with tool results...")
-                            currentToolName = "Analyzing \(toolName) results"
-                            
+              currentToolName = "Analyzing \(toolName) results"
+
                             // Automatically continue the conversation with tool results
                             sendMessageWithToolSupport(
                                 messages: updatedConv.messages,
@@ -711,9 +711,9 @@ struct ChatView: View {
         let enabledTools = mcpManager.getEnabledTools()
         let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
-        // Reset tool call depth
+    // Reset tool call depth
         toolCallDepth = 0
-        
+
         sendMessageWithToolSupport(
             messages: currentMessages,
             model: updatedConversation.model,
@@ -753,9 +753,9 @@ struct ChatView: View {
         let enabledTools = mcpManager.getEnabledTools()
         let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
-        // Reset tool call depth
+    // Reset tool call depth
         toolCallDepth = 0
-        
+
         sendMessageWithToolSupport(
             messages: currentMessages,
             model: model,

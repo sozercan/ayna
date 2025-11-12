@@ -9,6 +9,7 @@ A native macOS ChatGPT client built with SwiftUI.
 
 - 💬 Native macOS chat interface with streaming responses
 - ☁️ Support for OpenAI, Azure OpenAI, and AIKit (local models via Podman)
+- 🛠️ MCP (Model Context Protocol) integration for tool calling (search, filesystem access)
 - 🗂️ Conversation management with search
 - 🎨 Clean, modern design with keyboard shortcuts
 - 💾 Local data storage
@@ -42,6 +43,12 @@ Build and run with Cmd+R.
 2. Set up [GPU access](https://podman-desktop.io/docs/podman/gpu) (recommended for performance)
 3. Go to Settings → Models → New Model → AIKit tab
 4. Select a model and click "Pull & Run Model"
+
+### MCP Tools
+1. Go to Settings → MCP Tools
+2. Enable [brave-search](https://github.com/modelcontextprotocol/servers) for web search or [filesystem](https://github.com/modelcontextprotocol/servers) for file access
+3. Provide any required API keys (e.g., Brave Search API key)
+4. Tools automatically engage when relevant to your queries
 
 ## Keyboard Shortcuts
 
