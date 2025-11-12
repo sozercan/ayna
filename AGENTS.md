@@ -195,11 +195,63 @@ App uses `App Sandbox` entitlement (`ayna.entitlements`) with:
 - `ScrollViewReader` with `.scrollTo()` for auto-scroll to latest message
 - `.transaction { transaction in transaction.disablesAnimations = true }` to prevent unwanted animations in `ContentView`
 
+### Debugging and Logging
+**IMPORTANT**: Always use comprehensive logging for complex flows and error scenarios.
+
+**Logging Guidelines**:
+- Use `print()` statements with emoji prefixes for quick visual scanning:
+  - `🔌` - Connection/initialization events
+  - `✅` - Success operations
+  - `❌` - Error conditions
+  - `⚠️` - Warnings or recoverable issues
+  - `🔍` - Discovery/search operations
+  - `📋` - Tool/resource listings
+  - `📦` - Resource operations
+  - `🔄` - State changes or retry operations
+  - `🚀` - Startup/launch events
+
+**When to Add Logging**:
+1. **Complex Flows**: Any multi-step async operation (e.g., MCP server initialization, tool calling chains)
+2. **Error Paths**: Every catch block should log the error with context
+3. **State Transitions**: When changing important state (connecting, disconnecting, enabling/disabling)
+4. **Data Validation**: When validating or sanitizing user input or loaded data
+5. **Background Operations**: All async/Task operations that run in the background
+6. **Integration Points**: When communicating with external services (APIs, MCP servers, processes)
+
+**Viewing Debug Logs**:
+```bash
+# Real-time log streaming
+log stream --predicate 'process == "Ayna"' --level debug --style compact
+
+# View recent logs
+log show --predicate 'process == "Ayna"' --last 5m --info --debug
+
+# Check crash reports
+ls -lt ~/Library/Logs/DiagnosticReports/ | grep Ayna
+```
+
+**Example Logging Pattern**:
+```swift
+do {
+    print("🔌 Attempting to connect to MCP server: \(config.name)")
+    try await service.connect()
+    print("✅ Connected to MCP server: \(config.name)")
+
+    await discoverTools(for: config.name)
+    print("✅ Tool discovery complete for: \(config.name)")
+} catch {
+    print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
+    // Handle error...
+}
+```
+
 ### Error Handling
 - Custom `OpenAIError` enum in `OpenAIService` conforming to `LocalizedError`
 - Errors displayed to user in chat view with red text
 - Network errors and API errors handled separately
 - Missing configuration shows user-friendly messages (e.g., "Please add your API key in Settings")
+- **Always log errors with context** before handling them
+- Use defensive programming: validate data types, check optionals, handle edge cases
 
 ### Naming Conventions
 - Views: `{Purpose}View.swift` (e.g., `ChatView`, `SettingsView`)
@@ -234,9 +286,6 @@ The README outlines features ready for implementation due to extensible architec
 ### Documentation
 - `README.md` - Comprehensive feature list and setup guide
 - `AGENTS.md` - This file - development guide for AI assistants
-- `CLAUDE.md` - Symlink to AGENTS.md
-- `.github/copilot-instructions.md` - Symlink to AGENTS.md for GitHub Copilot
-- `MCP_OPTIMIZATIONS.md` - Performance optimizations for MCP architecture (January 2025)
 - `LICENSE` - MIT License
 
 ### Assets

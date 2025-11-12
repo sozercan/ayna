@@ -12,15 +12,20 @@ struct aynaApp: App {
     @StateObject private var conversationManager = ConversationManager()
 
     init() {
-        // Initialize MCP servers on app launch
+        // Initialize MCP servers on app launch with error handling
         Task {
-            await MCPServerManager.shared.connectToAllEnabledServers()
-            print("✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)")
+            do {
+                await MCPServerManager.shared.connectToAllEnabledServers()
+                print("✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)")
+            } catch {
+                print("⚠️ MCP initialization encountered errors: \(error.localizedDescription)")
+                print("App will continue without MCP servers.")
+            }
         }
     }
 
     var body: some Scene {
-        WindowGroup {   
+        WindowGroup {
             ContentView()
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 600)

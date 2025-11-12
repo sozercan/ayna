@@ -46,10 +46,21 @@ class MCPService: ObservableObject, @unchecked Sendable {
         let outputPipe = Pipe()
         let errorPipe = Pipe()
 
-        // Find the command executable
+        // Find the command executable with error handling
         print("🔍 Looking for executable: \(serverConfig.command)")
-        let commandPath = try findExecutable(serverConfig.command)
-        print("✅ Using executable path: \(commandPath)")
+        let commandPath: String
+        do {
+            commandPath = try findExecutable(serverConfig.command)
+            print("✅ Using executable path: \(commandPath)")
+        } catch {
+            let errorMsg = "Executable not found: \(serverConfig.command) - \(error.localizedDescription)"
+            print("❌ \(errorMsg)")
+            Task { @MainActor [weak self] in
+                self?.lastError = errorMsg
+            }
+            throw MCPServiceError.initializationFailed(errorMsg)
+        }
+
         process.executableURL = URL(fileURLWithPath: commandPath)
         process.arguments = serverConfig.args
 
@@ -84,32 +95,40 @@ class MCPService: ObservableObject, @unchecked Sendable {
         self.standardOutput = outputPipe
         self.standardError = errorPipe
 
-        // Set up output reading
+        // Set up output reading with error handling
         let serverName = serverConfig.name
         outputPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
+            do {
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
 
-            if let output = String(data: data, encoding: .utf8) {
-                Task { @MainActor in
-                    self?.handleOutput(output)
+                if let output = String(data: data, encoding: .utf8) {
+                    Task { @MainActor in
+                        self?.handleOutput(output)
+                    }
                 }
+            } catch {
+                print("⚠️ Error reading output from \(serverName): \(error.localizedDescription)")
             }
         }
 
         // Set up error reading (stderr - may include info messages)
         errorPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
+            do {
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
 
-            if let output = String(data: data, encoding: .utf8) {
-                print("MCP Server (\(serverName)) stderr: \(output)")
-                // Only treat it as an error if it contains error keywords
-                if output.lowercased().contains("error") || output.lowercased().contains("failed") {
-                    Task { @MainActor in
-                        self?.lastError = output
+                if let output = String(data: data, encoding: .utf8) {
+                    print("MCP Server (\(serverName)) stderr: \(output)")
+                    // Only treat it as an error if it contains error keywords
+                    if output.lowercased().contains("error") || output.lowercased().contains("failed") {
+                        Task { @MainActor in
+                            self?.lastError = output
+                        }
                     }
                 }
+            } catch {
+                print("⚠️ Error reading stderr from \(serverName): \(error.localizedDescription)")
             }
         }
 
@@ -117,10 +136,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
             try process.run()
         } catch {
             disconnect()
+            let errorMsg = "Failed to start process: \(error.localizedDescription)"
+            print("❌ \(errorMsg)")
             Task { @MainActor [weak self] in
-                self?.lastError = "Failed to start process: \(error.localizedDescription)"
+                self?.lastError = errorMsg
             }
-            throw MCPServiceError.initializationFailed("Process failed to start: \(error.localizedDescription)")
+            throw MCPServiceError.initializationFailed(errorMsg)
         }
 
         // Wait a bit for the process to start
@@ -141,7 +162,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 self?.isConnected = true
             }
         } catch {
-            print("❌ MCP initialization failed for \(serverName): \(error)")
+            print("❌ MCP initialization failed for \(serverName): \(error.localizedDescription)")
             disconnect()
             Task { @MainActor [weak self] in
                 self?.lastError = "Initialization failed: \(error.localizedDescription)"
@@ -200,9 +221,18 @@ class MCPService: ObservableObject, @unchecked Sendable {
             throw MCPServiceError.invalidResponse("Failed to parse tools list")
         }
 
-        return try toolsArray.compactMap { toolDict in
-            try parseTool(from: toolDict)
+        // Parse tools individually, skipping invalid ones instead of crashing
+        var validTools: [MCPTool] = []
+        for (index, toolDict) in toolsArray.enumerated() {
+            do {
+                let tool = try parseTool(from: toolDict)
+                validTools.append(tool)
+            } catch {
+                print("⚠️ Skipping invalid tool at index \(index) from \(serverConfig.name): \(error.localizedDescription)")
+            }
         }
+
+        return validTools
     }
 
     func callTool(name: String, arguments: [String: Any]) async throws -> String {
@@ -315,29 +345,36 @@ class MCPService: ObservableObject, @unchecked Sendable {
     }
 
     private func handleOutput(_ output: String) {
-        outputBuffer += output
+        do {
+            outputBuffer += output
 
-        // Process complete JSON-RPC messages (newline-delimited)
-        let lines = outputBuffer.components(separatedBy: "\n")
+            // Process complete JSON-RPC messages (newline-delimited)
+            let lines = outputBuffer.components(separatedBy: "\n")
 
-        // Keep the last incomplete line in the buffer
-        if let last = lines.last, !output.hasSuffix("\n") {
-            outputBuffer = last
-        } else {
-            outputBuffer = ""
-        }
+            // Keep the last incomplete line in the buffer
+            if let last = lines.last, !output.hasSuffix("\n") {
+                outputBuffer = last
+            } else {
+                outputBuffer = ""
+            }
 
-        // Process complete lines
-        for line in lines.dropLast() {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
+            // Process complete lines
+            for line in lines.dropLast() {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
 
-            processJSONRPCMessage(trimmed)
+                processJSONRPCMessage(trimmed)
+            }
+        } catch {
+            print("⚠️ Error handling output from \(serverConfig.name): \(error.localizedDescription)")
         }
     }
 
     private func processJSONRPCMessage(_ json: String) {
-        guard let data = json.data(using: .utf8) else { return }
+        guard let data = json.data(using: .utf8) else {
+            print("⚠️ Failed to convert JSON string to data for \(serverConfig.name)")
+            return
+        }
 
         do {
             let decoder = JSONDecoder()
@@ -347,32 +384,44 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 requestQueue.async {
                     if let continuation = self.pendingRequests.removeValue(forKey: id) {
                         continuation.resume(returning: response)
+                    } else {
+                        print("⚠️ Received response for unknown request ID: \(id)")
                     }
                 }
             }
         } catch {
-            print("Failed to decode MCP response: \(error)")
-      print("JSON: \(json)")
+            print("⚠️ Failed to decode MCP response from \(serverConfig.name): \(error.localizedDescription)")
+            print("JSON: \(json)")
         }
     }
 
     // MARK: - Parsing Helpers
 
     private func parseTool(from dict: [String: Any]) throws -> MCPTool {
-        guard let name = dict["name"] as? String,
-              let description = dict["description"] as? String,
-              let inputSchema = dict["inputSchema"] as? [String: Any] else {
-            throw MCPServiceError.invalidResponse("Invalid tool format")
+        guard let name = dict["name"] as? String else {
+            throw MCPServiceError.invalidResponse("Tool missing 'name' field")
         }
 
-        let schema = try parseJSONSchema(from: inputSchema)
+        guard let description = dict["description"] as? String else {
+            throw MCPServiceError.invalidResponse("Tool '\(name)' missing 'description' field")
+        }
 
-        return MCPTool(
-            name: name,
-            description: description,
-            inputSchema: schema,
-            serverName: serverConfig.name
-        )
+        guard let inputSchema = dict["inputSchema"] as? [String: Any] else {
+            throw MCPServiceError.invalidResponse("Tool '\(name)' missing 'inputSchema' field")
+        }
+
+        do {
+            let schema = try parseJSONSchema(from: inputSchema)
+
+            return MCPTool(
+                name: name,
+                description: description,
+                inputSchema: schema,
+                serverName: serverConfig.name
+            )
+        } catch {
+            throw MCPServiceError.invalidResponse("Failed to parse schema for tool '\(name)': \(error.localizedDescription)")
+        }
     }
 
     private func parseJSONSchema(from dict: [String: Any]) throws -> JSONSchema {
@@ -407,6 +456,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
     private func parseResource(from dict: [String: Any]) -> MCPResource? {
         guard let uri = dict["uri"] as? String,
               let name = dict["name"] as? String else {
+            print("⚠️ Skipping invalid resource from \(serverConfig.name): missing uri or name")
             return nil
         }
 

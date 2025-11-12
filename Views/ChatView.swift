@@ -465,10 +465,10 @@ struct ChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
-        isInitialRequest: Bool
-    ) {
-        let maxToolCallDepth = 5  // Prevent infinite loops
-        let mcpManager = MCPServerManager.shared
+    isInitialRequest: Bool
+  ) {
+    let maxToolCallDepth = 10  // Prevent infinite loops
+    let mcpManager = MCPServerManager.shared
 
         openAIService.sendMessage(
             messages: messages,

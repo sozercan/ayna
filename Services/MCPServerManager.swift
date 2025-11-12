@@ -90,11 +90,32 @@ class MCPServerManager: ObservableObject {
 
         do {
             let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
-            serverConfigs = decoded
+            // Validate that all configs have proper string dictionaries for env
+            let validatedConfigs = decoded.map { config -> MCPServerConfig in
+                // Ensure env is a proper [String: String] dictionary
+                // Filter out any non-string values that might have been corrupted
+                var validEnv: [String: String] = [:]
+                for (key, value) in config.env {
+                    // Only include if both key and value are valid strings
+                    if !key.isEmpty && !value.isEmpty {
+                        validEnv[key] = value
+                    }
+                }
+
+                return MCPServerConfig(
+                    id: config.id,
+                    name: config.name,
+                    command: config.command,
+                    args: config.args,
+                    env: validEnv,
+                    enabled: config.enabled
+                )
+            }
+            serverConfigs = validatedConfigs
             print("✅ Loaded \(serverConfigs.count) MCP server configs")
         } catch {
-            print("❌ Failed to load MCP server configs: \(error)")
-            print("⚠️ Clearing corrupted MCP config data")
+            print("❌ Failed to load MCP server configs: \(error.localizedDescription)")
+            print("⚠️ Clearing corrupted MCP config data and resetting to defaults")
             // Clear corrupted data and use defaults
             UserDefaults.standard.removeObject(forKey: "mcp_server_configs")
             serverConfigs = defaultServerConfigs()
@@ -145,6 +166,7 @@ class MCPServerManager: ObservableObject {
             return
         }
 
+        print("🔌 Attempting to connect to MCP server: \(config.name)")
         let service = MCPService(serverConfig: config)
 
         // Store service in dictionary on MainActor for thread safety
@@ -156,9 +178,13 @@ class MCPServerManager: ObservableObject {
             try await service.connect()
             print("✅ Connected to MCP server: \(config.name)")
 
-            // Auto-discover tools
-            await discoverTools(for: config.name)
-            print("✅ Tool discovery complete for: \(config.name)")
+            // Auto-discover tools (wrapped in do-catch to prevent discovery failures from crashing)
+            do {
+                await discoverTools(for: config.name)
+                print("✅ Tool discovery complete for: \(config.name)")
+            } catch {
+                print("⚠️ Tool discovery failed for \(config.name), but connection maintained: \(error.localizedDescription)")
+            }
         } catch {
             print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
             await MainActor.run {
@@ -172,6 +198,9 @@ class MCPServerManager: ObservableObject {
                     self.saveServerConfigs()
                     print("⚠️ Auto-disabled server '\(config.name)' due to connection failure")
                 }
+
+                // Clean up failed service
+                self.services.removeValue(forKey: config.name)
             }
         }
     }
@@ -215,47 +244,55 @@ class MCPServerManager: ObservableObject {
             isDiscovering = true
         }
 
-        // Capture services snapshot to avoid concurrency issues
-        let servicesSnapshot = services
+        do {
+            // Capture services snapshot to avoid concurrency issues
+            let servicesSnapshot = services
 
-        let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
-            for (serverName, service) in servicesSnapshot where service.isConnected {
-                group.addTask {
-                    let tools = (try? await service.listTools()) ?? []
-                    let resources = (try? await service.listResources()) ?? []
-                    return (serverName, tools, resources)
+            let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
+                for (serverName, service) in servicesSnapshot where service.isConnected {
+                    group.addTask {
+                        let tools = (try? await service.listTools()) ?? []
+                        let resources = (try? await service.listResources()) ?? []
+                        return (serverName, tools, resources)
+                    }
                 }
+
+                var allTools: [MCPTool] = []
+                var allResources: [MCPResource] = []
+
+                for await (serverName, tools, resources) in group {
+                    print("Discovered \(tools.count) tools from \(serverName)")
+                    allTools.append(contentsOf: tools)
+                    allResources.append(contentsOf: resources)
+                }
+
+                return (allTools, allResources)
             }
 
-            var allTools: [MCPTool] = []
-            var allResources: [MCPResource] = []
-
-            for await (serverName, tools, resources) in group {
-                print("Discovered \(tools.count) tools from \(serverName)")
-                allTools.append(contentsOf: tools)
-                allResources.append(contentsOf: resources)
+            await MainActor.run {
+                self.availableTools = results.0
+                self.availableResources = results.1
+                self.isDiscovering = false
+                // Invalidate cache when tools change
+                self.cachedEnabledTools = []
+                self.cachedOpenAIFunctions = []
             }
-
-            return (allTools, allResources)
-        }
-
-        await MainActor.run {
-            self.availableTools = results.0
-            self.availableResources = results.1
-            self.isDiscovering = false
-            // Invalidate cache when tools change
-            self.cachedEnabledTools = []
-            self.cachedOpenAIFunctions = []
+        } catch {
+            print("⚠️ Error during tool discovery: \(error.localizedDescription)")
+            await MainActor.run {
+                self.isDiscovering = false
+            }
         }
     }
 
     func discoverTools(for serverName: String) async {
         // Thread-safe access to services dictionary
         let service = await MainActor.run {
-      services[serverName]
+            services[serverName]
         }
 
         guard let service = service, service.isConnected else {
+            print("⚠️ Cannot discover tools for \(serverName): service not connected")
             return
         }
 
@@ -267,14 +304,14 @@ class MCPServerManager: ObservableObject {
             tools = try await service.listTools()
             print("📋 Discovered \(tools.count) tools from \(serverName)")
         } catch {
-            print("⚠️ Failed to list tools from \(serverName): \(error)")
+            print("⚠️ Failed to list tools from \(serverName): \(error.localizedDescription)")
         }
 
         do {
             resources = try await service.listResources()
             print("📦 Discovered \(resources.count) resources from \(serverName)")
         } catch {
-            print("⚠️ Failed to list resources from \(serverName): \(error)")
+            print("⚠️ Failed to list resources from \(serverName): \(error.localizedDescription)")
         }
 
         await MainActor.run {
@@ -285,6 +322,10 @@ class MCPServerManager: ObservableObject {
             // Add newly discovered items
             self.availableTools.append(contentsOf: tools)
             self.availableResources.append(contentsOf: resources)
+
+            // Invalidate cache when tools change
+            self.cachedEnabledTools = []
+            self.cachedOpenAIFunctions = []
         }
 
         print("✅ Discovery complete for \(serverName): \(tools.count) tools, \(resources.count) resources")
