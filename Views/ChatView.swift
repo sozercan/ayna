@@ -257,16 +257,22 @@ struct ChatView: View {
 
             // Send button on the rightmost side
             Button(action: sendMessage) {
-              Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(
-                  messageText.isEmpty && !isGenerating
-                    ? Color.secondary.opacity(0.5) : Color.accentColor
-                )
-                .symbolEffect(.bounce, value: isGenerating)
+              ZStack {
+                if isGenerating {
+                  Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.accentColor)
+                    .symbolEffect(.pulse, value: isGenerating)
+                } else {
+                  Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(
+                      messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                }
+              }
             }
             .buttonStyle(.plain)
-            .disabled(messageText.isEmpty && !isGenerating)
+            .allowsHitTesting(isGenerating || !messageText.isEmpty)
             .padding(.horizontal, 12)
             .frame(height: calculateTextHeight() + 24)
           }
@@ -354,14 +360,18 @@ struct ChatView: View {
   }
 
   private func sendMessage() {
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    if isGenerating {
+      // Stop generation immediately
+      print("🛑 Stop button clicked, cancelling...")
+      OpenAIService.shared.cancelCurrentRequest()
+      isGenerating = false
+      currentToolName = nil
+      toolCallDepth = 0
+      print("✅ isGenerating set to FALSE after stop")
             return
-        }
+    }
 
-        if isGenerating {
-            // Stop generation
-            OpenAIService.shared.cancelCurrentRequest()
-            isGenerating = false
+    guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
 
@@ -393,7 +403,8 @@ struct ChatView: View {
         messageText = ""
     attachedFiles = []  // Clear attached files after sending
     errorMessage = nil
-        isGenerating = true
+    isGenerating = true
+    print("🔄 isGenerating set to TRUE")
 
         // Get updated messages after adding user message
         guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
@@ -526,10 +537,15 @@ struct ChatView: View {
                 }
             },
             onComplete: {
-                // Only clear state if no tool call is pending
-                // (if currentToolName is set, a tool call handler will manage the state)
-                if currentToolName == nil {
-                    isGenerating = false
+        // Only clear state if no tool call is pending
+        // If currentToolName is set, a tool call was requested and will execute
+        // The tool execution will manage the state from there
+        if currentToolName == nil {
+          print("✅ onComplete: isGenerating set to FALSE (no tool calls pending)")
+          isGenerating = false
+        } else {
+          print(
+            "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))")
                 }
                 conversationManager.saveConversations()
             },

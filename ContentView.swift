@@ -57,6 +57,26 @@ struct NewChatView: View {
   @Binding var selectedConversationId: UUID?
   @State private var messageText = ""
   @State private var attachedFiles: [URL] = []
+  @State private var isGenerating = false
+  @State private var currentConversationId: UUID?
+
+  // Get the current conversation being created
+  private var currentConversation: Conversation? {
+    guard let id = currentConversationId else { return nil }
+    return conversationManager.conversations.first(where: { $0.id == id })
+  }
+
+  // Get visible messages (filtering out system and tool messages)
+  private var visibleMessages: [Message] {
+    guard let conversation = currentConversation else { return [] }
+    return conversation.messages.filter { message in
+      guard message.role != .system && message.role != .tool else { return false }
+      if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+        return message.id == conversation.messages.last?.id && isGenerating
+      }
+      return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+    }
+  }
 
   var body: some View {
     ZStack {
@@ -72,23 +92,50 @@ struct NewChatView: View {
       .ignoresSafeArea()
 
       VStack(spacing: 0) {
-        // Empty state
-        ScrollView {
-          VStack(spacing: 16) {
-            Spacer()
+        // Messages or empty state
+        ScrollViewReader { proxy in
+          ScrollView {
+            if visibleMessages.isEmpty {
+              // Empty state
+              VStack(spacing: 16) {
+                Spacer()
 
-            Image(systemName: "message")
-              .font(.system(size: 44, weight: .light))
-              .foregroundStyle(Color.secondary.opacity(0.4))
+                Image(systemName: "message")
+                  .font(.system(size: 44, weight: .light))
+                  .foregroundStyle(Color.secondary.opacity(0.4))
 
-            Text("How can I help you today?")
-              .font(.system(size: 19, weight: .medium))
-              .foregroundStyle(Color.primary)
+                Text("How can I help you today?")
+                  .font(.system(size: 19, weight: .medium))
+                  .foregroundStyle(Color.primary)
 
-            Spacer()
+                Spacer()
+              }
+              .frame(maxWidth: .infinity)
+              .frame(minHeight: 400)
+            } else {
+              // Show messages
+              LazyVStack(spacing: 0) {
+                ForEach(visibleMessages) { message in
+                  MessageView(
+                    message: message,
+                    modelName: message.model,
+                    onRetry: nil,
+                    onSwitchModel: nil
+                  )
+                  .id(message.id)
+                }
+              }
+              .padding(.horizontal, 24)
+              .padding(.vertical, 24)
+            }
           }
-          .frame(maxWidth: .infinity)
-          .frame(minHeight: 400)
+          .onChange(of: visibleMessages.count) { _, _ in
+            if let lastMessage = visibleMessages.last {
+              withAnimation {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+              }
+            }
+          }
         }
 
         // Input Area
@@ -202,14 +249,23 @@ struct NewChatView: View {
 
             // Send button
             Button(action: sendMessage) {
-              Image(systemName: "arrow.up.circle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(
-                  messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
-                )
+              ZStack {
+                if isGenerating {
+                  Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.accentColor)
+                    .symbolEffect(.pulse, value: isGenerating)
+                } else {
+                  Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(
+                      messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
+                    )
+                }
+              }
             }
             .buttonStyle(.plain)
-            .disabled(messageText.isEmpty)
+            .allowsHitTesting(isGenerating || !messageText.isEmpty)
             .padding(.horizontal, 12)
             .frame(height: calculateTextHeight() + 24)
           }
@@ -268,6 +324,15 @@ struct NewChatView: View {
   }
 
   private func sendMessage() {
+    if isGenerating {
+      // Stop generation immediately
+      print("🛑 Stop button clicked in NewChatView, cancelling...")
+      OpenAIService.shared.cancelCurrentRequest()
+      isGenerating = false
+      print("✅ isGenerating set to FALSE after stop")
+      return
+    }
+
     guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return
     }
@@ -275,11 +340,25 @@ struct NewChatView: View {
     let textToSend = messageText
     let filesToSend = attachedFiles
 
-    // Create the conversation now
-    conversationManager.createNewConversation()
-
-    guard let newConversation = conversationManager.conversations.first else {
-      return
+    // Get or create the conversation
+    let conversation: Conversation
+    if let existingId = currentConversationId,
+      let existingConversation = conversationManager.conversations.first(where: {
+        $0.id == existingId
+      })
+    {
+      // Continue with existing conversation
+      conversation = existingConversation
+      print("📝 Continuing with existing conversation: \(existingId)")
+    } else {
+      // Create a new conversation
+      conversationManager.createNewConversation()
+      guard let newConversation = conversationManager.conversations.first else {
+        return
+      }
+      conversation = newConversation
+      currentConversationId = newConversation.id
+      print("🆕 Created new conversation: \(newConversation.id)")
     }
 
     // Build file attachments
@@ -302,22 +381,17 @@ struct NewChatView: View {
       content: textToSend,
       attachments: attachments.isEmpty ? nil : attachments
     )
-    conversationManager.addMessage(to: newConversation, message: userMessage)
+    conversationManager.addMessage(to: conversation, message: userMessage)
 
     // Clear input first
     messageText = ""
     attachedFiles.removeAll()
 
-    // Switch to the new conversation - ChatView will be shown
-    selectedConversationId = newConversation.id
-    isCreatingNew = false
+    // DON'T switch views yet - stay in NewChatView so the stop button remains visible
+    // The view switch will happen in the completion handler after generation finishes
 
-    // Use a small delay to ensure ChatView is loaded, then trigger message sending
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-      // The ChatView should now be displayed and will handle sending the message
-      // We need to trigger it by simulating what happens in ChatView.sendMessage()
-      self.sendMessageForConversation(newConversation)
-    }
+    // Send the message immediately (no delay needed)
+    sendMessageForConversation(conversation)
   }
 
   private func sendMessageForConversation(_ conversation: Conversation) {
@@ -329,6 +403,9 @@ struct NewChatView: View {
     else {
       return
     }
+
+    isGenerating = true
+    print("🔄 isGenerating set to TRUE in NewChatView")
 
     let currentMessages = updatedConversation.messages
 
@@ -362,10 +439,20 @@ struct NewChatView: View {
         }
       },
       onComplete: {
-        print("✅ Message sent successfully")
+        self.isGenerating = false
+        print("✅ Message sent successfully, isGenerating set to FALSE")
+
+        // Now that generation is complete, switch to ChatView
+        self.selectedConversationId = conversation.id
+        self.isCreatingNew = false
       },
       onError: { error in
+        self.isGenerating = false
         print("❌ Error sending message: \(error)")
+
+        // On error, also switch to ChatView so user can see the error
+        self.selectedConversationId = conversation.id
+        self.isCreatingNew = false
       }
     )
   }
