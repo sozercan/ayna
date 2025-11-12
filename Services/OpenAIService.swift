@@ -44,8 +44,6 @@ class OpenAIService: ObservableObject {
     }
   }
 
-  let temperature: Double = 0.7
-
   // Track current task for cancellation
   private var currentTask: URLSessionDataTask?
 
@@ -416,6 +414,7 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping () -> Void,
     onError: @escaping (Error) -> Void,
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
+    onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
     let requestModel = model ?? selectedModel
@@ -460,8 +459,6 @@ class OpenAIService: ObservableObject {
         return
       }
     }
-
-    let requestTemp = temperature ?? self.temperature
 
     // Check if this model should use the responses API based on endpoint type setting
     let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
@@ -508,6 +505,55 @@ class OpenAIService: ObservableObject {
     let messagePayloads: [[String: Any]] = messages.map { message in
       var payload: [String: Any] = ["role": message.role.rawValue]
 
+      // Handle tool role messages (tool results)
+      if message.role == .tool {
+        payload["content"] = message.content
+        // Tool messages need tool_call_id from the assistant's tool call
+        if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+          payload["tool_call_id"] = firstToolCall.id
+        }
+        return payload
+      }
+
+      // Handle assistant messages with tool calls
+      if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+        // Assistant message that made tool calls
+        if !message.content.isEmpty {
+          payload["content"] = message.content
+        } else {
+          payload["content"] = ""  // Empty content when only tool calls
+        }
+        
+        // Add tool_calls array
+        let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+          // Convert AnyCodable arguments to JSON string safely
+          var argumentsDict: [String: Any] = [:]
+          for (key, anyCodable) in toolCall.arguments {
+            argumentsDict[key] = anyCodable.value
+          }
+          
+          guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+                let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
+            print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
+            return nil
+          }
+          
+          return [
+            "id": toolCall.id,
+            "type": "function",
+            "function": [
+              "name": toolCall.toolName,
+              "arguments": argumentsString
+            ]
+          ]
+        }
+        
+        if !toolCallsArray.isEmpty {
+          payload["tool_calls"] = toolCallsArray
+        }
+        return payload
+      }
+
       // Check if message has attachments (multimodal content)
       if let attachments = message.attachments, !attachments.isEmpty {
         var contentArray: [[String: Any]] = []
@@ -540,26 +586,26 @@ class OpenAIService: ObservableObject {
       return payload
     }
 
-    var body: [String: Any] = [
+    let body: [String: Any] = [
       "messages": messagePayloads,
+      "model": requestModel,
       "stream": stream
     ]
 
-    // Both OpenAI and Azure require model in body
-    body["model"] = requestModel
+    var finalBody = body
 
     // Add tools if provided
     if let tools = tools, !tools.isEmpty {
-      body["tools"] = tools
-      body["tool_choice"] = "auto"
+      finalBody["tools"] = tools
+      finalBody["tool_choice"] = "auto"
     }
 
-    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    request.httpBody = try? JSONSerialization.data(withJSONObject: finalBody)
 
     if stream {
       streamResponse(
         request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-        onToolCall: onToolCall, onReasoning: onReasoning)
+        onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning)
     } else {
       nonStreamResponse(
         request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
@@ -641,7 +687,7 @@ class OpenAIService: ObservableObject {
       inputArray.append(messageItem)
     }
 
-    var body: [String: Any] = [
+    let body: [String: Any] = [
       "model": model,
       "input": inputArray,
       "reasoning": ["summary": "auto"],
@@ -736,14 +782,13 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping () -> Void,
     onError: @escaping (Error) -> Void,
     onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
+    onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
     // Capture values for async context
     let currentProvider = provider
-    let currentModel = selectedModel
     let currentAzureDeployment = azureDeploymentName
     let currentAzureAPIVersion = azureAPIVersion
-    let currentAzureEndpoint = azureEndpoint
 
     Task {
       do {
@@ -758,14 +803,15 @@ class OpenAIService: ObservableObject {
 
         guard httpResponse.statusCode == 200 else {
           // Provide helpful error messages
-          var errorMessage = "HTTP \(httpResponse.statusCode)"
+          let errorMessage: String
           if httpResponse.statusCode == 400 {
             if currentProvider == .azure {
-              errorMessage +=
-                " - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
+              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid Azure deployment name '\(currentAzureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(currentAzureAPIVersion)."
             } else {
-              errorMessage += " - Invalid request. Check your model name and parameters."
+              errorMessage = "HTTP \(httpResponse.statusCode) - Invalid request. Check your model name and parameters."
             }
+          } else {
+            errorMessage = "HTTP \(httpResponse.statusCode)"
           }
 
           await MainActor.run {
@@ -846,12 +892,20 @@ class OpenAIService: ObservableObject {
                     let argsString = toolCallBuffer["arguments"] as? String,
                     let argsData = argsString.data(using: .utf8),
                     let arguments = try? JSONSerialization.jsonObject(with: argsData)
-                      as? [String: Any],
-                    let onToolCall = onToolCall {
+                      as? [String: Any] {
 
-                    let result = await onToolCall(toolCallId, toolName, arguments)
-                    await MainActor.run {
-                      onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+                    // Notify about tool call request (for proper flow)
+                    if let onToolCallRequested = onToolCallRequested {
+                      await MainActor.run {
+                        onToolCallRequested(toolCallId, toolName, arguments)
+                      }
+                    }
+                    // Legacy support: still execute inline if old callback provided
+                    else if let onToolCall = onToolCall {
+                      let result = await onToolCall(toolCallId, toolName, arguments)
+                      await MainActor.run {
+                        onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
+                      }
                     }
 
                     // Clear buffer for next tool call
@@ -1014,7 +1068,7 @@ class OpenAIService: ObservableObject {
     // Use the provided conversation ID or a default
     let convId = conversationId?.uuidString ?? "default"
 
-    let requestTemp = temperature ?? self.temperature
+    let requestTemp = temperature ?? 0.7
 
     Task {
       if stream {

@@ -10,19 +10,38 @@ import SwiftUI
 struct ChatView: View {
     let conversation: Conversation
     @EnvironmentObject var conversationManager: ConversationManager
-    @StateObject private var openAIService = OpenAIService.shared
+  @ObservedObject private var openAIService = OpenAIService.shared
 
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
   @State private var attachedFiles: [URL] = []
+  @State private var toolCallDepth = 0
+  @State private var currentToolName: String?
 
-    // Get the current conversation from the manager to ensure we have the latest data
+  // Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
     }
 
-    var body: some View {
+  // Pre-filter messages once for the view body
+  private var visibleMessages: [Message] {
+    currentConversation.messages.filter { message in
+      // Hide system and tool messages (tool messages are internal only)
+      guard message.role != .system && message.role != .tool else { return false }
+      
+      // Show if: has content, has image data, or is generating image
+      // Don't show empty assistant messages unless we're actively generating
+      if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+        // Only show empty assistant message if it's the last message and we're generating
+        return message.id == currentConversation.messages.last?.id && isGenerating
+      }
+      
+      return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+    }
+  }
+
+  var body: some View {
         ZStack {
             // Chat background with subtle gradient
             LinearGradient(
@@ -58,16 +77,7 @@ struct ChatView: View {
                         .frame(minHeight: 400)
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(currentConversation.messages.filter { message in
-                                // Hide system messages
-                                guard message.role != .system else { return false }
-
-                                // Show if: has content, has image data, is generating image, or is empty assistant (shows typing indicator)
-                                return !message.content.isEmpty ||
-                                       message.imageData != nil ||
-                                       message.mediaType == .image ||
-                                       message.role == .assistant
-                            }) { message in
+                ForEach(visibleMessages) { message in
                                 MessageView(
                     message: message,
                                     modelName: message.model,
@@ -122,6 +132,22 @@ struct ChatView: View {
                 }
                 .padding()
                 .background(Color.red.opacity(0.1))
+            }
+
+            // Tool execution status indicator
+            if let toolName = currentToolName {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .controlSize(.small)
+                    Text(toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)...")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.1))
             }
 
             // Input Area
@@ -355,8 +381,29 @@ struct ChatView: View {
 
         // Get available MCP tools
         let mcpManager = MCPServerManager.shared
-        let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        
+        print("📊 Total available tools in manager: \(mcpManager.availableTools.count)")
+        print("📊 Enabled server configs: \(mcpManager.serverConfigs.filter { $0.enabled }.map { $0.name })")
+        
+        var enabledTools = mcpManager.getEnabledTools()
+        
+        // If we have enabled servers but no tools yet, wait a moment and try again
+        // This handles the race condition where servers are connecting at app startup
+        if enabledTools.isEmpty {
+            let hasEnabledServers = !mcpManager.serverConfigs.filter({ $0.enabled }).isEmpty
+            if hasEnabledServers {
+                print("⏳ Enabled servers found but no tools yet, waiting for discovery...")
+                // Give discovery a moment to complete (non-blocking)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Re-query after a brief delay
+                    let updatedTools = mcpManager.getEnabledTools()
+                    print("� After delay: \(updatedTools.count) tools available")
+                }
+            }
+        }
+        
+        // Use cached OpenAI function format for better performance
+        let tools = enabledTools.isEmpty ? nil : MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
 
         if !enabledTools.isEmpty {
             print("🔧 Available MCP tools: \(enabledTools.map { $0.name }.joined(separator: ", "))")
@@ -364,52 +411,15 @@ struct ChatView: View {
             print("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools")
         }
 
-        openAIService.sendMessage(
+        // Reset tool call depth for new user messages
+        toolCallDepth = 0
+        
+        sendMessageWithToolSupport(
             messages: currentMessages,
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            conversationId: conversation.id,
-            onChunk: { chunk in
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    lastMessage.content += chunk
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            },
-            onComplete: {
-                isGenerating = false
-                conversationManager.saveConversations()
-            },
-            onError: { error in
-                isGenerating = false
-                errorMessage = error.localizedDescription
-
-                // Remove the empty assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-                    conversationManager.conversations[index].messages.removeLast()
-                }
-            },
-            onToolCall: { _, toolName, arguments in
-                // Execute the MCP tool
-                do {
-                    let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
-                    return result
-                } catch {
-                    return "Error executing tool: \(error.localizedDescription)"
-                }
-            },
-            onReasoning: { reasoning in
-                // Append reasoning content to the last assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    let currentReasoning = lastMessage.reasoning ?? ""
-                    lastMessage.reasoning = currentReasoning + reasoning
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            }
+            isInitialRequest: true
         )
     }
 
@@ -444,6 +454,161 @@ struct ChatView: View {
                 // Remove the placeholder message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
                     conversationManager.conversations[index].messages.removeLast()
+                }
+            }
+        )
+    }
+
+    // Helper function to send messages with automatic tool call handling
+    private func sendMessageWithToolSupport(
+        messages: [Message],
+        model: String,
+        temperature: Double,
+        tools: [[String: Any]]?,
+        isInitialRequest: Bool
+    ) {
+        let maxToolCallDepth = 5  // Prevent infinite loops
+        let mcpManager = MCPServerManager.shared
+
+        openAIService.sendMessage(
+            messages: messages,
+            model: model,
+            temperature: temperature,
+            tools: tools,
+            conversationId: conversation.id,
+            onChunk: { chunk in
+                // Clear tool execution indicator when we start receiving actual content
+                if currentToolName != nil {
+                    currentToolName = nil
+                }
+                
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    lastMessage.content += chunk
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
+                }
+            },
+            onComplete: {
+                // Only clear state if no tool call is pending
+                // (if currentToolName is set, a tool call handler will manage the state)
+                if currentToolName == nil {
+                    isGenerating = false
+                }
+                conversationManager.saveConversations()
+            },
+            onError: { error in
+                isGenerating = false
+                currentToolName = nil
+                toolCallDepth = 0
+                errorMessage = error.localizedDescription
+
+                // Remove the empty assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversationManager.conversations[index].messages.removeLast()
+                }
+            },
+            onToolCallRequested: { toolCallId, toolName, arguments in
+                // Tool call was requested by the LLM
+                print("🔧 Tool call requested: \(toolName)")
+                currentToolName = toolName
+                
+                // Check depth limit
+                guard toolCallDepth < maxToolCallDepth else {
+                    print("⚠️ Max tool call depth reached, stopping")
+                    isGenerating = false
+                    currentToolName = nil
+                    return
+                }
+                
+                toolCallDepth += 1
+                
+                // Store the tool call in the last assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    
+                    // Convert arguments to AnyCodable
+                    let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                        result[pair.key] = AnyCodable(pair.value)
+                    }
+                    
+                    let toolCall = MCPToolCall(
+                        id: toolCallId,
+                        toolName: toolName,
+                        arguments: anyCodableArgs
+                    )
+                    lastMessage.toolCalls = [toolCall]
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
+                    conversationManager.saveConversations()
+                }
+                
+                // Execute the tool asynchronously
+                Task {
+                    do {
+                        print("⚙️ Executing tool: \(toolName)")
+                        let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
+                        print("✅ Tool result received (\(result.count) chars)")
+                        
+                        // Create a tool message with the result
+                        await MainActor.run {
+                            let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                                result[pair.key] = AnyCodable(pair.value)
+                            }
+                            
+                            var toolMessage = Message(
+                                role: .tool,
+                                content: result
+                            )
+                            toolMessage.toolCalls = [MCPToolCall(
+                                id: toolCallId,
+                                toolName: toolName,
+                                arguments: anyCodableArgs,
+                                result: result
+                            )]
+                            conversationManager.addMessage(to: conversation, message: toolMessage)
+                            
+                            // Get updated conversation with tool result
+                            guard let updatedConv = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
+                                isGenerating = false
+                                currentToolName = nil
+                                return
+                            }
+                            
+                            // Add new empty assistant message for LLM response
+                            let newAssistantMessage = Message(role: .assistant, content: "", model: model)
+                            conversationManager.addMessage(to: conversation, message: newAssistantMessage)
+                            
+                            print("🔄 Sending follow-up request with tool results...")
+                            currentToolName = "Analyzing \(toolName) results"
+                            
+                            // Automatically continue the conversation with tool results
+                            sendMessageWithToolSupport(
+                                messages: updatedConv.messages,
+                                model: model,
+                                temperature: temperature,
+                                tools: tools,
+                                isInitialRequest: false
+                            )
+                        }
+                    } catch {
+                        await MainActor.run {
+                            print("❌ Tool execution error: \(error.localizedDescription)")
+                            isGenerating = false
+                            currentToolName = nil
+                            errorMessage = "Tool execution failed: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            },
+            onReasoning: { reasoning in
+                // Append reasoning content to the last assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant {
+                    let currentReasoning = lastMessage.reasoning ?? ""
+                    lastMessage.reasoning = currentReasoning + reasoning
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
                 }
             }
         )
@@ -541,57 +706,20 @@ struct ChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
+        // Get available MCP tools (using cached OpenAI format for performance)
         let mcpManager = MCPServerManager.shared
         let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
-        openAIService.sendMessage(
+        // Reset tool call depth
+        toolCallDepth = 0
+        
+        sendMessageWithToolSupport(
             messages: currentMessages,
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            conversationId: conversation.id,
-            onChunk: { chunk in
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    lastMessage.content += chunk
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            },
-            onComplete: {
-                isGenerating = false
-                conversationManager.saveConversations()
-            },
-            onError: { error in
-                isGenerating = false
-                errorMessage = error.localizedDescription
-
-                // Remove the empty assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-                    conversationManager.conversations[index].messages.removeLast()
-                }
-            },
-            onToolCall: { _, toolName, arguments in
-                // Execute the MCP tool
-                do {
-                    let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
-                    return result
-                } catch {
-                    return "Error executing tool: \(error.localizedDescription)"
-                }
-            },
-            onReasoning: { reasoning in
-                // Append reasoning content to the last assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    let currentReasoning = lastMessage.reasoning ?? ""
-                    lastMessage.reasoning = currentReasoning + reasoning
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            }
+            isInitialRequest: true
         )
     }
 
@@ -620,57 +748,20 @@ struct ChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
+        // Get available MCP tools (using cached OpenAI format for performance)
         let mcpManager = MCPServerManager.shared
         let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : enabledTools.map { $0.toOpenAIFunction() }
+        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
-        openAIService.sendMessage(
+        // Reset tool call depth
+        toolCallDepth = 0
+        
+        sendMessageWithToolSupport(
             messages: currentMessages,
-            model: model, // Use the specified model
+            model: model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            conversationId: conversation.id,
-            onChunk: { chunk in
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    lastMessage.content += chunk
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            },
-            onComplete: {
-                isGenerating = false
-                conversationManager.saveConversations()
-            },
-            onError: { error in
-                isGenerating = false
-                errorMessage = error.localizedDescription
-
-                // Remove the empty assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-                    conversationManager.conversations[index].messages.removeLast()
-                }
-            },
-            onToolCall: { _, toolName, arguments in
-                // Execute the MCP tool
-                do {
-                    let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
-                    return result
-                } catch {
-                    return "Error executing tool: \(error.localizedDescription)"
-                }
-            },
-            onReasoning: { reasoning in
-                // Append reasoning content to the last assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    let currentReasoning = lastMessage.reasoning ?? ""
-                    lastMessage.reasoning = currentReasoning + reasoning
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
-                }
-            }
+            isInitialRequest: true
         )
     }
 }

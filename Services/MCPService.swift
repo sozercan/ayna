@@ -7,8 +7,12 @@
 
 import Foundation
 
+#if compiler(>=6.0)
+#warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
+#endif
+
 /// Service for communicating with MCP servers via stdio
-class MCPService: ObservableObject {
+class MCPService: ObservableObject, @unchecked Sendable {
     private var process: Process?
     private var standardInput: Pipe?
     private var standardOutput: Pipe?
@@ -64,7 +68,13 @@ class MCPService: ObservableObject {
         environment["PATH"] = newPath
 
         // Merge with user-provided environment
-        process.environment = environment.merging(serverConfig.env) { _, new in new }
+        // Only merge if env is not empty to avoid potential type issues
+        if !serverConfig.env.isEmpty {
+            for (key, value) in serverConfig.env {
+                environment[key] = value
+            }
+        }
+        process.environment = environment
         process.standardInput = inputPipe
         process.standardOutput = outputPipe
         process.standardError = errorPipe
@@ -107,8 +117,8 @@ class MCPService: ObservableObject {
             try process.run()
         } catch {
             disconnect()
-            DispatchQueue.main.async {
-                self.lastError = "Failed to start process: \(error.localizedDescription)"
+            Task { @MainActor [weak self] in
+                self?.lastError = "Failed to start process: \(error.localizedDescription)"
             }
             throw MCPServiceError.initializationFailed("Process failed to start: \(error.localizedDescription)")
         }
@@ -120,18 +130,21 @@ class MCPService: ObservableObject {
         // If the process has already exited, initialization will fail with a timeout
         do {
             print("🔄 Initializing MCP server: \(serverName)")
-            try await withTimeout(seconds: 5) {
+            try await withTimeout(seconds: 5) { [weak self] in
+                guard let self = self else {
+                    throw MCPServiceError.notConnected
+                }
                 try await self.initialize()
             }
             print("✅ MCP server initialized: \(serverName)")
-            DispatchQueue.main.async {
-                self.isConnected = true
+            Task { @MainActor [weak self] in
+                self?.isConnected = true
             }
         } catch {
             print("❌ MCP initialization failed for \(serverName): \(error)")
             disconnect()
-            DispatchQueue.main.async {
-                self.lastError = "Initialization failed: \(error.localizedDescription)"
+            Task { @MainActor [weak self] in
+                self?.lastError = "Initialization failed: \(error.localizedDescription)"
             }
             throw error
         }
@@ -148,8 +161,8 @@ class MCPService: ObservableObject {
         standardOutput = nil
         standardError = nil
 
-        DispatchQueue.main.async {
-            self.isConnected = false
+        Task { @MainActor [weak self] in
+            self?.isConnected = false
         }
     }
 
@@ -241,7 +254,12 @@ class MCPService: ObservableObject {
 
     private func sendRequest(method: String, params: [String: AnyCodable]?) async throws -> MCPResponse {
         return try await withCheckedThrowingContinuation { continuation in
-            requestQueue.async {
+            requestQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(throwing: MCPServiceError.notConnected)
+                    return
+                }
+
                 self.requestId += 1
                 let id = self.requestId
 
@@ -334,6 +352,7 @@ class MCPService: ObservableObject {
             }
         } catch {
             print("Failed to decode MCP response: \(error)")
+      print("JSON: \(json)")
         }
     }
 
@@ -403,12 +422,12 @@ class MCPService: ObservableObject {
     // MARK: - Helper Methods
 
     private func findExecutable(_ command: String) throws -> String {
-        // If command is already an absolute path, validate it exists
+    // If command is already an absolute path, validate it exists
         if command.hasPrefix("/") {
-            guard FileManager.default.isExecutableFile(atPath: command) else {
-                throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
-            }
-            return command
+      guard FileManager.default.isExecutableFile(atPath: command) else {
+        throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
+      }
+      return command
         }
 
         // Common locations to search for executables
@@ -424,10 +443,10 @@ class MCPService: ObservableObject {
             let fullPath = "\(path)/\(command)"
             print("🔍 Checking: \(fullPath)")
             let exists = FileManager.default.fileExists(atPath: fullPath)
-            let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
-            print("   exists: \(exists), isExecutable: \(isExecutable)")
+      let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
+      print("   exists: \(exists), isExecutable: \(isExecutable)")
 
-            if isExecutable {
+      if isExecutable {
                 print("✅ Found executable '\(command)' at: \(fullPath)")
                 return fullPath
             }

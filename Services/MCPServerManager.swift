@@ -18,6 +18,12 @@ class MCPServerManager: ObservableObject {
 
     private var services: [String: MCPService] = [:] // serverName -> service
     private let queue = DispatchQueue(label: "com.ayna.mcp.manager")
+    
+    // Optimization: Cache enabled tools and their OpenAI function format
+    private var cachedEnabledTools: [MCPTool] = []
+    private var cachedOpenAIFunctions: [[String: Any]] = []
+    private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
+    private var cacheVersion = 0
 
     private init() {
         loadServerConfigs()
@@ -37,22 +43,30 @@ class MCPServerManager: ObservableObject {
     }
 
     func updateServerConfig(_ config: MCPServerConfig) {
-        if let index = serverConfigs.firstIndex(where: { $0.id == config.id }) {
-            let wasEnabled = serverConfigs[index].enabled
-            serverConfigs[index] = config
-            saveServerConfigs()
+        guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
 
-            // Handle connection state changes
-            if wasEnabled && !config.enabled {
+        let wasEnabled = serverConfigs[index].enabled
+        serverConfigs[index] = config
+        saveServerConfigs()
+        
+        // Invalidate cache when server configs change
+        cachedEnabledTools = []
+        cachedOpenAIFunctions = []
+
+        // Handle connection state changes
+        if wasEnabled && !config.enabled {
+            // Disconnect in the background
+            Task { @MainActor in
                 disconnectServer(config.name)
-            } else if !wasEnabled && config.enabled {
-                Task {
-                    await connectToServer(config)
-                }
+            }
+        } else if !wasEnabled && config.enabled {
+            Task {
+                await connectToServer(config)
             }
         }
     }
 
+    @MainActor
     func removeServerConfig(_ config: MCPServerConfig) {
         disconnectServer(config.name)
         serverConfigs.removeAll { $0.id == config.id }
@@ -66,10 +80,26 @@ class MCPServerManager: ObservableObject {
     }
 
     private func loadServerConfigs() {
-        // Always reload fresh defaults for now to avoid migration issues
-        // TODO: Implement proper config persistence
-        serverConfigs = defaultServerConfigs()
-        saveServerConfigs()
+        guard let data = UserDefaults.standard.data(forKey: "mcp_server_configs") else {
+            // First launch: use default configs
+            print("No saved MCP server configs, using defaults")
+            serverConfigs = defaultServerConfigs()
+            saveServerConfigs()
+            return
+        }
+        
+        do {
+            let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
+            serverConfigs = decoded
+            print("✅ Loaded \(serverConfigs.count) MCP server configs")
+        } catch {
+            print("❌ Failed to load MCP server configs: \(error)")
+            print("⚠️ Clearing corrupted MCP config data")
+            // Clear corrupted data and use defaults
+            UserDefaults.standard.removeObject(forKey: "mcp_server_configs")
+            serverConfigs = defaultServerConfigs()
+            saveServerConfigs()
+        }
     }
 
     private func defaultServerConfigs() -> [MCPServerConfig] {
@@ -97,13 +127,30 @@ class MCPServerManager: ObservableObject {
     func connectToServer(_ config: MCPServerConfig) async {
         guard config.enabled else { return }
 
-        // Don't reconnect if already connected
-        if services[config.name]?.isConnected == true {
+        // Check if already connected (thread-safe)
+        let existingService = await MainActor.run {
+            services[config.name]
+        }
+        
+        if let existingService = existingService, existingService.isConnected {
+            // Already connected - but check if we need to discover tools
+            let hasTools = await MainActor.run {
+                !availableTools.filter { $0.serverName == config.name }.isEmpty
+            }
+            
+            if !hasTools {
+                print("🔍 Server \(config.name) connected but no tools found, discovering...")
+                await discoverTools(for: config.name)
+            }
             return
         }
 
         let service = MCPService(serverConfig: config)
-        services[config.name] = service
+        
+        // Store service in dictionary on MainActor for thread safety
+        await MainActor.run {
+            services[config.name] = service
+        }
 
         do {
             try await service.connect()
@@ -111,6 +158,7 @@ class MCPServerManager: ObservableObject {
 
             // Auto-discover tools
             await discoverTools(for: config.name)
+            print("✅ Tool discovery complete for: \(config.name)")
         } catch {
             print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
             await MainActor.run {
@@ -128,27 +176,32 @@ class MCPServerManager: ObservableObject {
         }
     }
 
+    @MainActor
     func disconnectServer(_ serverName: String) {
         services[serverName]?.disconnect()
         services.removeValue(forKey: serverName)
 
         // Remove tools from this server
-        DispatchQueue.main.async {
-            self.availableTools.removeAll { $0.serverName == serverName }
-            self.availableResources.removeAll { $0.serverName == serverName }
-        }
+        availableTools.removeAll { $0.serverName == serverName }
+        availableResources.removeAll { $0.serverName == serverName }
     }
 
     func connectToAllEnabledServers() async {
+        let enabledConfigs = serverConfigs.filter { $0.enabled }
+        print("🚀 Connecting to \(enabledConfigs.count) enabled MCP servers: \(enabledConfigs.map { $0.name })")
+        
         await withTaskGroup(of: Void.self) { group in
-            for config in serverConfigs where config.enabled {
+            for config in enabledConfigs {
                 group.addTask {
                     await self.connectToServer(config)
                 }
             }
         }
+        
+        print("✅ All enabled servers connected. Total tools available: \(availableTools.count)")
     }
 
+    @MainActor
     func disconnectAllServers() {
         for serverName in services.keys {
             disconnectServer(serverName)
@@ -162,13 +215,10 @@ class MCPServerManager: ObservableObject {
             isDiscovering = true
         }
 
-        var allTools: [MCPTool] = []
-        var allResources: [MCPResource] = []
-
         // Capture services snapshot to avoid concurrency issues
         let servicesSnapshot = services
 
-        await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
+        let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
             for (serverName, service) in servicesSnapshot where service.isConnected {
                 group.addTask {
                     let tools = (try? await service.listTools()) ?? []
@@ -177,58 +227,91 @@ class MCPServerManager: ObservableObject {
                 }
             }
 
+            var allTools: [MCPTool] = []
+            var allResources: [MCPResource] = []
+
             for await (serverName, tools, resources) in group {
                 print("Discovered \(tools.count) tools from \(serverName)")
                 allTools.append(contentsOf: tools)
                 allResources.append(contentsOf: resources)
             }
+
+            return (allTools, allResources)
         }
 
         await MainActor.run {
-            self.availableTools = allTools
-            self.availableResources = allResources
+            self.availableTools = results.0
+            self.availableResources = results.1
             self.isDiscovering = false
+            // Invalidate cache when tools change
+            self.cachedEnabledTools = []
+            self.cachedOpenAIFunctions = []
         }
     }
 
     func discoverTools(for serverName: String) async {
-        guard let service = services[serverName], service.isConnected else {
+        // Thread-safe access to services dictionary
+        let service = await MainActor.run {
+            services[serverName]
+        }
+        
+        guard let service = service, service.isConnected else {
             return
         }
 
+        // Discover tools and resources independently - don't let one failure block the other
+        var tools: [MCPTool] = []
+        var resources: [MCPResource] = []
+        
         do {
-            let tools = try await service.listTools()
-            let resources = try await service.listResources()
-
-            await MainActor.run {
-                // Remove old tools from this server
-                self.availableTools.removeAll { $0.serverName == serverName }
-                self.availableResources.removeAll { $0.serverName == serverName }
-
-                // Add new tools
-                self.availableTools.append(contentsOf: tools)
-                self.availableResources.append(contentsOf: resources)
-            }
-
-            print("Discovered \(tools.count) tools from \(serverName)")
+            tools = try await service.listTools()
+            print("📋 Discovered \(tools.count) tools from \(serverName)")
         } catch {
-            print("Failed to discover tools from \(serverName): \(error)")
+            print("⚠️ Failed to list tools from \(serverName): \(error)")
         }
+        
+        do {
+            resources = try await service.listResources()
+            print("📦 Discovered \(resources.count) resources from \(serverName)")
+        } catch {
+            print("⚠️ Failed to list resources from \(serverName): \(error)")
+        }
+
+        await MainActor.run {
+            // Remove old tools/resources from this server
+            self.availableTools.removeAll { $0.serverName == serverName }
+            self.availableResources.removeAll { $0.serverName == serverName }
+
+            // Add newly discovered items
+            self.availableTools.append(contentsOf: tools)
+            self.availableResources.append(contentsOf: resources)
+        }
+        
+        print("✅ Discovery complete for \(serverName): \(tools.count) tools, \(resources.count) resources")
     }
 
     // MARK: - Tool Execution
 
     func executeTool(name: String, arguments: [String: Any]) async throws -> String {
-        // Find which server provides this tool
-        guard let tool = availableTools.first(where: { $0.name == name }),
-              let service = services[tool.serverName],
-              service.isConnected else {
+        // Optimization: Use O(1) lookup instead of linear search
+        guard let tool = toolLookup[name] ?? availableTools.first(where: { $0.name == name }) else {
+            throw MCPManagerError.toolNotFound(name)
+        }
+        
+        // Thread-safe access to services dictionary
+        let service = await MainActor.run { services[tool.serverName] }
+        guard let service = service, service.isConnected else {
             throw MCPManagerError.toolNotFound(name)
         }
 
         do {
-            let result = try await service.callTool(name: name, arguments: arguments)
+            // Add timeout to prevent hanging tool calls
+            let result = try await withTimeout(seconds: 30) {
+                try await service.callTool(name: name, arguments: arguments)
+            }
             return result
+        } catch MCPServiceError.timeout {
+            throw MCPManagerError.executionFailed(name, "Tool execution timed out after 30 seconds")
         } catch {
             throw MCPManagerError.executionFailed(name, error.localizedDescription)
         }
@@ -254,10 +337,31 @@ class MCPServerManager: ObservableObject {
         Dictionary(grouping: availableTools) { $0.serverName }
     }
 
+    /// Returns all tools from enabled servers (cached for performance)
     func getEnabledTools() -> [MCPTool] {
-        return availableTools.filter { tool in
+        if cachedEnabledTools.isEmpty {
+            refreshToolCache()
+        }
+        return cachedEnabledTools
+    }
+    
+    /// Returns enabled tools in OpenAI function format (cached for performance)
+    func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
+        if cachedOpenAIFunctions.isEmpty {
+            refreshToolCache()
+            cachedOpenAIFunctions = cachedEnabledTools.map { $0.toOpenAIFunction() }
+        }
+        return cachedOpenAIFunctions
+    }
+    
+    /// Refresh the enabled tools cache
+    private func refreshToolCache() {
+        cachedEnabledTools = availableTools.filter { tool in
             serverConfigs.first(where: { $0.name == tool.serverName })?.enabled ?? false
         }
+        toolLookup = Dictionary(uniqueKeysWithValues: cachedEnabledTools.map { ($0.name, $0) })
+        cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
+        cacheVersion += 1
     }
 }
 
