@@ -17,6 +17,12 @@ struct MessageView: View {
     @State private var showModelMenu = false
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
+    
+    // Performance: Cache parsed content blocks to avoid re-parsing on every render
+    @State private var cachedContentBlocks: [ContentBlock] = []
+    @State private var cachedReasoningBlocks: [ContentBlock] = []
+    @State private var lastContentHash: Int = 0
+    @State private var lastReasoningHash: Int = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -125,7 +131,7 @@ struct MessageView: View {
 
                         if showReasoning {
                             VStack(alignment: .leading, spacing: 8) {
-                                ForEach(parseMessageContent(reasoning), id: \.id) { block in
+                                ForEach(cachedReasoningBlocks, id: \.id) { block in
                                     block.view
                                 }
                             }
@@ -139,7 +145,7 @@ struct MessageView: View {
                         }
                     }
 
-                    ForEach(parseMessageContent(message.content), id: \.id) { block in
+                    ForEach(cachedContentBlocks, id: \.id) { block in
                         block.view
                     }
                 }
@@ -220,6 +226,33 @@ struct MessageView: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
+            }
+        }
+        .onAppear {
+            updateCachedBlocks()
+        }
+        .onChange(of: message.content) { _, _ in
+            updateCachedBlocks()
+        }
+        .onChange(of: message.reasoning) { _, _ in
+            updateCachedReasoningBlocks()
+        }
+    }
+    
+    private func updateCachedBlocks() {
+        let newHash = message.content.hashValue
+        if newHash != lastContentHash {
+            cachedContentBlocks = parseMessageContent(message.content)
+            lastContentHash = newHash
+        }
+    }
+    
+    private func updateCachedReasoningBlocks() {
+        if let reasoning = message.reasoning {
+            let newHash = reasoning.hashValue
+            if newHash != lastReasoningHash {
+                cachedReasoningBlocks = parseMessageContent(reasoning)
+                lastReasoningHash = newHash
             }
         }
     }
@@ -336,19 +369,30 @@ struct MessageView: View {
 struct ContentBlock: Identifiable {
     let id = UUID()
     let type: BlockType
+    let cachedLines: [String]? // Performance: cache split lines for text blocks
 
     enum BlockType {
         case text(String)
         case code(String, String) // code, language
         case tool(String, String) // tool name, result
     }
+    
+    init(type: BlockType) {
+        self.type = type
+        // Pre-split text lines for better rendering performance
+        if case .text(let text) = type {
+            self.cachedLines = text.components(separatedBy: "\n")
+        } else {
+            self.cachedLines = nil
+        }
+    }
 
     @ViewBuilder
     var view: some View {
         switch type {
-        case .text(let text):
+        case .text:
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(text.components(separatedBy: "\n"), id: \.self) { line in
+                ForEach(cachedLines ?? [], id: \.self) { line in
                     if line.hasPrefix("### ") {
                         Text(line.replacingOccurrences(of: "### ", with: ""))
                             .font(.system(size: 16, weight: .semibold))

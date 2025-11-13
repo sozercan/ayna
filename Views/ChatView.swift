@@ -24,6 +24,7 @@ struct ChatView: View {
   @State private var isNearBottom = true
   @State private var pendingChunks: [String] = []
   @State private var batchUpdateTask: Task<Void, Never>?
+  @State private var visibleMessages: [Message] = []
 
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -33,23 +34,23 @@ struct ChatView: View {
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
     }
+    
+    // Helper to filter visible messages
+    private func updateVisibleMessages() {
+        visibleMessages = currentConversation.messages.filter { message in
+            // Hide system and tool messages (tool messages are internal only)
+            guard message.role != .system && message.role != .tool else { return false }
 
-  // Pre-filter messages once for the view body
-  private var visibleMessages: [Message] {
-    currentConversation.messages.filter { message in
-      // Hide system and tool messages (tool messages are internal only)
-      guard message.role != .system && message.role != .tool else { return false }
+            // Show if: has content, has image data, or is generating image
+            // Don't show empty assistant messages unless we're actively generating
+            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+                // Only show empty assistant message if it's the last message and we're generating
+                return message.id == currentConversation.messages.last?.id && isGenerating
+            }
 
-      // Show if: has content, has image data, or is generating image
-      // Don't show empty assistant messages unless we're actively generating
-      if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-        // Only show empty assistant message if it's the last message and we're generating
-        return message.id == currentConversation.messages.last?.id && isGenerating
-      }
-
-      return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+        }
     }
-  }
 
   var body: some View {
         ZStack {
@@ -124,16 +125,26 @@ struct ChatView: View {
                     }
                 }
                 .onAppear {
-                    // Start at bottom when conversation is first loaded
+                    // Update visible messages and scroll to bottom
+                    updateVisibleMessages()
                     if let lastMessage = currentConversation.messages.last {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
                 }
                 .onChange(of: conversation.id) { _, _ in
-                    // Start at bottom when switching conversations
+                    // Update visible messages when switching conversations
+                    updateVisibleMessages()
                     if let lastMessage = currentConversation.messages.last {
                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                     }
+                }
+                .onChange(of: currentConversation.messages) { _, _ in
+                    // Update visible messages when messages change
+                    updateVisibleMessages()
+                }
+                .onChange(of: isGenerating) { _, _ in
+                    // Update visible messages when generation state changes (affects empty assistant message visibility)
+                    updateVisibleMessages()
                 }
             }
 
