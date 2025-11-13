@@ -421,11 +421,9 @@ struct NewChatView: View {
     let enabledTools = mcpManager.getEnabledTools()
     let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
 
-    // Cache the conversation index to avoid repeated lookups in onChunk
-    let conversationIndex = conversationManager.conversations.firstIndex(where: {
-      $0.id == conversation.id })
-
     // Send the message using the public API
+    // Capture conversation ID for validation in closure
+    let expectedConversationId = conversation.id
     openAIService.sendMessage(
       messages: currentMessages,
       model: updatedConversation.model,
@@ -433,9 +431,14 @@ struct NewChatView: View {
       tools: tools,
       conversationId: conversation.id,
       onChunk: { chunk in
-        // Properly accumulate chunks by appending to existing content (use cached index)
-        if let index = conversationIndex,
-          var lastMessage = self.conversationManager.conversations[index].messages.last,
+        // Always update conversation data, regardless of which view is active
+        guard let index = self.conversationManager.conversations.firstIndex(where: { $0.id == expectedConversationId }) else {
+          print("⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk")
+          return
+        }
+        
+        // Update the message content
+        if var lastMessage = self.conversationManager.conversations[index].messages.last,
           lastMessage.role == .assistant
         {
           lastMessage.content += chunk

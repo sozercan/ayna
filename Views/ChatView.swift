@@ -529,47 +529,81 @@ struct ChatView: View {
             tools: tools,
             conversationId: conversation.id,
             onChunk: { chunk in
-                // Clear tool execution indicator when we start receiving actual content
-                if currentToolName != nil {
-          currentToolName = nil
-        }
-
-        // Use cached index for better performance (avoids lookup on every chunk)
-        if let index = conversationIndex,
-                   var lastMessage = conversationManager.conversations[index].messages.last,
-                   lastMessage.role == .assistant {
-                    lastMessage.content += chunk
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
+                // Always update the conversation data, but only update UI state if we're viewing this conversation
+                guard let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) else {
+                    print("⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk")
+                    return
+                }
+                
+                // Update the message content regardless of which conversation is active
+                var lastMessage = conversationManager.conversations[index].messages.last
+                if lastMessage?.role == .assistant {
+                    lastMessage?.content += chunk
+                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage!
+                }
+                
+                // Only update UI state if we're currently viewing this conversation
+                if index == conversationIndex {
+                    // Clear tool execution indicator when we start receiving actual content
+                    if currentToolName != nil {
+                        currentToolName = nil
+                    }
                 }
             },
             onComplete: {
-        // Only clear state if no tool call is pending
-        // If currentToolName is set, a tool call was requested and will execute
-        // The tool execution will manage the state from there
-        if currentToolName == nil {
-          print("✅ onComplete: isGenerating set to FALSE (no tool calls pending)")
-          isGenerating = false
-        } else {
-          print(
-            "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))")
-                }
+                // Always save conversations
                 conversationManager.saveConversations()
+                
+                // Only update UI state if we're viewing this conversation
+                guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                      currentIndex == conversationIndex else {
+                    print("✅ onComplete for conversation \(conversation.id) (background)")
+                    return
+                }
+                
+                // Only clear state if no tool call is pending
+                // If currentToolName is set, a tool call was requested and will execute
+                // The tool execution will manage the state from there
+                if currentToolName == nil {
+                    print("✅ onComplete: isGenerating set to FALSE (no tool calls pending)")
+                    isGenerating = false
+                } else {
+                    print("⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))")
+                }
             },
             onError: { error in
+                // Always remove the empty assistant message
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                    conversationManager.conversations[index].messages.removeLast()
+                }
+                
+                // Only update UI state if we're viewing this conversation
+                guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                      currentIndex == conversationIndex else {
+                    print("❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)")
+                    return
+                }
+                
                 isGenerating = false
                 currentToolName = nil
                 toolCallDepth = 0
                 errorMessage = error.localizedDescription
-
-                // Remove the empty assistant message
-                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-                    conversationManager.conversations[index].messages.removeLast()
-                }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
+                // Validate conversation still exists
+                guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
+                    print("⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring")
+                    return
+                }
+                
                 // Tool call was requested by the LLM
-                print("🔧 Tool call requested: \(toolName)")
-        currentToolName = toolName
+                print("🔧 Tool call requested: \(toolName) for conversation \(conversation.id)")
+                
+                // Only update UI state if we're currently viewing this conversation
+                if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                   currentIndex == conversationIndex {
+                    currentToolName = toolName
+                }
 
                 // Check depth limit
                 guard toolCallDepth < maxToolCallDepth else {
@@ -628,9 +662,13 @@ struct ChatView: View {
 
                             // Get updated conversation with tool result
                             guard let updatedConv = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
-                                isGenerating = false
-                                currentToolName = nil
-                return
+                                // Only update UI if viewing this conversation
+                                if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                                   currentIndex == conversationIndex {
+                                    isGenerating = false
+                                    currentToolName = nil
+                                }
+                                return
                             }
 
                             // Add new empty assistant message for LLM response
@@ -638,7 +676,12 @@ struct ChatView: View {
                             conversationManager.addMessage(to: conversation, message: newAssistantMessage)
 
                             print("🔄 Sending follow-up request with tool results...")
-              currentToolName = "Analyzing \(toolName) results"
+                            
+                            // Only update UI state if viewing this conversation
+                            if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                               currentIndex == conversationIndex {
+                                currentToolName = "Analyzing \(toolName) results"
+                            }
 
                             // Automatically continue the conversation with tool results
                             sendMessageWithToolSupport(
@@ -652,9 +695,14 @@ struct ChatView: View {
                     } catch {
                         await MainActor.run {
                             print("❌ Tool execution error: \(error.localizedDescription)")
-                            isGenerating = false
-                            currentToolName = nil
-                            errorMessage = "Tool execution failed: \(error.localizedDescription)"
+                            
+                            // Only update UI state if viewing this conversation
+                            if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                               currentIndex == conversationIndex {
+                                isGenerating = false
+                                currentToolName = nil
+                                errorMessage = "Tool execution failed: \(error.localizedDescription)"
+                            }
                         }
                     }
                 }
