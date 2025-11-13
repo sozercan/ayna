@@ -18,6 +18,12 @@ struct ChatView: View {
   @State private var attachedFiles: [URL] = []
   @State private var toolCallDepth = 0
   @State private var currentToolName: String?
+  
+  // Performance optimizations
+  @State private var scrollDebounceTask: Task<Void, Never>?
+  @State private var isNearBottom = true
+  @State private var pendingChunks: [String] = []
+  @State private var batchUpdateTask: Task<Void, Never>?
 
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -100,9 +106,20 @@ struct ChatView: View {
                     }
                 }
                 .onChange(of: currentConversation.messages.count) { _, _ in
-                    if let lastMessage = currentConversation.messages.last {
-                        withAnimation {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    // Debounce scroll updates during streaming for better performance
+                    scrollDebounceTask?.cancel()
+                    scrollDebounceTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
+                        guard !Task.isCancelled, isNearBottom else { return }
+                        if let lastMessage = currentConversation.messages.last {
+                            if isGenerating {
+                                // No animation during streaming for better performance
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            } else {
+                                withAnimation {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
+                            }
                         }
                     }
                 }
@@ -529,38 +546,71 @@ struct ChatView: View {
             tools: tools,
             conversationId: conversation.id,
             onChunk: { chunk in
-                // Always update the conversation data, but only update UI state if we're viewing this conversation
-                guard let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) else {
-                    print("⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk")
-                    return
-                }
+                // Batch chunks for better performance during streaming
+                pendingChunks.append(chunk)
                 
-                // Update the message content regardless of which conversation is active
-                var lastMessage = conversationManager.conversations[index].messages.last
-                if lastMessage?.role == .assistant {
-                    lastMessage?.content += chunk
-                    conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage!
-                }
-                
-                // Only update UI state if we're currently viewing this conversation
-                if index == conversationIndex {
-                    // Clear tool execution indicator when we start receiving actual content
-                    if currentToolName != nil {
-                        currentToolName = nil
+                // Cancel existing batch task and create new one
+                batchUpdateTask?.cancel()
+                batchUpdateTask = Task { @MainActor in
+                    // Wait for batch window (50ms for smoother updates)
+                    try? await Task.sleep(for: .milliseconds(50))
+                    guard !Task.isCancelled else { return }
+                    
+                    // Process all pending chunks at once
+                    let chunksToProcess = pendingChunks
+                    pendingChunks.removeAll()
+                    
+                    guard !chunksToProcess.isEmpty else { return }
+                    
+                    let combinedChunk = chunksToProcess.joined()
+                    
+                    // Always update the conversation data, but only update UI state if we're viewing this conversation
+                    guard let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) else {
+                        print("⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk")
+                        return
+                    }
+
+                    // Update the message content regardless of which conversation is active
+                    var lastMessage = conversationManager.conversations[index].messages.last
+                    if lastMessage?.role == .assistant {
+                        lastMessage?.content += combinedChunk
+                        conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage!
+                    }
+
+                    // Only update UI state if we're currently viewing this conversation
+                    if index == conversationIndex {
+                        // Clear tool execution indicator when we start receiving actual content
+                        if currentToolName != nil {
+                            currentToolName = nil
+                        }
                     }
                 }
             },
             onComplete: {
-                // Always save conversations
-                conversationManager.saveConversations()
+                // Flush any pending chunks immediately
+                batchUpdateTask?.cancel()
+                if !pendingChunks.isEmpty {
+                    let remainingChunks = pendingChunks.joined()
+                    pendingChunks.removeAll()
+                    
+                    if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                       var lastMessage = conversationManager.conversations[index].messages.last,
+                       lastMessage.role == .assistant {
+                        lastMessage.content += remainingChunks
+                        conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
+                    }
+                }
                 
+                // Always save conversations
+        conversationManager.saveConversations()
+
                 // Only update UI state if we're viewing this conversation
                 guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                       currentIndex == conversationIndex else {
                     print("✅ onComplete for conversation \(conversation.id) (background)")
                     return
                 }
-                
+
                 // Only clear state if no tool call is pending
                 // If currentToolName is set, a tool call was requested and will execute
                 // The tool execution will manage the state from there
@@ -572,18 +622,22 @@ struct ChatView: View {
                 }
             },
             onError: { error in
+                // Clean up batching
+                batchUpdateTask?.cancel()
+                pendingChunks.removeAll()
+                
                 // Always remove the empty assistant message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
                     conversationManager.conversations[index].messages.removeLast()
                 }
-                
+
                 // Only update UI state if we're viewing this conversation
                 guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                       currentIndex == conversationIndex else {
                     print("❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)")
                     return
                 }
-                
+
                 isGenerating = false
                 currentToolName = nil
                 toolCallDepth = 0
@@ -595,10 +649,10 @@ struct ChatView: View {
                     print("⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring")
                     return
                 }
-                
+
                 // Tool call was requested by the LLM
                 print("🔧 Tool call requested: \(toolName) for conversation \(conversation.id)")
-                
+
                 // Only update UI state if we're currently viewing this conversation
                 if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                    currentIndex == conversationIndex {
@@ -675,8 +729,8 @@ struct ChatView: View {
                             let newAssistantMessage = Message(role: .assistant, content: "", model: model)
                             conversationManager.addMessage(to: conversation, message: newAssistantMessage)
 
-                            print("🔄 Sending follow-up request with tool results...")
-                            
+              print("🔄 Sending follow-up request with tool results...")
+
                             // Only update UI state if viewing this conversation
                             if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                                currentIndex == conversationIndex {
@@ -694,8 +748,8 @@ struct ChatView: View {
                         }
                     } catch {
                         await MainActor.run {
-                            print("❌ Tool execution error: \(error.localizedDescription)")
-                            
+              print("❌ Tool execution error: \(error.localizedDescription)")
+
                             // Only update UI state if viewing this conversation
                             if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                                currentIndex == conversationIndex {
