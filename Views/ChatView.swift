@@ -18,13 +18,14 @@ struct ChatView: View {
   @State private var attachedFiles: [URL] = []
   @State private var toolCallDepth = 0
   @State private var currentToolName: String?
-  
+
   // Performance optimizations
   @State private var scrollDebounceTask: Task<Void, Never>?
   @State private var isNearBottom = true
   @State private var pendingChunks: [String] = []
   @State private var batchUpdateTask: Task<Void, Never>?
   @State private var visibleMessages: [Message] = []
+  @State private var cachedConversationIndex: Int?
 
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -34,8 +35,21 @@ struct ChatView: View {
     private var currentConversation: Conversation {
         conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
     }
-    
-    // Helper to filter visible messages
+
+  // Helper to get conversation index with caching
+  private func getConversationIndex() -> Int? {
+    if let cached = cachedConversationIndex,
+      cached < conversationManager.conversations.count,
+      conversationManager.conversations[cached].id == conversation.id
+    {
+      return cached
+    }
+    let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id })
+    cachedConversationIndex = index
+    return index
+  }
+
+  // Helper to filter visible messages
     private func updateVisibleMessages() {
         visibleMessages = currentConversation.messages.filter { message in
             // Hide system and tool messages (tool messages are internal only)
@@ -394,6 +408,30 @@ struct ChatView: View {
       // Stop generation immediately
       print("🛑 Stop button clicked, cancelling...")
       OpenAIService.shared.cancelCurrentRequest()
+
+      // Flush any pending chunks before stopping
+      batchUpdateTask?.cancel()
+      if !pendingChunks.isEmpty {
+        let remainingChunks = pendingChunks.joined()
+        pendingChunks.removeAll()
+
+        if let index = conversationManager.conversations.firstIndex(where: {
+          $0.id == conversation.id
+        }),
+          var lastMessage = conversationManager.conversations[index].messages.last,
+          lastMessage.role == .assistant
+        {
+          lastMessage.content += remainingChunks
+          conversationManager.conversations[index].messages[
+            conversationManager.conversations[index].messages.count - 1] = lastMessage
+          print("💾 Flushed \(remainingChunks.count) chars before cancellation")
+        }
+      }
+
+      // Save conversations immediately to persist partial message
+      conversationManager.saveConversationsImmediately()
+      print("💾 Saved conversation after cancellation")
+
       isGenerating = false
       currentToolName = nil
       toolCallDepth = 0
@@ -559,24 +597,24 @@ struct ChatView: View {
             onChunk: { chunk in
                 // Batch chunks for better performance during streaming
                 pendingChunks.append(chunk)
-                
+
                 // Cancel existing batch task and create new one
                 batchUpdateTask?.cancel()
                 batchUpdateTask = Task { @MainActor in
                     // Wait for batch window (50ms for smoother updates)
                     try? await Task.sleep(for: .milliseconds(50))
                     guard !Task.isCancelled else { return }
-                    
+
                     // Process all pending chunks at once
                     let chunksToProcess = pendingChunks
                     pendingChunks.removeAll()
-                    
+
                     guard !chunksToProcess.isEmpty else { return }
-                    
+
                     let combinedChunk = chunksToProcess.joined()
-                    
-                    // Always update the conversation data, but only update UI state if we're viewing this conversation
-                    guard let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) else {
+
+          // Always update the conversation data, but only update UI state if we're viewing this conversation
+          guard let index = getConversationIndex() else {
                         print("⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk")
                         return
                     }
@@ -603,7 +641,7 @@ struct ChatView: View {
                 if !pendingChunks.isEmpty {
                     let remainingChunks = pendingChunks.joined()
                     pendingChunks.removeAll()
-                    
+
                     if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                        var lastMessage = conversationManager.conversations[index].messages.last,
                        lastMessage.role == .assistant {
@@ -611,7 +649,7 @@ struct ChatView: View {
                         conversationManager.conversations[index].messages[conversationManager.conversations[index].messages.count - 1] = lastMessage
                     }
                 }
-                
+
                 // Always save conversations
         conversationManager.saveConversations()
 
@@ -636,7 +674,7 @@ struct ChatView: View {
                 // Clean up batching
                 batchUpdateTask?.cancel()
                 pendingChunks.removeAll()
-                
+
                 // Always remove the empty assistant message
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
                     conversationManager.conversations[index].messages.removeLast()

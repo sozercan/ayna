@@ -17,7 +17,7 @@ struct MessageView: View {
     @State private var showModelMenu = false
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
-    
+
     // Performance: Cache parsed content blocks to avoid re-parsing on every render
     @State private var cachedContentBlocks: [ContentBlock] = []
     @State private var cachedReasoningBlocks: [ContentBlock] = []
@@ -215,18 +215,15 @@ struct MessageView: View {
                     .fixedSize()
                 }
             }
-            .opacity(isHovered ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
+      .opacity(isHovered ? 1 : 0)
             .frame(width: message.role == .assistant ? 72 : 32)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(isHovered ? Color.primary.opacity(0.03) : Color.clear)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
+    .onHover { hovering in
+      isHovered = hovering
         }
         .onAppear {
             updateCachedBlocks()
@@ -238,7 +235,7 @@ struct MessageView: View {
             updateCachedReasoningBlocks()
         }
     }
-    
+
     private func updateCachedBlocks() {
         let newHash = message.content.hashValue
         if newHash != lastContentHash {
@@ -246,7 +243,7 @@ struct MessageView: View {
             lastContentHash = newHash
         }
     }
-    
+
     private func updateCachedReasoningBlocks() {
         if let reasoning = message.reasoning {
             let newHash = reasoning.hashValue
@@ -376,7 +373,7 @@ struct ContentBlock: Identifiable {
         case code(String, String) // code, language
         case tool(String, String) // tool name, result
     }
-    
+
     init(type: BlockType) {
         self.type = type
         // Pre-split text lines for better rendering performance

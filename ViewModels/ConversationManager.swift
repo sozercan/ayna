@@ -12,6 +12,8 @@ class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
 
     private let conversationsKey = "saved_conversations"
+  private var saveTask: Task<Void, Never>?
+  private let saveDebounceDuration: Duration = .milliseconds(200)
 
     init() {
         loadConversations()
@@ -147,6 +149,21 @@ class ConversationManager: ObservableObject {
     // MARK: - Persistence
 
     func saveConversations() {
+    // Debounce saves to batch rapid updates (e.g., during streaming)
+    saveTask?.cancel()
+    saveTask = Task { @MainActor in
+      try? await Task.sleep(for: saveDebounceDuration)
+      guard !Task.isCancelled else { return }
+
+      if let encoded = try? JSONEncoder().encode(conversations) {
+        UserDefaults.standard.set(encoded, forKey: conversationsKey)
+      }
+    }
+  }
+
+  func saveConversationsImmediately() {
+    // For critical saves that shouldn't be debounced
+    saveTask?.cancel()
         if let encoded = try? JSONEncoder().encode(conversations) {
             UserDefaults.standard.set(encoded, forKey: conversationsKey)
         }
@@ -157,10 +174,10 @@ class ConversationManager: ObservableObject {
             print("No saved conversations found")
             return
         }
-        
+
         do {
             var decoded = try JSONDecoder().decode([Conversation].self, from: data)
-            
+
             // Validate and fix models that no longer exist
             let availableModels = OpenAIService.shared.customModels
             let defaultModel = OpenAIService.shared.selectedModel
@@ -178,7 +195,7 @@ class ConversationManager: ObservableObject {
             if needsSave {
                 saveConversations()
             }
-            
+
             print("✅ Loaded \(conversations.count) conversations")
         } catch {
             print("❌ Failed to load conversations: \(error)")

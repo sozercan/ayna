@@ -14,9 +14,10 @@ struct SidebarView: View {
   @Binding var isCreatingNew: Bool
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
+  @State private var filteredConversations: [Conversation] = []
 
-    private var filteredConversations: [Conversation] {
-        conversationManager.searchConversations(query: searchText)
+  private func updateFilteredConversations() {
+    filteredConversations = conversationManager.searchConversations(query: searchText)
     }
 
     var body: some View {
@@ -118,6 +119,15 @@ struct SidebarView: View {
                 }
             }
         }
+    .onChange(of: searchText) { _, _ in
+      updateFilteredConversations()
+    }
+    .onChange(of: conversationManager.conversations.count) { _, _ in
+      updateFilteredConversations()
+    }
+    .onAppear {
+      updateFilteredConversations()
+    }
     }
 
     private func deleteSelectedConversations() {
