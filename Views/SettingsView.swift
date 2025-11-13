@@ -39,6 +39,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
+    @AppStorage("enableNotchIntegration") private var enableNotchIntegration = false
   @ObservedObject private var openAIService = OpenAIService.shared
 
     var body: some View {
@@ -48,6 +49,16 @@ struct GeneralSettingsView: View {
                     .help("Automatically generate conversation titles from first message")
             } header: {
                 Text("Behavior")
+            }
+
+            Section {
+                Toggle("Enable Notch Integration", isOn: $enableNotchIntegration)
+                    .help("Show chat interface in the notch area")
+            } header: {
+                Text("Interface")
+            } footer: {
+                Text("Shows compact chat in notch area (or menu bar on older Macs). Works alongside main window. Restart app to apply changes.")
+                    .font(.caption)
             }
 
             Section {

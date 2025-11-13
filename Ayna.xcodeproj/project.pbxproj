@@ -21,6 +21,9 @@
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
+		C88A18842EC558FF00D6FCA7 /* NotchPositioningService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88A18832EC558FF00D6FCA7 /* NotchPositioningService.swift */; };
+		C88A18872EC5591800D6FCA7 /* NotchWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88A18852EC5591800D6FCA7 /* NotchWindow.swift */; };
+		C88A18892EC5592B00D6FCA7 /* NotchChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88A18882EC5592B00D6FCA7 /* NotchChatView.swift */; };
 		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
 		C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */; };
 		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
@@ -44,6 +47,9 @@
 		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
 		C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C8831AFA2EBDCA9800C5703C /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
+		C88A18832EC558FF00D6FCA7 /* NotchPositioningService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPositioningService.swift; sourceTree = "<group>"; };
+		C88A18852EC5591800D6FCA7 /* NotchWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchWindow.swift; sourceTree = "<group>"; };
+		C88A18882EC5592B00D6FCA7 /* NotchChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchChatView.swift; sourceTree = "<group>"; };
 		C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C8E86EFD2EB9281300D601B5 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
@@ -87,6 +93,7 @@
 		06000004 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C88A18882EC5592B00D6FCA7 /* NotchChatView.swift */,
 				C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */,
 				C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */,
 				02000007 /* ChatView.swift */,
@@ -110,6 +117,8 @@
 		06000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C88A18832EC558FF00D6FCA7 /* NotchPositioningService.swift */,
+				C88A18862EC5591800D6FCA7 /* Windows */,
 				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
 				02000013 /* AppleIntelligenceService.swift */,
 				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
@@ -125,6 +134,14 @@
 				02000010 /* ConversationManager.swift */,
 			);
 			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		C88A18862EC5591800D6FCA7 /* Windows */ = {
+			isa = PBXGroup;
+			children = (
+				C88A18852EC5591800D6FCA7 /* NotchWindow.swift */,
+			);
+			path = Windows;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -203,15 +220,18 @@
 				01000002 /* ContentView.swift in Sources */,
 				01000004 /* Conversation.swift in Sources */,
 				01000005 /* Message.swift in Sources */,
+				C88A18892EC5592B00D6FCA7 /* NotchChatView.swift in Sources */,
 				C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */,
 				01000006 /* OpenAIService.swift in Sources */,
 				01000013 /* AppleIntelligenceService.swift in Sources */,
 				01000007 /* ChatView.swift in Sources */,
+				C88A18872EC5591800D6FCA7 /* NotchWindow.swift in Sources */,
 				C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */,
 				01000008 /* SidebarView.swift in Sources */,
 				01000009 /* SettingsView.swift in Sources */,
 				01000010 /* ConversationManager.swift in Sources */,
 				01000012 /* MessageView.swift in Sources */,
+				C88A18842EC558FF00D6FCA7 /* NotchPositioningService.swift in Sources */,
 				C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */,
 				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
 				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
