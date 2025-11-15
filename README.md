@@ -1,36 +1,25 @@
-# ayna
+# Ayna
 
-A native macOS ChatGPT client built with SwiftUI.
+Native macOS ChatGPT client built with SwiftUI.
 
-![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
-![Swift](https://img.shields.io/badge/Swift-5.9-orange)
+## Highlights
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing guidance, and PR expectations.
-```markdown
-# ayna
-
-A native macOS ChatGPT client built with SwiftUI.
-
-![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
-![Swift](https://img.shields.io/badge/Swift-5.9-orange)
-
-## Features
-
-- 💬 Native macOS chat interface with streaming responses
-- ☁️ Support for OpenAI, Azure OpenAI, and AIKit (local models via Podman)
-- 🛠️ MCP (Model Context Protocol) integration for tool calling (search, filesystem access)
-- 🗂️ Conversation management with search
-- 🎨 Clean, modern design with keyboard shortcuts
-- 💾 Local data storage
+- 💬 Fast, streaming chat interface tailored for macOS
+- ☁️ Works with OpenAI and Azure OpenAI out of the box
+- 🏠 Run local models through AIKit + Podman when you prefer everything on device
+- 🛠️ Model Context Protocol (MCP) tools for search and filesystem access
+- 🗂️ Conversation management with search, titles, and keyboard shortcuts
 
 ## Requirements
 
-- macOS 14.0+
-- Xcode 15.0+
+- macOS 14.0 or newer
+- Xcode 15.0+ to build from source
+- OpenAI or Azure OpenAI API key (optional if using local AIKit models)
+- [Podman](https://podman-desktop.io/docs/installation) for AIKit containers (optional)
 
-## Installation
+## Install & Run
+
+Clone the repo, open the project in Xcode, and press `Cmd+R` with the “My Mac” target selected.
 
 ```bash
 git clone https://github.com/yourusername/ayna.git
@@ -38,38 +27,37 @@ cd ayna
 open ayna.xcodeproj
 ```
 
-Build and run with Cmd+R.
+## Using Ayna
 
-## Getting Started
+### Connect to OpenAI or Azure OpenAI
+1. Launch the app and open Settings (`Cmd+,`).
+2. In the API tab, pick a provider and add your API key (and Azure endpoint/deployment if needed).
+3. Start a new chat with `Cmd+N` and begin messaging.
 
-### Cloud Providers (OpenAI/Azure OpenAI)
-1. Launch the app
-2. Go to Settings (Cmd+,) → API tab
-3. Select your provider and enter API credentials
-4. Start chatting with Cmd+N
+### Run Local Models with AIKit
+1. Install Podman (GPU support recommended for speed).
+2. In Settings → Models → AIKit, choose a model and select **Pull & Run**.
+3. Chats sent while AIKit is running stay fully local.
 
-### Local Models ([AIKit](https://kaito-project.github.io/aikit/docs))
-1. Install [Podman](https://podman-desktop.io/docs/installation)
-2. Set up [GPU access](https://podman-desktop.io/docs/podman/gpu) (recommended for performance)
-3. Go to Settings → Models → New Model → AIKit tab
-4. Select a model and click "Pull & Run Model"
-
-### MCP Tools
-1. Go to Settings → MCP Tools
-2. Enable [brave-search](https://github.com/modelcontextprotocol/servers) for web search or [filesystem](https://github.com/modelcontextprotocol/servers) for file access
-3. Provide any required API keys (e.g., Brave Search API key)
-4. Tools automatically engage when relevant to your queries
+### Use MCP Tools
+1. Head to Settings → MCP Tools.
+2. Enable servers like `brave-search` or `filesystem` and supply any required keys.
+3. Ayna automatically calls tools when a response benefits from them.
 
 ## Keyboard Shortcuts
 
-- `Cmd+N` - New conversation
-- `Cmd+,` - Settings
-- `Enter` - Send message
+- `Cmd+N` — new conversation
+- `Cmd+,` — open Settings
+- `Enter` — send message (use `Shift+Enter` for a new line)
 
-## Security
+## Privacy & Security
 
-- API keys are stored exclusively in the macOS Keychain.
-- Conversations are persisted locally in an AES-GCM encrypted store under Application Support.
-- See `SECURITY.md` for the detailed threat model and operational guidance.
+- API keys live in the macOS Keychain, not on disk.
+- Conversations are encrypted (AES-GCM) inside Application Support.
+- No telemetry or analytics; everything stays on your Mac unless you call a cloud provider.
 
-```
+## Support & Contributing
+
+Questions or bugs? Open an [issue](https://github.com/sozercan/ayna/issues) on GitHub.
+
+Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
