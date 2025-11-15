@@ -115,6 +115,19 @@ class OpenAIService: ObservableObject {
     }
   }
 
+  @Published var modelEndpoints: [String: String] {
+    didSet {
+      UserDefaults.standard.set(modelEndpoints, forKey: "modelEndpoints")
+    }
+  }
+
+  @Published var modelAPIKeys: [String: String] {
+    didSet {
+      // Store in UserDefaults (Note: Should use Keychain for production)
+      UserDefaults.standard.set(modelAPIKeys, forKey: "modelAPIKeys")
+    }
+  }
+
   let azureAPIVersions = [
     "2025-04-01-preview",
     "2025-03-01-preview",
@@ -172,24 +185,50 @@ class OpenAIService: ObservableObject {
     self.customModels = loadedCustomModels
 
     // Load model providers mapping
+    let loadedProviders: [String: AIProvider]
     if let savedProviders = UserDefaults.standard.dictionary(forKey: "modelProviders")
       as? [String: String] {
-      self.modelProviders = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
+      loadedProviders = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
     } else {
       // Default all initial models to OpenAI
-      self.modelProviders = Dictionary(
+      loadedProviders = Dictionary(
         uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) })
     }
+    self.modelProviders = loadedProviders
 
     // Load model endpoint types mapping
+    let loadedEndpointTypes: [String: APIEndpointType]
     if let savedEndpointTypes = UserDefaults.standard.dictionary(forKey: "modelEndpointTypes")
       as? [String: String] {
-      self.modelEndpointTypes = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
+      loadedEndpointTypes = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
     } else {
       // Default all models to Chat Completions
-      self.modelEndpointTypes = Dictionary(
+      loadedEndpointTypes = Dictionary(
         uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) })
     }
+    self.modelEndpointTypes = loadedEndpointTypes
+
+    // Load custom endpoints mapping
+    let loadedEndpoints: [String: String]
+    if let savedEndpoints = UserDefaults.standard.dictionary(forKey: "modelEndpoints")
+      as? [String: String]
+    {
+      loadedEndpoints = savedEndpoints
+    } else {
+      loadedEndpoints = [:]
+    }
+    self.modelEndpoints = loadedEndpoints
+
+    // Load per-model API keys
+    let loadedAPIKeys: [String: String]
+    if let savedAPIKeys = UserDefaults.standard.dictionary(forKey: "modelAPIKeys")
+      as? [String: String]
+    {
+      loadedAPIKeys = savedAPIKeys
+    } else {
+      loadedAPIKeys = [:]
+    }
+    self.modelAPIKeys = loadedAPIKeys
 
     // Load selected model, ensure it exists in custom models
     let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
@@ -232,8 +271,30 @@ class OpenAIService: ObservableObject {
     UserDefaults.standard.set(apiKey, forKey: "openai_api_key")
   }
 
+  // Get API key for a specific model, falling back to global key if not set
+  func getAPIKey(for model: String?) -> String {
+    guard let model = model else { return apiKey }
+    return modelAPIKeys[model] ?? apiKey
+  }
+
   private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
     let effectiveProvider = provider ?? self.provider
+
+    // Check for custom endpoint first (for OpenAI provider)
+    if effectiveProvider == .openai {
+      let modelName = deploymentName ?? selectedModel
+      if let customEndpoint = modelEndpoints[modelName], !customEndpoint.isEmpty {
+        // Use custom endpoint with /v1/chat/completions path if not already included
+        let trimmedEndpoint = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+          .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if trimmedEndpoint.contains("/v1/chat/completions") {
+          return trimmedEndpoint
+        } else {
+          return "\(trimmedEndpoint)/v1/chat/completions"
+        }
+      }
+    }
+
     switch effectiveProvider {
     case .openai:
       return openAIURL
@@ -257,6 +318,22 @@ class OpenAIService: ObservableObject {
 
   private func getResponsesAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
     let effectiveProvider = provider ?? self.provider
+
+    // Check for custom endpoint first (for OpenAI provider)
+    if effectiveProvider == .openai {
+      let modelName = deploymentName ?? selectedModel
+      if let customEndpoint = modelEndpoints[modelName], !customEndpoint.isEmpty {
+        // Use custom endpoint with /v1/responses path if not already included
+        let trimmedEndpoint = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+          .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if trimmedEndpoint.contains("/v1/responses") {
+          return trimmedEndpoint
+        } else {
+          return "\(trimmedEndpoint)/v1/responses"
+        }
+      }
+    }
+
     switch effectiveProvider {
     case .openai:
       return "https://api.openai.com/v1/responses"
@@ -302,7 +379,10 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping (Data) -> Void,
     onError: @escaping (Error) -> Void
   ) {
-    guard !apiKey.isEmpty else {
+    let requestModel = model ?? selectedModel
+    let modelAPIKey = getAPIKey(for: requestModel)
+
+    guard !modelAPIKey.isEmpty else {
       onError(OpenAIError.missingAPIKey)
       return
     }
@@ -316,8 +396,6 @@ class OpenAIService: ObservableObject {
       onError(OpenAIError.missingAzureEndpoint)
       return
     }
-
-    let requestModel = model ?? selectedModel
 
     // Image generation endpoint: {endpoint}/openai/deployments/{model}/images/generations?api-version={version}
     let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -334,7 +412,11 @@ class OpenAIService: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+    // Only add Authorization header if API key is provided
+    if !modelAPIKey.isEmpty {
+      request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
+    }
 
     let body: [String: Any] = [
       "prompt": prompt,
@@ -586,9 +668,13 @@ class OpenAIService: ObservableObject {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
     // Set authentication header based on provider
+    let modelAPIKey = getAPIKey(for: requestModel)
     switch effectiveProvider {
     case .openai, .azure:
-      request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+      // Only add Authorization header if API key is provided
+      if !modelAPIKey.isEmpty {
+        request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
+      }
     case .appleIntelligence, .aikit:
       break // No authentication needed
     }
@@ -640,6 +726,8 @@ class OpenAIService: ObservableObject {
       return
     }
 
+    let requestModel: String = model ?? selectedModel
+    let modelAPIKey = getAPIKey(for: requestModel)
     let apiURL = getResponsesAPIURL(provider: effectiveProvider)
 
     guard let url = URL(string: apiURL) else {
@@ -650,7 +738,11 @@ class OpenAIService: ObservableObject {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+    // Only add Authorization header if API key is provided
+    if !modelAPIKey.isEmpty {
+      request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
+    }
 
     // Build input array with proper multimodal support
     var inputArray: [[String: Any]] = []

@@ -356,13 +356,15 @@ struct APISettingsView: View {
                                             .padding(.vertical, 2)
                                             .background(Color.secondary.opacity(0.1))
                                             .cornerRadius(4)
-                                    }
-                                    TextField("https://api.openai.com", text: $tempEndpoint)
+                    }
+                    TextField(
+                      "https://api.openai.com or http://localhost:8000", text: $tempEndpoint)
                                         .textFieldStyle(.roundedBorder)
                                         .onChange(of: tempEndpoint) { _, _ in
                                             validationStatus = .notChecked
-                                        }
-                                    Text("OpenAI API endpoint URL")
+                    }
+                    Text(
+                      "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000)")
                                         .font(.caption)
                                         .foregroundStyle(.tertiary)
                                 }
@@ -373,8 +375,8 @@ struct APISettingsView: View {
                                         Text("API Key")
                                             .font(.subheadline)
                                             .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
+                      Spacer()
+                      Text("Optional")
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                             .padding(.horizontal, 6)
@@ -427,34 +429,97 @@ struct APISettingsView: View {
                                         Text("Validate")
                                     }
                                     .frame(maxWidth: .infinity)
-                                }
-                                .disabled(tempAPIKey.isEmpty || tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                  }
+                  .disabled(
+                    tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      || tempEndpoint.isEmpty)
                                 .controlSize(.large)
 
-                                Button {
-                                    openAIService.apiKey = tempAPIKey
+                  if let selectedName = selectedModelName,
+                    openAIService.customModels.contains(selectedName)
+                  {
+                    // Update existing model
+                    Button {
+                      let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                      let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                                    let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
-                                        openAIService.customModels.append(modelName)
-                                        openAIService.modelProviders[modelName] = .openai
-                                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-                                        if openAIService.customModels.count == 1 {
-                                            openAIService.selectedModel = modelName
-                                        }
-                                        selectedModelName = modelName
-                                        validationStatus = .notChecked
-                                    }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "plus.circle.fill")
-                                        Text("Add Model")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .disabled(tempAPIKey.isEmpty || tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tempEndpoint.isEmpty)
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.large)
+                      if !modelName.isEmpty {
+                        // Update provider and endpoint type
+                        openAIService.modelProviders[modelName] = .openai
+                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                        // Update per-model API key
+                        if !apiKey.isEmpty {
+                          openAIService.modelAPIKeys[modelName] = apiKey
+                        } else {
+                          openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                        }
+
+                        // Update custom endpoint
+                        if !endpoint.isEmpty {
+                          openAIService.modelEndpoints[modelName] = endpoint
+                        } else {
+                          openAIService.modelEndpoints.removeValue(forKey: modelName)
+                        }
+
+                        validationStatus = .notChecked
+                      }
+                    } label: {
+                      HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                        Text("Update Model")
+                      }
+                      .frame(maxWidth: .infinity)
+                    }
+                    .disabled(
+                      tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || tempEndpoint.isEmpty
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                  } else {
+                    // Add new model
+                    Button {
+                      let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                      let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                      if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
+                        openAIService.customModels.append(modelName)
+                        openAIService.modelProviders[modelName] = .openai
+                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                        // Save per-model API key if provided
+                        if !apiKey.isEmpty {
+                          openAIService.modelAPIKeys[modelName] = apiKey
+                        }
+
+                        // Save custom endpoint if provided
+                        if !endpoint.isEmpty {
+                          openAIService.modelEndpoints[modelName] = endpoint
+                        }
+
+                        if openAIService.customModels.count == 1 {
+                          openAIService.selectedModel = modelName
+                        }
+                        selectedModelName = modelName
+                        validationStatus = .notChecked
+                      }
+                    } label: {
+                      HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add Model")
+                      }
+                      .frame(maxWidth: .infinity)
+                    }
+                    .disabled(
+                      tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || tempEndpoint.isEmpty
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                  }
                             }
                         }
                         .padding(.horizontal)
@@ -595,38 +660,84 @@ struct APISettingsView: View {
                                         Text("Validate")
                                     }
                                     .frame(maxWidth: .infinity)
-                                }
-                                .disabled(tempAPIKey.isEmpty || tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                  }
+                  .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
                                 .controlSize(.large)
 
-                                Button {
-                                    openAIService.apiKey = tempAPIKey
-                                    openAIService.azureEndpoint = tempAzureEndpoint
-                                    openAIService.azureDeploymentName = tempAzureDeployment
+                  if let selectedName = selectedModelName,
+                    openAIService.customModels.contains(selectedName)
+                  {
+                    // Update existing model
+                    Button {
+                      openAIService.azureEndpoint = tempAzureEndpoint
+                      openAIService.azureDeploymentName = tempAzureDeployment
 
-                                    let modelName = tempAzureDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
-                                        openAIService.customModels.append(modelName)
-                                        openAIService.modelProviders[modelName] = .azure
-                                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-                                        if openAIService.customModels.count == 1 {
-                                            openAIService.selectedModel = modelName
-                                        }
-                                        selectedModelName = modelName
-                                        validationStatus = .notChecked
-                                    }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "plus.circle.fill")
-                                        Text("Add Model")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .disabled(tempAPIKey.isEmpty || tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.large)
-                            }
+                      let modelName = tempAzureDeployment.trimmingCharacters(
+                        in: .whitespacesAndNewlines)
+                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                      if !modelName.isEmpty {
+                        openAIService.modelProviders[modelName] = .azure
+                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                        // Update per-model API key
+                        if !apiKey.isEmpty {
+                          openAIService.modelAPIKeys[modelName] = apiKey
+                        } else {
+                          openAIService.modelAPIKeys.removeValue(forKey: modelName)
                         }
+
+                        validationStatus = .notChecked
+                      }
+                    } label: {
+                      HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                        Text("Update Model")
+                      }
+                      .frame(maxWidth: .infinity)
+                    }
+                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                  } else {
+                    // Add new model
+                    Button {
+                      openAIService.azureEndpoint = tempAzureEndpoint
+                      openAIService.azureDeploymentName = tempAzureDeployment
+
+                      let modelName = tempAzureDeployment.trimmingCharacters(
+                        in: .whitespacesAndNewlines)
+                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                      if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
+                        openAIService.customModels.append(modelName)
+                        openAIService.modelProviders[modelName] = .azure
+                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                        // Save per-model API key if provided
+                        if !apiKey.isEmpty {
+                          openAIService.modelAPIKeys[modelName] = apiKey
+                        }
+
+                        if openAIService.customModels.count == 1 {
+                          openAIService.selectedModel = modelName
+                        }
+                        selectedModelName = modelName
+                        validationStatus = .notChecked
+                      }
+                    } label: {
+                      HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add Model")
+                      }
+                      .frame(maxWidth: .infinity)
+                    }
+                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                  }
+                }
+              }
                         .padding(.horizontal)
                     } else if openAIService.provider == .appleIntelligence {
                         // Apple Intelligence Configuration
@@ -847,23 +958,38 @@ struct APISettingsView: View {
 
         do {
             if openAIService.provider == .openai {
-                // Validate OpenAI configuration
-                guard !tempAPIKey.isEmpty else {
-                    validationStatus = .invalid("API key is required")
-                    return
-                }
-
+        // Validate OpenAI configuration
                 let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !modelName.isEmpty else {
-                    validationStatus = .invalid("Model name is required")
+          validationStatus = .invalid("Model name is required")
                     return
-                }
+        }
 
-                // Call OpenAI models endpoint to verify API key and check if model exists
-                let url = URL(string: "https://api.openai.com/v1/models")!
+        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !endpoint.isEmpty else {
+          validationStatus = .invalid("Endpoint is required")
+          return
+        }
+
+        // Use custom endpoint for validation if provided
+        let baseEndpoint =
+          endpoint.contains("api.openai.com")
+          ? "https://api.openai.com"
+          : endpoint.replacingOccurrences(of: "/v1/chat/completions", with: "")
+        let modelsURL = "\(baseEndpoint)/v1/models"
+
+        guard let url = URL(string: modelsURL) else {
+          validationStatus = .invalid("Invalid endpoint URL")
+          return
+        }
+
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
-                request.setValue("Bearer \(tempAPIKey)", forHTTPHeaderField: "Authorization")
+
+        // Only add auth header if API key is provided
+        if !tempAPIKey.isEmpty {
+          request.setValue("Bearer \(tempAPIKey)", forHTTPHeaderField: "Authorization")
+        }
 
                 let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -985,11 +1111,13 @@ struct APISettingsView: View {
         }
 
         tempModelName = model
-        tempAPIKey = openAIService.apiKey
+    // Load per-model API key if available, otherwise use global
+    tempAPIKey = openAIService.modelAPIKeys[model] ?? openAIService.apiKey
         tempEndpointType = openAIService.modelEndpointTypes[model] ?? .chatCompletions
 
         if openAIService.provider == .openai {
-            tempEndpoint = "https://api.openai.com/"
+      // Load custom endpoint if available, otherwise use default
+      tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
         } else {
             tempAzureDeployment = model
             tempAzureEndpoint = openAIService.azureEndpoint
@@ -998,8 +1126,10 @@ struct APISettingsView: View {
 
     private func removeModel(_ model: String) {
         openAIService.customModels.removeAll { $0 == model }
-        // Also remove from provider mapping
+    // Also remove from provider mapping and per-model settings
         openAIService.modelProviders.removeValue(forKey: model)
+    openAIService.modelEndpoints.removeValue(forKey: model)
+    openAIService.modelAPIKeys.removeValue(forKey: model)
 
         // If we removed the selected default model, pick a new one
         if openAIService.selectedModel == model && !openAIService.customModels.isEmpty {
