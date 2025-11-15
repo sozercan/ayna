@@ -87,8 +87,8 @@ struct NewChatView: View {
       // Chat background with subtle gradient
       LinearGradient(
         colors: [
-          Color(nsColor: .windowBackgroundColor),
-          Color(nsColor: .windowBackgroundColor).opacity(0.95),
+            Color(nsColor: .windowBackgroundColor),
+            Color(nsColor: .windowBackgroundColor).opacity(0.95)
         ],
         startPoint: .top,
         endPoint: .bottom
@@ -168,8 +168,7 @@ struct NewChatView: View {
                         .font(.caption)
                         .lineLimit(1)
                       if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
-                        .fileSize
-                      {
+                        .fileSize {
                         Text(
                           ByteCountFormatter.string(
                             fromByteCount: Int64(fileSize), countStyle: .file)
@@ -345,11 +344,10 @@ struct NewChatView: View {
 
     // Get or create the conversation
     let conversation: Conversation
-    if let existingId = currentConversationId,
-      let existingConversation = conversationManager.conversations.first(where: {
-        $0.id == existingId
-      })
-    {
+      if let existingId = currentConversationId,
+        let existingConversation = conversationManager.conversations.first(where: {
+          $0.id == existingId
+        }) {
       // Continue with existing conversation
       conversation = existingConversation
       print("📝 Continuing with existing conversation: \(existingId)")
@@ -438,9 +436,8 @@ struct NewChatView: View {
         }
         
         // Update the message content
-        if var lastMessage = self.conversationManager.conversations[index].messages.last,
-          lastMessage.role == .assistant
-        {
+          if var lastMessage = self.conversationManager.conversations[index].messages.last,
+            lastMessage.role == .assistant {
           lastMessage.content += chunk
           self.conversationManager.conversations[index].messages[
             self.conversationManager.conversations[index].messages.count - 1] = lastMessage

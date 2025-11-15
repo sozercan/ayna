@@ -219,8 +219,7 @@ class OpenAIService: ObservableObject {
     // Load custom endpoints mapping
     let loadedEndpoints: [String: String]
     if let savedEndpoints = UserDefaults.standard.dictionary(forKey: "modelEndpoints")
-      as? [String: String]
-    {
+      as? [String: String] {
       loadedEndpoints = savedEndpoints
     } else {
       loadedEndpoints = [:]

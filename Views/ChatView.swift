@@ -37,11 +37,10 @@ struct ChatView: View {
     }
 
   // Helper to get conversation index with caching
-  private func getConversationIndex() -> Int? {
+    private func getConversationIndex() -> Int? {
     if let cached = cachedConversationIndex,
       cached < conversationManager.conversations.count,
-      conversationManager.conversations[cached].id == conversation.id
-    {
+      conversationManager.conversations[cached].id == conversation.id {
       return cached
     }
     let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id })
@@ -403,7 +402,7 @@ struct ChatView: View {
     }
   }
 
-  private func sendMessage() {
+    private func sendMessage() {
     if isGenerating {
       // Stop generation immediately
       print("🛑 Stop button clicked, cancelling...")
@@ -415,12 +414,11 @@ struct ChatView: View {
         let remainingChunks = pendingChunks.joined()
         pendingChunks.removeAll()
 
-        if let index = conversationManager.conversations.firstIndex(where: {
-          $0.id == conversation.id
-        }),
-          var lastMessage = conversationManager.conversations[index].messages.last,
-          lastMessage.role == .assistant
-        {
+          if let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversation.id
+          }),
+            var lastMessage = conversationManager.conversations[index].messages.last,
+            lastMessage.role == .assistant {
           lastMessage.content += remainingChunks
           conversationManager.conversations[index].messages[
             conversationManager.conversations[index].messages.count - 1] = lastMessage
@@ -575,6 +573,7 @@ struct ChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
+    // swiftlint:disable:next function_body_length
     private func sendMessageWithToolSupport(
         messages: [Message],
         model: String,

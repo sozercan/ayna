@@ -30,6 +30,12 @@ The repository ships with the `aynaTests` XCTest bundle.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 
+### Linting
+- Run `swiftlint` from the repo root after every non-trivial change and before handing work back to the user.
+- Fix every reported warning; only add `// swiftlint:disable` annotations when there is a documented reason in-code.
+- Do **not** raise lint thresholds or comment out rules to “get green.” If a rule is noisy, discuss with the user before changing `.swiftlint.yml`.
+- When editing large files (e.g., `Views/SettingsView.swift`), keep existing scoped disables intact and avoid introducing new violations elsewhere.
+
 ## Architecture
 
 ### Core Structure

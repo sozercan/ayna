@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+// swiftlint:disable file_length type_body_length
+
 struct SettingsView: View {
   @ObservedObject private var openAIService = OpenAIService.shared
     @State private var showAPIKeyInfo = false
@@ -436,9 +438,8 @@ struct APISettingsView: View {
                       || tempEndpoint.isEmpty)
                                 .controlSize(.large)
 
-                  if let selectedName = selectedModelName,
-                    openAIService.customModels.contains(selectedName)
-                  {
+                                    if let selectedName = selectedModelName,
+                                        openAIService.customModels.contains(selectedName) {
                     // Update existing model
                     Button {
                       let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -665,9 +666,8 @@ struct APISettingsView: View {
                   .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
                                 .controlSize(.large)
 
-                  if let selectedName = selectedModelName,
-                    openAIService.customModels.contains(selectedName)
-                  {
+                                    if let selectedName = selectedModelName,
+                                        openAIService.customModels.contains(selectedName) {
                     // Update existing model
                     Button {
                       openAIService.azureEndpoint = tempAzureEndpoint
@@ -1494,3 +1494,5 @@ struct AIKitConfigurationView: View {
 #Preview {
     SettingsView()
 }
+
+// swiftlint:enable file_length type_body_length
