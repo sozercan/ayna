@@ -26,6 +26,7 @@
 		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
 		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
 		C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
+		C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +51,7 @@
 		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
 		C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
+		C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +114,7 @@
 		06000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */,
 				C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */,
 				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
 				02000013 /* AppleIntelligenceService.swift */,
@@ -201,6 +204,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */,
 				C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */,
 				C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */,
 				01000001 /* aynaApp.swift in Sources */,

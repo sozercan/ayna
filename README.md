@@ -4,6 +4,13 @@ A native macOS ChatGPT client built with SwiftUI.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
+```markdown
+# ayna
+
+A native macOS ChatGPT client built with SwiftUI.
+
+![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
+![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 
 ## Features
 
@@ -54,3 +61,11 @@ Build and run with Cmd+R.
 - `Cmd+N` - New conversation
 - `Cmd+,` - Settings
 - `Enter` - Send message
+
+## Security
+
+- API keys are stored exclusively in the macOS Keychain.
+- Conversations are persisted locally in an AES-GCM encrypted store under Application Support.
+- See `SECURITY.md` for the detailed threat model and operational guidance.
+
+```

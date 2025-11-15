@@ -129,10 +129,10 @@ The `OpenAIService.streamResponse()` method:
 5. Completes when receiving `[DONE]` marker
 
 ### Conversation Persistence
-- Stored in `UserDefaults` under key `"saved_conversations"`
-- JSON encoded using `Codable` protocol
-- Auto-saves after every mutation (create, delete, update, add message, etc.)
-- Loads on `ConversationManager.init()`
+- Conversations are JSON-encoded via `Codable` and written to an encrypted file (`conversations.enc`) in `Application Support/Ayna`.
+- Encryption uses AES-GCM with a 256-bit symmetric key stored in the Keychain.
+- Auto-saves after every mutation (create, delete, update, add message, etc.) with a debounce to reduce writes.
+- Loads on `ConversationManager.init()`; corrupted data wipes the encrypted file.
 
 ### Title Generation
 When the first user message is sent and title is still "New Conversation":
@@ -169,18 +169,14 @@ The interface has been streamlined to focus on core chat functionality:
 ## Security Considerations
 
 ### API Key Storage
-**IMPORTANT**: Despite code comments mentioning Keychain, API keys are currently stored in `UserDefaults`, which is NOT secure. Keys are stored in plain text. For production:
-1. Implement actual macOS Keychain storage using `Security` framework
-2. Replace `UserDefaults.standard.set(apiKey, forKey: "openai_api_key")` with proper Keychain calls
-3. This is a known limitation and priority security enhancement
+API keys (global and per-model) are stored in the macOS Keychain via `KeychainStorage`. No plaintext copies remain in `UserDefaults`.
 
 ### App Sandbox
 App uses `App Sandbox` entitlement (`ayna.entitlements`) with:
 - Network client access (for API calls)
 - User selected file read/write (for future export features)
 
-### Data Privacy
-- All conversations stored locally in `UserDefaults`
+- All conversations stored locally in an encrypted file under Application Support
 - No telemetry or analytics
 - Direct API connection, no proxy servers
 - Users must provide their own API keys

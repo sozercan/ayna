@@ -9,9 +9,9 @@ import Foundation
 import SwiftUI
 
 class ConversationManager: ObservableObject {
-    @Published var conversations: [Conversation] = []
+        @Published var conversations: [Conversation] = []
 
-    private let conversationsKey = "saved_conversations"
+    private let store = EncryptedConversationStore.shared
   private var saveTask: Task<Void, Never>?
   private let saveDebounceDuration: Duration = .milliseconds(200)
 
@@ -155,28 +155,27 @@ class ConversationManager: ObservableObject {
       try? await Task.sleep(for: saveDebounceDuration)
       guard !Task.isCancelled else { return }
 
-      if let encoded = try? JSONEncoder().encode(conversations) {
-        UserDefaults.standard.set(encoded, forKey: conversationsKey)
-      }
+            do {
+                try store.save(conversations)
+            } catch {
+                print("❌ Failed to save conversations: \(error.localizedDescription)")
+            }
     }
   }
 
   func saveConversationsImmediately() {
     // For critical saves that shouldn't be debounced
     saveTask?.cancel()
-        if let encoded = try? JSONEncoder().encode(conversations) {
-            UserDefaults.standard.set(encoded, forKey: conversationsKey)
+        do {
+            try store.save(conversations)
+        } catch {
+            print("❌ Failed to save conversations: \(error.localizedDescription)")
         }
     }
 
     private func loadConversations() {
-        guard let data = UserDefaults.standard.data(forKey: conversationsKey) else {
-            print("No saved conversations found")
-            return
-        }
-
         do {
-            var decoded = try JSONDecoder().decode([Conversation].self, from: data)
+            var decoded = try store.loadConversations()
 
             // Validate and fix models that no longer exist
             let availableModels = OpenAIService.shared.customModels
@@ -198,11 +197,21 @@ class ConversationManager: ObservableObject {
 
             print("✅ Loaded \(conversations.count) conversations")
         } catch {
-            print("❌ Failed to load conversations: \(error)")
+            print("❌ Failed to load conversations: \(error.localizedDescription)")
             print("⚠️ Clearing corrupted conversation data")
-            // Clear corrupted data
-            UserDefaults.standard.removeObject(forKey: conversationsKey)
+            try? store.clear()
             conversations = []
+        }
+    }
+
+    func clearAllConversations() {
+        conversations.removeAll()
+        saveTask?.cancel()
+        do {
+            try store.clear()
+            print("🧹 Cleared encrypted conversation store")
+        } catch {
+            print("⚠️ Failed to clear conversation store: \(error.localizedDescription)")
         }
     }
 

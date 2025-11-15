@@ -40,6 +40,7 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
   @ObservedObject private var openAIService = OpenAIService.shared
+    @EnvironmentObject private var conversationManager: ConversationManager
 
     var body: some View {
         Form {
@@ -98,7 +99,7 @@ struct GeneralSettingsView: View {
                 }
 
                 Button("Clear All Conversations") {
-                    UserDefaults.standard.removeObject(forKey: "saved_conversations")
+          conversationManager.clearAllConversations()
                 }
                 .foregroundStyle(.red)
             } header: {
