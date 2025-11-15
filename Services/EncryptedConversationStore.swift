@@ -12,19 +12,30 @@ final class EncryptedConversationStore {
   static let shared = EncryptedConversationStore()
 
   private let fileURL: URL
-  private let keyIdentifier = "conversation_encryption_key"
-  private let keychain = KeychainStorage.shared
+  private let keyIdentifier: String
+  private let keychain: KeychainStoring
 
-  private init() {
-    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-      .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-    let directory = appSupport.appendingPathComponent("Ayna", isDirectory: true)
+  init(
+    fileURL: URL? = nil,
+    keyIdentifier: String = "conversation_encryption_key",
+    keychain: KeychainStoring = KeychainStorage.shared
+  ) {
+    if let explicitURL = fileURL {
+      self.fileURL = explicitURL
+    } else {
+      let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+      let directory = appSupport.appendingPathComponent("Ayna", isDirectory: true)
 
-    if !FileManager.default.fileExists(atPath: directory.path) {
-      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      if !FileManager.default.fileExists(atPath: directory.path) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      }
+
+      self.fileURL = directory.appendingPathComponent("conversations.enc")
     }
 
-    self.fileURL = directory.appendingPathComponent("conversations.enc")
+    self.keyIdentifier = keyIdentifier
+    self.keychain = keychain
   }
 
   func loadConversations() throws -> [Conversation] {

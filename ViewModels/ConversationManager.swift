@@ -11,11 +11,16 @@ import SwiftUI
 class ConversationManager: ObservableObject {
         @Published var conversations: [Conversation] = []
 
-    private let store = EncryptedConversationStore.shared
-  private var saveTask: Task<Void, Never>?
-  private let saveDebounceDuration: Duration = .milliseconds(200)
+    private let store: EncryptedConversationStore
+    private var saveTask: Task<Void, Never>?
+    private let saveDebounceDuration: Duration
 
-    init() {
+    init(
+        store: EncryptedConversationStore = .shared,
+        saveDebounceDuration: Duration = .milliseconds(200)
+    ) {
+        self.store = store
+        self.saveDebounceDuration = saveDebounceDuration
         loadConversations()
     }
 

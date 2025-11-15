@@ -8,6 +8,14 @@
 import Foundation
 import Security
 
+protocol KeychainStoring {
+  func setString(_ value: String, for key: String) throws
+  func string(for key: String) throws -> String?
+  func setData(_ data: Data, for key: String) throws
+  func data(for key: String) throws -> Data?
+  func removeValue(for key: String) throws
+}
+
 enum KeychainStorageError: LocalizedError {
   case unexpectedStatus(OSStatus)
 
@@ -92,3 +100,5 @@ final class KeychainStorage {
     ]
   }
 }
+
+extension KeychainStorage: KeychainStoring {}

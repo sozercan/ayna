@@ -27,7 +27,7 @@ enum APIEndpointType: String, CaseIterable, Codable {
 // swiftlint:disable:next type_body_length
 class OpenAIService: ObservableObject {
   static let shared = OpenAIService()
-  private static let keychain = KeychainStorage.shared
+  static var keychain: KeychainStoring = KeychainStorage.shared
 
   private enum KeychainKeys {
     static let globalAPIKey = "openai_api_key"
@@ -94,12 +94,7 @@ class OpenAIService: ObservableObject {
   private let openAIURL = "https://api.openai.com/v1/chat/completions"
 
   // Custom URLSession with longer timeout for slow models
-  private lazy var urlSession: URLSession = {
-    let config = URLSessionConfiguration.default
-    config.timeoutIntervalForRequest = 120  // 2 minutes
-    config.timeoutIntervalForResource = 300  // 5 minutes
-    return URLSession(configuration: config)
-  }()
+  private let urlSession: URLSession
 
   @Published var customModels: [String] {
     didSet {
@@ -178,7 +173,15 @@ class OpenAIService: ObservableObject {
     case imageGeneration
   }
 
-  init() {
+  init(urlSession: URLSession? = nil) {
+    if let session = urlSession {
+      self.urlSession = session
+    } else {
+      let config = URLSessionConfiguration.default
+      config.timeoutIntervalForRequest = 120  // 2 minutes
+      config.timeoutIntervalForResource = 300  // 5 minutes
+      self.urlSession = URLSession(configuration: config)
+    }
     // Load custom models first
     let loadedCustomModels: [String]
     if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String],

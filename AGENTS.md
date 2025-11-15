@@ -20,10 +20,15 @@ open ayna.xcodeproj
 - Swift 5.9
 
 ### Testing
-This project does not currently have a test suite. When adding tests:
-- Place unit tests in a new `aynaTests` target
-- Use XCTest framework
-- Test critical business logic in `ConversationManager` and `OpenAIService`
+The repository ships with the `aynaTests` XCTest bundle.
+
+- Run the entire suite with:
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' test
+  ```
+- Tests live under `aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network.
+- `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
+- CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 
 ## Architecture
 
@@ -59,7 +64,7 @@ Models → ViewModels → Views → Services
 - Tool calling support via `onToolCallRequested` callback
 - `MCPServerManager.shared`: Manages MCP server connections, tool discovery, and execution with performance optimizations
 - `MCPService`: Individual MCP server communication via stdio
-- API key stored in UserDefaults (Note: Real keychain not yet implemented despite comments)
+- API keys are retrieved via `KeychainStorage` (global and per-model) and never written to UserDefaults
 
 ### State Management Pattern
 - `@StateObject` in App entry point for `ConversationManager`

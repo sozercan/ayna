@@ -4,6 +4,10 @@ A native macOS ChatGPT client built with SwiftUI.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing guidance, and PR expectations.
 ```markdown
 # ayna
 
