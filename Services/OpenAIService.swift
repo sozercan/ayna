@@ -27,6 +27,12 @@ enum APIEndpointType: String, CaseIterable, Codable {
 // swiftlint:disable:next type_body_length
 class OpenAIService: ObservableObject {
   static let shared = OpenAIService()
+  private static let keychain = KeychainStorage.shared
+
+  private enum KeychainKeys {
+    static let globalAPIKey = "openai_api_key"
+    static let modelAPIKeys = "model_api_keys"
+  }
 
   @Published var apiKey: String {
     didSet {
@@ -123,8 +129,7 @@ class OpenAIService: ObservableObject {
 
   @Published var modelAPIKeys: [String: String] {
     didSet {
-      // Store in UserDefaults (Note: Should use Keychain for production)
-      UserDefaults.standard.set(modelAPIKeys, forKey: "modelAPIKeys")
+      persistModelAPIKeys()
     }
   }
 
@@ -220,15 +225,7 @@ class OpenAIService: ObservableObject {
     self.modelEndpoints = loadedEndpoints
 
     // Load per-model API keys
-    let loadedAPIKeys: [String: String]
-    if let savedAPIKeys = UserDefaults.standard.dictionary(forKey: "modelAPIKeys")
-      as? [String: String]
-    {
-      loadedAPIKeys = savedAPIKeys
-    } else {
-      loadedAPIKeys = [:]
-    }
-    self.modelAPIKeys = loadedAPIKeys
+    self.modelAPIKeys = OpenAIService.loadModelAPIKeys()
 
     // Load selected model, ensure it exists in custom models
     let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
@@ -239,7 +236,7 @@ class OpenAIService: ObservableObject {
     }
 
     // Initialize API key
-    self.apiKey = UserDefaults.standard.string(forKey: "openai_api_key") ?? ""
+    self.apiKey = OpenAIService.loadGlobalAPIKey()
 
     // Initialize provider
     if let providerString = UserDefaults.standard.string(forKey: "aiProvider"),
@@ -268,7 +265,59 @@ class OpenAIService: ObservableObject {
   }
 
   private func saveAPIKey() {
-    UserDefaults.standard.set(apiKey, forKey: "openai_api_key")
+    do {
+      if apiKey.isEmpty {
+        try OpenAIService.keychain.removeValue(for: KeychainKeys.globalAPIKey)
+      } else {
+        try OpenAIService.keychain.setString(apiKey, for: KeychainKeys.globalAPIKey)
+      }
+    } catch {
+      print("❌ Failed to persist API key: \(error.localizedDescription)")
+    }
+  }
+
+  private func persistModelAPIKeys() {
+    do {
+      try OpenAIService.storeModelAPIKeys(modelAPIKeys)
+    } catch {
+      print("❌ Failed to persist model API keys: \(error.localizedDescription)")
+    }
+  }
+
+  private static func loadGlobalAPIKey() -> String {
+    do {
+      if let storedKey = try keychain.string(for: KeychainKeys.globalAPIKey) {
+        return storedKey
+      }
+    } catch {
+      print("⚠️ Unable to read API key from Keychain: \(error.localizedDescription)")
+    }
+    return ""
+  }
+
+  private static func loadModelAPIKeys() -> [String: String] {
+    do {
+      if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
+        do {
+          return try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+          print("⚠️ Failed to decode model API keys from Keychain: \(error.localizedDescription)")
+        }
+      }
+    } catch {
+      print("⚠️ Unable to read model API keys from Keychain: \(error.localizedDescription)")
+    }
+    return [:]
+  }
+
+  private static func storeModelAPIKeys(_ dictionary: [String: String]) throws {
+    if dictionary.isEmpty {
+      try keychain.removeValue(for: KeychainKeys.modelAPIKeys)
+      return
+    }
+
+    let data = try JSONEncoder().encode(dictionary)
+    try keychain.setData(data, for: KeychainKeys.modelAPIKeys)
   }
 
   // Get API key for a specific model, falling back to global key if not set

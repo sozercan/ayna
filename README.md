@@ -18,7 +18,6 @@ A native macOS ChatGPT client built with SwiftUI.
 
 - macOS 14.0+
 - Xcode 15.0+
-- OpenAI or Azure OpenAI API key
 
 ## Installation
 
@@ -55,7 +54,3 @@ Build and run with Cmd+R.
 - `Cmd+N` - New conversation
 - `Cmd+,` - Settings
 - `Enter` - Send message
-
-## License
-
-MIT License - see LICENSE file for details.
