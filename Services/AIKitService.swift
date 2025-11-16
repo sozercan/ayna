@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os.log
 
 // AIKit Model Definition
 struct AIKitModel: Identifiable, Codable {
@@ -135,6 +136,13 @@ class AIKitService: ObservableObject {
 
   // Container management - stores the container name/ID
   private var containerName: String?
+  private func log(
+    _ message: String,
+    level: OSLogType = .default,
+    metadata: [String: String] = [:]
+  ) {
+    DiagnosticsLogger.log(.aiKitService, level: level, message: message, metadata: metadata)
+  }
 
   init() {
     // Load selected model
@@ -171,6 +179,7 @@ class AIKitService: ObservableObject {
         self.podmanPath = path
         self.isPodmanAvailable = true
       }
+      log("Detected Podman binary", metadata: ["path": path, "source": "common"])
       return
     }
 
@@ -196,6 +205,7 @@ class AIKitService: ObservableObject {
               self?.podmanPath = path
               self?.isPodmanAvailable = true
             }
+            self?.log("Detected Podman binary", metadata: ["path": path, "source": "which"])
             return
           }
         }
@@ -203,11 +213,17 @@ class AIKitService: ObservableObject {
         await MainActor.run {
           self?.isPodmanAvailable  = false
         }
+        self?.log(
+          "Failed to resolve Podman path",
+          level: .error,
+          metadata: ["error": error.localizedDescription]
+        )
       }
 
       await MainActor.run {
         self?.isPodmanAvailable = false
       }
+      self?.log("Podman not available", level: .error)
     }.value
   }
 
@@ -228,6 +244,7 @@ class AIKitService: ObservableObject {
         containerStatus = .notPulled
         statusMessage = "No model selected"
       }
+      log("Skipped container status update; no model selected", level: .info)
       return
     }
 
@@ -236,6 +253,7 @@ class AIKitService: ObservableObject {
         containerStatus = .notSupported
         statusMessage = "Podman not found. Install with: brew install podman"
       }
+      log("Podman unavailable during status update", level: .error, metadata: ["model": model.id])
       return
     }
 
@@ -245,6 +263,7 @@ class AIKitService: ObservableObject {
         containerStatus = .running
         statusMessage = "Container running on \(defaultEndpoint)"
       }
+      log("Container already running", metadata: ["model": model.id])
       return
     }
 
@@ -253,9 +272,11 @@ class AIKitService: ObservableObject {
       if pulledImages.contains(model.id) {
         containerStatus = .pulled
         statusMessage = "Model ready to run"
+        log("Model image ready", metadata: ["model": model.id])
       } else {
         containerStatus = .notPulled
         statusMessage = "Model not pulled"
+        log("Model not pulled", metadata: ["model": model.id])
       }
     }
   }
@@ -285,12 +306,17 @@ class AIKitService: ObservableObject {
           if !trimmedOutput.isEmpty && trimmedOutput == containerName {
             // Store the container name for future operations
             self.containerName = containerName
+            log("Detected running container", metadata: ["name": containerName])
             return true
           }
         }
       }
     } catch {
-      // If we can't check, assume not running
+      log(
+        "Failed to inspect container state",
+        level: .error,
+        metadata: ["container": containerName, "error": error.localizedDescription]
+      )
       return false
     }
 
@@ -307,6 +333,8 @@ class AIKitService: ObservableObject {
     guard isPodmanAvailable else {
       throw AIKitError.podmanNotAvailable
     }
+
+    log("Pulling AIKit model", metadata: ["model": model.id])
 
     await MainActor.run {
       containerStatus = .pulling
@@ -333,6 +361,11 @@ class AIKitService: ObservableObject {
       if process.terminationStatus != 0 {
         let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
         let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+        log(
+          "Failed to pull AIKit model",
+          level: .error,
+          metadata: ["model": model.id, "error": errorMessage]
+        )
         await MainActor.run {
           containerStatus = .error
           statusMessage = "Failed to pull: \(errorMessage)"
@@ -346,9 +379,15 @@ class AIKitService: ObservableObject {
         containerStatus = .pulled
         statusMessage = "Model pulled successfully"
       }
+      log("Model pulled successfully", metadata: ["model": model.id])
     } catch let error as AIKitError {
       throw error
     } catch {
+      log(
+        "Unexpected failure while pulling model",
+        level: .error,
+        metadata: ["model": model.id, "error": error.localizedDescription]
+      )
       await MainActor.run {
         containerStatus = .error
         statusMessage = "Failed to pull: \(error.localizedDescription)"
@@ -372,8 +411,11 @@ class AIKitService: ObservableObject {
         containerStatus = .running
         statusMessage = "Container already running on \(defaultEndpoint)"
       }
+      log("Container already running; skipping start", metadata: ["model": model.id])
       return
     }
+
+    log("Starting AIKit container", metadata: ["model": model.id])
 
     await MainActor.run {
       containerStatus = .starting
@@ -424,6 +466,11 @@ class AIKitService: ObservableObject {
           containerStatus = .error
           statusMessage = "Failed to start: \(errorMessage)"
         }
+        log(
+          "Failed to start AIKit container",
+          level: .error,
+          metadata: ["model": model.id, "error": errorMessage]
+        )
         throw AIKitError.containerStartFailed(errorMessage)
       }
 
@@ -438,6 +485,7 @@ class AIKitService: ObservableObject {
         containerStatus = .running
         statusMessage = "Container running on \(defaultEndpoint)"
       }
+      log("AIKit container running", metadata: ["model": model.id, "container": containerName])
     } catch let error as AIKitError {
       throw error
     } catch {
@@ -445,6 +493,11 @@ class AIKitService: ObservableObject {
         containerStatus = .error
         statusMessage = "Failed to start: \(error.localizedDescription)"
       }
+      log(
+        "Unexpected failure while starting container",
+        level: .error,
+        metadata: ["model": model.id, "error": error.localizedDescription]
+      )
       throw error
     }
   }
@@ -462,6 +515,7 @@ class AIKitService: ObservableObject {
       containerStatus = .stopping
       statusMessage = "Stopping container..."
     }
+    log("Stopping AIKit container", metadata: ["container": containerName])
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: podmanPath)
@@ -481,6 +535,11 @@ class AIKitService: ObservableObject {
           containerStatus = .error
           statusMessage = "Failed to stop: \(errorMessage)"
         }
+        log(
+          "Failed to stop AIKit container",
+          level: .error,
+          metadata: ["container": containerName, "error": errorMessage]
+        )
         throw AIKitError.containerStopFailed(errorMessage)
       }
 
@@ -490,6 +549,7 @@ class AIKitService: ObservableObject {
         containerStatus = .stopped
         statusMessage = "Container stopped"
       }
+      log("AIKit container stopped", metadata: ["container": containerName])
     } catch let error as AIKitError {
       throw error
     } catch {
@@ -497,6 +557,11 @@ class AIKitService: ObservableObject {
         containerStatus = .error
         statusMessage = "Failed to stop: \(error.localizedDescription)"
       }
+      log(
+        "Unexpected failure while stopping container",
+        level: .error,
+        metadata: ["container": containerName, "error": error.localizedDescription]
+      )
       throw error
     }
   }
@@ -505,6 +570,8 @@ class AIKitService: ObservableObject {
     guard let model = selectedModel else {
       throw AIKitError.noModelSelected
     }
+
+    log("Deleting AIKit image", metadata: ["model": model.id])
 
     // Stop container if running
     if containerStatus == .running {

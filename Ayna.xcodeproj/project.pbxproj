@@ -30,6 +30,7 @@
 		C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */; };
 		C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */; };
 		C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */; };
+		C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -59,6 +60,7 @@
 		C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
 		C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
 		C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
+		C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +83,7 @@
 				06000004 /* Views */,
 				06000005 /* Models */,
 				06000006 /* Services */,
+				C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */,
 				06000007 /* ViewModels */,
 				02000003 /* Assets.xcassets */,
 				C8F1F0012ED5B4F500B5BC45 /* aynaTests */,
@@ -152,6 +155,14 @@
 			path = aynaTests;
 			sourceTree = "<group>";
 		};
+	C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */ = {
+		isa = PBXGroup;
+		children = (
+			C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */,
+		);
+		path = Diagnostics;
+		sourceTree = "<group>";
+	};
 /* End PBXGroup section */
 
 /* Begin PBXContainerItemProxy section */
@@ -255,6 +266,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */,
 				C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */,
 				C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */,
 				C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */,

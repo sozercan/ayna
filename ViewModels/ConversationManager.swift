@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import OSLog
 
 class ConversationManager: ObservableObject {
         @Published var conversations: [Conversation] = []
@@ -14,6 +15,14 @@ class ConversationManager: ObservableObject {
     private let store: EncryptedConversationStore
     private var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration
+
+    private func logManager(
+        _ message: String,
+        level: OSLogType = .default,
+        metadata: [String: String] = [:]
+    ) {
+        DiagnosticsLogger.log(.conversationManager, level: level, message: message, metadata: metadata)
+    }
 
     init(
         store: EncryptedConversationStore = .shared,
@@ -143,7 +152,11 @@ class ConversationManager: ObservableObject {
             },
             onError: { [weak self] error in
                 // Fallback to simple title if AI fails
-                print("⚠️ Failed to generate AI title: \(error.localizedDescription)")
+                self?.logManager(
+                    "⚠️ Failed to generate AI title",
+                    level: .error,
+                    metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString]
+                )
                 let fallbackTitle = String(content.prefix(50))
                 self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
             },
@@ -163,7 +176,11 @@ class ConversationManager: ObservableObject {
             do {
                 try store.save(conversations)
             } catch {
-                print("❌ Failed to save conversations: \(error.localizedDescription)")
+                logManager(
+                    "❌ Failed to save conversations",
+                    level: .error,
+                    metadata: ["error": error.localizedDescription]
+                )
             }
     }
   }
@@ -174,7 +191,11 @@ class ConversationManager: ObservableObject {
         do {
             try store.save(conversations)
         } catch {
-            print("❌ Failed to save conversations: \(error.localizedDescription)")
+            logManager(
+                "❌ Failed to save conversations",
+                level: .error,
+                metadata: ["error": error.localizedDescription]
+            )
         }
     }
 
@@ -200,10 +221,18 @@ class ConversationManager: ObservableObject {
                 saveConversations()
             }
 
-            print("✅ Loaded \(conversations.count) conversations")
+            logManager(
+                "✅ Loaded \(conversations.count) conversations",
+                level: .info,
+                metadata: ["count": "\(conversations.count)"]
+            )
         } catch {
-            print("❌ Failed to load conversations: \(error.localizedDescription)")
-            print("⚠️ Clearing corrupted conversation data")
+            logManager(
+                "❌ Failed to load conversations",
+                level: .error,
+                metadata: ["error": error.localizedDescription]
+            )
+            logManager("⚠️ Clearing corrupted conversation data", level: .default)
             try? store.clear()
             conversations = []
         }
@@ -214,9 +243,13 @@ class ConversationManager: ObservableObject {
         saveTask?.cancel()
         do {
             try store.clear()
-            print("🧹 Cleared encrypted conversation store")
+            logManager("🧹 Cleared encrypted conversation store", level: .info)
         } catch {
-            print("⚠️ Failed to clear conversation store: \(error.localizedDescription)")
+            logManager(
+                "⚠️ Failed to clear conversation store",
+                level: .error,
+                metadata: ["error": error.localizedDescription]
+            )
         }
     }
 

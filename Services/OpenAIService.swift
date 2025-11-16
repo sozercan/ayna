@@ -15,7 +15,6 @@ enum AIProvider: String, CaseIterable, Codable {
 
   var displayName: String { rawValue }
 }
-
 enum APIEndpointType: String, CaseIterable, Codable {
   case chatCompletions = "Chat Completions"
   case responses = "Responses"
@@ -23,7 +22,6 @@ enum APIEndpointType: String, CaseIterable, Codable {
 
   var displayName: String { rawValue }
 }
-
 // swiftlint:disable:next type_body_length
 class OpenAIService: ObservableObject {
   static let shared = OpenAIService()
@@ -33,7 +31,6 @@ class OpenAIService: ObservableObject {
     static let globalAPIKey = "openai_api_key"
     static let modelAPIKeys = "model_api_keys"
   }
-
   @Published var apiKey: String {
     didSet {
       saveAPIKey()
@@ -53,7 +50,7 @@ class OpenAIService: ObservableObject {
   // Track current task for cancellation
   private var currentTask: URLSessionDataTask?
   private var currentStreamTask: Task<Void, Never>?
-
+  
   @Published var provider: AIProvider {
     didSet {
       UserDefaults.standard.set(provider.rawValue, forKey: "aiProvider")
@@ -77,7 +74,6 @@ class OpenAIService: ObservableObject {
       if trimmed != azureDeploymentName {
         azureDeploymentName = trimmed
       }
-      UserDefaults.standard.set(trimmed, forKey: "azureDeploymentName")
     }
   }
 
@@ -274,7 +270,12 @@ class OpenAIService: ObservableObject {
         try OpenAIService.keychain.setString(apiKey, for: KeychainKeys.globalAPIKey)
       }
     } catch {
-      print("❌ Failed to persist API key: \(error.localizedDescription)")
+      DiagnosticsLogger.log(
+        .openAIService,
+        level: .error,
+        message: "Failed to persist API key",
+        metadata: ["error": error.localizedDescription]
+      )
     }
   }
 
@@ -282,7 +283,12 @@ class OpenAIService: ObservableObject {
     do {
       try OpenAIService.storeModelAPIKeys(modelAPIKeys)
     } catch {
-      print("❌ Failed to persist model API keys: \(error.localizedDescription)")
+      DiagnosticsLogger.log(
+        .openAIService,
+        level: .error,
+        message: "Failed to persist model API keys",
+        metadata: ["error": error.localizedDescription]
+      )
     }
   }
 
@@ -292,7 +298,12 @@ class OpenAIService: ObservableObject {
         return storedKey
       }
     } catch {
-      print("⚠️ Unable to read API key from Keychain: \(error.localizedDescription)")
+      DiagnosticsLogger.log(
+        .openAIService,
+        level: .error,
+        message: "Unable to read API key from Keychain",
+        metadata: ["error": error.localizedDescription]
+      )
     }
     return ""
   }
@@ -303,11 +314,21 @@ class OpenAIService: ObservableObject {
         do {
           return try JSONDecoder().decode([String: String].self, from: data)
         } catch {
-          print("⚠️ Failed to decode model API keys from Keychain: \(error.localizedDescription)")
+          DiagnosticsLogger.log(
+            .openAIService,
+            level: .error,
+            message: "Failed to decode model API keys from Keychain",
+            metadata: ["error": error.localizedDescription]
+          )
         }
       }
     } catch {
-      print("⚠️ Unable to read model API keys from Keychain: \(error.localizedDescription)")
+      DiagnosticsLogger.log(
+        .openAIService,
+        level: .error,
+        message: "Unable to read model API keys from Keychain",
+        metadata: ["error": error.localizedDescription]
+      )
     }
     return [:]
   }
@@ -416,12 +437,20 @@ class OpenAIService: ObservableObject {
   }
 
   func cancelCurrentRequest() {
-    print("🛑 Canceling current request...")
+    DiagnosticsLogger.log(
+      .openAIService,
+      level: .info,
+      message: "Canceling current request"
+    )
     currentTask?.cancel()
     currentTask = nil
     currentStreamTask?.cancel()
     currentStreamTask = nil
-    print("✅ Request cancellation initiated")
+    DiagnosticsLogger.log(
+      .openAIService,
+      level: .info,
+      message: "Request cancellation initiated"
+    )
   }
 
   func generateImage(
@@ -494,7 +523,11 @@ class OpenAIService: ObservableObject {
       }
 
       guard let data = data else {
-        print("❌ No data received")
+        DiagnosticsLogger.log(
+          .openAIService,
+          level: .error,
+          message: "No data received"
+        )
         DispatchQueue.main.async {
           onError(OpenAIError.noData)
         }
@@ -508,7 +541,12 @@ class OpenAIService: ObservableObject {
           if let errorDict = json["error"] as? [String: Any],
             let code = errorDict["code"] as? String,
             let message = errorDict["message"] as? String {
-            print("❌ API error: \(code) - \(message)")
+            DiagnosticsLogger.log(
+              .openAIService,
+              level: .error,
+              message: "API error",
+              metadata: ["code": code, "message": message]
+            )
             DispatchQueue.main.async {
               if code == "contentFilter" {
                 onError(OpenAIError.contentFiltered(message))
@@ -575,7 +613,12 @@ class OpenAIService: ObservableObject {
 
         guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
               let argumentsString = String(data: argumentsJSON, encoding: .utf8) else {
-          print("⚠️ Failed to encode arguments for tool call: \(toolCall.toolName)")
+          DiagnosticsLogger.log(
+            .openAIService,
+            level: .error,
+            message: "Failed to encode arguments for tool call",
+            metadata: ["tool": toolCall.toolName]
+          )
           return nil
         }
 
@@ -1079,7 +1122,11 @@ class OpenAIService: ObservableObject {
         for try await byte in bytes {
           // Check if task was cancelled
           if Task.isCancelled {
-            print("🛑 Stream task cancelled, stopping iteration")
+            DiagnosticsLogger.log(
+              .openAIService,
+              level: .info,
+              message: "Stream task cancelled; stopping iteration"
+            )
             await MainActor.run {
               self.currentStreamTask = nil
             }
@@ -1131,7 +1178,11 @@ class OpenAIService: ObservableObject {
                 "Network connection was lost. The server may have rejected the request."))
           } else if (error as? CancellationError) != nil {
             // Task was cancelled, don't report as error
-            print("✅ Stream task was cancelled successfully")
+            DiagnosticsLogger.log(
+              .openAIService,
+              level: .info,
+              message: "Stream task cancelled successfully"
+            )
           } else {
             onError(error)
           }

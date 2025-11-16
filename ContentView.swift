@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct ContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
@@ -325,13 +326,21 @@ struct NewChatView: View {
     attachedFiles.removeAll { $0 == fileURL }
   }
 
+  private func logNewChat(
+    _ message: String,
+    level: OSLogType = .default,
+    metadata: [String: String] = [:]
+  ) {
+    DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
+  }
+
   private func sendMessage() {
     if isGenerating {
       // Stop generation immediately
-      print("🛑 Stop button clicked in NewChatView, cancelling...")
+      logNewChat("🛑 Stop button clicked in NewChatView, cancelling...", level: .info)
       OpenAIService.shared.cancelCurrentRequest()
       isGenerating = false
-      print("✅ isGenerating set to FALSE after stop")
+      logNewChat("✅ isGenerating set to FALSE after stop", level: .info)
       return
     }
 
@@ -350,7 +359,10 @@ struct NewChatView: View {
         }) {
       // Continue with existing conversation
       conversation = existingConversation
-      print("📝 Continuing with existing conversation: \(existingId)")
+      logNewChat(
+        "📝 Continuing with existing conversation: \(existingId)",
+        metadata: ["conversationId": existingId.uuidString]
+      )
     } else {
       // Create a new conversation
       conversationManager.createNewConversation()
@@ -359,7 +371,11 @@ struct NewChatView: View {
       }
       conversation = newConversation
       currentConversationId = newConversation.id
-      print("🆕 Created new conversation: \(newConversation.id)")
+      logNewChat(
+        "🆕 Created new conversation: \(newConversation.id)",
+        level: .info,
+        metadata: ["conversationId": newConversation.id.uuidString]
+      )
     }
 
     // Build file attachments
@@ -406,7 +422,10 @@ struct NewChatView: View {
     }
 
     isGenerating = true
-    print("🔄 isGenerating set to TRUE in NewChatView")
+    logNewChat(
+      "🔄 isGenerating set to TRUE in NewChatView",
+      metadata: ["conversationId": conversation.id.uuidString]
+    )
 
     let currentMessages = updatedConversation.messages
 
@@ -431,7 +450,11 @@ struct NewChatView: View {
       onChunk: { chunk in
         // Always update conversation data, regardless of which view is active
         guard let index = self.conversationManager.conversations.firstIndex(where: { $0.id == expectedConversationId }) else {
-          print("⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk")
+          logNewChat(
+            "⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk",
+            level: .default,
+            metadata: ["conversationId": expectedConversationId.uuidString]
+          )
           return
         }
         
@@ -445,7 +468,11 @@ struct NewChatView: View {
       },
       onComplete: {
         self.isGenerating = false
-        print("✅ Message sent successfully, isGenerating set to FALSE")
+        logNewChat(
+          "✅ Message sent successfully, isGenerating set to FALSE",
+          level: .info,
+          metadata: ["conversationId": conversation.id.uuidString]
+        )
 
         // Now that generation is complete, switch to ChatView
         self.selectedConversationId = conversation.id
@@ -453,7 +480,14 @@ struct NewChatView: View {
       },
       onError: { error in
         self.isGenerating = false
-        print("❌ Error sending message: \(error)")
+        logNewChat(
+          "❌ Error sending message: \(error.localizedDescription)",
+          level: .error,
+          metadata: [
+            "conversationId": conversation.id.uuidString,
+            "error": error.localizedDescription
+          ]
+        )
 
         // On error, also switch to ChatView so user can see the error
         self.selectedConversationId = conversation.id

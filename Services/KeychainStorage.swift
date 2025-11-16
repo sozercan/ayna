@@ -7,6 +7,7 @@
 
 import Foundation
 import Security
+import os.log
 
 protocol KeychainStoring {
   func setString(_ value: String, for key: String) throws
@@ -36,6 +37,14 @@ final class KeychainStorage {
   private let serviceIdentifier = "com.sertacozercan.ayna"
   private init() {}
 
+  private func log(
+    _ message: String,
+    level: OSLogType = .default,
+    metadata: [String: String] = [:]
+  ) {
+    DiagnosticsLogger.log(.keychain, level: level, message: message, metadata: metadata)
+  }
+
   func setString(_ value: String, for key: String) throws {
     guard let data = value.data(using: .utf8) else {
       throw KeychainStorageError.unexpectedStatus(errSecParam)
@@ -58,12 +67,22 @@ final class KeychainStorage {
       query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
       let addStatus = SecItemAdd(query as CFDictionary, nil)
       guard addStatus == errSecSuccess else {
+        log(
+          "Failed to add keychain item",
+          level: .error,
+          metadata: ["status": "\(addStatus)", "key": key]
+        )
         throw KeychainStorageError.unexpectedStatus(addStatus)
       }
       return
     }
 
     guard status == errSecSuccess else {
+      log(
+        "Failed to update keychain item",
+        level: .error,
+        metadata: ["status": "\(status)", "key": key]
+      )
       throw KeychainStorageError.unexpectedStatus(status)
     }
   }
@@ -78,6 +97,11 @@ final class KeychainStorage {
 
     guard status != errSecItemNotFound else { return nil }
     guard status == errSecSuccess else {
+      log(
+        "Failed to read keychain item",
+        level: .error,
+        metadata: ["status": "\(status)", "key": key]
+      )
       throw KeychainStorageError.unexpectedStatus(status)
     }
 
@@ -88,6 +112,11 @@ final class KeychainStorage {
   func removeValue(for key: String) throws {
     let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {
+      log(
+        "Failed to remove keychain item",
+        level: .error,
+        metadata: ["status": "\(status)", "key": key]
+      )
       throw KeychainStorageError.unexpectedStatus(status)
     }
   }

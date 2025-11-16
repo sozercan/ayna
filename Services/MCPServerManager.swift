@@ -82,7 +82,11 @@ class MCPServerManager: ObservableObject {
     private func loadServerConfigs() {
         guard let data = UserDefaults.standard.data(forKey: "mcp_server_configs") else {
             // First launch: use default configs
-            print("No saved MCP server configs, using defaults")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "No saved MCP server configs; using defaults"
+            )
             serverConfigs = defaultServerConfigs()
             saveServerConfigs()
             return
@@ -112,10 +116,24 @@ class MCPServerManager: ObservableObject {
                 )
             }
             serverConfigs = validatedConfigs
-            print("✅ Loaded \(serverConfigs.count) MCP server configs")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Loaded MCP server configs",
+                metadata: ["count": "\(serverConfigs.count)"]
+            )
         } catch {
-            print("❌ Failed to load MCP server configs: \(error.localizedDescription)")
-            print("⚠️ Clearing corrupted MCP config data and resetting to defaults")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to load MCP server configs",
+                metadata: ["error": error.localizedDescription]
+            )
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Clearing corrupted MCP config data and resetting to defaults"
+            )
             // Clear corrupted data and use defaults
             UserDefaults.standard.removeObject(forKey: "mcp_server_configs")
             serverConfigs = defaultServerConfigs()
@@ -160,13 +178,23 @@ class MCPServerManager: ObservableObject {
             }
 
             if !hasTools {
-                print("🔍 Server \(config.name) connected but no tools found, discovering...")
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "Server connected without tools; starting discovery",
+                    metadata: ["server": config.name]
+                )
                 await discoverTools(for: config.name)
             }
             return
         }
 
-        print("🔌 Attempting to connect to MCP server: \(config.name)")
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "Attempting to connect to MCP server",
+            metadata: ["server": config.name]
+        )
         let service = MCPService(serverConfig: config)
 
         // Store service in dictionary on MainActor for thread safety
@@ -176,17 +204,37 @@ class MCPServerManager: ObservableObject {
 
         do {
             try await service.connect()
-            print("✅ Connected to MCP server: \(config.name)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Connected to MCP server",
+                metadata: ["server": config.name]
+            )
 
             // Auto-discover tools (wrapped in do-catch to prevent discovery failures from crashing)
             do {
                 await discoverTools(for: config.name)
-                print("✅ Tool discovery complete for: \(config.name)")
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "Tool discovery complete",
+                    metadata: ["server": config.name]
+                )
             } catch {
-                print("⚠️ Tool discovery failed for \(config.name), but connection maintained: \(error.localizedDescription)")
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .error,
+                    message: "Tool discovery failed but connection maintained",
+                    metadata: ["server": config.name, "error": error.localizedDescription]
+                )
             }
         } catch {
-            print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to connect to MCP server",
+                metadata: ["server": config.name, "error": error.localizedDescription]
+            )
             await MainActor.run {
                 service.lastError = error.localizedDescription
 
@@ -196,7 +244,12 @@ class MCPServerManager: ObservableObject {
                     updatedConfig.enabled = false
                     self.serverConfigs[index] = updatedConfig
                     self.saveServerConfigs()
-                    print("⚠️ Auto-disabled server '\(config.name)' due to connection failure")
+                    DiagnosticsLogger.log(
+                        .mcpServerManager,
+                        level: .error,
+                        message: "Auto-disabled server due to connection failure",
+                        metadata: ["server": config.name]
+                    )
                 }
 
                 // Clean up failed service
@@ -217,7 +270,12 @@ class MCPServerManager: ObservableObject {
 
     func connectToAllEnabledServers() async {
         let enabledConfigs = serverConfigs.filter { $0.enabled }
-        print("🚀 Connecting to \(enabledConfigs.count) enabled MCP servers: \(enabledConfigs.map { $0.name })")
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "Connecting to enabled MCP servers",
+            metadata: ["count": "\(enabledConfigs.count)", "servers": enabledConfigs.map { $0.name }.joined(separator: ",")]
+        )
 
         await withTaskGroup(of: Void.self) { group in
             for config in enabledConfigs {
@@ -227,7 +285,12 @@ class MCPServerManager: ObservableObject {
             }
         }
 
-        print("✅ All enabled servers connected. Total tools available: \(availableTools.count)")
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "All enabled servers connected",
+            metadata: ["tools": "\(availableTools.count)"]
+        )
     }
 
     @MainActor
@@ -261,7 +324,12 @@ class MCPServerManager: ObservableObject {
                 var allResources: [MCPResource] = []
 
                 for await (serverName, tools, resources) in group {
-                    print("Discovered \(tools.count) tools from \(serverName)")
+                    DiagnosticsLogger.log(
+                        .mcpServerManager,
+                        level: .info,
+                        message: "Discovered tools from server",
+                        metadata: ["server": serverName, "tools": "\(tools.count)"]
+                    )
                     allTools.append(contentsOf: tools)
                     allResources.append(contentsOf: resources)
                 }
@@ -278,7 +346,12 @@ class MCPServerManager: ObservableObject {
                 self.cachedOpenAIFunctions = []
             }
         } catch {
-            print("⚠️ Error during tool discovery: \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Error during tool discovery",
+                metadata: ["error": error.localizedDescription]
+            )
             await MainActor.run {
                 self.isDiscovering = false
             }
@@ -292,7 +365,12 @@ class MCPServerManager: ObservableObject {
         }
 
         guard let service = service, service.isConnected else {
-            print("⚠️ Cannot discover tools for \(serverName): service not connected")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Cannot discover tools; service not connected",
+                metadata: ["server": serverName]
+            )
             return
         }
 
@@ -302,16 +380,36 @@ class MCPServerManager: ObservableObject {
 
         do {
             tools = try await service.listTools()
-            print("📋 Discovered \(tools.count) tools from \(serverName)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Discovered tools",
+                metadata: ["server": serverName, "count": "\(tools.count)"]
+            )
         } catch {
-            print("⚠️ Failed to list tools from \(serverName): \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to list tools",
+                metadata: ["server": serverName, "error": error.localizedDescription]
+            )
         }
 
         do {
             resources = try await service.listResources()
-            print("📦 Discovered \(resources.count) resources from \(serverName)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Discovered resources",
+                metadata: ["server": serverName, "count": "\(resources.count)"]
+            )
         } catch {
-            print("⚠️ Failed to list resources from \(serverName): \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to list resources",
+                metadata: ["server": serverName, "error": error.localizedDescription]
+            )
         }
 
         await MainActor.run {
@@ -328,7 +426,16 @@ class MCPServerManager: ObservableObject {
             self.cachedOpenAIFunctions = []
         }
 
-        print("✅ Discovery complete for \(serverName): \(tools.count) tools, \(resources.count) resources")
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "Discovery complete",
+            metadata: [
+                "server": serverName,
+                "tools": "\(tools.count)",
+                "resources": "\(resources.count)"
+            ]
+        )
     }
 
     // MARK: - Tool Execution

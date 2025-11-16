@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 @main
 struct aynaApp: App {
@@ -16,10 +17,24 @@ struct aynaApp: App {
         Task {
             do {
                 await MCPServerManager.shared.connectToAllEnabledServers()
-                print("✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)")
+                DiagnosticsLogger.log(
+                    .app,
+                    level: .info,
+                    message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
+                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
+                )
             } catch {
-                print("⚠️ MCP initialization encountered errors: \(error.localizedDescription)")
-                print("App will continue without MCP servers.")
+                DiagnosticsLogger.log(
+                    .app,
+                    level: .error,
+                    message: "⚠️ MCP initialization encountered errors",
+                    metadata: ["error": error.localizedDescription]
+                )
+                DiagnosticsLogger.log(
+                    .app,
+                    level: .info,
+                    message: "App will continue without MCP servers."
+                )
             }
         }
     }

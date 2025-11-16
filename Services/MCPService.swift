@@ -38,6 +38,10 @@ class MCPService: ObservableObject, @unchecked Sendable {
 
     // MARK: - Connection Management
 
+    // This routine wires up the MCP subprocess, pipes, and async stream handlers in one place so we
+    // can share the same cleanup/error propagation. Splitting it today would duplicate fragile state
+    // management, so we temporarily allow the longer body until the connection pipeline is refactored.
+    // swiftlint:disable:next function_body_length
     func connect() async throws {
         guard !isConnected else { return }
 
@@ -47,14 +51,28 @@ class MCPService: ObservableObject, @unchecked Sendable {
         let errorPipe = Pipe()
 
         // Find the command executable with error handling
-        print("🔍 Looking for executable: \(serverConfig.command)")
+        DiagnosticsLogger.log(
+            .mcpService,
+            level: .info,
+            message: "Looking for executable",
+            metadata: ["command": serverConfig.command]
+        )
         let commandPath: String
         do {
             commandPath = try findExecutable(serverConfig.command)
-            print("✅ Using executable path: \(commandPath)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .info,
+                message: "Using executable path",
+                metadata: ["path": commandPath]
+            )
         } catch {
             let errorMsg = "Executable not found: \(serverConfig.command) - \(error.localizedDescription)"
-            print("❌ \(errorMsg)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: errorMsg
+            )
             Task { @MainActor [weak self] in
                 self?.lastError = errorMsg
             }
@@ -108,7 +126,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
                     }
                 }
             } catch {
-                print("⚠️ Error reading output from \(serverName): \(error.localizedDescription)")
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .error,
+                    message: "Error reading MCP output",
+                    metadata: ["server": serverName, "error": error.localizedDescription]
+                )
             }
         }
 
@@ -119,7 +142,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 guard !data.isEmpty else { return }
 
                 if let output = String(data: data, encoding: .utf8) {
-                    print("MCP Server (\(serverName)) stderr: \(output)")
+                    DiagnosticsLogger.log(
+                        .mcpService,
+                        level: .info,
+                        message: "MCP server stderr",
+                        metadata: ["server": serverName, "output": output]
+                    )
                     // Only treat it as an error if it contains error keywords
                     if output.lowercased().contains("error") || output.lowercased().contains("failed") {
                         Task { @MainActor in
@@ -128,7 +156,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
                     }
                 }
             } catch {
-                print("⚠️ Error reading stderr from \(serverName): \(error.localizedDescription)")
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .error,
+                    message: "Error reading stderr",
+                    metadata: ["server": serverName, "error": error.localizedDescription]
+                )
             }
         }
 
@@ -137,7 +170,11 @@ class MCPService: ObservableObject, @unchecked Sendable {
         } catch {
             disconnect()
             let errorMsg = "Failed to start process: \(error.localizedDescription)"
-            print("❌ \(errorMsg)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: errorMsg
+            )
             Task { @MainActor [weak self] in
                 self?.lastError = errorMsg
             }
@@ -150,19 +187,34 @@ class MCPService: ObservableObject, @unchecked Sendable {
         // Initialize the connection with timeout
         // If the process has already exited, initialization will fail with a timeout
         do {
-            print("🔄 Initializing MCP server: \(serverName)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .info,
+                message: "Initializing MCP server",
+                metadata: ["server": serverName]
+            )
             try await withTimeout(seconds: 5) { [weak self] in
                 guard let self = self else {
                     throw MCPServiceError.notConnected
                 }
                 try await self.initialize()
             }
-            print("✅ MCP server initialized: \(serverName)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .info,
+                message: "MCP server initialized",
+                metadata: ["server": serverName]
+            )
             Task { @MainActor [weak self] in
                 self?.isConnected = true
             }
         } catch {
-            print("❌ MCP initialization failed for \(serverName): \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "MCP initialization failed",
+                metadata: ["server": serverName, "error": error.localizedDescription]
+            )
             disconnect()
             Task { @MainActor [weak self] in
                 self?.lastError = "Initialization failed: \(error.localizedDescription)"
@@ -228,7 +280,16 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 let tool = try parseTool(from: toolDict)
                 validTools.append(tool)
             } catch {
-                print("⚠️ Skipping invalid tool at index \(index) from \(serverConfig.name): \(error.localizedDescription)")
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .error,
+                    message: "Skipping invalid tool",
+                    metadata: [
+                        "server": serverConfig.name,
+                        "index": "\(index)",
+                        "error": error.localizedDescription
+                    ]
+                )
             }
         }
 
@@ -366,13 +427,23 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 processJSONRPCMessage(trimmed)
             }
         } catch {
-            print("⚠️ Error handling output from \(serverConfig.name): \(error.localizedDescription)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Error handling MCP output",
+                metadata: ["server": serverConfig.name, "error": error.localizedDescription]
+            )
         }
     }
 
     private func processJSONRPCMessage(_ json: String) {
         guard let data = json.data(using: .utf8) else {
-            print("⚠️ Failed to convert JSON string to data for \(serverConfig.name)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Failed to convert JSON string to data",
+                metadata: ["server": serverConfig.name]
+            )
             return
         }
 
@@ -385,13 +456,22 @@ class MCPService: ObservableObject, @unchecked Sendable {
                     if let continuation = self.pendingRequests.removeValue(forKey: id) {
                         continuation.resume(returning: response)
                     } else {
-                        print("⚠️ Received response for unknown request ID: \(id)")
+                        DiagnosticsLogger.log(
+                            .mcpService,
+                            level: .error,
+                            message: "Received response for unknown request",
+                            metadata: ["id": "\(id)"]
+                        )
                     }
                 }
             }
         } catch {
-            print("⚠️ Failed to decode MCP response from \(serverConfig.name): \(error.localizedDescription)")
-            print("JSON: \(json)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Failed to decode MCP response",
+                metadata: ["server": serverConfig.name, "error": error.localizedDescription, "payload": json]
+            )
         }
     }
 
@@ -454,9 +534,14 @@ class MCPService: ObservableObject, @unchecked Sendable {
     }
 
     private func parseResource(from dict: [String: Any]) -> MCPResource? {
-        guard let uri = dict["uri"] as? String,
-              let name = dict["name"] as? String else {
-            print("⚠️ Skipping invalid resource from \(serverConfig.name): missing uri or name")
+                guard let uri = dict["uri"] as? String,
+                            let name = dict["name"] as? String else {
+                        DiagnosticsLogger.log(
+                                .mcpService,
+                                level: .error,
+                                message: "Skipping invalid resource",
+                                metadata: ["server": serverConfig.name]
+                        )
             return nil
         }
 
@@ -491,13 +576,28 @@ class MCPService: ObservableObject, @unchecked Sendable {
         // Search in common paths
         for path in searchPaths {
             let fullPath = "\(path)/\(command)"
-            print("🔍 Checking: \(fullPath)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .debug,
+                message: "Checking executable path",
+                metadata: ["path": fullPath]
+            )
             let exists = FileManager.default.fileExists(atPath: fullPath)
-      let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
-      print("   exists: \(exists), isExecutable: \(isExecutable)")
+            let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .debug,
+                message: "Executable candidate",
+                metadata: ["exists": "\(exists)", "executable": "\(isExecutable)", "path": fullPath]
+            )
 
-      if isExecutable {
-                print("✅ Found executable '\(command)' at: \(fullPath)")
+            if isExecutable {
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .info,
+                    message: "Found executable",
+                    metadata: ["command": command, "path": fullPath]
+                )
                 return fullPath
             }
         }
@@ -528,12 +628,22 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !path.isEmpty,
                    FileManager.default.isExecutableFile(atPath: path) {
-                    print("✅ Found executable '\(command)' using shell: \(path)")
+                    DiagnosticsLogger.log(
+                        .mcpService,
+                        level: .info,
+                        message: "Found executable via shell",
+                        metadata: ["command": command, "path": path]
+                    )
                     return path
                 }
             }
         } catch {
-            print("❌ Failed to find executable using shell: \(error)")
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Failed to find executable via shell",
+                metadata: ["command": command, "error": "\(error)"]
+            )
         }
 
         // Could not find executable

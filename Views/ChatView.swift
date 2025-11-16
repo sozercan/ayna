@@ -6,7 +6,12 @@
 //
 
 import SwiftUI
+import OSLog
 
+// ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
+// tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
+// the larger body here until the view hierarchy is modularized.
+// swiftlint:disable:next type_body_length
 struct ChatView: View {
     let conversation: Conversation
     @EnvironmentObject var conversationManager: ConversationManager
@@ -47,6 +52,18 @@ struct ChatView: View {
     cachedConversationIndex = index
     return index
   }
+
+    private func logChat(
+        _ message: String,
+        level: OSLogType = .default,
+        metadata: [String: String] = [:]
+    ) {
+        var combinedMetadata = metadata
+        if combinedMetadata["conversationId"] == nil {
+            combinedMetadata["conversationId"] = conversation.id.uuidString
+        }
+        DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
+    }
 
   // Helper to filter visible messages
     private func updateVisibleMessages() {
@@ -402,10 +419,14 @@ struct ChatView: View {
     }
   }
 
+    // This method coordinates attachment handling, MCP tool availability, streaming setup, and state
+    // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
+    // we defer that refactor and explicitly allow the longer body.
+    // swiftlint:disable:next function_body_length
     private func sendMessage() {
     if isGenerating {
       // Stop generation immediately
-      print("🛑 Stop button clicked, cancelling...")
+            logChat("🛑 Stop button clicked, cancelling...", level: .info)
       OpenAIService.shared.cancelCurrentRequest()
 
       // Flush any pending chunks before stopping
@@ -422,18 +443,22 @@ struct ChatView: View {
           lastMessage.content += remainingChunks
           conversationManager.conversations[index].messages[
             conversationManager.conversations[index].messages.count - 1] = lastMessage
-          print("💾 Flushed \(remainingChunks.count) chars before cancellation")
+                    logChat(
+                        "💾 Flushed \(remainingChunks.count) chars before cancellation",
+                        level: .info,
+                        metadata: ["chunkLength": "\(remainingChunks.count)"]
+                    )
         }
       }
 
       // Save conversations immediately to persist partial message
       conversationManager.saveConversationsImmediately()
-      print("💾 Saved conversation after cancellation")
+            logChat("💾 Saved conversation after cancellation", level: .info)
 
       isGenerating = false
       currentToolName = nil
       toolCallDepth = 0
-      print("✅ isGenerating set to FALSE after stop")
+            logChat("✅ isGenerating set to FALSE after stop", level: .info)
             return
     }
 
@@ -452,8 +477,15 @@ struct ChatView: View {
           data: fileData
         )
         attachments.append(attachment)
-        print(
-          "📎 Attached file: \(fileURL.lastPathComponent) (\(mimeType), \(fileData.count) bytes)")
+                logChat(
+                    "📎 Attached file: \(fileURL.lastPathComponent) (\(mimeType), \(fileData.count) bytes)",
+                    level: .info,
+                    metadata: [
+                        "fileName": fileURL.lastPathComponent,
+                        "mimeType": mimeType,
+                        "fileSize": "\(fileData.count)"
+                    ]
+                )
       }
     }
 
@@ -462,7 +494,11 @@ struct ChatView: View {
       content: messageText,
       attachments: attachments.isEmpty ? nil : attachments
     )
-    print("📨 Creating message with \(attachments.count) attachments")
+        logChat(
+            "📨 Creating message with \(attachments.count) attachments",
+            level: .info,
+            metadata: ["attachmentCount": "\(attachments.count)"]
+        )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         let promptText = messageText
@@ -470,7 +506,7 @@ struct ChatView: View {
     attachedFiles = []  // Clear attached files after sending
     errorMessage = nil
     isGenerating = true
-    print("🔄 isGenerating set to TRUE")
+    logChat("🔄 isGenerating set to TRUE", level: .info)
 
         // Get updated messages after adding user message
         guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) else {
@@ -495,8 +531,17 @@ struct ChatView: View {
         // Get available MCP tools
         let mcpManager = MCPServerManager.shared
 
-        print("📊 Total available tools in manager: \(mcpManager.availableTools.count)")
-        print("📊 Enabled server configs: \(mcpManager.serverConfigs.filter { $0.enabled }.map { $0.name })")
+                logChat(
+                    "📊 Total available tools in manager: \(mcpManager.availableTools.count)",
+                    metadata: ["availableTools": "\(mcpManager.availableTools.count)"]
+                )
+                logChat(
+                    "📊 Enabled server configs: \(mcpManager.serverConfigs.filter { $0.enabled }.map { $0.name })",
+                    metadata: ["enabledServers": mcpManager.serverConfigs
+                        .filter { $0.enabled }
+                        .map { $0.name }
+                        .joined(separator: ", ")]
+                )
 
         var enabledTools = mcpManager.getEnabledTools()
 
@@ -505,12 +550,16 @@ struct ChatView: View {
         if enabledTools.isEmpty {
             let hasEnabledServers = !mcpManager.serverConfigs.filter({ $0.enabled }).isEmpty
             if hasEnabledServers {
-                print("⏳ Enabled servers found but no tools yet, waiting for discovery...")
+                logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
                 // Give discovery a moment to complete (non-blocking)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     // Re-query after a brief delay
                     let updatedTools = mcpManager.getEnabledTools()
-                    print("� After delay: \(updatedTools.count) tools available")
+                                        logChat(
+                                            "⏳ After delay: \(updatedTools.count) tools available",
+                                            level: .info,
+                                            metadata: ["availableTools": "\(updatedTools.count)"]
+                                        )
                 }
             }
         }
@@ -519,9 +568,13 @@ struct ChatView: View {
         let tools = enabledTools.isEmpty ? nil : MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
 
         if !enabledTools.isEmpty {
-            print("🔧 Available MCP tools: \(enabledTools.map { $0.name }.joined(separator: ", "))")
+            logChat(
+              "🔧 Available MCP tools: \(enabledTools.map { $0.name }.joined(separator: ", "))",
+              level: .info,
+              metadata: ["tools": enabledTools.map { $0.name }.joined(separator: ", ")]
+            )
         } else {
-            print("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools")
+            logChat("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools", level: .info)
         }
 
         // Reset tool call depth for new user messages
@@ -614,7 +667,10 @@ struct ChatView: View {
 
           // Always update the conversation data, but only update UI state if we're viewing this conversation
           guard let index = getConversationIndex() else {
-                        print("⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk")
+                                                logChat(
+                                                    "⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk",
+                                                    level: .info
+                                                )
                         return
                     }
 
@@ -655,7 +711,10 @@ struct ChatView: View {
                 // Only update UI state if we're viewing this conversation
                 guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                       currentIndex == conversationIndex else {
-                    print("✅ onComplete for conversation \(conversation.id) (background)")
+                                        logChat(
+                                            "✅ onComplete for conversation \(conversation.id) (background)",
+                                            level: .info
+                                        )
                     return
                 }
 
@@ -663,10 +722,14 @@ struct ChatView: View {
                 // If currentToolName is set, a tool call was requested and will execute
                 // The tool execution will manage the state from there
                 if currentToolName == nil {
-                    print("✅ onComplete: isGenerating set to FALSE (no tool calls pending)")
+                                        logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
                     isGenerating = false
                 } else {
-                    print("⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))")
+                                        logChat(
+                                            "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))",
+                                            level: .info,
+                                            metadata: ["toolName": currentToolName ?? "unknown"]
+                                        )
                 }
             },
             onError: { error in
@@ -682,7 +745,11 @@ struct ChatView: View {
                 // Only update UI state if we're viewing this conversation
                 guard let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
                       currentIndex == conversationIndex else {
-                    print("❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)")
+                                        logChat(
+                                            "❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)",
+                                            level: .error,
+                                            metadata: ["error": error.localizedDescription]
+                                        )
                     return
                 }
 
@@ -694,12 +761,19 @@ struct ChatView: View {
             onToolCallRequested: { toolCallId, toolName, arguments in
                 // Validate conversation still exists
                 guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
-                    print("⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring")
+                                        logChat(
+                                            "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
+                                            level: .default
+                                        )
                     return
                 }
 
                 // Tool call was requested by the LLM
-                print("🔧 Tool call requested: \(toolName) for conversation \(conversation.id)")
+                                logChat(
+                                    "🔧 Tool call requested: \(toolName) for conversation \(conversation.id)",
+                                    level: .info,
+                                    metadata: ["toolName": toolName]
+                                )
 
                 // Only update UI state if we're currently viewing this conversation
                 if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
@@ -709,7 +783,7 @@ struct ChatView: View {
 
                 // Check depth limit
                 guard toolCallDepth < maxToolCallDepth else {
-                    print("⚠️ Max tool call depth reached, stopping")
+                    logChat("⚠️ Max tool call depth reached, stopping", level: .error)
                     isGenerating = false
                     currentToolName = nil
                     return
@@ -740,9 +814,17 @@ struct ChatView: View {
                 // Execute the tool asynchronously
                 Task {
                     do {
-                        print("⚙️ Executing tool: \(toolName)")
+                                                logChat(
+                                                    "⚙️ Executing tool: \(toolName)",
+                                                    level: .info,
+                                                    metadata: ["toolName": toolName]
+                                                )
                         let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
-                        print("✅ Tool result received (\(result.count) chars)")
+                                                logChat(
+                                                    "✅ Tool result received (\(result.count) chars)",
+                                                    level: .info,
+                                                    metadata: ["resultLength": "\(result.count)"]
+                                                )
 
                         // Create a tool message with the result
                         await MainActor.run {
@@ -777,7 +859,7 @@ struct ChatView: View {
                             let newAssistantMessage = Message(role: .assistant, content: "", model: model)
                             conversationManager.addMessage(to: conversation, message: newAssistantMessage)
 
-              print("🔄 Sending follow-up request with tool results...")
+              logChat("🔄 Sending follow-up request with tool results...", level: .info)
 
                             // Only update UI state if viewing this conversation
                             if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
@@ -796,7 +878,11 @@ struct ChatView: View {
                         }
                     } catch {
                         await MainActor.run {
-              print("❌ Tool execution error: \(error.localizedDescription)")
+                            logChat(
+                                "❌ Tool execution error: \(error.localizedDescription)",
+                                level: .error,
+                                metadata: ["error": error.localizedDescription]
+                            )
 
                             // Only update UI state if viewing this conversation
                             if let currentIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),

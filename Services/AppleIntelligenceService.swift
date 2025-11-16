@@ -7,6 +7,7 @@
 
 import Foundation
 import FoundationModels
+import os.log
 
 enum AppleIntelligenceError: LocalizedError {
     case deviceNotEligible
@@ -41,6 +42,18 @@ class AppleIntelligenceService: ObservableObject {
     @Published var model = SystemLanguageModel.default
     private var sessions: [String: LanguageModelSession] = [:]
   private let sessionsLock = NSLock()
+    private func log(
+        _ message: String,
+        level: OSLogType = .default,
+        metadata: [String: String] = [:]
+    ) {
+        DiagnosticsLogger.log(
+            .appleIntelligence,
+            level: level,
+            message: message,
+            metadata: metadata
+        )
+    }
 
     private init() {}
 
@@ -95,6 +108,7 @@ class AppleIntelligenceService: ObservableObject {
     sessionsLock.lock()
     defer { sessionsLock.unlock() }
         sessions.removeValue(forKey: conversationId)
+    log("Cleared Apple Intelligence session", metadata: ["conversationId": conversationId])
     }
 
     // Clear all sessions
@@ -102,6 +116,7 @@ class AppleIntelligenceService: ObservableObject {
     sessionsLock.lock()
     defer { sessionsLock.unlock() }
         sessions.removeAll()
+    log("Cleared all Apple Intelligence sessions")
     }
 
     // Stream response
@@ -116,9 +131,16 @@ class AppleIntelligenceService: ObservableObject {
     ) async {
         // Check availability
         guard isAvailable else {
+            log(
+                "Apple Intelligence stream unavailable",
+                level: .error,
+                metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+            )
             onError(getAvailabilityError())
             return
         }
+
+        log("Starting Apple Intelligence stream", metadata: ["conversationId": conversationId])
 
         // Get or create session
         let session = getSession(
@@ -155,7 +177,13 @@ class AppleIntelligenceService: ObservableObject {
             await MainActor.run {
                 onComplete()
             }
+            log("Completed Apple Intelligence stream", metadata: ["conversationId": conversationId])
         } catch {
+            log(
+                "Apple Intelligence stream failed",
+                level: .error,
+                metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+            )
             await MainActor.run {
                 onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
             }
@@ -173,9 +201,16 @@ class AppleIntelligenceService: ObservableObject {
     ) async {
         // Check availability
         guard isAvailable else {
+            log(
+                "Apple Intelligence response unavailable",
+                level: .error,
+                metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+            )
             onError(getAvailabilityError())
             return
         }
+
+        log("Generating Apple Intelligence response", metadata: ["conversationId": conversationId])
 
         // Get or create session
         let session = getSession(
@@ -193,7 +228,13 @@ class AppleIntelligenceService: ObservableObject {
             await MainActor.run {
                 onComplete(response.content)
             }
+            log("Generated Apple Intelligence response", metadata: ["conversationId": conversationId])
         } catch {
+            log(
+                "Apple Intelligence generation failed",
+                level: .error,
+                metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+            )
             await MainActor.run {
                 onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
             }
