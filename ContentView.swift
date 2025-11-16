@@ -1,4 +1,5 @@
 //
+//
 //  ContentView.swift
 //  ayna
 //
@@ -9,45 +10,120 @@ import SwiftUI
 import OSLog
 
 struct ContentView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
+  @EnvironmentObject var conversationManager: ConversationManager
+  @ObservedObject private var openAIService = OpenAIService.shared
   @State private var selectedConversationId: UUID?
   @State private var isCreatingNew: Bool = false
 
-    var body: some View {
+  private var configurationIssues: [String] {
+    openAIService.configurationIssues
+  }
+
+  var body: some View {
     NavigationSplitView {
       SidebarView(selectedConversationId: $selectedConversationId, isCreatingNew: $isCreatingNew)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
-        } detail: {
-            if let conversationId = selectedConversationId,
-               let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                ChatView(conversation: conversation)
-                    .id(conversationId)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+      } detail: {
+        if let conversationId = selectedConversationId,
+          let conversation = conversationManager.conversations.first(where: {
+            $0.id == conversationId
+          }) {
+        ChatView(conversation: conversation)
+          .id(conversationId)
       } else if isCreatingNew {
-        // New conversation mode - show empty chat that creates on first message
         NewChatView(
           isCreatingNew: $isCreatingNew,
           selectedConversationId: $selectedConversationId
         )
-            } else {
-                // Empty state
-                Color.clear
-                    .overlay(
-                        VStack(spacing: 16) {
-                            Image(systemName: "message")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.tertiary)
-
-                            Text("No conversation selected")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
-                    )
-            }
-        }
-        .transaction { transaction in
-            transaction.disablesAnimations = true
-        }
+      } else {
+        WelcomeEmptyState(
+          hasConversations: !conversationManager.conversations.isEmpty,
+          configurationIssues: configurationIssues,
+          onStartNewConversation: { isCreatingNew = true }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     }
+    .transaction { transaction in
+      transaction.disablesAnimations = true
+    }
+  }
+}
+
+struct WelcomeEmptyState: View {
+  let hasConversations: Bool
+  let configurationIssues: [String]
+  let onStartNewConversation: () -> Void
+
+  private let documentationURL = URL(string: "https://github.com/sozercan/ayna#readme")!
+
+  var body: some View {
+    VStack(spacing: 24) {
+      VStack(spacing: 8) {
+        Image(systemName: "rectangle.on.rectangle.angled")
+          .font(.system(size: 54))
+          .foregroundStyle(.secondary)
+
+        Text(hasConversations ? "Pick a conversation or start a new one" : "Welcome to Ayna")
+          .font(.title2.weight(.semibold))
+
+        Text(
+          configurationIssues.isEmpty
+            ? "Your workspace is ready. Start with ⌘N or pick a quick action below."
+            : "Complete setup steps so we can connect to your AI provider."
+        )
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      }
+
+      if configurationIssues.isEmpty {
+        HStack(spacing: 12) {
+          Button(action: onStartNewConversation) {
+            Label("New Conversation", systemImage: "square.and.pencil")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+
+          SettingsLink {
+            Label("Settings", systemImage: "slider.horizontal.3")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: 420)
+      } else {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(configurationIssues, id: \.self) { issue in
+            Label(issue, systemImage: "exclamationmark.triangle")
+              .foregroundStyle(.orange)
+          }
+
+          SettingsLink {
+            Label("Open Settings", systemImage: "slider.horizontal.3")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .routeSettings(to: .models)
+        }
+        .frame(maxWidth: 420)
+      }
+
+      Link(destination: documentationURL) {
+        Label("Review the quickstart", systemImage: "book")
+          .font(.footnote)
+      }
+      .foregroundStyle(.secondary)
+    }
+    .padding(40)
+    .frame(maxWidth: 520)
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+    .overlay(
+      RoundedRectangle(cornerRadius: 32)
+        .stroke(Color.white.opacity(0.05))
+    )
+    .padding()
+  }
 }
 
 // View for creating a new conversation - only creates on first message
@@ -64,6 +140,10 @@ struct NewChatView: View {
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
   private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+
+  private var configurationIssues: [String] {
+    openAIService.configurationIssues
+  }
 
   // Get the current conversation being created
   private var currentConversation: Conversation? {
@@ -88,8 +168,8 @@ struct NewChatView: View {
       // Chat background with subtle gradient
       LinearGradient(
         colors: [
-            Color(nsColor: .windowBackgroundColor),
-            Color(nsColor: .windowBackgroundColor).opacity(0.95)
+          Color(nsColor: .windowBackgroundColor),
+          Color(nsColor: .windowBackgroundColor).opacity(0.95)
         ],
         startPoint: .top,
         endPoint: .bottom
@@ -101,22 +181,17 @@ struct NewChatView: View {
         ScrollViewReader { proxy in
           ScrollView {
             if visibleMessages.isEmpty {
-              // Empty state
-              VStack(spacing: 16) {
-                Spacer()
-
-                Image(systemName: "message")
-                  .font(.system(size: 44, weight: .light))
-                  .foregroundStyle(Color.secondary.opacity(0.4))
-
-                Text("How can I help you today?")
-                  .font(.system(size: 19, weight: .medium))
-                  .foregroundStyle(Color.primary)
-
-                Spacer()
-              }
+              ChatEmptyStateCard(
+                configurationIssues: configurationIssues,
+                providerName: openAIService.provider.displayName,
+                prompts: OnboardingContent.quickPrompts,
+                showPrompts: configurationIssues.isEmpty,
+                onInsertPrompt: handlePromptSelection
+              )
               .frame(maxWidth: .infinity)
-              .frame(minHeight: 400)
+              .padding(.horizontal, 32)
+              .padding(.top, 60)
+              .padding(.bottom, 80)
             } else {
               // Show messages
               LazyVStack(spacing: 0) {
@@ -218,14 +293,21 @@ struct NewChatView: View {
 
             // Model selector
             Menu {
-              ForEach(openAIService.customModels, id: \.self) { model in
-                Button(action: {
-                  openAIService.selectedModel = model
-                }) {
-                  HStack {
-                    Text(model)
-                    if openAIService.selectedModel == model {
-                      Image(systemName: "checkmark")
+              if openAIService.customModels.isEmpty {
+                SettingsLink {
+                  Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                }
+                .routeSettings(to: .models)
+              } else {
+                ForEach(openAIService.customModels, id: \.self) { model in
+                  Button(action: {
+                    openAIService.selectedModel = model
+                  }) {
+                    HStack {
+                      Text(model)
+                      if openAIService.selectedModel == model {
+                        Image(systemName: "checkmark")
+                      }
                     }
                   }
                 }
@@ -236,7 +318,8 @@ struct NewChatView: View {
                   .frame(height: 24)
                   .padding(.leading, 8)
 
-                Text(openAIService.selectedModel)
+                Text(
+                  openAIService.selectedModel.isEmpty ? "Add Model" : openAIService.selectedModel)
                   .font(.system(size: 13))
                   .foregroundStyle(.primary)
                   .lineLimit(1)
@@ -285,6 +368,10 @@ struct NewChatView: View {
         .background(.ultraThinMaterial)
       }
     }
+  }
+
+  private func handlePromptSelection(_ prompt: String) {
+    messageText = prompt
   }
 
   private func calculateTextHeight() -> CGFloat {
@@ -353,10 +440,10 @@ struct NewChatView: View {
 
     // Get or create the conversation
     let conversation: Conversation
-      if let existingId = currentConversationId,
-        let existingConversation = conversationManager.conversations.first(where: {
-          $0.id == existingId
-        }) {
+    if let existingId = currentConversationId,
+      let existingConversation = conversationManager.conversations.first(where: {
+        $0.id == existingId
+      }) {
       // Continue with existing conversation
       conversation = existingConversation
       logNewChat(
@@ -448,7 +535,6 @@ struct NewChatView: View {
       tools: tools,
       conversationId: conversation.id,
       onChunk: { chunk in
-        // Always update conversation data, regardless of which view is active
         guard let index = self.conversationManager.conversations.firstIndex(where: { $0.id == expectedConversationId }) else {
           logNewChat(
             "⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk",
@@ -458,9 +544,8 @@ struct NewChatView: View {
           return
         }
 
-        // Update the message content
-          if var lastMessage = self.conversationManager.conversations[index].messages.last,
-            lastMessage.role == .assistant {
+        if var lastMessage = self.conversationManager.conversations[index].messages.last,
+          lastMessage.role == .assistant {
           lastMessage.content += chunk
           self.conversationManager.conversations[index].messages[
             self.conversationManager.conversations[index].messages.count - 1] = lastMessage
@@ -474,7 +559,6 @@ struct NewChatView: View {
           metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        // Now that generation is complete, switch to ChatView
         self.selectedConversationId = conversation.id
         self.isCreatingNew = false
       },
@@ -489,7 +573,6 @@ struct NewChatView: View {
           ]
         )
 
-        // On error, also switch to ChatView so user can see the error
         self.selectedConversationId = conversation.id
         self.isCreatingNew = false
       }
@@ -522,6 +605,6 @@ struct NewChatView: View {
 }
 
 #Preview {
-    ContentView()
-        .environmentObject(ConversationManager())
+  ContentView()
+    .environmentObject(ConversationManager())
 }

@@ -7,6 +7,9 @@
 
 import Foundation
 
+// swiftlint:disable file_length
+// This service intentionally aggregates every provider workflow until we extract dedicated modules.
+
 enum AIProvider: String, CaseIterable, Codable {
   case openai = "OpenAI"
   case azure = "Azure OpenAI"
@@ -74,6 +77,7 @@ class OpenAIService: ObservableObject {
       if trimmed != azureDeploymentName {
         azureDeploymentName = trimmed
       }
+      UserDefaults.standard.set(trimmed, forKey: "azureDeploymentName")
     }
   }
 
@@ -180,11 +184,10 @@ class OpenAIService: ObservableObject {
     }
     // Load custom models first
     let loadedCustomModels: [String]
-    if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String],
-      !savedModels.isEmpty {
+    if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String] {
       loadedCustomModels = savedModels
     } else {
-      loadedCustomModels = ["gpt-4o", "gpt-4o-mini", "o1", "gpt-image-1"]
+      loadedCustomModels = []
     }
     self.customModels = loadedCustomModels
 
@@ -226,11 +229,13 @@ class OpenAIService: ObservableObject {
     self.modelAPIKeys = OpenAIService.loadModelAPIKeys()
 
     // Load selected model, ensure it exists in custom models
-    let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "gpt-4o"
+    let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? ""
     if loadedCustomModels.contains(savedSelectedModel) {
       self.selectedModel = savedSelectedModel
+    } else if let firstModel = loadedCustomModels.first {
+      self.selectedModel = firstModel
     } else {
-      self.selectedModel = loadedCustomModels.first ?? "gpt-4o"
+      self.selectedModel = ""
     }
 
     // Initialize API key
@@ -459,7 +464,11 @@ class OpenAIService: ObservableObject {
     onComplete: @escaping (Data) -> Void,
     onError: @escaping (Error) -> Void
   ) {
-    let requestModel = model ?? selectedModel
+    let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !requestModel.isEmpty else {
+      onError(OpenAIError.missingModel)
+      return
+    }
     let modelAPIKey = getAPIKey(for: requestModel)
 
     guard !modelAPIKey.isEmpty else {
@@ -703,7 +712,11 @@ class OpenAIService: ObservableObject {
     onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
-    let requestModel = model ?? selectedModel
+    let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !requestModel.isEmpty else {
+      onError(OpenAIError.missingModel)
+      return
+    }
     let effectiveProvider = modelProviders[requestModel] ?? provider
 
     // Handle Apple Intelligence separately
@@ -820,7 +833,7 @@ class OpenAIService: ObservableObject {
       return
     }
 
-    let requestModel: String = model ?? selectedModel
+    let requestModel = model
     let modelAPIKey = getAPIKey(for: requestModel)
     let apiURL = getResponsesAPIURL(provider: effectiveProvider)
 
@@ -974,6 +987,12 @@ class OpenAIService: ObservableObject {
 
   // MARK: - Helper Methods for streamResponse
 
+  private struct StreamLineResult {
+    let shouldComplete: Bool
+    let toolCallBuffer: [String: Any]
+    let toolCallId: String
+  }
+
   private func getHTTPErrorMessage(statusCode: Int, provider: AIProvider, azureDeployment: String, azureVersion: String) -> String {
     if statusCode == 400 {
       if provider == .azure {
@@ -988,20 +1007,26 @@ class OpenAIService: ObservableObject {
 
   private func processStreamLine(
     _ line: String,
-    toolCallBuffer: inout [String: Any],
-    toolCallId: inout String,
+    toolCallBuffer: [String: Any],
+    toolCallId: String,
     onChunk: @escaping (String) -> Void,
     onReasoning: ((String) -> Void)?,
     onToolCall: ((String, String, [String: Any]) async -> String)?,
     onToolCallRequested: ((String, String, [String: Any]) -> Void)?
-  ) async -> Bool {
+  ) async -> StreamLineResult {
+    var updatedToolCallBuffer = toolCallBuffer
+    var updatedToolCallId = toolCallId
     let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
     if trimmedLine.hasPrefix("data: ") {
       let jsonString = String(trimmedLine.dropFirst(6))
 
       if jsonString == "[DONE]" {
-        return true // Signal completion
+        return StreamLineResult(
+          shouldComplete: true,
+          toolCallBuffer: updatedToolCallBuffer,
+          toolCallId: updatedToolCallId
+        )  // Signal completion
       }
 
       if let jsonData = jsonString.data(using: .utf8),
@@ -1033,15 +1058,15 @@ class OpenAIService: ObservableObject {
         if let toolCalls = delta["tool_calls"] as? [[String: Any]],
            let toolCall = toolCalls.first {
           if let id = toolCall["id"] as? String {
-            toolCallId = id
+            updatedToolCallId = id
           }
           if let function = toolCall["function"] as? [String: Any] {
             if let name = function["name"] as? String {
-              toolCallBuffer["name"] = name
+              updatedToolCallBuffer["name"] = name
             }
             if let argsChunk = function["arguments"] as? String {
-              let currentArgs = toolCallBuffer["arguments"] as? String ?? ""
-              toolCallBuffer["arguments"] = currentArgs + argsChunk
+              let currentArgs = updatedToolCallBuffer["arguments"] as? String ?? ""
+              updatedToolCallBuffer["arguments"] = currentArgs + argsChunk
             }
           }
         }
@@ -1049,32 +1074,38 @@ class OpenAIService: ObservableObject {
         // Check if tool call is complete
         if let finishReason = firstChoice["finish_reason"] as? String,
            finishReason == "tool_calls",
-           let toolName = toolCallBuffer["name"] as? String,
-           let argsString = toolCallBuffer["arguments"] as? String,
+          let toolName = updatedToolCallBuffer["name"] as? String,
+          let argsString = updatedToolCallBuffer["arguments"] as? String,
            let argsData = argsString.data(using: .utf8),
            let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
+
+          let currentToolCallId = updatedToolCallId
 
           // Notify about tool call request (for proper flow)
           if let onToolCallRequested = onToolCallRequested {
             await MainActor.run {
-              onToolCallRequested(toolCallId, toolName, arguments)
+              onToolCallRequested(currentToolCallId, toolName, arguments)
             }
           }
           // Legacy support: still execute inline if old callback provided
           else if let onToolCall = onToolCall {
-            let result = await onToolCall(toolCallId, toolName, arguments)
+            let result = await onToolCall(currentToolCallId, toolName, arguments)
             await MainActor.run {
               onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
             }
           }
 
           // Clear buffer for next tool call
-          toolCallBuffer = [:]
-          toolCallId = ""
+          updatedToolCallBuffer = [:]
+          updatedToolCallId = ""
         }
       }
     }
-    return false // Continue processing
+    return StreamLineResult(
+      shouldComplete: false,
+      toolCallBuffer: updatedToolCallBuffer,
+      toolCallId: updatedToolCallId
+    )  // Continue processing
   }
 
   private func streamResponse(
@@ -1138,17 +1169,19 @@ class OpenAIService: ObservableObject {
           // Check if we have a newline (UTF-8: 0x0A)
           if byte == 0x0A {
             if let line = String(data: buffer, encoding: .utf8) {
-              let shouldComplete = await processStreamLine(
+              let result = await processStreamLine(
                 line,
-                toolCallBuffer: &toolCallBuffer,
-                toolCallId: &toolCallId,
+                toolCallBuffer: toolCallBuffer,
+                toolCallId: toolCallId,
                 onChunk: onChunk,
                 onReasoning: onReasoning,
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested
               )
+              toolCallBuffer = result.toolCallBuffer
+              toolCallId = result.toolCallId
 
-              if shouldComplete {
+              if result.shouldComplete {
                 await MainActor.run {
                   self.currentStreamTask = nil
                   onComplete()
@@ -1360,6 +1393,7 @@ class OpenAIService: ObservableObject {
 
   enum OpenAIError: LocalizedError {
     case missingAPIKey
+    case missingModel
     case invalidResponse
     case apiError(String)
     case invalidURL
@@ -1373,6 +1407,8 @@ class OpenAIService: ObservableObject {
       switch self {
       case .missingAPIKey:
         return "Please add your API key in Settings"
+      case .missingModel:
+        return "Please add or select a model in Settings"
       case .invalidResponse:
         return "Invalid response from API"
       case .apiError(let message):
@@ -1391,6 +1427,86 @@ class OpenAIService: ObservableObject {
         return "Content filtered: \(message)"
       }
     }
+  }
+}
+
+extension OpenAIService {
+  private func providerRequiresAPIKey(_ provider: AIProvider) -> Bool {
+    switch provider {
+    case .aikit, .appleIntelligence:
+      return false
+    case .openai, .azure:
+      return true
+    }
+  }
+
+  var requiresAPIKey: Bool {
+    providerRequiresAPIKey(provider)
+  }
+
+  private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
+    guard providerRequiresAPIKey(provider) else { return true }
+
+    if let model,
+      let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !modelKey.isEmpty {
+      return true
+    }
+
+    let trimmedGlobalKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedGlobalKey.isEmpty {
+      return true
+    }
+
+    return modelAPIKeys.values.contains {
+      !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+  }
+
+  var isAPIKeyConfigured: Bool {
+    let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedModel = trimmedModel.isEmpty ? nil : trimmedModel
+    return isAPIKeyConfigured(for: provider, model: normalizedModel)
+  }
+
+  private func missingAzureConfigurationFields(for provider: AIProvider) -> [String] {
+    guard provider == .azure else { return [] }
+    var fields: [String] = []
+    if azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      fields.append("endpoint URL")
+    }
+    if azureDeploymentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      fields.append("deployment name")
+    }
+    if azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      fields.append("API version")
+    }
+    return fields
+  }
+
+  var configurationIssues: [String] {
+    var issues: [String] = []
+    let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedModel = trimmedModel.isEmpty ? nil : trimmedModel
+    let activeProvider = normalizedModel.flatMap { modelProviders[$0] } ?? provider
+
+    if customModels.isEmpty {
+      issues.append("Add at least one model in Settings > Model tab")
+    } else if normalizedModel == nil {
+      issues.append("Select a default model in Settings > Model tab")
+    }
+
+    if providerRequiresAPIKey(activeProvider)
+      && !isAPIKeyConfigured(for: activeProvider, model: normalizedModel) {
+      issues.append("Add an API key for \(activeProvider.displayName)")
+    }
+
+    if activeProvider == .azure {
+      issues.append(contentsOf: missingAzureConfigurationFields(for: activeProvider).map {
+        "Set Azure \($0)"
+      })
+    }
+    return issues
   }
 }
 

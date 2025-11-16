@@ -82,6 +82,18 @@ struct ChatView: View {
         }
     }
 
+  private var configurationIssues: [String] {
+    openAIService.configurationIssues
+  }
+
+  private var shouldShowPrompts: Bool {
+    configurationIssues.isEmpty
+  }
+
+  private func handlePromptSelection(_ prompt: String) {
+    messageText = prompt
+  }
+
   var body: some View {
         ZStack {
             // Chat background with subtle gradient
@@ -100,22 +112,17 @@ struct ChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                     if currentConversation.messages.isEmpty {
-                        // Empty state
-                        VStack(spacing: 16) {
-                            Spacer()
-
-                            Image(systemName: "message")
-                                .font(.system(size: 44, weight: .light))
-                                .foregroundStyle(Color.secondary.opacity(0.4))
-
-                            Text("How can I help you today?")
-                                .font(.system(size: 19, weight: .medium))
-                                .foregroundStyle(Color.primary)
-
-                            Spacer()
-                        }
+              ChatEmptyStateCard(
+                configurationIssues: configurationIssues,
+                providerName: openAIService.provider.displayName,
+                prompts: OnboardingContent.quickPrompts,
+                showPrompts: shouldShowPrompts,
+                onInsertPrompt: handlePromptSelection
+              )
                         .frame(maxWidth: .infinity)
-                        .frame(minHeight: 400)
+              .padding(.horizontal, 32)
+              .padding(.top, 60)
+              .padding(.bottom, 80)
                     } else {
                         LazyVStack(spacing: 0) {
                 ForEach(visibleMessages) { message in
@@ -284,14 +291,21 @@ struct ChatView: View {
 
             // Model selector (seamlessly integrated)
             Menu {
-              ForEach(openAIService.customModels, id: \.self) { model in
-                Button(action: {
-                  conversationManager.updateModel(for: conversation, model: model)
-                }) {
-                  HStack {
-                    Text(model)
-                    if currentConversation.model == model {
-                      Image(systemName: "checkmark")
+              if openAIService.customModels.isEmpty {
+                SettingsLink {
+                  Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                }
+                .routeSettings(to: .models)
+              } else {
+                ForEach(openAIService.customModels, id: \.self) { model in
+                  Button(action: {
+                    conversationManager.updateModel(for: conversation, model: model)
+                  }) {
+                    HStack {
+                      Text(model)
+                      if currentConversation.model == model {
+                        Image(systemName: "checkmark")
+                      }
                     }
                   }
                 }
@@ -302,7 +316,11 @@ struct ChatView: View {
                   .frame(height: 24)
                   .padding(.leading, 8)
 
-                Text(currentConversation.model)
+                Text(
+                  currentConversation.model.isEmpty
+                    ? (openAIService.customModels.isEmpty ? "Add Model" : "Select Model")
+                    : currentConversation.model
+                )
                   .font(.system(size: 13))
                   .foregroundStyle(.primary)
                   .lineLimit(1)
@@ -540,10 +558,11 @@ struct ChatView: View {
                     metadata: ["enabledServers": mcpManager.serverConfigs
                         .filter { $0.enabled }
                         .map { $0.name }
-                        .joined(separator: ", ")]
-                )
+                        .joined(separator: ",")
+      ]
+    )
 
-        var enabledTools = mcpManager.getEnabledTools()
+    let enabledTools = mcpManager.getEnabledTools()
 
         // If we have enabled servers but no tools yet, wait a moment and try again
         // This handles the race condition where servers are connecting at app startup
@@ -1131,11 +1150,113 @@ struct DynamicTextEditor: NSViewRepresentable {
                 if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
                     onSubmit?()
                     return true
-                }
-            }
-            return false
         }
+      }
+      return false
     }
+  }
+}
+
+struct ChatEmptyStateCard: View {
+  let configurationIssues: [String]
+  let providerName: String
+  let prompts: [String]
+  let showPrompts: Bool
+  let onInsertPrompt: (String) -> Void
+
+  private let documentationURL = URL(string: "https://github.com/sozercan/ayna#readme")!
+
+  var body: some View {
+    VStack(spacing: 24) {
+      VStack(spacing: 8) {
+        Image(systemName: showPrompts ? "sparkles" : "key.fill")
+          .font(.system(size: 48, weight: .light))
+          .foregroundStyle(.secondary)
+
+        Text(showPrompts ? "Start your first conversation" : "You're almost ready")
+          .font(.title3.weight(.semibold))
+
+        Text(
+          showPrompts
+            ? "Share a prompt below or paste content you'd like me to analyze."
+            : "Complete the setup steps so Ayna can connect to \(providerName)."
+        )
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      }
+
+      if configurationIssues.isEmpty {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Try one of these quick prompts")
+            .font(.subheadline.weight(.medium))
+
+          VStack(alignment: .leading, spacing: 8) {
+            ForEach(prompts, id: \.self) { prompt in
+              Button(action: { onInsertPrompt(prompt) }) {
+                HStack {
+                  Image(systemName: "text.quote")
+                    .font(.system(size: 13, weight: .semibold))
+                  Text(prompt)
+                    .font(.callout)
+                    .multilineTextAlignment(.leading)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(configurationIssues, id: \.self) { issue in
+            Label(issue, systemImage: "exclamationmark.triangle")
+              .font(.callout)
+              .foregroundStyle(.orange)
+          }
+
+          SettingsLink {
+            HStack {
+              Image(systemName: "slider.horizontal.3")
+              Text("Open Settings")
+            }
+            .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.borderedProminent)
+          .routeSettings(to: .models)
+
+          Text("Tip: Press ⌘, anytime to open Settings.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      Link(destination: documentationURL) {
+        Label("Read the quickstart guide", systemImage: "book")
+          .font(.footnote)
+      }
+      .foregroundStyle(.secondary)
+    }
+    .padding(32)
+    .frame(maxWidth: 520)
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 28, style: .continuous)
+        .stroke(Color.white.opacity(0.05))
+    )
+  }
+}
+
+enum OnboardingContent {
+  static let quickPrompts: [String] = [
+    "Summarize today's meeting notes into three bullet points.",
+    "Explain this SwiftUI snippet and suggest improvements.",
+    "Help me brainstorm launch ideas for our next release."
+    ]
 }
 
 #Preview {

@@ -10,32 +10,43 @@ import SwiftUI
 // swiftlint:disable file_length type_body_length
 
 struct SettingsView: View {
-  @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var settingsRouter = SettingsRouter.shared
     @State private var showAPIKeyInfo = false
+    @State private var selectedTab: SettingsTab = SettingsRouter.shared.consumeRequestedTab() ?? .general
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             GeneralSettingsView()
                 .tabItem {
                     Label("General", systemImage: "gear")
                 }
+                .tag(SettingsTab.general)
 
             APISettingsView()
                 .tabItem {
                     Label("Models", systemImage: "cpu")
                 }
+                .tag(SettingsTab.models)
 
-      MCPSettingsView()
+            MCPSettingsView()
                 .tabItem {
                     Label("MCP Tools", systemImage: "wrench.and.screwdriver")
                 }
+                .tag(SettingsTab.mcp)
 
             AboutView()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
+                .tag(SettingsTab.about)
         }
         .frame(width: 650, height: 500)
+        .onReceive(settingsRouter.$requestedTab) { tab in
+            guard let tab else { return }
+            selectedTab = tab
+            _ = settingsRouter.consumeRequestedTab()
+        }
     }
 }
 
@@ -1132,9 +1143,13 @@ struct APISettingsView: View {
     openAIService.modelEndpoints.removeValue(forKey: model)
     openAIService.modelAPIKeys.removeValue(forKey: model)
 
-        // If we removed the selected default model, pick a new one
-        if openAIService.selectedModel == model && !openAIService.customModels.isEmpty {
-            openAIService.selectedModel = openAIService.customModels[0]
+    // If we removed the selected default model, pick the next available one or clear it
+    if openAIService.selectedModel == model {
+      if let nextModel = openAIService.customModels.first {
+        openAIService.selectedModel = nextModel
+      } else {
+        openAIService.selectedModel = ""
+      }
         }
 
         if selectedModelName == model {
