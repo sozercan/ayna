@@ -42,7 +42,7 @@ class OpenAIService: ObservableObject {
 
   @Published var selectedModel: String {
     didSet {
-      UserDefaults.standard.set(selectedModel, forKey: "selectedModel")
+      AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
       // Sync with AIKitService if this is an AIKit model
       if modelProviders[selectedModel] == .aikit {
         AIKitService.shared.selectModelByName(selectedModel)
@@ -56,7 +56,7 @@ class OpenAIService: ObservableObject {
 
   @Published var provider: AIProvider {
     didSet {
-      UserDefaults.standard.set(provider.rawValue, forKey: "aiProvider")
+      AppPreferences.storage.set(provider.rawValue, forKey: "aiProvider")
     }
   }
 
@@ -67,7 +67,7 @@ class OpenAIService: ObservableObject {
       if trimmed != azureEndpoint {
         azureEndpoint = trimmed
       }
-      UserDefaults.standard.set(trimmed, forKey: "azureEndpoint")
+      AppPreferences.storage.set(trimmed, forKey: "azureEndpoint")
     }
   }
 
@@ -77,7 +77,7 @@ class OpenAIService: ObservableObject {
       if trimmed != azureDeploymentName {
         azureDeploymentName = trimmed
       }
-      UserDefaults.standard.set(trimmed, forKey: "azureDeploymentName")
+      AppPreferences.storage.set(trimmed, forKey: "azureDeploymentName")
     }
   }
 
@@ -87,7 +87,7 @@ class OpenAIService: ObservableObject {
       if trimmed != azureAPIVersion {
         azureAPIVersion = trimmed
       }
-      UserDefaults.standard.set(trimmed, forKey: "azureAPIVersion")
+      AppPreferences.storage.set(trimmed, forKey: "azureAPIVersion")
     }
   }
 
@@ -98,27 +98,27 @@ class OpenAIService: ObservableObject {
 
   @Published var customModels: [String] {
     didSet {
-      UserDefaults.standard.set(customModels, forKey: "customModels")
+      AppPreferences.storage.set(customModels, forKey: "customModels")
     }
   }
 
   @Published var modelProviders: [String: AIProvider] {
     didSet {
       let encodedDict = modelProviders.mapValues { $0.rawValue }
-      UserDefaults.standard.set(encodedDict, forKey: "modelProviders")
+      AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
     }
   }
 
   @Published var modelEndpointTypes: [String: APIEndpointType] {
     didSet {
       let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
-      UserDefaults.standard.set(encodedDict, forKey: "modelEndpointTypes")
+      AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
     }
   }
 
   @Published var modelEndpoints: [String: String] {
     didSet {
-      UserDefaults.standard.set(modelEndpoints, forKey: "modelEndpoints")
+      AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
     }
   }
 
@@ -146,25 +146,25 @@ class OpenAIService: ObservableObject {
   // Image generation settings
   @Published var imageSize: String {
     didSet {
-      UserDefaults.standard.set(imageSize, forKey: "imageSize")
+      AppPreferences.storage.set(imageSize, forKey: "imageSize")
     }
   }
 
   @Published var imageQuality: String {
     didSet {
-      UserDefaults.standard.set(imageQuality, forKey: "imageQuality")
+      AppPreferences.storage.set(imageQuality, forKey: "imageQuality")
     }
   }
 
   @Published var outputFormat: String {
     didSet {
-      UserDefaults.standard.set(outputFormat, forKey: "outputFormat")
+      AppPreferences.storage.set(outputFormat, forKey: "outputFormat")
     }
   }
 
   @Published var outputCompression: Int {
     didSet {
-      UserDefaults.standard.set(outputCompression, forKey: "outputCompression")
+      AppPreferences.storage.set(outputCompression, forKey: "outputCompression")
     }
   }
 
@@ -184,7 +184,7 @@ class OpenAIService: ObservableObject {
     }
     // Load custom models first
     let loadedCustomModels: [String]
-    if let savedModels = UserDefaults.standard.array(forKey: "customModels") as? [String] {
+    if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
       loadedCustomModels = savedModels
     } else {
       loadedCustomModels = []
@@ -193,7 +193,7 @@ class OpenAIService: ObservableObject {
 
     // Load model providers mapping
     let loadedProviders: [String: AIProvider]
-    if let savedProviders = UserDefaults.standard.dictionary(forKey: "modelProviders")
+    if let savedProviders = AppPreferences.storage.dictionary(forKey: "modelProviders")
       as? [String: String] {
       loadedProviders = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
     } else {
@@ -205,7 +205,7 @@ class OpenAIService: ObservableObject {
 
     // Load model endpoint types mapping
     let loadedEndpointTypes: [String: APIEndpointType]
-    if let savedEndpointTypes = UserDefaults.standard.dictionary(forKey: "modelEndpointTypes")
+    if let savedEndpointTypes = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes")
       as? [String: String] {
       loadedEndpointTypes = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
     } else {
@@ -217,7 +217,7 @@ class OpenAIService: ObservableObject {
 
     // Load custom endpoints mapping
     let loadedEndpoints: [String: String]
-    if let savedEndpoints = UserDefaults.standard.dictionary(forKey: "modelEndpoints")
+    if let savedEndpoints = AppPreferences.storage.dictionary(forKey: "modelEndpoints")
       as? [String: String] {
       loadedEndpoints = savedEndpoints
     } else {
@@ -229,7 +229,7 @@ class OpenAIService: ObservableObject {
     self.modelAPIKeys = OpenAIService.loadModelAPIKeys()
 
     // Load selected model, ensure it exists in custom models
-    let savedSelectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? ""
+    let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
     if loadedCustomModels.contains(savedSelectedModel) {
       self.selectedModel = savedSelectedModel
     } else if let firstModel = loadedCustomModels.first {
@@ -242,7 +242,7 @@ class OpenAIService: ObservableObject {
     self.apiKey = OpenAIService.loadGlobalAPIKey()
 
     // Initialize provider
-    if let providerString = UserDefaults.standard.string(forKey: "aiProvider"),
+    if let providerString = AppPreferences.storage.string(forKey: "aiProvider"),
       let savedProvider = AIProvider(rawValue: providerString) {
       self.provider = savedProvider
     } else {
@@ -250,21 +250,21 @@ class OpenAIService: ObservableObject {
     }
 
     // Initialize Azure settings
-    self.azureEndpoint = (UserDefaults.standard.string(forKey: "azureEndpoint") ?? "")
+    self.azureEndpoint = (AppPreferences.storage.string(forKey: "azureEndpoint") ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    self.azureDeploymentName = (UserDefaults.standard.string(forKey: "azureDeploymentName") ?? "")
+    self.azureDeploymentName = (AppPreferences.storage.string(forKey: "azureDeploymentName") ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     self.azureAPIVersion =
-      (UserDefaults.standard.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview")
+      (AppPreferences.storage.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview")
       .trimmingCharacters(in: .whitespacesAndNewlines)
 
     // Initialize image generation settings
-    self.imageSize = UserDefaults.standard.string(forKey: "imageSize") ?? "1024x1024"
-    self.imageQuality = UserDefaults.standard.string(forKey: "imageQuality") ?? "medium"
-    self.outputFormat = UserDefaults.standard.string(forKey: "outputFormat") ?? "png"
+    self.imageSize = AppPreferences.storage.string(forKey: "imageSize") ?? "1024x1024"
+    self.imageQuality = AppPreferences.storage.string(forKey: "imageQuality") ?? "medium"
+    self.outputFormat = AppPreferences.storage.string(forKey: "outputFormat") ?? "png"
     self.outputCompression =
-      UserDefaults.standard.integer(forKey: "outputCompression") == 0
-      ? 100 : UserDefaults.standard.integer(forKey: "outputCompression")
+      AppPreferences.storage.integer(forKey: "outputCompression") == 0
+      ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
   }
 
   private func saveAPIKey() {

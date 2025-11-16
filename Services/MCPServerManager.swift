@@ -75,12 +75,12 @@ class MCPServerManager: ObservableObject {
 
     private func saveServerConfigs() {
         if let encoded = try? JSONEncoder().encode(serverConfigs) {
-            UserDefaults.standard.set(encoded, forKey: "mcp_server_configs")
+            AppPreferences.storage.set(encoded, forKey: "mcp_server_configs")
         }
     }
 
     private func loadServerConfigs() {
-        guard let data = UserDefaults.standard.data(forKey: "mcp_server_configs") else {
+        guard let data = AppPreferences.storage.data(forKey: "mcp_server_configs") else {
             // First launch: use default configs
             DiagnosticsLogger.log(
                 .mcpServerManager,
@@ -135,7 +135,7 @@ class MCPServerManager: ObservableObject {
                 message: "Clearing corrupted MCP config data and resetting to defaults"
             )
             // Clear corrupted data and use defaults
-            UserDefaults.standard.removeObject(forKey: "mcp_server_configs")
+            AppPreferences.storage.removeObject(forKey: "mcp_server_configs")
             serverConfigs = defaultServerConfigs()
             saveServerConfigs()
         }

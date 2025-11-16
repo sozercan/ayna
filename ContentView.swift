@@ -8,20 +8,19 @@
 
 import SwiftUI
 import OSLog
+import Combine
+
+extension Notification.Name {
+  static let newConversationRequested = Notification.Name("newConversationRequested")
+}
 
 struct ContentView: View {
   @EnvironmentObject var conversationManager: ConversationManager
-  @ObservedObject private var openAIService = OpenAIService.shared
   @State private var selectedConversationId: UUID?
-  @State private var isCreatingNew: Bool = false
-
-  private var configurationIssues: [String] {
-    openAIService.configurationIssues
-  }
 
   var body: some View {
     NavigationSplitView {
-      SidebarView(selectedConversationId: $selectedConversationId, isCreatingNew: $isCreatingNew)
+      SidebarView(selectedConversationId: $selectedConversationId)
         .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
       } detail: {
         if let conversationId = selectedConversationId,
@@ -30,99 +29,18 @@ struct ContentView: View {
           }) {
         ChatView(conversation: conversation)
           .id(conversationId)
-      } else if isCreatingNew {
+      } else {
         NewChatView(
-          isCreatingNew: $isCreatingNew,
           selectedConversationId: $selectedConversationId
         )
-      } else {
-        WelcomeEmptyState(
-          hasConversations: !conversationManager.conversations.isEmpty,
-          configurationIssues: configurationIssues,
-          onStartNewConversation: { isCreatingNew = true }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
     .transaction { transaction in
       transaction.disablesAnimations = true
     }
-  }
-}
-
-struct WelcomeEmptyState: View {
-  let hasConversations: Bool
-  let configurationIssues: [String]
-  let onStartNewConversation: () -> Void
-
-  private let documentationURL = URL(string: "https://github.com/sozercan/ayna#readme")!
-
-  var body: some View {
-    VStack(spacing: 24) {
-      VStack(spacing: 8) {
-        Image(systemName: "rectangle.on.rectangle.angled")
-          .font(.system(size: 54))
-          .foregroundStyle(.secondary)
-
-        Text(hasConversations ? "Pick a conversation or start a new one" : "Welcome to Ayna")
-          .font(.title2.weight(.semibold))
-
-        Text(
-          configurationIssues.isEmpty
-            ? "Your workspace is ready. Start with ⌘N or pick a quick action below."
-            : "Complete setup steps so we can connect to your AI provider."
-        )
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-      }
-
-      if configurationIssues.isEmpty {
-        HStack(spacing: 12) {
-          Button(action: onStartNewConversation) {
-            Label("New Conversation", systemImage: "square.and.pencil")
-              .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.borderedProminent)
-
-          SettingsLink {
-            Label("Settings", systemImage: "slider.horizontal.3")
-              .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.bordered)
-        }
-        .frame(maxWidth: 420)
-      } else {
-        VStack(alignment: .leading, spacing: 10) {
-          ForEach(configurationIssues, id: \.self) { issue in
-            Label(issue, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(.orange)
-          }
-
-          SettingsLink {
-            Label("Open Settings", systemImage: "slider.horizontal.3")
-              .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.borderedProminent)
-          .routeSettings(to: .models)
-        }
-        .frame(maxWidth: 420)
-      }
-
-      Link(destination: documentationURL) {
-        Label("Review the quickstart", systemImage: "book")
-          .font(.footnote)
-      }
-      .foregroundStyle(.secondary)
+    .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
+      selectedConversationId = nil
     }
-    .padding(40)
-    .frame(maxWidth: 520)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
-    .overlay(
-      RoundedRectangle(cornerRadius: 32)
-        .stroke(Color.white.opacity(0.05))
-    )
-    .padding()
   }
 }
 
@@ -130,7 +48,6 @@ struct WelcomeEmptyState: View {
 struct NewChatView: View {
   @EnvironmentObject var conversationManager: ConversationManager
   @ObservedObject private var openAIService = OpenAIService.shared
-  @Binding var isCreatingNew: Bool
   @Binding var selectedConversationId: UUID?
   @State private var messageText = ""
   @State private var attachedFiles: [URL] = []
@@ -140,10 +57,6 @@ struct NewChatView: View {
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
   private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
-
-  private var configurationIssues: [String] {
-    openAIService.configurationIssues
-  }
 
   // Get the current conversation being created
   private var currentConversation: Conversation? {
@@ -163,6 +76,21 @@ struct NewChatView: View {
     }
   }
 
+  private var needsModelSetup: Bool {
+    openAIService.customModels.isEmpty
+      || openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var modelSetupIssues: [String] {
+    let modelSpecificIssues = openAIService.configurationIssues.filter {
+      $0.localizedCaseInsensitiveContains("model")
+    }
+    if !modelSpecificIssues.isEmpty {
+      return modelSpecificIssues
+    }
+    return ["Add at least one model in Settings > Model tab"]
+  }
+
   var body: some View {
     ZStack {
       // Chat background with subtle gradient
@@ -176,24 +104,13 @@ struct NewChatView: View {
       )
       .ignoresSafeArea()
 
-      VStack(spacing: 0) {
-        // Messages or empty state
-        ScrollViewReader { proxy in
-          ScrollView {
-            if visibleMessages.isEmpty {
-              ChatEmptyStateCard(
-                configurationIssues: configurationIssues,
-                providerName: openAIService.provider.displayName,
-                prompts: OnboardingContent.quickPrompts,
-                showPrompts: configurationIssues.isEmpty,
-                onInsertPrompt: handlePromptSelection
-              )
-              .frame(maxWidth: .infinity)
-              .padding(.horizontal, 32)
-              .padding(.top, 60)
-              .padding(.bottom, 80)
-            } else {
-              // Show messages
+      if needsModelSetup {
+        ModelSetupPromptView(issues: modelSetupIssues)
+      } else {
+        VStack(spacing: 0) {
+          // Messages or empty state
+          ScrollViewReader { proxy in
+            ScrollView {
               LazyVStack(spacing: 0) {
                 ForEach(visibleMessages) { message in
                   MessageView(
@@ -208,170 +125,166 @@ struct NewChatView: View {
               .padding(.horizontal, 24)
               .padding(.vertical, 24)
             }
-          }
-          .onChange(of: visibleMessages.count) { _, _ in
-            if let lastMessage = visibleMessages.last {
-              withAnimation {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-              }
-            }
-          }
-        }
-
-        // Input Area
-        VStack(spacing: 8) {
-          // Attached files preview
-          if !attachedFiles.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-              HStack(spacing: 8) {
-                ForEach(attachedFiles, id: \.self) { fileURL in
-                  HStack(spacing: 8) {
-                    if let image = NSImage(contentsOf: fileURL) {
-                      Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
-                      Image(systemName: "doc.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 48, height: 48)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                      Text(fileURL.lastPathComponent)
-                        .font(.caption)
-                        .lineLimit(1)
-                      if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
-                        .fileSize {
-                        Text(
-                          ByteCountFormatter.string(
-                            fromByteCount: Int64(fileSize), countStyle: .file)
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                      }
-                    }
-
-                    Button(action: { removeFile(fileURL) }) {
-                      Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                  }
-                  .padding(8)
-                  .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .onChange(of: visibleMessages.count) { _, _ in
+              if let lastMessage = visibleMessages.last {
+                withAnimation {
+                  proxy.scrollTo(lastMessage.id, anchor: .bottom)
                 }
               }
-              .padding(.horizontal, 24)
             }
           }
 
-          HStack(spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-              DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
-                .frame(height: calculateTextHeight())
-                .font(.system(size: 15))
-                .scrollContentBackground(.hidden)
-                .padding(.leading, 48)
-                .padding(.trailing, 12)
-                .padding(.vertical, 12)
-                .background(.clear)
+          // Input Area
+          VStack(spacing: 8) {
+            // Attached files preview
+            if !attachedFiles.isEmpty {
+              ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                  ForEach(attachedFiles, id: \.self) { fileURL in
+                    HStack(spacing: 8) {
+                      if let image = NSImage(contentsOf: fileURL) {
+                        Image(nsImage: image)
+                          .resizable()
+                          .aspectRatio(contentMode: .fill)
+                          .frame(width: 48, height: 48)
+                          .clipShape(RoundedRectangle(cornerRadius: 6))
+                      } else {
+                        Image(systemName: "doc.fill")
+                          .font(.system(size: 20))
+                          .foregroundStyle(.secondary)
+                          .frame(width: 48, height: 48)
+                      }
 
-              // Attach file button
-              Button(action: attachFile) {
-                Image(systemName: "plus.circle.fill")
-                  .font(.system(size: 24))
-                  .foregroundStyle(Color.secondary.opacity(0.7))
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(fileURL.lastPathComponent)
+                          .font(.caption)
+                          .lineLimit(1)
+                        if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
+                          .fileSize {
+                          Text(
+                            ByteCountFormatter.string(
+                              fromByteCount: Int64(fileSize), countStyle: .file)
+                          )
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                        }
+                      }
+
+                      Button(action: { removeFile(fileURL) }) {
+                        Image(systemName: "xmark.circle.fill")
+                          .font(.system(size: 16))
+                          .foregroundStyle(.secondary)
+                      }
+                      .buttonStyle(.plain)
+                    }
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                  }
+                }
+                .padding(.horizontal, 24)
+              }
+            }
+
+            HStack(spacing: 0) {
+              ZStack(alignment: .bottomLeading) {
+                DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
+                  .frame(height: calculateTextHeight())
+                  .font(.system(size: 15))
+                  .scrollContentBackground(.hidden)
+                  .padding(.leading, 48)
+                  .padding(.trailing, 12)
+                  .padding(.vertical, 12)
+                  .background(.clear)
+
+                // Attach file button
+                Button(action: attachFile) {
+                  Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .padding(.bottom, 8)
+              }
+
+              // Model selector
+              Menu {
+                if openAIService.customModels.isEmpty {
+                  SettingsLink {
+                    Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                  }
+                  .routeSettings(to: .models)
+                } else {
+                  ForEach(openAIService.customModels, id: \.self) { model in
+                    Button(action: {
+                      openAIService.selectedModel = model
+                    }) {
+                      HStack {
+                        Text(model)
+                        if openAIService.selectedModel == model {
+                          Image(systemName: "checkmark")
+                        }
+                      }
+                    }
+                  }
+                }
+              } label: {
+                HStack(spacing: 4) {
+                  Divider()
+                    .frame(height: 24)
+                    .padding(.leading, 8)
+
+                  Text(
+                    openAIService.selectedModel.isEmpty ? "Add Model" : openAIService.selectedModel)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                  Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: calculateTextHeight() + 24)
+                .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
-              .padding(.leading, 8)
-              .padding(.bottom, 8)
-            }
+              .fixedSize()
 
-            // Model selector
-            Menu {
-              if openAIService.customModels.isEmpty {
-                SettingsLink {
-                  Label("Add Model in Settings", systemImage: "slider.horizontal.3")
-                }
-                .routeSettings(to: .models)
-              } else {
-                ForEach(openAIService.customModels, id: \.self) { model in
-                  Button(action: {
-                    openAIService.selectedModel = model
-                  }) {
-                    HStack {
-                      Text(model)
-                      if openAIService.selectedModel == model {
-                        Image(systemName: "checkmark")
-                      }
-                    }
+              // Send button
+              Button(action: sendMessage) {
+                ZStack {
+                  if isGenerating {
+                    Image(systemName: "stop.circle.fill")
+                      .font(.system(size: 24))
+                      .foregroundStyle(Color.accentColor)
+                      .symbolEffect(.pulse, value: isGenerating)
+                  } else {
+                    Image(systemName: "arrow.up.circle.fill")
+                      .font(.system(size: 24))
+                      .foregroundStyle(
+                        messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
+                      )
                   }
                 }
               }
-            } label: {
-              HStack(spacing: 4) {
-                Divider()
-                  .frame(height: 24)
-                  .padding(.leading, 8)
-
-                Text(
-                  openAIService.selectedModel.isEmpty ? "Add Model" : openAIService.selectedModel)
-                  .font(.system(size: 13))
-                  .foregroundStyle(.primary)
-                  .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                  .font(.system(size: 10))
-                  .foregroundStyle(.secondary)
-              }
+              .buttonStyle(.plain)
+              .allowsHitTesting(isGenerating || !messageText.isEmpty)
               .padding(.horizontal, 12)
               .frame(height: calculateTextHeight() + 24)
-              .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .fixedSize()
-
-            // Send button
-            Button(action: sendMessage) {
-              ZStack {
-                if isGenerating {
-                  Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
-                    .symbolEffect(.pulse, value: isGenerating)
-                } else {
-                  Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(
-                      messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
-                    )
-                }
-              }
-            }
-            .buttonStyle(.plain)
-            .allowsHitTesting(isGenerating || !messageText.isEmpty)
-            .padding(.horizontal, 12)
-            .frame(height: calculateTextHeight() + 24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+              RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 24)
           }
-          .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-          .overlay(
-            RoundedRectangle(cornerRadius: 12)
-              .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-          )
-          .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-          .padding(.horizontal, 24)
+          .padding(.vertical, 20)
+          .background(.ultraThinMaterial)
         }
-        .padding(.vertical, 20)
-        .background(.ultraThinMaterial)
       }
     }
-  }
-
-  private func handlePromptSelection(_ prompt: String) {
-    messageText = prompt
   }
 
   private func calculateTextHeight() -> CGFloat {
@@ -560,7 +473,6 @@ struct NewChatView: View {
         )
 
         self.selectedConversationId = conversation.id
-        self.isCreatingNew = false
       },
       onError: { error in
         self.isGenerating = false
@@ -574,7 +486,6 @@ struct NewChatView: View {
         )
 
         self.selectedConversationId = conversation.id
-        self.isCreatingNew = false
       }
     )
   }
@@ -601,6 +512,47 @@ struct NewChatView: View {
     default:
       return "application/octet-stream"
     }
+  }
+}
+
+private struct ModelSetupPromptView: View {
+  let issues: [String]
+
+  var body: some View {
+    VStack(spacing: 20) {
+      Image(systemName: "sparkles.rectangle.stack")
+        .font(.system(size: 54))
+        .foregroundStyle(Color.accentColor)
+
+      VStack(spacing: 8) {
+        Text("Add a model to start chatting")
+          .font(.title3.weight(.semibold))
+        Text("Head to Settings → Model to connect OpenAI, Azure, or AIKit models before sending your first message.")
+          .font(.body)
+          .multilineTextAlignment(.center)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: 420)
+      }
+
+      if !issues.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(issues, id: \.self) { issue in
+            Label(issue, systemImage: "exclamationmark.triangle")
+              .labelStyle(.titleAndIcon)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+      }
+
+      SettingsLink {
+        Label("Open Settings", systemImage: "slider.horizontal.3")
+      }
+      .routeSettings(to: .models)
+      .buttonStyle(.borderedProminent)
+    }
+    .padding(40)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 

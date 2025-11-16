@@ -41,7 +41,7 @@ class AIKitService: ObservableObject {
 
   @Published var selectedModelId: String {
     didSet {
-      UserDefaults.standard.set(selectedModelId, forKey: "aikit_selected_model")
+      AppPreferences.storage.set(selectedModelId, forKey: "aikit_selected_model")
       Task {
         await updateContainerStatus()
       }
@@ -146,11 +146,11 @@ class AIKitService: ObservableObject {
 
   init() {
     // Load selected model
-    let savedModel = UserDefaults.standard.string(forKey: "aikit_selected_model") ?? "llama-3.1-8b"
+    let savedModel = AppPreferences.storage.string(forKey: "aikit_selected_model") ?? "llama-3.1-8b"
     self.selectedModelId = savedModel
 
     // Load pulled images
-    if let savedPulled = UserDefaults.standard.array(forKey: "aikit_pulled_images") as? [String] {
+    if let savedPulled = AppPreferences.storage.array(forKey: "aikit_pulled_images") as? [String] {
       self.pulledImages = Set(savedPulled)
     }
 
@@ -375,7 +375,7 @@ class AIKitService: ObservableObject {
 
       await MainActor.run {
         pulledImages.insert(model.id)
-        UserDefaults.standard.set(Array(pulledImages), forKey: "aikit_pulled_images")
+        AppPreferences.storage.set(Array(pulledImages), forKey: "aikit_pulled_images")
         containerStatus = .pulled
         statusMessage = "Model pulled successfully"
       }
@@ -581,7 +581,7 @@ class AIKitService: ObservableObject {
     // Remove from pulled images
     await MainActor.run {
       pulledImages.remove(model.id)
-      UserDefaults.standard.set(Array(pulledImages), forKey: "aikit_pulled_images")
+      AppPreferences.storage.set(Array(pulledImages), forKey: "aikit_pulled_images")
     }
 
     await updateContainerStatus()

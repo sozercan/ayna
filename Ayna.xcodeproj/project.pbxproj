@@ -19,6 +19,7 @@
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
+		C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
 		C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
@@ -48,6 +49,7 @@
 		02000012 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
 		02000013 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
+		C90000032F01A00100ABCDE0 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */,
+				C90000032F01A00100ABCDE0 /* AppPreferences.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -277,6 +280,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */,
 				C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */,
 				C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */,
 				C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */,

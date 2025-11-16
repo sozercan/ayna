@@ -2,10 +2,24 @@ import XCTest
 @testable import Ayna
 
 final class ConversationManagerTests: XCTestCase {
+  private var defaults: UserDefaults!
+
   override func setUp() {
     super.setUp()
-    UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "AynaTests")
-    UserDefaults.standard.set(false, forKey: "autoGenerateTitle")
+    guard let suite = UserDefaults(suiteName: "ConversationManagerTests") else {
+      fatalError("Failed to create UserDefaults suite for tests")
+    }
+    defaults = suite
+    defaults.removePersistentDomain(forName: "ConversationManagerTests")
+    AppPreferences.use(defaults)
+    defaults.set(false, forKey: "autoGenerateTitle")
+  }
+
+  override func tearDown() {
+    defaults.removePersistentDomain(forName: "ConversationManagerTests")
+    AppPreferences.reset()
+    defaults = nil
+    super.tearDown()
   }
 
   func makeManager(directory: URL) -> ConversationManager {

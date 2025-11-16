@@ -2,13 +2,17 @@ import XCTest
 @testable import Ayna
 
 final class OpenAIServiceTests: XCTestCase {
+  private var defaults: UserDefaults!
+
   override func setUp() {
     super.setUp()
-    // Reset UserDefaults to avoid leaking state across tests
-    if let bundleIdentifier = Bundle.main.bundleIdentifier {
-      UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
+    guard let suite = UserDefaults(suiteName: "OpenAIServiceTests") else {
+      fatalError("Failed to create UserDefaults suite for OpenAIServiceTests")
     }
-    UserDefaults.standard.synchronize()
+    defaults = suite
+    defaults.removePersistentDomain(forName: "OpenAIServiceTests")
+    defaults.synchronize()
+    AppPreferences.use(defaults)
 
     // Use in-memory keychain to avoid touching the real Keychain in tests
     OpenAIService.keychain = InMemoryKeychainStorage()
@@ -16,6 +20,9 @@ final class OpenAIServiceTests: XCTestCase {
   }
 
   override func tearDown() {
+    AppPreferences.reset()
+    defaults.removePersistentDomain(forName: "OpenAIServiceTests")
+    defaults = nil
     OpenAIService.keychain = KeychainStorage.shared
     MockURLProtocol.reset()
     super.tearDown()

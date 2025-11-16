@@ -82,18 +82,6 @@ struct ChatView: View {
         }
     }
 
-  private var configurationIssues: [String] {
-    openAIService.configurationIssues
-  }
-
-  private var shouldShowPrompts: Bool {
-    configurationIssues.isEmpty
-  }
-
-  private func handlePromptSelection(_ prompt: String) {
-    messageText = prompt
-  }
-
   var body: some View {
         ZStack {
             // Chat background with subtle gradient
@@ -108,103 +96,83 @@ struct ChatView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Messages
-                ScrollViewReader { proxy in
-                    ScrollView {
-                    if currentConversation.messages.isEmpty {
-              ChatEmptyStateCard(
-                configurationIssues: configurationIssues,
-                providerName: openAIService.provider.displayName,
-                prompts: OnboardingContent.quickPrompts,
-                showPrompts: shouldShowPrompts,
-                onInsertPrompt: handlePromptSelection
-              )
-                        .frame(maxWidth: .infinity)
-              .padding(.horizontal, 32)
-              .padding(.top, 60)
-              .padding(.bottom, 80)
-                    } else {
-                        LazyVStack(spacing: 0) {
-                ForEach(visibleMessages) { message in
-                                MessageView(
-                    message: message,
-                                    modelName: message.model,
-                                    onRetry: message.role == .assistant ? {
-                                        retryLastMessage(beforeMessage: message)
-                                    } : nil,
-                                    onSwitchModel: message.role == .assistant ? { newModel in
-                                        switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                    } : nil
-                                )
-                                    .id(message.id)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 24)
+              // Messages
+              ScrollViewReader { proxy in
+                ScrollView {
+                  LazyVStack(spacing: 0) {
+                    ForEach(visibleMessages) { message in
+                      MessageView(
+                        message: message,
+                        modelName: message.model,
+                        onRetry: message.role == .assistant ? {
+                          retryLastMessage(beforeMessage: message)
+                        } : nil,
+                        onSwitchModel: message.role == .assistant ? { newModel in
+                          switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                        } : nil
+                      )
+                      .id(message.id)
                     }
+                  }
+                  .padding(.horizontal, 24)
+                  .padding(.vertical, 24)
                 }
                 .onChange(of: currentConversation.messages.count) { _, _ in
-                    // Debounce scroll updates during streaming for better performance
-                    scrollDebounceTask?.cancel()
-                    scrollDebounceTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
-                        guard !Task.isCancelled, isNearBottom else { return }
-                        if let lastMessage = currentConversation.messages.last {
-                            if isGenerating {
-                                // No animation during streaming for better performance
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            } else {
-                                withAnimation {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
-                            }
+                  scrollDebounceTask?.cancel()
+                  scrollDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
+                    guard !Task.isCancelled, isNearBottom else { return }
+                    if let lastMessage = currentConversation.messages.last {
+                      if isGenerating {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                      } else {
+                        withAnimation {
+                          proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
+                      }
                     }
+                  }
                 }
                 .onAppear {
-                    // Update visible messages and scroll to bottom
-                    updateVisibleMessages()
-                    if let lastMessage = currentConversation.messages.last {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
+                  updateVisibleMessages()
+                  if let lastMessage = currentConversation.messages.last {
+                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                  }
                 }
                 .onChange(of: conversation.id) { _, _ in
-                    // Update visible messages when switching conversations
-                    updateVisibleMessages()
-                    if let lastMessage = currentConversation.messages.last {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
+                  updateVisibleMessages()
+                  if let lastMessage = currentConversation.messages.last {
+                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                  }
                 }
                 .onChange(of: currentConversation.messages) { _, _ in
-                    // Update visible messages when messages change
-                    updateVisibleMessages()
+                  updateVisibleMessages()
                 }
                 .onChange(of: isGenerating) { _, _ in
-                    // Update visible messages when generation state changes (affects empty assistant message visibility)
-                    updateVisibleMessages()
+                  updateVisibleMessages()
                 }
-            }
+              }
 
-            // Error Message
-            if let error = errorMessage {
+              // Error Message
+              if let error = errorMessage {
                 HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(error)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                    Spacer()
-                    Button("Dismiss") {
-                        errorMessage = nil
-                    }
-                    .buttonStyle(.plain)
+                  Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                  Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                  Spacer()
+                  Button("Dismiss") {
+                    errorMessage = nil
+                  }
+                  .buttonStyle(.plain)
                 }
                 .padding()
                 .background(Color.red.opacity(0.1))
-            }
+              }
 
-            // Tool execution status indicator
-            if let toolName = currentToolName {
+              // Tool execution status indicator
+              if let toolName = currentToolName {
                 HStack(spacing: 8) {
                     ProgressView()
                         .scaleEffect(0.8)
@@ -1084,6 +1052,8 @@ struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     let onSubmit: () -> Void
 
+  typealias Coordinator = DynamicTextEditorCoordinator
+
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         guard let textView = scrollView.documentView as? NSTextView else {
@@ -1127,137 +1097,34 @@ struct DynamicTextEditor: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+      DynamicTextEditorCoordinator(self)
+    }
+}
+
+  final class DynamicTextEditorCoordinator: NSObject, NSTextViewDelegate {
+    let parent: DynamicTextEditor
+    var onSubmit: (() -> Void)?
+
+    init(_ parent: DynamicTextEditor) {
+      self.parent = parent
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: DynamicTextEditor
-        var onSubmit: (() -> Void)?
+    func textDidChange(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      parent.text = textView.string
+    }
 
-        init(_ parent: DynamicTextEditor) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            // Handle Enter (without modifiers) to send
-            if commandSelector == #selector(NSTextView.insertNewline(_:)) {
-                let event = NSApp.currentEvent
-                if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
-                    onSubmit?()
-                    return true
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      if commandSelector == #selector(NSTextView.insertNewline(_:)) {
+        let event = NSApp.currentEvent
+        if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
+          onSubmit?()
+          return true
         }
       }
       return false
     }
   }
-}
-
-struct ChatEmptyStateCard: View {
-  let configurationIssues: [String]
-  let providerName: String
-  let prompts: [String]
-  let showPrompts: Bool
-  let onInsertPrompt: (String) -> Void
-
-  private let documentationURL = URL(string: "https://github.com/sozercan/ayna#readme")!
-
-  var body: some View {
-    VStack(spacing: 24) {
-      VStack(spacing: 8) {
-        Image(systemName: showPrompts ? "sparkles" : "key.fill")
-          .font(.system(size: 48, weight: .light))
-          .foregroundStyle(.secondary)
-
-        Text(showPrompts ? "Start your first conversation" : "You're almost ready")
-          .font(.title3.weight(.semibold))
-
-        Text(
-          showPrompts
-            ? "Share a prompt below or paste content you'd like me to analyze."
-            : "Complete the setup steps so Ayna can connect to \(providerName)."
-        )
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-      }
-
-      if configurationIssues.isEmpty {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Try one of these quick prompts")
-            .font(.subheadline.weight(.medium))
-
-          VStack(alignment: .leading, spacing: 8) {
-            ForEach(prompts, id: \.self) { prompt in
-              Button(action: { onInsertPrompt(prompt) }) {
-                HStack {
-                  Image(systemName: "text.quote")
-                    .font(.system(size: 13, weight: .semibold))
-                  Text(prompt)
-                    .font(.callout)
-                    .multilineTextAlignment(.leading)
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-              }
-              .buttonStyle(.plain)
-            }
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      } else {
-        VStack(alignment: .leading, spacing: 10) {
-          ForEach(configurationIssues, id: \.self) { issue in
-            Label(issue, systemImage: "exclamationmark.triangle")
-              .font(.callout)
-              .foregroundStyle(.orange)
-          }
-
-          SettingsLink {
-            HStack {
-              Image(systemName: "slider.horizontal.3")
-              Text("Open Settings")
-            }
-            .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.borderedProminent)
-          .routeSettings(to: .models)
-
-          Text("Tip: Press ⌘, anytime to open Settings.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
-      }
-
-      Link(destination: documentationURL) {
-        Label("Read the quickstart guide", systemImage: "book")
-          .font(.footnote)
-      }
-      .foregroundStyle(.secondary)
-    }
-    .padding(32)
-    .frame(maxWidth: 520)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 28, style: .continuous)
-        .stroke(Color.white.opacity(0.05))
-    )
-  }
-}
-
-enum OnboardingContent {
-  static let quickPrompts: [String] = [
-    "Summarize today's meeting notes into three bullet points.",
-    "Explain this SwiftUI snippet and suggest improvements.",
-    "Help me brainstorm launch ideas for our next release."
-    ]
-}
 
 #Preview {
     ChatView(conversation: Conversation())
