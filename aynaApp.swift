@@ -50,7 +50,7 @@ struct aynaApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Conversation") {
-                    conversationManager.createNewConversation()
+                    NotificationCenter.default.post(name: .newConversationRequested, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }

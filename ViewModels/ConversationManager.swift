@@ -65,7 +65,7 @@ class ConversationManager: ObservableObject {
             conversations[index].addMessage(message)
 
             // Auto-generate title from first user message
-            let autoGenerateTitle = UserDefaults.standard.object(forKey: "autoGenerateTitle") as? Bool ?? true
+            let autoGenerateTitle = AppPreferences.storage.object(forKey: "autoGenerateTitle") as? Bool ?? true
             let userMessageCount = conversations[index].messages.filter({ $0.role == .user }).count
             let currentTitle = conversations[index].title
 

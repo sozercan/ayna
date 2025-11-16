@@ -6,12 +6,12 @@
 //
 
 import SwiftUI
+import Combine
 
 struct SidebarView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
-  @ObservedObject private var openAIService = OpenAIService.shared
-    @Binding var selectedConversationId: UUID?
-  @Binding var isCreatingNew: Bool
+        @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject private var openAIService = OpenAIService.shared
+        @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
   @State private var filteredConversations: [Conversation] = []
@@ -113,7 +113,7 @@ struct SidebarView: View {
           // Enter new conversation creation mode
           selectedConversationId = nil
           selectedConversations.removeAll()
-          isCreatingNew = true
+          NotificationCenter.default.post(name: .newConversationRequested, object: nil)
                 }) {
                     Image(systemName: "square.and.pencil")
                 }
@@ -128,6 +128,10 @@ struct SidebarView: View {
     .onAppear {
       updateFilteredConversations()
     }
+        .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
+            selectedConversationId = nil
+            selectedConversations.removeAll()
+        }
     }
 
     private func deleteSelectedConversations() {
@@ -179,7 +183,7 @@ struct ConversationRow: View {
 }
 
 #Preview {
-  SidebarView(selectedConversationId: .constant(nil), isCreatingNew: .constant(false))
+    SidebarView(selectedConversationId: .constant(nil))
         .environmentObject(ConversationManager())
         .frame(width: 300, height: 600)
 }

@@ -1,4 +1,5 @@
 //
+//
 //  ContentView.swift
 //  ayna
 //
@@ -7,54 +8,46 @@
 
 import SwiftUI
 import OSLog
+import Combine
+
+extension Notification.Name {
+  static let newConversationRequested = Notification.Name("newConversationRequested")
+}
 
 struct ContentView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
+  @EnvironmentObject var conversationManager: ConversationManager
   @State private var selectedConversationId: UUID?
-  @State private var isCreatingNew: Bool = false
 
-    var body: some View {
+  var body: some View {
     NavigationSplitView {
-      SidebarView(selectedConversationId: $selectedConversationId, isCreatingNew: $isCreatingNew)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
-        } detail: {
-            if let conversationId = selectedConversationId,
-               let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                ChatView(conversation: conversation)
-                    .id(conversationId)
-      } else if isCreatingNew {
-        // New conversation mode - show empty chat that creates on first message
+      SidebarView(selectedConversationId: $selectedConversationId)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+      } detail: {
+        if let conversationId = selectedConversationId,
+          let conversation = conversationManager.conversations.first(where: {
+            $0.id == conversationId
+          }) {
+        ChatView(conversation: conversation)
+          .id(conversationId)
+      } else {
         NewChatView(
-          isCreatingNew: $isCreatingNew,
           selectedConversationId: $selectedConversationId
         )
-            } else {
-                // Empty state
-                Color.clear
-                    .overlay(
-                        VStack(spacing: 16) {
-                            Image(systemName: "message")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.tertiary)
-
-                            Text("No conversation selected")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
-                    )
-            }
-        }
-        .transaction { transaction in
-            transaction.disablesAnimations = true
-        }
+      }
     }
+    .transaction { transaction in
+      transaction.disablesAnimations = true
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
+      selectedConversationId = nil
+    }
+  }
 }
 
 // View for creating a new conversation - only creates on first message
 struct NewChatView: View {
   @EnvironmentObject var conversationManager: ConversationManager
   @ObservedObject private var openAIService = OpenAIService.shared
-  @Binding var isCreatingNew: Bool
   @Binding var selectedConversationId: UUID?
   @State private var messageText = ""
   @State private var attachedFiles: [URL] = []
@@ -83,42 +76,41 @@ struct NewChatView: View {
     }
   }
 
+  private var needsModelSetup: Bool {
+    openAIService.customModels.isEmpty
+      || openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var modelSetupIssues: [String] {
+    let modelSpecificIssues = openAIService.configurationIssues.filter {
+      $0.localizedCaseInsensitiveContains("model")
+    }
+    if !modelSpecificIssues.isEmpty {
+      return modelSpecificIssues
+    }
+    return ["Add at least one model in Settings > Model tab"]
+  }
+
   var body: some View {
     ZStack {
       // Chat background with subtle gradient
       LinearGradient(
         colors: [
-            Color(nsColor: .windowBackgroundColor),
-            Color(nsColor: .windowBackgroundColor).opacity(0.95)
+          Color(nsColor: .windowBackgroundColor),
+          Color(nsColor: .windowBackgroundColor).opacity(0.95)
         ],
         startPoint: .top,
         endPoint: .bottom
       )
       .ignoresSafeArea()
 
-      VStack(spacing: 0) {
-        // Messages or empty state
-        ScrollViewReader { proxy in
-          ScrollView {
-            if visibleMessages.isEmpty {
-              // Empty state
-              VStack(spacing: 16) {
-                Spacer()
-
-                Image(systemName: "message")
-                  .font(.system(size: 44, weight: .light))
-                  .foregroundStyle(Color.secondary.opacity(0.4))
-
-                Text("How can I help you today?")
-                  .font(.system(size: 19, weight: .medium))
-                  .foregroundStyle(Color.primary)
-
-                Spacer()
-              }
-              .frame(maxWidth: .infinity)
-              .frame(minHeight: 400)
-            } else {
-              // Show messages
+      if needsModelSetup {
+        ModelSetupPromptView(issues: modelSetupIssues)
+      } else {
+        VStack(spacing: 0) {
+          // Messages or empty state
+          ScrollViewReader { proxy in
+            ScrollView {
               LazyVStack(spacing: 0) {
                 ForEach(visibleMessages) { message in
                   MessageView(
@@ -133,156 +125,164 @@ struct NewChatView: View {
               .padding(.horizontal, 24)
               .padding(.vertical, 24)
             }
-          }
-          .onChange(of: visibleMessages.count) { _, _ in
-            if let lastMessage = visibleMessages.last {
-              withAnimation {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+            .onChange(of: visibleMessages.count) { _, _ in
+              if let lastMessage = visibleMessages.last {
+                withAnimation {
+                  proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                }
               }
             }
           }
-        }
 
-        // Input Area
-        VStack(spacing: 8) {
-          // Attached files preview
-          if !attachedFiles.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-              HStack(spacing: 8) {
-                ForEach(attachedFiles, id: \.self) { fileURL in
-                  HStack(spacing: 8) {
-                    if let image = NSImage(contentsOf: fileURL) {
-                      Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
-                      Image(systemName: "doc.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 48, height: 48)
+          // Input Area
+          VStack(spacing: 8) {
+            // Attached files preview
+            if !attachedFiles.isEmpty {
+              ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                  ForEach(attachedFiles, id: \.self) { fileURL in
+                    HStack(spacing: 8) {
+                      if let image = NSImage(contentsOf: fileURL) {
+                        Image(nsImage: image)
+                          .resizable()
+                          .aspectRatio(contentMode: .fill)
+                          .frame(width: 48, height: 48)
+                          .clipShape(RoundedRectangle(cornerRadius: 6))
+                      } else {
+                        Image(systemName: "doc.fill")
+                          .font(.system(size: 20))
+                          .foregroundStyle(.secondary)
+                          .frame(width: 48, height: 48)
+                      }
+
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(fileURL.lastPathComponent)
+                          .font(.caption)
+                          .lineLimit(1)
+                        if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
+                          .fileSize {
+                          Text(
+                            ByteCountFormatter.string(
+                              fromByteCount: Int64(fileSize), countStyle: .file)
+                          )
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                        }
+                      }
+
+                      Button(action: { removeFile(fileURL) }) {
+                        Image(systemName: "xmark.circle.fill")
+                          .font(.system(size: 16))
+                          .foregroundStyle(.secondary)
+                      }
+                      .buttonStyle(.plain)
                     }
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                  }
+                }
+                .padding(.horizontal, 24)
+              }
+            }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                      Text(fileURL.lastPathComponent)
-                        .font(.caption)
-                        .lineLimit(1)
-                      if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
-                        .fileSize {
-                        Text(
-                          ByteCountFormatter.string(
-                            fromByteCount: Int64(fileSize), countStyle: .file)
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 0) {
+              ZStack(alignment: .bottomLeading) {
+                DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
+                  .frame(height: calculateTextHeight())
+                  .font(.system(size: 15))
+                  .scrollContentBackground(.hidden)
+                  .padding(.leading, 48)
+                  .padding(.trailing, 12)
+                  .padding(.vertical, 12)
+                  .background(.clear)
+
+                // Attach file button
+                Button(action: attachFile) {
+                  Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .padding(.bottom, 8)
+              }
+
+              // Model selector
+              Menu {
+                if openAIService.customModels.isEmpty {
+                  SettingsLink {
+                    Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                  }
+                  .routeSettings(to: .models)
+                } else {
+                  ForEach(openAIService.customModels, id: \.self) { model in
+                    Button(action: {
+                      openAIService.selectedModel = model
+                    }) {
+                      HStack {
+                        Text(model)
+                        if openAIService.selectedModel == model {
+                          Image(systemName: "checkmark")
+                        }
                       }
                     }
-
-                    Button(action: { removeFile(fileURL) }) {
-                      Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
                   }
-                  .padding(8)
-                  .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-              }
-              .padding(.horizontal, 24)
-            }
-          }
+              } label: {
+                HStack(spacing: 4) {
+                  Divider()
+                    .frame(height: 24)
+                    .padding(.leading, 8)
 
-          HStack(spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-              DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
-                .frame(height: calculateTextHeight())
-                .font(.system(size: 15))
-                .scrollContentBackground(.hidden)
-                .padding(.leading, 48)
-                .padding(.trailing, 12)
-                .padding(.vertical, 12)
-                .background(.clear)
-
-              // Attach file button
-              Button(action: attachFile) {
-                Image(systemName: "plus.circle.fill")
-                  .font(.system(size: 24))
-                  .foregroundStyle(Color.secondary.opacity(0.7))
+                  Text(
+                    openAIService.selectedModel.isEmpty ? "Add Model" : openAIService.selectedModel)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                  Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: calculateTextHeight() + 24)
+                .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
-              .padding(.leading, 8)
-              .padding(.bottom, 8)
-            }
+              .fixedSize()
 
-            // Model selector
-            Menu {
-              ForEach(openAIService.customModels, id: \.self) { model in
-                Button(action: {
-                  openAIService.selectedModel = model
-                }) {
-                  HStack {
-                    Text(model)
-                    if openAIService.selectedModel == model {
-                      Image(systemName: "checkmark")
-                    }
+              // Send button
+              Button(action: sendMessage) {
+                ZStack {
+                  if isGenerating {
+                    Image(systemName: "stop.circle.fill")
+                      .font(.system(size: 24))
+                      .foregroundStyle(Color.accentColor)
+                      .symbolEffect(.pulse, value: isGenerating)
+                  } else {
+                    Image(systemName: "arrow.up.circle.fill")
+                      .font(.system(size: 24))
+                      .foregroundStyle(
+                        messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
+                      )
                   }
                 }
               }
-            } label: {
-              HStack(spacing: 4) {
-                Divider()
-                  .frame(height: 24)
-                  .padding(.leading, 8)
-
-                Text(openAIService.selectedModel)
-                  .font(.system(size: 13))
-                  .foregroundStyle(.primary)
-                  .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                  .font(.system(size: 10))
-                  .foregroundStyle(.secondary)
-              }
+              .buttonStyle(.plain)
+              .allowsHitTesting(isGenerating || !messageText.isEmpty)
               .padding(.horizontal, 12)
               .frame(height: calculateTextHeight() + 24)
-              .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .fixedSize()
-
-            // Send button
-            Button(action: sendMessage) {
-              ZStack {
-                if isGenerating {
-                  Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
-                    .symbolEffect(.pulse, value: isGenerating)
-                } else {
-                  Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(
-                      messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
-                    )
-                }
-              }
-            }
-            .buttonStyle(.plain)
-            .allowsHitTesting(isGenerating || !messageText.isEmpty)
-            .padding(.horizontal, 12)
-            .frame(height: calculateTextHeight() + 24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+              RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 24)
           }
-          .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-          .overlay(
-            RoundedRectangle(cornerRadius: 12)
-              .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
-          )
-          .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-          .padding(.horizontal, 24)
+          .padding(.vertical, 20)
+          .background(.ultraThinMaterial)
         }
-        .padding(.vertical, 20)
-        .background(.ultraThinMaterial)
       }
     }
   }
@@ -353,10 +353,10 @@ struct NewChatView: View {
 
     // Get or create the conversation
     let conversation: Conversation
-      if let existingId = currentConversationId,
-        let existingConversation = conversationManager.conversations.first(where: {
-          $0.id == existingId
-        }) {
+    if let existingId = currentConversationId,
+      let existingConversation = conversationManager.conversations.first(where: {
+        $0.id == existingId
+      }) {
       // Continue with existing conversation
       conversation = existingConversation
       logNewChat(
@@ -448,7 +448,6 @@ struct NewChatView: View {
       tools: tools,
       conversationId: conversation.id,
       onChunk: { chunk in
-        // Always update conversation data, regardless of which view is active
         guard let index = self.conversationManager.conversations.firstIndex(where: { $0.id == expectedConversationId }) else {
           logNewChat(
             "⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk",
@@ -458,9 +457,8 @@ struct NewChatView: View {
           return
         }
 
-        // Update the message content
-          if var lastMessage = self.conversationManager.conversations[index].messages.last,
-            lastMessage.role == .assistant {
+        if var lastMessage = self.conversationManager.conversations[index].messages.last,
+          lastMessage.role == .assistant {
           lastMessage.content += chunk
           self.conversationManager.conversations[index].messages[
             self.conversationManager.conversations[index].messages.count - 1] = lastMessage
@@ -474,9 +472,7 @@ struct NewChatView: View {
           metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        // Now that generation is complete, switch to ChatView
         self.selectedConversationId = conversation.id
-        self.isCreatingNew = false
       },
       onError: { error in
         self.isGenerating = false
@@ -489,9 +485,7 @@ struct NewChatView: View {
           ]
         )
 
-        // On error, also switch to ChatView so user can see the error
         self.selectedConversationId = conversation.id
-        self.isCreatingNew = false
       }
     )
   }
@@ -521,7 +515,48 @@ struct NewChatView: View {
   }
 }
 
+private struct ModelSetupPromptView: View {
+  let issues: [String]
+
+  var body: some View {
+    VStack(spacing: 20) {
+      Image(systemName: "sparkles.rectangle.stack")
+        .font(.system(size: 54))
+        .foregroundStyle(Color.accentColor)
+
+      VStack(spacing: 8) {
+        Text("Add a model to start chatting")
+          .font(.title3.weight(.semibold))
+        Text("Head to Settings → Model to connect OpenAI, Azure, or AIKit models before sending your first message.")
+          .font(.body)
+          .multilineTextAlignment(.center)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: 420)
+      }
+
+      if !issues.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(issues, id: \.self) { issue in
+            Label(issue, systemImage: "exclamationmark.triangle")
+              .labelStyle(.titleAndIcon)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+      }
+
+      SettingsLink {
+        Label("Open Settings", systemImage: "slider.horizontal.3")
+      }
+      .routeSettings(to: .models)
+      .buttonStyle(.borderedProminent)
+    }
+    .padding(40)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
 #Preview {
-    ContentView()
-        .environmentObject(ConversationManager())
+  ContentView()
+    .environmentObject(ConversationManager())
 }

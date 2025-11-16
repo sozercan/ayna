@@ -96,108 +96,83 @@ struct ChatView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Messages
-                ScrollViewReader { proxy in
-                    ScrollView {
-                    if currentConversation.messages.isEmpty {
-                        // Empty state
-                        VStack(spacing: 16) {
-                            Spacer()
-
-                            Image(systemName: "message")
-                                .font(.system(size: 44, weight: .light))
-                                .foregroundStyle(Color.secondary.opacity(0.4))
-
-                            Text("How can I help you today?")
-                                .font(.system(size: 19, weight: .medium))
-                                .foregroundStyle(Color.primary)
-
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 400)
-                    } else {
-                        LazyVStack(spacing: 0) {
-                ForEach(visibleMessages) { message in
-                                MessageView(
-                    message: message,
-                                    modelName: message.model,
-                                    onRetry: message.role == .assistant ? {
-                                        retryLastMessage(beforeMessage: message)
-                                    } : nil,
-                                    onSwitchModel: message.role == .assistant ? { newModel in
-                                        switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                    } : nil
-                                )
-                                    .id(message.id)
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 24)
+              // Messages
+              ScrollViewReader { proxy in
+                ScrollView {
+                  LazyVStack(spacing: 0) {
+                    ForEach(visibleMessages) { message in
+                      MessageView(
+                        message: message,
+                        modelName: message.model,
+                        onRetry: message.role == .assistant ? {
+                          retryLastMessage(beforeMessage: message)
+                        } : nil,
+                        onSwitchModel: message.role == .assistant ? { newModel in
+                          switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                        } : nil
+                      )
+                      .id(message.id)
                     }
+                  }
+                  .padding(.horizontal, 24)
+                  .padding(.vertical, 24)
                 }
                 .onChange(of: currentConversation.messages.count) { _, _ in
-                    // Debounce scroll updates during streaming for better performance
-                    scrollDebounceTask?.cancel()
-                    scrollDebounceTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
-                        guard !Task.isCancelled, isNearBottom else { return }
-                        if let lastMessage = currentConversation.messages.last {
-                            if isGenerating {
-                                // No animation during streaming for better performance
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            } else {
-                                withAnimation {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
-                            }
+                  scrollDebounceTask?.cancel()
+                  scrollDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
+                    guard !Task.isCancelled, isNearBottom else { return }
+                    if let lastMessage = currentConversation.messages.last {
+                      if isGenerating {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                      } else {
+                        withAnimation {
+                          proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
+                      }
                     }
+                  }
                 }
                 .onAppear {
-                    // Update visible messages and scroll to bottom
-                    updateVisibleMessages()
-                    if let lastMessage = currentConversation.messages.last {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
+                  updateVisibleMessages()
+                  if let lastMessage = currentConversation.messages.last {
+                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                  }
                 }
                 .onChange(of: conversation.id) { _, _ in
-                    // Update visible messages when switching conversations
-                    updateVisibleMessages()
-                    if let lastMessage = currentConversation.messages.last {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
+                  updateVisibleMessages()
+                  if let lastMessage = currentConversation.messages.last {
+                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                  }
                 }
                 .onChange(of: currentConversation.messages) { _, _ in
-                    // Update visible messages when messages change
-                    updateVisibleMessages()
+                  updateVisibleMessages()
                 }
                 .onChange(of: isGenerating) { _, _ in
-                    // Update visible messages when generation state changes (affects empty assistant message visibility)
-                    updateVisibleMessages()
+                  updateVisibleMessages()
                 }
-            }
+              }
 
-            // Error Message
-            if let error = errorMessage {
+              // Error Message
+              if let error = errorMessage {
                 HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(error)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                    Spacer()
-                    Button("Dismiss") {
-                        errorMessage = nil
-                    }
-                    .buttonStyle(.plain)
+                  Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                  Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                  Spacer()
+                  Button("Dismiss") {
+                    errorMessage = nil
+                  }
+                  .buttonStyle(.plain)
                 }
                 .padding()
                 .background(Color.red.opacity(0.1))
-            }
+              }
 
-            // Tool execution status indicator
-            if let toolName = currentToolName {
+              // Tool execution status indicator
+              if let toolName = currentToolName {
                 HStack(spacing: 8) {
                     ProgressView()
                         .scaleEffect(0.8)
@@ -284,14 +259,21 @@ struct ChatView: View {
 
             // Model selector (seamlessly integrated)
             Menu {
-              ForEach(openAIService.customModels, id: \.self) { model in
-                Button(action: {
-                  conversationManager.updateModel(for: conversation, model: model)
-                }) {
-                  HStack {
-                    Text(model)
-                    if currentConversation.model == model {
-                      Image(systemName: "checkmark")
+              if openAIService.customModels.isEmpty {
+                SettingsLink {
+                  Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                }
+                .routeSettings(to: .models)
+              } else {
+                ForEach(openAIService.customModels, id: \.self) { model in
+                  Button(action: {
+                    conversationManager.updateModel(for: conversation, model: model)
+                  }) {
+                    HStack {
+                      Text(model)
+                      if currentConversation.model == model {
+                        Image(systemName: "checkmark")
+                      }
                     }
                   }
                 }
@@ -302,7 +284,11 @@ struct ChatView: View {
                   .frame(height: 24)
                   .padding(.leading, 8)
 
-                Text(currentConversation.model)
+                Text(
+                  currentConversation.model.isEmpty
+                    ? (openAIService.customModels.isEmpty ? "Add Model" : "Select Model")
+                    : currentConversation.model
+                )
                   .font(.system(size: 13))
                   .foregroundStyle(.primary)
                   .lineLimit(1)
@@ -540,10 +526,11 @@ struct ChatView: View {
                     metadata: ["enabledServers": mcpManager.serverConfigs
                         .filter { $0.enabled }
                         .map { $0.name }
-                        .joined(separator: ", ")]
-                )
+                        .joined(separator: ",")
+      ]
+    )
 
-        var enabledTools = mcpManager.getEnabledTools()
+    let enabledTools = mcpManager.getEnabledTools()
 
         // If we have enabled servers but no tools yet, wait a moment and try again
         // This handles the race condition where servers are connecting at app startup
@@ -1065,6 +1052,8 @@ struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     let onSubmit: () -> Void
 
+  typealias Coordinator = DynamicTextEditorCoordinator
+
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         guard let textView = scrollView.documentView as? NSTextView else {
@@ -1108,35 +1097,34 @@ struct DynamicTextEditor: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: DynamicTextEditor
-        var onSubmit: (() -> Void)?
-
-        init(_ parent: DynamicTextEditor) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            // Handle Enter (without modifiers) to send
-            if commandSelector == #selector(NSTextView.insertNewline(_:)) {
-                let event = NSApp.currentEvent
-                if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
-                    onSubmit?()
-                    return true
-                }
-            }
-            return false
-        }
+      DynamicTextEditorCoordinator(self)
     }
 }
+
+  final class DynamicTextEditorCoordinator: NSObject, NSTextViewDelegate {
+    let parent: DynamicTextEditor
+    var onSubmit: (() -> Void)?
+
+    init(_ parent: DynamicTextEditor) {
+      self.parent = parent
+    }
+
+    func textDidChange(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      parent.text = textView.string
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      if commandSelector == #selector(NSTextView.insertNewline(_:)) {
+        let event = NSApp.currentEvent
+        if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
+          onSubmit?()
+          return true
+        }
+      }
+      return false
+    }
+  }
 
 #Preview {
     ChatView(conversation: Conversation())

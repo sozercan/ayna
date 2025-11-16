@@ -30,8 +30,13 @@ The repository ships with the `aynaTests` XCTest bundle.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 
+### Build & Test Expectations
+- Unless your change is strictly documentation (e.g., Markdown copy edits with zero code or config impact), run both `xcodebuild -scheme Ayna -destination 'platform=macOS' build` and `xcodebuild -scheme Ayna -destination 'platform=macOS' test` before handing work back.
+- Fix every build, lint, or test failure you hit; do not skip failures unless the user explicitly waives them for that task.
+- Note any deviations (such as intentionally skipping tests for docs-only edits) in your final handoff so the user knows what ran.
+
 ### Linting
-- Run `swiftlint` from the repo root after every non-trivial change and before handing work back to the user.
+- Run `swiftlint --strict` from the repo root after every non-trivial change and before handing work back to the user.
 - Fix every reported warning; only add `// swiftlint:disable` annotations when there is a documented reason in-code.
 - Do **not** raise lint thresholds or comment out rules to “get green.” If a rule is noisy, discuss with the user before changing `.swiftlint.yml`.
 - When editing large files (e.g., `Views/SettingsView.swift`), keep existing scoped disables intact and avoid introducing new violations elsewhere.
