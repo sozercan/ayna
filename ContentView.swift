@@ -457,7 +457,7 @@ struct NewChatView: View {
           )
           return
         }
-        
+
         // Update the message content
           if var lastMessage = self.conversationManager.conversations[index].messages.last,
             lastMessage.role == .assistant {

@@ -206,16 +206,9 @@ App uses `App Sandbox` entitlement (`ayna.entitlements`) with:
 **IMPORTANT**: Always use comprehensive logging for complex flows and error scenarios.
 
 **Logging Guidelines**:
-- Use `print()` statements with emoji prefixes for quick visual scanning:
-  - `🔌` - Connection/initialization events
-  - `✅` - Success operations
-  - `❌` - Error conditions
-  - `⚠️` - Warnings or recoverable issues
-  - `🔍` - Discovery/search operations
-  - `📋` - Tool/resource listings
-  - `📦` - Resource operations
-  - `🔄` - State changes or retry operations
-  - `🚀` - Startup/launch events
+- Always log through `DiagnosticsLogger.log` so entries land in both the unified logging system and breadcrumb store.
+- Keep using emoji prefixes in the `message` string for quick scanning (`🔌`, `✅`, `❌`, `⚠️`, `🔍`, `📋`, `📦`, `🔄`, `🚀`, etc.).
+- Include concise metadata (`conversationId`, `toolName`, `server`, etc.) to make log filtering deterministic.
 
 **When to Add Logging**:
 1. **Complex Flows**: Any multi-step async operation (e.g., MCP server initialization, tool calling chains)
@@ -237,18 +230,35 @@ log show --predicate 'process == "Ayna"' --last 5m --info --debug
 ls -lt ~/Library/Logs/DiagnosticReports/ | grep Ayna
 ```
 
-**Example Logging Pattern**:
+#### Structured Logging & Breadcrumbs
+- Prefer `DiagnosticsLogger.log(_:,level:message:metadata:)` for any new logs so entries land in both the unified logging system and `BreadcrumbStore`.
+- Pick the closest `DiagnosticsCategory` (see `Diagnostics/DiagnosticsLogger.swift`) and always include lightweight metadata keys (e.g., `conversationId`, `toolName`, `server`). These key/value pairs make `log show` searches deterministic.
+- Breadcrumbs persist to `~/Library/Application Support/Ayna/breadcrumbs.json`; read that file or call `BreadcrumbStore.shared.latest()` when you need a quick timeline while debugging.
+- When sharing debugging findings with the user, cite the log line you relied on (category + emoji prefix + timestamp if available) so they can correlate with `log show` output.
+
+**Structured Logging Example**:
 ```swift
 do {
-    print("🔌 Attempting to connect to MCP server: \(config.name)")
-    try await service.connect()
-    print("✅ Connected to MCP server: \(config.name)")
-
-    await discoverTools(for: config.name)
-    print("✅ Tool discovery complete for: \(config.name)")
+  DiagnosticsLogger.log(
+    .mcpServerManager,
+    level: .default,
+    message: "🔌 Attempting MCP connect",
+    metadata: ["server": config.name]
+  )
+  try await service.connect()
+  DiagnosticsLogger.log(
+    .mcpServerManager,
+    level: .info,
+    message: "✅ Connected to MCP server",
+    metadata: ["server": config.name]
+  )
 } catch {
-    print("❌ Failed to connect to \(config.name): \(error.localizedDescription)")
-    // Handle error...
+  DiagnosticsLogger.log(
+    .mcpServerManager,
+    level: .error,
+    message: "❌ Failed MCP connect: \(error.localizedDescription)",
+    metadata: ["server": config.name]
+  )
 }
 ```
 

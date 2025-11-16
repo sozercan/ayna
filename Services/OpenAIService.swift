@@ -50,7 +50,7 @@ class OpenAIService: ObservableObject {
   // Track current task for cancellation
   private var currentTask: URLSessionDataTask?
   private var currentStreamTask: Task<Void, Never>?
-  
+
   @Published var provider: AIProvider {
     didSet {
       UserDefaults.standard.set(provider.rawValue, forKey: "aiProvider")
