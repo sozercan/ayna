@@ -53,6 +53,7 @@ struct NewChatView: View {
   @State private var attachedFiles: [URL] = []
   @State private var isGenerating = false
   @State private var currentConversationId: UUID?
+  @State private var selectedModel = OpenAIService.shared.selectedModel
 
   // Cached font for text height calculation (computed property to avoid lazy initialization issues)
   private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -89,6 +90,31 @@ struct NewChatView: View {
       return modelSpecificIssues
     }
     return ["Add at least one model in Settings > Model tab"]
+  }
+
+  private var normalizedSelectedModel: String {
+    let explicitSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !explicitSelection.isEmpty {
+      return explicitSelection
+    }
+
+    if let conversationModel = currentConversation?.model.trimmingCharacters(
+      in: .whitespacesAndNewlines),
+      !conversationModel.isEmpty
+    {
+      return conversationModel
+    }
+
+    return openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var composerModelLabel: String {
+    let label = normalizedSelectedModel
+    return label.isEmpty ? "Add Model" : label
+  }
+
+  private func isModelCurrentlySelected(_ model: String) -> Bool {
+    normalizedSelectedModel == model.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   var body: some View {
@@ -215,13 +241,16 @@ struct NewChatView: View {
                   }
                   .routeSettings(to: .models)
                 } else {
-                  ForEach(openAIService.customModels, id: \.self) { model in
+                  ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) {
+                    _, model in
                     Button(action: {
+                      selectedModel = model
                       openAIService.selectedModel = model
+                      updateCurrentConversationModelIfNeeded(using: model)
                     }) {
                       HStack {
                         Text(model)
-                        if openAIService.selectedModel == model {
+                        if isModelCurrentlySelected(model) {
                           Image(systemName: "checkmark")
                         }
                       }
@@ -234,8 +263,7 @@ struct NewChatView: View {
                     .frame(height: 24)
                     .padding(.leading, 8)
 
-                  Text(
-                    openAIService.selectedModel.isEmpty ? "Add Model" : openAIService.selectedModel)
+                  Text(composerModelLabel)
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -285,6 +313,17 @@ struct NewChatView: View {
         }
       }
     }
+    .onAppear {
+      syncSelectedModelState()
+    }
+    .onChange(of: currentConversation?.model ?? "") { _, _ in
+      syncSelectedModelState()
+    }
+    .onChange(of: openAIService.selectedModel) { _, newValue in
+      // Only follow global selection if we don't have a conversation yet
+      guard currentConversation == nil else { return }
+      selectedModel = newValue
+    }
   }
 
   private func calculateTextHeight() -> CGFloat {
@@ -306,6 +345,35 @@ struct NewChatView: View {
 
     let calculatedHeight = ceil(boundingRect.height) + 4
     return min(max(calculatedHeight, baseHeight), maxHeight)
+  }
+
+  private func resolveModelForSending() -> String? {
+    let trimmedSelection = normalizedSelectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmedSelection.isEmpty ? nil : trimmedSelection
+  }
+
+  private func ensureConversationModelMatchesSelection(_ model: String) {
+    guard let conversation = currentConversation else { return }
+    if conversation.model != model {
+      conversationManager.updateModel(for: conversation, model: model)
+    }
+  }
+
+  private func updateCurrentConversationModelIfNeeded(using model: String) {
+    let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    ensureConversationModelMatchesSelection(trimmed)
+  }
+
+  private func syncSelectedModelState() {
+    if let conversationModel = currentConversation?.model.trimmingCharacters(
+      in: .whitespacesAndNewlines),
+      !conversationModel.isEmpty
+    {
+      selectedModel = conversationModel
+    } else {
+      selectedModel = openAIService.selectedModel
+    }
   }
 
   private func attachFile() {
@@ -348,6 +416,14 @@ struct NewChatView: View {
       return
     }
 
+    guard let activeModel = resolveModelForSending() else {
+      logNewChat("⚠️ Cannot send message: no model selected", level: .error)
+      return
+    }
+
+    openAIService.selectedModel = activeModel
+    ensureConversationModelMatchesSelection(activeModel)
+
     let textToSend = messageText
     let filesToSend = attachedFiles
 
@@ -377,6 +453,8 @@ struct NewChatView: View {
         metadata: ["conversationId": newConversation.id.uuidString]
       )
     }
+
+    conversationManager.updateModel(for: conversation, model: activeModel)
 
     // Build file attachments
     var attachments: [Message.FileAttachment] = []
@@ -408,10 +486,10 @@ struct NewChatView: View {
     // The view switch will happen in the completion handler after generation finishes
 
     // Send the message immediately (no delay needed)
-    sendMessageForConversation(conversation)
+    sendMessageForConversation(conversation, model: activeModel)
   }
 
-  private func sendMessageForConversation(_ conversation: Conversation) {
+  private func sendMessageForConversation(_ conversation: Conversation, model: String) {
     // Get the conversation with the user message we just added
     guard
       let updatedConversation = conversationManager.conversations.first(where: {
@@ -419,6 +497,12 @@ struct NewChatView: View {
       })
     else {
       return
+    }
+
+    let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+    let activeModel = trimmedModel.isEmpty ? updatedConversation.model : trimmedModel
+    if updatedConversation.model != activeModel {
+      conversationManager.updateModel(for: updatedConversation, model: activeModel)
     }
 
     isGenerating = true
@@ -430,7 +514,7 @@ struct NewChatView: View {
     let currentMessages = updatedConversation.messages
 
     // Add empty assistant message with current model
-    let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
+    let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
     conversationManager.addMessage(to: conversation, message: assistantMessage)
 
     // Get available MCP tools
@@ -443,7 +527,7 @@ struct NewChatView: View {
     let expectedConversationId = conversation.id
     openAIService.sendMessage(
       messages: currentMessages,
-      model: updatedConversation.model,
+      model: activeModel,
       temperature: updatedConversation.temperature,
       tools: tools,
       conversationId: conversation.id,

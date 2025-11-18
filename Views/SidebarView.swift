@@ -122,7 +122,7 @@ struct SidebarView: View {
     .onChange(of: searchText) { _, _ in
       updateFilteredConversations()
     }
-    .onChange(of: conversationManager.conversations.count) { _, _ in
+    .onReceive(conversationManager.$conversations) { _ in
       updateFilteredConversations()
     }
     .onAppear {

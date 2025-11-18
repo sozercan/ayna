@@ -13,13 +13,20 @@ import OSLog
 // the larger body here until the view hierarchy is modularized.
 // swiftlint:disable:next type_body_length
 struct ChatView: View {
-    let conversation: Conversation
-    @EnvironmentObject var conversationManager: ConversationManager
+  let conversation: Conversation
+
+  init(conversation: Conversation) {
+    self.conversation = conversation
+    _selectedModel = State(initialValue: conversation.model)
+  }
+
+  @EnvironmentObject var conversationManager: ConversationManager
   @ObservedObject private var openAIService = OpenAIService.shared
 
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
+  @State private var selectedModel: String
   @State private var attachedFiles: [URL] = []
   @State private var toolCallDepth = 0
   @State private var currentToolName: String?
@@ -82,6 +89,26 @@ struct ChatView: View {
         }
     }
 
+  private var normalizedSelectedModel: String {
+    let explicitSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !explicitSelection.isEmpty {
+      return explicitSelection
+    }
+    return currentConversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var composerModelLabel: String {
+    let displayName = normalizedSelectedModel
+    if displayName.isEmpty {
+      return openAIService.customModels.isEmpty ? "Add Model" : "Select Model"
+    }
+    return displayName
+  }
+
+  private func isModelCurrentlySelected(_ model: String) -> Bool {
+    normalizedSelectedModel == model.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   var body: some View {
         ZStack {
             // Chat background with subtle gradient
@@ -138,16 +165,21 @@ struct ChatView: View {
                   if let lastMessage = currentConversation.messages.last {
                     proxy.scrollTo(lastMessage.id, anchor: .bottom)
                   }
+            syncSelectedModelWithConversation()
                 }
                 .onChange(of: conversation.id) { _, _ in
                   updateVisibleMessages()
                   if let lastMessage = currentConversation.messages.last {
                     proxy.scrollTo(lastMessage.id, anchor: .bottom)
                   }
+            syncSelectedModelWithConversation()
                 }
                 .onChange(of: currentConversation.messages) { _, _ in
                   updateVisibleMessages()
                 }
+          .onChange(of: currentConversation.model) { _, _ in
+            syncSelectedModelWithConversation()
+          }
                 .onChange(of: isGenerating) { _, _ in
                   updateVisibleMessages()
                 }
@@ -265,13 +297,14 @@ struct ChatView: View {
                 }
                 .routeSettings(to: .models)
               } else {
-                ForEach(openAIService.customModels, id: \.self) { model in
+                ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) { _, model in
                   Button(action: {
+                    selectedModel = model
                     conversationManager.updateModel(for: conversation, model: model)
                   }) {
                     HStack {
                       Text(model)
-                      if currentConversation.model == model {
+                      if isModelCurrentlySelected(model) {
                         Image(systemName: "checkmark")
                       }
                     }
@@ -284,11 +317,7 @@ struct ChatView: View {
                   .frame(height: 24)
                   .padding(.leading, 8)
 
-                Text(
-                  currentConversation.model.isEmpty
-                    ? (openAIService.customModels.isEmpty ? "Add Model" : "Select Model")
-                    : currentConversation.model
-                )
+                Text(composerModelLabel)
                   .font(.system(size: 13))
                   .foregroundStyle(.primary)
                   .lineLimit(1)
@@ -361,7 +390,46 @@ struct ChatView: View {
 
         // Clamp between min and max heights
         return min(max(calculatedHeight, baseHeight), maxHeight)
+  }
+
+  // MARK: - Model Selection Helpers
+
+  private func resolveModelForSending() -> String? {
+    let trimmedSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedSelection.isEmpty {
+      return trimmedSelection
     }
+
+    let trimmedConversationModel = currentConversation.model.trimmingCharacters(
+      in: .whitespacesAndNewlines)
+    if !trimmedConversationModel.isEmpty {
+      return trimmedConversationModel
+    }
+
+    let trimmedGlobal = openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmedGlobal.isEmpty ? nil : trimmedGlobal
+  }
+
+  private func ensureConversationModelMatchesSelection(_ model: String) {
+    if currentConversation.model != model {
+      conversationManager.updateModel(for: conversation, model: model)
+    }
+    if selectedModel != model {
+      selectedModel = model
+    }
+  }
+
+  private func syncSelectedModelWithConversation() {
+    guard
+      let latest = conversationManager.conversations.first(where: { $0.id == conversation.id })?
+        .model
+    else {
+      return
+    }
+    if latest != selectedModel {
+      selectedModel = latest
+    }
+  }
 
   private func attachFile() {
     let panel = NSOpenPanel()
@@ -475,6 +543,19 @@ struct ChatView: View {
       }
     }
 
+    guard let activeModel = resolveModelForSending() else {
+      logChat("❌ Cannot send message: no model selected", level: .error)
+      errorMessage = "Select a model in Settings → Model."
+      return
+    }
+
+    ensureConversationModelMatchesSelection(activeModel)
+    logChat(
+      "🎯 Sending message with model \(activeModel)",
+      level: .info,
+      metadata: ["model": activeModel]
+    )
+
     let userMessage = Message(
       role: .user,
       content: messageText,
@@ -499,19 +580,19 @@ struct ChatView: View {
             return
         }
 
-        // Check if current model is for image generation
-        let modelCapability = openAIService.getModelCapability(updatedConversation.model)
+    // Check if current model is for image generation
+    let modelCapability = openAIService.getModelCapability(activeModel)
 
         if modelCapability == .imageGeneration {
-            // Image generation flow
-            generateImage(prompt: promptText, model: updatedConversation.model)
+      // Image generation flow
+      generateImage(prompt: promptText, model: activeModel)
             return
         }
 
         let currentMessages = updatedConversation.messages
 
-        // Add empty assistant message with current model
-        let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
+    // Add empty assistant message with current model
+    let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Get available MCP tools
@@ -568,8 +649,8 @@ struct ChatView: View {
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
-            messages: currentMessages,
-            model: updatedConversation.model,
+      messages: currentMessages,
+          model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
             isInitialRequest: true
