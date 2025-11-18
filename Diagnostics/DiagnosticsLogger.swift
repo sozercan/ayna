@@ -45,7 +45,7 @@ struct Breadcrumb: Codable, Identifiable {
         category: DiagnosticsCategory,
         level: BreadcrumbLevel,
         message: String,
-        metadata: [String: String]
+        metadata: [String: String],
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -56,7 +56,7 @@ struct Breadcrumb: Codable, Identifiable {
     }
 }
 
-final class BreadcrumbStore {
+final class BreadcrumbStore: @unchecked Sendable {
     static let shared = BreadcrumbStore()
 
     private let maxEntries = 200
@@ -86,7 +86,7 @@ final class BreadcrumbStore {
         category: DiagnosticsCategory,
         level: BreadcrumbLevel,
         message: String,
-        metadata: [String: String]
+        metadata: [String: String],
     ) {
         queue.async {
             let breadcrumb = Breadcrumb(category: category, level: level, message: message, metadata: metadata)
@@ -132,7 +132,7 @@ enum DiagnosticsLogger {
         _ category: DiagnosticsCategory,
         level: OSLogType = .default,
         message: String,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
     ) {
         guard let logger = loggers[category] else { return }
 
@@ -149,7 +149,7 @@ enum DiagnosticsLogger {
             category: category,
             level: level.breadcrumbLevel,
             message: message,
-            metadata: metadata
+            metadata: metadata,
         )
     }
 }

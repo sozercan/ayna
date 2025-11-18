@@ -93,7 +93,7 @@ struct MCPSettingsView: View {
                                     var updated = config
                                     updated.enabled.toggle()
                                     mcpManager.updateServerConfig(updated)
-                                }
+                                },
                             )
                         }
                     }
@@ -110,7 +110,7 @@ struct MCPSettingsView: View {
                 },
                 onCancel: {
                     showingAddServer = false
-                }
+                },
             )
         }
         .sheet(item: $editingServer) { config in
@@ -122,7 +122,7 @@ struct MCPSettingsView: View {
                 },
                 onCancel: {
                     editingServer = nil
-                }
+                },
             )
         }
     }
@@ -385,7 +385,7 @@ struct ServerConfigSheet: View {
                     let envDict = Dictionary(
                         uniqueKeysWithValues: envVars
                             .filter { !$0.key.isEmpty }
-                            .map { ($0.key, $0.value) }
+                            .map { ($0.key, $0.value) },
                     )
 
                     let newConfig = MCPServerConfig(
@@ -394,7 +394,7 @@ struct ServerConfigSheet: View {
                         command: command,
                         args: argsArray,
                         env: envDict,
-                        enabled: config?.enabled ?? true
+                        enabled: config?.enabled ?? true,
                     )
 
                     onSave(newConfig)

@@ -1,6 +1,7 @@
 @testable import Ayna
 import XCTest
 
+@MainActor
 final class ConversationManagerTests: XCTestCase {
     private var defaults: UserDefaults!
 

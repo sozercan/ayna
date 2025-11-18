@@ -48,7 +48,7 @@ enum TestHelpers {
     static func makeTestStore(
         directory: URL,
         keyIdentifier: String = UUID().uuidString,
-        keychain: KeychainStoring = InMemoryKeychainStorage()
+        keychain: KeychainStoring = InMemoryKeychainStorage(),
     ) -> EncryptedConversationStore {
         let fileURL = directory.appendingPathComponent("conversations.enc")
         return EncryptedConversationStore(fileURL: fileURL, keyIdentifier: keyIdentifier, keychain: keychain)

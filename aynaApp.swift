@@ -9,25 +9,28 @@ import AppKit
 import OSLog
 import SwiftUI
 
+@MainActor
+private var uiTestWindowObserver: NSObjectProtocol?
+
+@MainActor
+private var uiTestFallbackWindow: NSWindow?
+
 @main
 struct aynaApp: App {
     @StateObject private var conversationManager: ConversationManager
 
     init() {
         UITestEnvironment.configureIfNeeded()
-        if UITestEnvironment.isEnabled {
-            _conversationManager = StateObject(wrappedValue: UITestEnvironment.makeConversationManager())
+
+        let manager: ConversationManager = if UITestEnvironment.isEnabled {
+            UITestEnvironment.makeConversationManager()
         } else {
-            _conversationManager = StateObject(wrappedValue: ConversationManager())
+            ConversationManager()
         }
+        _conversationManager = StateObject(wrappedValue: manager)
 
         if UITestEnvironment.isEnabled {
-            Task { @MainActor in
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                for window in NSApplication.shared.windows {
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
+            Task { await prepareWindowsForUITests(using: manager) }
         }
 
         guard !UITestEnvironment.shouldSkipMCPInitialization else { return }
@@ -40,19 +43,19 @@ struct aynaApp: App {
                     .app,
                     level: .info,
                     message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
-                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
+                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"],
                 )
             } catch {
                 DiagnosticsLogger.log(
                     .app,
                     level: .error,
                     message: "⚠️ MCP initialization encountered errors",
-                    metadata: ["error": error.localizedDescription]
+                    metadata: ["error": error.localizedDescription],
                 )
                 DiagnosticsLogger.log(
                     .app,
                     level: .info,
-                    message: "App will continue without MCP servers."
+                    message: "App will continue without MCP servers.",
                 )
             }
         }
@@ -64,7 +67,6 @@ struct aynaApp: App {
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 600)
         }
-        .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -79,5 +81,75 @@ struct aynaApp: App {
             SettingsView()
                 .environmentObject(conversationManager)
         }
+    }
+}
+
+@MainActor
+private func prepareWindowsForUITests(using manager: ConversationManager) async {
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+
+    @MainActor
+    func configure(_ window: NSWindow) {
+        window.styleMask.insert([.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView])
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    @MainActor
+    func ensureFallbackWindowIfNeeded() {
+        guard uiTestFallbackWindow == nil else { return }
+        let fallbackWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false,
+        )
+        fallbackWindow.contentView = NSHostingView(
+            rootView: ContentView()
+                .environmentObject(manager)
+                .frame(minWidth: 900, minHeight: 600),
+        )
+        fallbackWindow.center()
+        configure(fallbackWindow)
+        uiTestFallbackWindow = fallbackWindow
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "🪟 Created fallback UI test window",
+        )
+    }
+
+    var attempts = 0
+    while NSApplication.shared.windows.isEmpty, attempts < 50 {
+        attempts += 1
+        try? await Task.sleep(for: .milliseconds(100))
+    }
+    DiagnosticsLogger.log(
+        .app,
+        level: .info,
+        message: "🪟 Windows visible after wait: \(NSApplication.shared.windows.count)",
+        metadata: ["attempts": "\(attempts)"],
+    )
+    if NSApplication.shared.windows.isEmpty {
+        DiagnosticsLogger.log(
+            .app,
+            level: .error,
+            message: "⚠️ No windows available; creating fallback window for UI tests",
+        )
+        ensureFallbackWindowIfNeeded()
+    }
+    NSApplication.shared.windows.forEach(configure)
+
+    uiTestWindowObserver = NotificationCenter.default.addObserver(
+        forName: NSWindow.didBecomeKeyNotification,
+        object: nil,
+        queue: nil,
+    ) { notification in
+        guard let window = notification.object as? NSWindow else { return }
+        Task { await MainActor.run { configure(window) } }
     }
 }

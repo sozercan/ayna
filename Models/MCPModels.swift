@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - MCP Server Configuration
 
-struct MCPServerConfig: Identifiable, Codable, Equatable {
+struct MCPServerConfig: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var command: String
@@ -23,7 +23,7 @@ struct MCPServerConfig: Identifiable, Codable, Equatable {
         command: String,
         args: [String] = [],
         env: [String: String] = [:],
-        enabled: Bool = true
+        enabled: Bool = true,
     ) {
         self.id = id
         self.name = name
@@ -36,7 +36,7 @@ struct MCPServerConfig: Identifiable, Codable, Equatable {
 
 // MARK: - MCP Tool
 
-struct MCPTool: Identifiable, Codable, Equatable {
+struct MCPTool: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let name: String
     let description: String
@@ -48,7 +48,7 @@ struct MCPTool: Identifiable, Codable, Equatable {
         name: String,
         description: String,
         inputSchema: JSONSchema,
-        serverName: String
+        serverName: String,
     ) {
         self.id = id
         self.name = name
@@ -72,13 +72,13 @@ struct MCPTool: Identifiable, Codable, Equatable {
 
 // MARK: - JSON Schema
 
-struct JSONSchema: Codable, Equatable {
+struct JSONSchema: Codable, Equatable, Sendable {
     let type: String
     let properties: [String: AnyCodable]?
     let required: [String]?
     let items: AnyCodable?
 
-    struct Property: Codable, Equatable {
+    struct Property: Codable, Equatable, Sendable {
         let type: String
         let description: String?
         let `enum`: [String]?
@@ -131,7 +131,7 @@ extension JSONSchema.Property {
 
 // MARK: - MCP Resource
 
-struct MCPResource: Identifiable, Codable, Equatable {
+struct MCPResource: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let uri: String
     let name: String
@@ -145,7 +145,7 @@ struct MCPResource: Identifiable, Codable, Equatable {
         name: String,
         description: String? = nil,
         mimeType: String? = nil,
-        serverName: String
+        serverName: String,
     ) {
         self.id = id
         self.uri = uri
@@ -158,7 +158,7 @@ struct MCPResource: Identifiable, Codable, Equatable {
 
 // MARK: - MCP JSON-RPC Messages
 
-struct MCPRequest: Codable {
+struct MCPRequest: Codable, Sendable {
     let jsonrpc: String = "2.0"
     let id: Int
     let method: String
@@ -171,14 +171,14 @@ struct MCPRequest: Codable {
     }
 }
 
-struct MCPResponse: Codable {
+struct MCPResponse: Codable, Sendable {
     let jsonrpc: String
     let id: Int?
     let result: AnyCodable?
     let error: MCPError?
 }
 
-struct MCPError: Codable {
+struct MCPError: Codable, Sendable {
     let code: Int
     let message: String
     let data: AnyCodable?
@@ -186,7 +186,7 @@ struct MCPError: Codable {
 
 // MARK: - Tool Call Result
 
-struct MCPToolCall: Identifiable, Codable, Equatable {
+struct MCPToolCall: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let toolName: String
     let arguments: [String: AnyCodable]
@@ -200,7 +200,7 @@ struct MCPToolCall: Identifiable, Codable, Equatable {
         arguments: [String: AnyCodable],
         result: String? = nil,
         error: String? = nil,
-        timestamp: Date = Date()
+        timestamp: Date = Date(),
     ) {
         self.id = id
         self.toolName = toolName
@@ -213,7 +213,7 @@ struct MCPToolCall: Identifiable, Codable, Equatable {
 
 // MARK: - AnyCodable Helper
 
-struct AnyCodable: Codable, Equatable {
+struct AnyCodable: Codable, Equatable, @unchecked Sendable {
     let value: Any
 
     init(_ value: Any) {

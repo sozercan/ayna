@@ -18,13 +18,14 @@ enum UITestEnvironment {
     }
 
     /// Call once during app initialization to swap out side-effectful dependencies.
+    @MainActor
     static func configureIfNeeded() {
         guard isEnabled else { return }
 
         DiagnosticsLogger.log(
             .app,
             level: .info,
-            message: "🧪 UI test environment enabled"
+            message: "🧪 UI test environment enabled",
         )
 
         configureUserDefaults()
@@ -34,11 +35,12 @@ enum UITestEnvironment {
     }
 
     /// Conversation manager used when the app is running in UI tests.
+    @MainActor
     static func makeConversationManager() -> ConversationManager {
         let store = EncryptedConversationStore(
             fileURL: conversationFileURL,
             keyIdentifier: "uitest-conversation-key",
-            keychain: OpenAIService.keychain
+            keychain: OpenAIService.keychain,
         )
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
@@ -55,10 +57,12 @@ enum UITestEnvironment {
         AppPreferences.use(suite)
     }
 
+    @MainActor
     private static func configureKeychain() {
         OpenAIService.keychain = EphemeralKeychainStorage()
     }
 
+    @MainActor
     private static func configureOpenAIService() {
         let service = OpenAIService.shared
         if service.customModels.isEmpty {

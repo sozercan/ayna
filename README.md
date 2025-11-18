@@ -14,6 +14,7 @@ Native macOS ChatGPT client built with SwiftUI.
 
 - macOS 14.0 or newer
 - Xcode 15.0+ to build from source
+- Swift 6.2.1 toolchain
 - OpenAI or Azure OpenAI API key (optional if using local AIKit models)
 - [Podman](https://podman-desktop.io/docs/installation) for AIKit containers (optional)
 

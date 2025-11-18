@@ -28,6 +28,7 @@ enum APIEndpointType: String, CaseIterable, Codable {
 }
 
 // swiftlint:disable:next type_body_length
+@MainActor
 class OpenAIService: ObservableObject {
     static let shared = OpenAIService()
     static var keychain: KeychainStoring = KeychainStorage.shared
@@ -282,7 +283,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Failed to persist API key",
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
     }
@@ -295,7 +296,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Failed to persist model API keys",
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
     }
@@ -310,7 +311,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Unable to read API key from Keychain",
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
         return ""
@@ -326,7 +327,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .error,
                         message: "Failed to decode model API keys from Keychain",
-                        metadata: ["error": error.localizedDescription]
+                        metadata: ["error": error.localizedDescription],
                     )
                 }
             }
@@ -335,7 +336,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Unable to read model API keys from Keychain",
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
         return [:]
@@ -448,7 +449,7 @@ class OpenAIService: ObservableObject {
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: "Canceling current request"
+            message: "Canceling current request",
         )
         currentTask?.cancel()
         currentTask = nil
@@ -457,7 +458,7 @@ class OpenAIService: ObservableObject {
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: "Request cancellation initiated"
+            message: "Request cancellation initiated",
         )
     }
 
@@ -465,7 +466,7 @@ class OpenAIService: ObservableObject {
         prompt: String,
         model: String? = nil,
         onComplete: @escaping (Data) -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -538,7 +539,7 @@ class OpenAIService: ObservableObject {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .error,
-                    message: "No data received"
+                    message: "No data received",
                 )
                 DispatchQueue.main.async {
                     onError(OpenAIError.noData)
@@ -558,7 +559,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .error,
                             message: "API error",
-                            metadata: ["code": code, "message": message]
+                            metadata: ["code": code, "message": message],
                         )
                         DispatchQueue.main.async {
                             if code == "contentFilter" {
@@ -632,7 +633,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .error,
                         message: "Failed to encode arguments for tool call",
-                        metadata: ["tool": toolCall.toolName]
+                        metadata: ["tool": toolCall.toolName],
                     )
                     return nil
                 }
@@ -716,14 +717,14 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: ((String) -> Void)? = nil
+        onReasoning: ((String) -> Void)? = nil,
     ) {
         if UITestEnvironment.isEnabled {
             simulateUITestResponse(
                 messages: messages,
                 stream: stream,
                 onChunk: onChunk,
-                onComplete: onComplete
+                onComplete: onComplete,
             )
             return
         }
@@ -745,7 +746,7 @@ class OpenAIService: ObservableObject {
                     conversationId: conversationId,
                     onChunk: onChunk,
                     onComplete: onComplete,
-                    onError: onError
+                    onError: onError,
                 )
             } else {
                 onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or later"))
@@ -770,7 +771,7 @@ class OpenAIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
-                onReasoning: onReasoning
+                onReasoning: onReasoning,
             )
             return
         }
@@ -824,12 +825,12 @@ class OpenAIService: ObservableObject {
         if stream {
             streamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning
+                onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning,
             )
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onReasoning: onReasoning
+                onToolCall: onToolCall, onReasoning: onReasoning,
             )
         }
     }
@@ -838,7 +839,7 @@ class OpenAIService: ObservableObject {
         messages: [Message],
         stream: Bool,
         onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void
+        onComplete: @escaping () -> Void,
     ) {
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
@@ -862,7 +863,7 @@ class OpenAIService: ObservableObject {
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void,
-        onReasoning: ((String) -> Void)? = nil
+        onReasoning: ((String) -> Void)? = nil,
     ) {
         // Check if this model has a provider override
         let effectiveProvider = modelProviders[model] ?? provider
@@ -1056,7 +1057,7 @@ class OpenAIService: ObservableObject {
         onChunk: @escaping (String) -> Void,
         onReasoning: ((String) -> Void)?,
         onToolCall: ((String, String, [String: Any]) async -> String)?,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)?
+        onToolCallRequested: ((String, String, [String: Any]) -> Void)?,
     ) async -> StreamLineResult {
         var updatedToolCallBuffer = toolCallBuffer
         var updatedToolCallId = toolCallId
@@ -1069,7 +1070,7 @@ class OpenAIService: ObservableObject {
                 return StreamLineResult(
                     shouldComplete: true,
                     toolCallBuffer: updatedToolCallBuffer,
-                    toolCallId: updatedToolCallId
+                    toolCallId: updatedToolCallId,
                 ) // Signal completion
             }
 
@@ -1149,7 +1150,7 @@ class OpenAIService: ObservableObject {
         return StreamLineResult(
             shouldComplete: false,
             toolCallBuffer: updatedToolCallBuffer,
-            toolCallId: updatedToolCallId
+            toolCallId: updatedToolCallId,
         ) // Continue processing
     }
 
@@ -1160,7 +1161,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: ((String) -> Void)? = nil
+        onReasoning: ((String) -> Void)? = nil,
     ) {
         // Capture values for async context
         let currentProvider = provider
@@ -1183,7 +1184,7 @@ class OpenAIService: ObservableObject {
                         statusCode: httpResponse.statusCode,
                         provider: currentProvider,
                         azureDeployment: currentAzureDeployment,
-                        azureVersion: currentAzureAPIVersion
+                        azureVersion: currentAzureAPIVersion,
                     )
                     await MainActor.run {
                         onError(OpenAIError.apiError(errorMessage))
@@ -1201,7 +1202,7 @@ class OpenAIService: ObservableObject {
                         DiagnosticsLogger.log(
                             .openAIService,
                             level: .info,
-                            message: "Stream task cancelled; stopping iteration"
+                            message: "Stream task cancelled; stopping iteration",
                         )
                         await MainActor.run {
                             self.currentStreamTask = nil
@@ -1221,7 +1222,7 @@ class OpenAIService: ObservableObject {
                                 onChunk: onChunk,
                                 onReasoning: onReasoning,
                                 onToolCall: onToolCall,
-                                onToolCallRequested: onToolCallRequested
+                                onToolCallRequested: onToolCallRequested,
                             )
                             toolCallBuffer = result.toolCallBuffer
                             toolCallId = result.toolCallId
@@ -1259,7 +1260,7 @@ class OpenAIService: ObservableObject {
                         DiagnosticsLogger.log(
                             .openAIService,
                             level: .info,
-                            message: "Stream task cancelled successfully"
+                            message: "Stream task cancelled successfully",
                         )
                     } else {
                         onError(error)
@@ -1278,7 +1279,7 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
-        onReasoning: ((String) -> Void)? = nil
+        onReasoning: ((String) -> Void)? = nil,
     ) {
         let task = urlSession.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async {
@@ -1378,7 +1379,7 @@ class OpenAIService: ObservableObject {
         conversationId: UUID?,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
     ) {
         let service = AppleIntelligenceService.shared
 
@@ -1419,7 +1420,7 @@ class OpenAIService: ObservableObject {
                     },
                     onError: { error in
                         onError(error)
-                    }
+                    },
                 )
             } else {
                 await service.generateResponse(
@@ -1433,7 +1434,7 @@ class OpenAIService: ObservableObject {
                     },
                     onError: { error in
                         onError(error)
-                    }
+                    },
                 )
             }
         }

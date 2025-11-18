@@ -12,7 +12,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         let genericResponse = app.otherElements.element(matching: NSPredicate(
             format: "label CONTAINS %@ OR value CONTAINS %@",
             "UI Test Response",
-            "UI Test Response"
+            "UI Test Response",
         ))
         let foundResponse = responseLabel.waitForExistence(timeout: 2)
             || responseTextView.waitForExistence(timeout: 3)

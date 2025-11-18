@@ -36,6 +36,7 @@ enum AppleIntelligenceError: LocalizedError {
 }
 
 @available(macOS 26.0, iOS 26.0, *)
+@MainActor
 class AppleIntelligenceService: ObservableObject {
     static let shared = AppleIntelligenceService()
 
@@ -45,13 +46,13 @@ class AppleIntelligenceService: ObservableObject {
     private func log(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
     ) {
         DiagnosticsLogger.log(
             .appleIntelligence,
             level: level,
             message: message,
-            metadata: metadata
+            metadata: metadata,
         )
     }
 
@@ -89,7 +90,7 @@ class AppleIntelligenceService: ObservableObject {
     // Get or create a session for a conversation
     private func getSession(
         conversationId: String,
-        systemInstructions: String
+        systemInstructions: String,
     ) -> LanguageModelSession {
         sessionsLock.lock()
         defer { sessionsLock.unlock() }
@@ -127,14 +128,14 @@ class AppleIntelligenceService: ObservableObject {
         temperature: Double = 0.7,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
     ) async {
         // Check availability
         guard isAvailable else {
             log(
                 "Apple Intelligence stream unavailable",
                 level: .error,
-                metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+                metadata: ["conversationId": conversationId, "reason": availabilityDescription()],
             )
             onError(getAvailabilityError())
             return
@@ -145,7 +146,7 @@ class AppleIntelligenceService: ObservableObject {
         // Get or create session
         let session = getSession(
             conversationId: conversationId,
-            systemInstructions: systemInstructions
+            systemInstructions: systemInstructions,
         )
 
         // Create generation options
@@ -182,7 +183,7 @@ class AppleIntelligenceService: ObservableObject {
             log(
                 "Apple Intelligence stream failed",
                 level: .error,
-                metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+                metadata: ["conversationId": conversationId, "error": error.localizedDescription],
             )
             await MainActor.run {
                 onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
@@ -197,14 +198,14 @@ class AppleIntelligenceService: ObservableObject {
         systemInstructions: String = "You are a helpful assistant.",
         temperature: Double = 0.7,
         onComplete: @escaping (String) -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
     ) async {
         // Check availability
         guard isAvailable else {
             log(
                 "Apple Intelligence response unavailable",
                 level: .error,
-                metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+                metadata: ["conversationId": conversationId, "reason": availabilityDescription()],
             )
             onError(getAvailabilityError())
             return
@@ -215,7 +216,7 @@ class AppleIntelligenceService: ObservableObject {
         // Get or create session
         let session = getSession(
             conversationId: conversationId,
-            systemInstructions: systemInstructions
+            systemInstructions: systemInstructions,
         )
 
         // Create generation options
@@ -233,7 +234,7 @@ class AppleIntelligenceService: ObservableObject {
             log(
                 "Apple Intelligence generation failed",
                 level: .error,
-                metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+                metadata: ["conversationId": conversationId, "error": error.localizedDescription],
             )
             await MainActor.run {
                 onError(AppleIntelligenceError.generationFailed(error.localizedDescription))

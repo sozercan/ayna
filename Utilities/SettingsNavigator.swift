@@ -8,6 +8,7 @@ enum SettingsTab: Hashable {
     case about
 }
 
+@MainActor
 final class SettingsRouter: ObservableObject {
     static let shared = SettingsRouter()
 
@@ -16,13 +17,7 @@ final class SettingsRouter: ObservableObject {
     private init() {}
 
     func route(to tab: SettingsTab) {
-        if Thread.isMainThread {
-            updateRequestedTab(tab)
-        } else {
-            DispatchQueue.main.async {
-                self.updateRequestedTab(tab)
-            }
-        }
+        updateRequestedTab(tab)
     }
 
     func consumeRequestedTab() -> SettingsTab? {
@@ -42,7 +37,7 @@ extension View {
         simultaneousGesture(
             TapGesture().onEnded {
                 SettingsRouter.shared.route(to: tab)
-            }
+            },
         )
     }
 }

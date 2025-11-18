@@ -32,7 +32,7 @@ struct ContentView: View {
                     .id(conversationId)
             } else {
                 NewChatView(
-                    selectedConversationId: $selectedConversationId
+                    selectedConversationId: $selectedConversationId,
                 )
             }
         }
@@ -127,7 +127,7 @@ struct NewChatView: View {
                     Color(nsColor: .windowBackgroundColor).opacity(0.95),
                 ],
                 startPoint: .top,
-                endPoint: .bottom
+                endPoint: .bottom,
             )
             .ignoresSafeArea()
 
@@ -144,7 +144,7 @@ struct NewChatView: View {
                                         message: message,
                                         modelName: message.model,
                                         onRetry: nil,
-                                        onSwitchModel: nil
+                                        onSwitchModel: nil,
                                     )
                                     .id(message.id)
                                 }
@@ -191,8 +191,8 @@ struct NewChatView: View {
                                                 {
                                                     Text(
                                                         ByteCountFormatter.string(
-                                                            fromByteCount: Int64(fileSize), countStyle: .file
-                                                        )
+                                                            fromByteCount: Int64(fileSize), countStyle: .file,
+                                                        ),
                                                     )
                                                     .font(.caption2)
                                                     .foregroundStyle(.secondary)
@@ -219,7 +219,7 @@ struct NewChatView: View {
                                 DynamicTextEditor(
                                     text: $messageText,
                                     onSubmit: sendMessage,
-                                    accessibilityIdentifier: TestIdentifiers.NewChatComposer.textEditor
+                                    accessibilityIdentifier: TestIdentifiers.NewChatComposer.textEditor,
                                 )
                                 .frame(height: calculateTextHeight())
                                 .font(.system(size: 15))
@@ -296,7 +296,7 @@ struct NewChatView: View {
                                         Image(systemName: "arrow.up.circle.fill")
                                             .font(.system(size: 24))
                                             .foregroundStyle(
-                                                messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
+                                                messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor,
                                             )
                                     }
                                 }
@@ -310,7 +310,7 @@ struct NewChatView: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+                                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5),
                         )
                         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                         .padding(.horizontal, 24)
@@ -347,7 +347,7 @@ struct NewChatView: View {
         let boundingRect = (messageText as NSString).boundingRect(
             with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttributes
+            attributes: textAttributes,
         )
 
         let calculatedHeight = ceil(boundingRect.height) + 4
@@ -404,7 +404,7 @@ struct NewChatView: View {
     private func logNewChat(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
     ) {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
     }
@@ -445,7 +445,7 @@ struct NewChatView: View {
             conversation = existingConversation
             logNewChat(
                 "📝 Continuing with existing conversation: \(existingId)",
-                metadata: ["conversationId": existingId.uuidString]
+                metadata: ["conversationId": existingId.uuidString],
             )
         } else {
             // Create a new conversation
@@ -458,7 +458,7 @@ struct NewChatView: View {
             logNewChat(
                 "🆕 Created new conversation: \(newConversation.id)",
                 level: .info,
-                metadata: ["conversationId": newConversation.id.uuidString]
+                metadata: ["conversationId": newConversation.id.uuidString],
             )
         }
 
@@ -472,7 +472,7 @@ struct NewChatView: View {
                 let attachment = Message.FileAttachment(
                     fileName: fileURL.lastPathComponent,
                     mimeType: mimeType,
-                    data: fileData
+                    data: fileData,
                 )
                 attachments.append(attachment)
             }
@@ -482,7 +482,7 @@ struct NewChatView: View {
         let userMessage = Message(
             role: .user,
             content: textToSend,
-            attachments: attachments.isEmpty ? nil : attachments
+            attachments: attachments.isEmpty ? nil : attachments,
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
@@ -516,7 +516,7 @@ struct NewChatView: View {
         isGenerating = true
         logNewChat(
             "🔄 isGenerating set to TRUE in NewChatView",
-            metadata: ["conversationId": conversation.id.uuidString]
+            metadata: ["conversationId": conversation.id.uuidString],
         )
 
         let currentMessages = updatedConversation.messages
@@ -544,7 +544,7 @@ struct NewChatView: View {
                     logNewChat(
                         "⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk",
                         level: .default,
-                        metadata: ["conversationId": expectedConversationId.uuidString]
+                        metadata: ["conversationId": expectedConversationId.uuidString],
                     )
                     return
                 }
@@ -554,7 +554,7 @@ struct NewChatView: View {
                 {
                     lastMessage.content += chunk
                     conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1
+                        conversationManager.conversations[index].messages.count - 1,
                     ] = lastMessage
                 }
             },
@@ -563,7 +563,7 @@ struct NewChatView: View {
                 logNewChat(
                     "✅ Message sent successfully, isGenerating set to FALSE",
                     level: .info,
-                    metadata: ["conversationId": conversation.id.uuidString]
+                    metadata: ["conversationId": conversation.id.uuidString],
                 )
 
                 selectedConversationId = conversation.id
@@ -576,11 +576,11 @@ struct NewChatView: View {
                     metadata: [
                         "conversationId": conversation.id.uuidString,
                         "error": error.localizedDescription,
-                    ]
+                    ],
                 )
 
                 selectedConversationId = conversation.id
-            }
+            },
         )
     }
 

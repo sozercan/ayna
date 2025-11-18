@@ -40,7 +40,7 @@ final class KeychainStorage {
     private func log(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
     ) {
         DiagnosticsLogger.log(.keychain, level: level, message: message, metadata: metadata)
     }
@@ -70,7 +70,7 @@ final class KeychainStorage {
                 log(
                     "Failed to add keychain item",
                     level: .error,
-                    metadata: ["status": "\(addStatus)", "key": key]
+                    metadata: ["status": "\(addStatus)", "key": key],
                 )
                 throw KeychainStorageError.unexpectedStatus(addStatus)
             }
@@ -81,7 +81,7 @@ final class KeychainStorage {
             log(
                 "Failed to update keychain item",
                 level: .error,
-                metadata: ["status": "\(status)", "key": key]
+                metadata: ["status": "\(status)", "key": key],
             )
             throw KeychainStorageError.unexpectedStatus(status)
         }
@@ -100,7 +100,7 @@ final class KeychainStorage {
             log(
                 "Failed to read keychain item",
                 level: .error,
-                metadata: ["status": "\(status)", "key": key]
+                metadata: ["status": "\(status)", "key": key],
             )
             throw KeychainStorageError.unexpectedStatus(status)
         }
@@ -115,7 +115,7 @@ final class KeychainStorage {
             log(
                 "Failed to remove keychain item",
                 level: .error,
-                metadata: ["status": "\(status)", "key": key]
+                metadata: ["status": "\(status)", "key": key],
             )
             throw KeychainStorageError.unexpectedStatus(status)
         }
@@ -131,3 +131,5 @@ final class KeychainStorage {
 }
 
 extension KeychainStorage: KeychainStoring {}
+
+extension KeychainStorage: @unchecked Sendable {}

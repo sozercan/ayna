@@ -90,7 +90,7 @@ struct GeneralSettingsView: View {
                     Spacer()
                     Slider(value: Binding(
                         get: { Double(openAIService.outputCompression) },
-                        set: { openAIService.outputCompression = Int($0) }
+                        set: { openAIService.outputCompression = Int($0) },
                     ), in: 0 ... 100, step: 10)
                         .frame(width: 150)
                     Text("\(openAIService.outputCompression)%")
@@ -229,7 +229,7 @@ struct APISettingsView: View {
                                 .padding(.vertical, 8)
                                 .background(
                                     selectedModelName == model ? Color.blue.opacity(0.1) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 6)
+                                    in: RoundedRectangle(cornerRadius: 6),
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -307,7 +307,7 @@ struct APISettingsView: View {
                                         } else {
                                             tempEndpointType = newValue
                                         }
-                                    }
+                                    },
                                 )) {
                                     ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
                                         Text(endpointType.displayName).tag(endpointType)
@@ -371,7 +371,7 @@ struct APISettingsView: View {
                                                 .cornerRadius(4)
                                         }
                                         TextField(
-                                            "https://api.openai.com or http://localhost:8000", text: $tempEndpoint
+                                            "https://api.openai.com or http://localhost:8000", text: $tempEndpoint,
                                         )
                                         .textFieldStyle(.roundedBorder)
                                         .onChange(of: tempEndpoint) { _, _ in
@@ -488,7 +488,7 @@ struct APISettingsView: View {
                                         }
                                         .disabled(
                                             tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                                || tempEndpoint.isEmpty
+                                                || tempEndpoint.isEmpty,
                                         )
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.large)
@@ -529,7 +529,7 @@ struct APISettingsView: View {
                                         }
                                         .disabled(
                                             tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                                || tempEndpoint.isEmpty
+                                                || tempEndpoint.isEmpty,
                                         )
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.large)
@@ -867,7 +867,7 @@ struct APISettingsView: View {
                             // AIKit Configuration
                             AIKitConfigurationView(
                                 tempModelName: $tempModelName,
-                                selectedModelName: $selectedModelName
+                                selectedModelName: $selectedModelName,
                             )
                             .padding(.horizontal)
                         }
@@ -1174,7 +1174,7 @@ struct FlowLayout: Layout {
         let result = FlowResult(
             in: proposal.replacingUnspecifiedDimensions().width,
             subviews: subviews,
-            spacing: spacing
+            spacing: spacing,
         )
         return result.size
     }
@@ -1183,7 +1183,7 @@ struct FlowLayout: Layout {
         let result = FlowResult(
             in: bounds.width,
             subviews: subviews,
-            spacing: spacing
+            spacing: spacing,
         )
         for (index, subview) in subviews.enumerated() {
             subview.place(at: CGPoint(x: bounds.minX + result.frames[index].minX, y: bounds.minY + result.frames[index].minY), proposal: .unspecified)

@@ -17,7 +17,7 @@ open ayna.xcodeproj
 ### Requirements
 - macOS 14.0+ (Sonoma)
 - Xcode 15.0+
-- Swift 5.9
+- Swift 6.2.1
 
 ### Testing
 The repository ships with the `aynaTests` unit bundle plus a deterministic `aynaUITests` UI bundle.

@@ -9,6 +9,7 @@ import Foundation
 import OSLog
 import SwiftUI
 
+@MainActor
 class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
 
@@ -19,14 +20,14 @@ class ConversationManager: ObservableObject {
     private func logManager(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
     ) {
         DiagnosticsLogger.log(.conversationManager, level: level, message: message, metadata: metadata)
     }
 
     init(
         store: EncryptedConversationStore = .shared,
-        saveDebounceDuration: Duration = .milliseconds(200)
+        saveDebounceDuration: Duration = .milliseconds(200),
     ) {
         self.store = store
         self.saveDebounceDuration = saveDebounceDuration
@@ -66,7 +67,7 @@ class ConversationManager: ObservableObject {
 
             // Auto-generate title from first user message
             let autoGenerateTitle = AppPreferences.storage.object(forKey: "autoGenerateTitle") as? Bool ?? true
-            let userMessageCount = conversations[index].messages.filter { $0.role == .user }.count
+            let userMessageCount = conversations[index].messages.count(where: { $0.role == .user })
             let currentTitle = conversations[index].title
 
             if autoGenerateTitle,
@@ -157,12 +158,12 @@ class ConversationManager: ObservableObject {
                 self?.logManager(
                     "⚠️ Failed to generate AI title",
                     level: .error,
-                    metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString]
+                    metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString],
                 )
                 let fallbackTitle = String(content.prefix(50))
                 self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
             },
-            onReasoning: nil
+            onReasoning: nil,
         )
     }
 
@@ -181,7 +182,7 @@ class ConversationManager: ObservableObject {
                 logManager(
                     "❌ Failed to save conversations",
                     level: .error,
-                    metadata: ["error": error.localizedDescription]
+                    metadata: ["error": error.localizedDescription],
                 )
             }
         }
@@ -196,7 +197,7 @@ class ConversationManager: ObservableObject {
             logManager(
                 "❌ Failed to save conversations",
                 level: .error,
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
     }
@@ -226,13 +227,13 @@ class ConversationManager: ObservableObject {
             logManager(
                 "✅ Loaded \(conversations.count) conversations",
                 level: .info,
-                metadata: ["count": "\(conversations.count)"]
+                metadata: ["count": "\(conversations.count)"],
             )
         } catch {
             logManager(
                 "❌ Failed to load conversations",
                 level: .error,
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
             logManager("⚠️ Clearing corrupted conversation data", level: .default)
             try? store.clear()
@@ -250,7 +251,7 @@ class ConversationManager: ObservableObject {
             logManager(
                 "⚠️ Failed to clear conversation store",
                 level: .error,
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error.localizedDescription],
             )
         }
     }
