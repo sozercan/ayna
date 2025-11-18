@@ -5,19 +5,26 @@
 //  Created on 11/2/25.
 //
 
-import SwiftUI
 import Combine
+import SwiftUI
 
 struct SidebarView: View {
-        @EnvironmentObject var conversationManager: ConversationManager
+    @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
-        @Binding var selectedConversationId: UUID?
+    @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
-  @State private var filteredConversations: [Conversation] = []
+    @State private var filteredConversations: [Conversation] = []
 
-  private func updateFilteredConversations() {
-    filteredConversations = conversationManager.searchConversations(query: searchText)
+    private var timelineSections: [ConversationTimelineSection] {
+        ConversationTimelineGrouper.sections(from: filteredConversations)
+    }
+
+    private func updateFilteredConversations() {
+        filteredConversations =
+            conversationManager
+                .searchConversations(query: searchText)
+                .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     var body: some View {
@@ -45,12 +52,12 @@ struct SidebarView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(6)
             .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
 
             if UITestEnvironment.isEnabled {
                 HStack {
@@ -82,43 +89,56 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $selectedConversations) {
-          // Add spacer at top to prevent first item from being cut off
-          Color.clear
-            .frame(height: 1)
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-
-          ForEach(filteredConversations) { conversation in
-                        ConversationRow(conversation: conversation)
-                            .tag(conversation.id)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-              .contextMenu {
-                                if selectedConversations.count > 1 {
-                                    Button(role: .destructive, action: {
-                                        deleteSelectedConversations()
-                                    }) {
-                                        Label("Delete \(selectedConversations.count) Conversations", systemImage: "trash")
-                                    }
-                                } else {
-                                    Button(role: .destructive, action: {
-                                        conversationManager.deleteConversation(conversation)
-                                        if selectedConversationId == conversation.id {
-                                            selectedConversationId = nil
+                    ForEach(timelineSections) { section in
+                        Section {
+                            ForEach(section.conversations) { conversation in
+                                ConversationRow(conversation: conversation)
+                                    .tag(conversation.id)
+                                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                                    .contextMenu {
+                                        if selectedConversations.count > 1 {
+                                            Button(
+                                                role: .destructive,
+                                                action: {
+                                                    deleteSelectedConversations()
+                                                }
+                                            ) {
+                                                Label(
+                                                    "Delete \(selectedConversations.count) Conversations",
+                                                    systemImage: "trash"
+                                                )
+                                            }
+                                        } else {
+                                            Button(
+                                                role: .destructive,
+                                                action: {
+                                                    conversationManager.deleteConversation(conversation)
+                                                    if selectedConversationId == conversation.id {
+                                                        selectedConversationId = nil
+                                                    }
+                                                }
+                                            ) {
+                                                Label("Delete", systemImage: "trash")
+                                            }
                                         }
-                                    }) {
-                                        Label("Delete", systemImage: "trash")
                                     }
-                                }
                             }
+                        } header: {
+                            Text(section.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.top, section.id == timelineSections.first?.id ? 0 : 6)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
-        .scrollContentBackground(.hidden)
-        .onChange(of: selectedConversations) { _, newSelection in
+                .scrollContentBackground(.hidden)
+                .onChange(of: selectedConversations) { _, newSelection in
                     // Keep single selection in sync for chat view
-          if let firstId = newSelection.first, newSelection.count == 1 {
-            selectedConversationId = firstId
+                    if let firstId = newSelection.first, newSelection.count == 1 {
+                        selectedConversationId = firstId
                     }
                 }
             }
@@ -130,15 +150,15 @@ struct SidebarView: View {
                 }
             }
         }
-    .onChange(of: searchText) { _, _ in
-      updateFilteredConversations()
-    }
-    .onReceive(conversationManager.$conversations) { _ in
-      updateFilteredConversations()
-    }
-    .onAppear {
-      updateFilteredConversations()
-    }
+        .onChange(of: searchText) { _, _ in
+            updateFilteredConversations()
+        }
+        .onReceive(conversationManager.$conversations) { _ in
+            updateFilteredConversations()
+        }
+        .onAppear {
+            updateFilteredConversations()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()

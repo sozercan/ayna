@@ -8,7 +8,7 @@
 import Foundation
 
 #if compiler(>=6.0)
-#warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
+    #warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
 #endif
 
 /// Service for communicating with MCP servers via stdio
@@ -90,7 +90,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
             "/usr/bin",
             "/bin",
             "/opt/homebrew/opt/node/bin",
-            NSHomeDirectory() + "/.nvm/versions/node/*/bin"
+            NSHomeDirectory() + "/.nvm/versions/node/*/bin",
         ]
         let existingPath = environment["PATH"] ?? ""
         let newPath = (commonPaths + [existingPath]).joined(separator: ":")
@@ -109,9 +109,9 @@ class MCPService: ObservableObject, @unchecked Sendable {
         process.standardError = errorPipe
 
         self.process = process
-        self.standardInput = inputPipe
-        self.standardOutput = outputPipe
-        self.standardError = errorPipe
+        standardInput = inputPipe
+        standardOutput = outputPipe
+        standardError = errorPipe
 
         // Set up output reading with error handling
         let serverName = serverConfig.name
@@ -194,10 +194,10 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 metadata: ["server": serverName]
             )
             try await withTimeout(seconds: 5) { [weak self] in
-                guard let self = self else {
+                guard let self else {
                     throw MCPServiceError.notConnected
                 }
-                try await self.initialize()
+                try await initialize()
             }
             DiagnosticsLogger.log(
                 .mcpService,
@@ -248,12 +248,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 "protocolVersion": AnyCodable("2024-11-05"),
                 "capabilities": AnyCodable([
                     "roots": ["list_changed": true],
-                    "sampling": [:]
+                    "sampling": [:],
                 ] as [String: Any]),
                 "clientInfo": AnyCodable([
                     "name": "ayna",
-                    "version": "1.0.0"
-                ] as [String: String])
+                    "version": "1.0.0",
+                ] as [String: String]),
             ]
         )
 
@@ -269,7 +269,8 @@ class MCPService: ObservableObject, @unchecked Sendable {
         let response = try await sendRequest(method: "tools/list", params: nil)
 
         guard let result = response.result?.value as? [String: Any],
-              let toolsArray = result["tools"] as? [[String: Any]] else {
+              let toolsArray = result["tools"] as? [[String: Any]]
+        else {
             throw MCPServiceError.invalidResponse("Failed to parse tools list")
         }
 
@@ -287,7 +288,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
                     metadata: [
                         "server": serverConfig.name,
                         "index": "\(index)",
-                        "error": error.localizedDescription
+                        "error": error.localizedDescription,
                     ]
                 )
             }
@@ -301,7 +302,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
             method: "tools/call",
             params: [
                 "name": AnyCodable(name),
-                "arguments": AnyCodable(arguments)
+                "arguments": AnyCodable(arguments),
             ]
         )
 
@@ -314,7 +315,8 @@ class MCPService: ObservableObject, @unchecked Sendable {
             // Multiple content items
             let texts = content.compactMap { item -> String? in
                 if item["type"] as? String == "text",
-                   let text = item["text"] as? String {
+                   let text = item["text"] as? String
+                {
                     return text
                 }
                 return nil
@@ -332,7 +334,8 @@ class MCPService: ObservableObject, @unchecked Sendable {
         let response = try await sendRequest(method: "resources/list", params: nil)
 
         guard let result = response.result?.value as? [String: Any],
-              let resourcesArray = result["resources"] as? [[String: Any]] else {
+              let resourcesArray = result["resources"] as? [[String: Any]]
+        else {
             throw MCPServiceError.invalidResponse("Failed to parse resources list")
         }
 
@@ -344,17 +347,17 @@ class MCPService: ObservableObject, @unchecked Sendable {
     // MARK: - Low-level JSON-RPC
 
     private func sendRequest(method: String, params: [String: AnyCodable]?) async throws -> MCPResponse {
-        return try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { continuation in
             requestQueue.async { [weak self] in
-                guard let self = self else {
+                guard let self else {
                     continuation.resume(throwing: MCPServiceError.notConnected)
                     return
                 }
 
-                self.requestId += 1
-                let id = self.requestId
+                requestId += 1
+                let id = requestId
 
-                self.pendingRequests[id] = continuation
+                pendingRequests[id] = continuation
 
                 let request = MCPRequest(id: id, method: method, params: params)
 
@@ -367,7 +370,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
 
                     jsonString += "\n"
 
-                    guard let inputHandle = self.standardInput?.fileHandleForWriting else {
+                    guard let inputHandle = standardInput?.fileHandleForWriting else {
                         continuation.resume(throwing: MCPServiceError.notConnected)
                         return
                     }
@@ -386,7 +389,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
         let notification: [String: Any] = [
             "jsonrpc": "2.0",
             "method": method,
-            "params": params?.mapValues { $0.value } ?? [:]
+            "params": params?.mapValues { $0.value } ?? [:],
         ]
 
         let data = try JSONSerialization.data(withJSONObject: notification)
@@ -509,20 +512,18 @@ class MCPService: ObservableObject, @unchecked Sendable {
             throw MCPServiceError.invalidResponse("Missing schema type")
         }
 
-        let properties: [String: AnyCodable]?
-        if let propsDict = dict["properties"] as? [String: Any] {
-            properties = propsDict.mapValues { AnyCodable($0) }
+        let properties: [String: AnyCodable]? = if let propsDict = dict["properties"] as? [String: Any] {
+            propsDict.mapValues { AnyCodable($0) }
         } else {
-            properties = nil
+            nil
         }
 
         let required = dict["required"] as? [String]
 
-        let items: AnyCodable?
-        if let itemsDict = dict["items"] {
-            items = AnyCodable(itemsDict)
+        let items: AnyCodable? = if let itemsDict = dict["items"] {
+            AnyCodable(itemsDict)
         } else {
-            items = nil
+            nil
         }
 
         return JSONSchema(
@@ -534,14 +535,15 @@ class MCPService: ObservableObject, @unchecked Sendable {
     }
 
     private func parseResource(from dict: [String: Any]) -> MCPResource? {
-                guard let uri = dict["uri"] as? String,
-                            let name = dict["name"] as? String else {
-                        DiagnosticsLogger.log(
-                                .mcpService,
-                                level: .error,
-                                message: "Skipping invalid resource",
-                                metadata: ["server": serverConfig.name]
-                        )
+        guard let uri = dict["uri"] as? String,
+              let name = dict["name"] as? String
+        else {
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Skipping invalid resource",
+                metadata: ["server": serverConfig.name]
+            )
             return nil
         }
 
@@ -557,12 +559,12 @@ class MCPService: ObservableObject, @unchecked Sendable {
     // MARK: - Helper Methods
 
     private func findExecutable(_ command: String) throws -> String {
-    // If command is already an absolute path, validate it exists
+        // If command is already an absolute path, validate it exists
         if command.hasPrefix("/") {
-      guard FileManager.default.isExecutableFile(atPath: command) else {
-        throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
-      }
-      return command
+            guard FileManager.default.isExecutableFile(atPath: command) else {
+                throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
+            }
+            return command
         }
 
         // Common locations to search for executables
@@ -570,7 +572,7 @@ class MCPService: ObservableObject, @unchecked Sendable {
             "/opt/homebrew/bin",
             "/usr/local/bin",
             "/usr/bin",
-            "/bin"
+            "/bin",
         ]
 
         // Search in common paths
@@ -627,7 +629,8 @@ class MCPService: ObservableObject, @unchecked Sendable {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !path.isEmpty,
-                   FileManager.default.isExecutableFile(atPath: path) {
+                   FileManager.default.isExecutableFile(atPath: path)
+                {
                     DiagnosticsLogger.log(
                         .mcpService,
                         level: .info,
@@ -674,17 +677,17 @@ enum MCPServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConnected:
-            return "Not connected to MCP server"
+            "Not connected to MCP server"
         case .encodingFailed:
-            return "Failed to encode request"
-        case .initializationFailed(let message):
-            return "Failed to initialize MCP server: \(message)"
-        case .invalidResponse(let message):
-            return "Invalid response from MCP server: \(message)"
-        case .toolExecutionFailed(let message):
-            return "Tool execution failed: \(message)"
+            "Failed to encode request"
+        case let .initializationFailed(message):
+            "Failed to initialize MCP server: \(message)"
+        case let .invalidResponse(message):
+            "Invalid response from MCP server: \(message)"
+        case let .toolExecutionFailed(message):
+            "Tool execution failed: \(message)"
         case .timeout:
-            return "Operation timed out"
+            "Operation timed out"
         }
     }
 }

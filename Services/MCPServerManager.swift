@@ -54,12 +54,12 @@ class MCPServerManager: ObservableObject {
         cachedOpenAIFunctions = []
 
         // Handle connection state changes
-        if wasEnabled && !config.enabled {
+        if wasEnabled, !config.enabled {
             // Disconnect in the background
             Task { @MainActor in
                 disconnectServer(config.name)
             }
-        } else if !wasEnabled && config.enabled {
+        } else if !wasEnabled, config.enabled {
             Task {
                 await connectToServer(config)
             }
@@ -101,7 +101,7 @@ class MCPServerManager: ObservableObject {
                 var validEnv: [String: String] = [:]
                 for (key, value) in config.env {
                     // Only include if both key and value are valid strings
-                    if !key.isEmpty && !value.isEmpty {
+                    if !key.isEmpty, !value.isEmpty {
                         validEnv[key] = value
                     }
                 }
@@ -143,7 +143,7 @@ class MCPServerManager: ObservableObject {
 
     private func defaultServerConfigs() -> [MCPServerConfig] {
         // Use npx directly with full path
-        return [
+        [
             MCPServerConfig(
                 name: "brave-search",
                 command: "/opt/homebrew/bin/npx",
@@ -157,7 +157,7 @@ class MCPServerManager: ObservableObject {
                 args: ["-y", "@modelcontextprotocol/server-filesystem", NSHomeDirectory()],
                 env: [:],
                 enabled: false
-            )
+            ),
         ]
     }
 
@@ -171,7 +171,7 @@ class MCPServerManager: ObservableObject {
             services[config.name]
         }
 
-        if let existingService = existingService, existingService.isConnected {
+        if let existingService, existingService.isConnected {
             // Already connected - but check if we need to discover tools
             let hasTools = await MainActor.run {
                 !availableTools.filter { $0.serverName == config.name }.isEmpty
@@ -269,12 +269,12 @@ class MCPServerManager: ObservableObject {
     }
 
     func connectToAllEnabledServers() async {
-        let enabledConfigs = serverConfigs.filter { $0.enabled }
+        let enabledConfigs = serverConfigs.filter(\.enabled)
         DiagnosticsLogger.log(
             .mcpServerManager,
             level: .info,
             message: "Connecting to enabled MCP servers",
-            metadata: ["count": "\(enabledConfigs.count)", "servers": enabledConfigs.map { $0.name }.joined(separator: ",")]
+            metadata: ["count": "\(enabledConfigs.count)", "servers": enabledConfigs.map(\.name).joined(separator: ",")]
         )
 
         await withTaskGroup(of: Void.self) { group in
@@ -314,8 +314,8 @@ class MCPServerManager: ObservableObject {
             let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
                 for (serverName, service) in servicesSnapshot where service.isConnected {
                     group.addTask {
-                        let tools = (try? await service.listTools()) ?? []
-                        let resources = (try? await service.listResources()) ?? []
+                        let tools = await (try? service.listTools()) ?? []
+                        let resources = await (try? service.listResources()) ?? []
                         return (serverName, tools, resources)
                     }
                 }
@@ -364,7 +364,7 @@ class MCPServerManager: ObservableObject {
             services[serverName]
         }
 
-        guard let service = service, service.isConnected else {
+        guard let service, service.isConnected else {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
@@ -433,7 +433,7 @@ class MCPServerManager: ObservableObject {
             metadata: [
                 "server": serverName,
                 "tools": "\(tools.count)",
-                "resources": "\(resources.count)"
+                "resources": "\(resources.count)",
             ]
         )
     }
@@ -448,7 +448,7 @@ class MCPServerManager: ObservableObject {
 
         // Thread-safe access to services dictionary
         let service = await MainActor.run { services[tool.serverName] }
-        guard let service = service, service.isConnected else {
+        guard let service, service.isConnected else {
             throw MCPManagerError.toolNotFound(name)
         }
 
@@ -468,15 +468,15 @@ class MCPServerManager: ObservableObject {
     // MARK: - Server Status
 
     func isServerConnected(_ serverName: String) -> Bool {
-        return services[serverName]?.isConnected ?? false
+        services[serverName]?.isConnected ?? false
     }
 
     func getServerError(_ serverName: String) -> String? {
-        return services[serverName]?.lastError
+        services[serverName]?.lastError
     }
 
     func getConnectedServerCount() -> Int {
-        return services.values.filter { $0.isConnected }.count
+        services.values.filter(\.isConnected).count
     }
 
     // MARK: - Tool Helpers
@@ -521,10 +521,10 @@ enum MCPManagerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .toolNotFound(let name):
-            return "Tool '\(name)' not found or server not connected"
-        case .executionFailed(let name, let reason):
-            return "Failed to execute tool '\(name)': \(reason)"
+        case let .toolNotFound(name):
+            "Tool '\(name)' not found or server not connected"
+        case let .executionFailed(name, reason):
+            "Failed to execute tool '\(name)': \(reason)"
         }
     }
 }

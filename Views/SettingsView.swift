@@ -52,7 +52,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
-  @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
     var body: some View {
@@ -91,8 +91,8 @@ struct GeneralSettingsView: View {
                     Slider(value: Binding(
                         get: { Double(openAIService.outputCompression) },
                         set: { openAIService.outputCompression = Int($0) }
-                    ), in: 0...100, step: 10)
-                    .frame(width: 150)
+                    ), in: 0 ... 100, step: 10)
+                        .frame(width: 150)
                     Text("\(openAIService.outputCompression)%")
                         .foregroundStyle(.secondary)
                         .frame(width: 45, alignment: .trailing)
@@ -112,7 +112,7 @@ struct GeneralSettingsView: View {
                 }
 
                 Button("Clear All Conversations") {
-          conversationManager.clearAllConversations()
+                    conversationManager.clearAllConversations()
                 }
                 .foregroundStyle(.red)
             } header: {
@@ -125,7 +125,7 @@ struct GeneralSettingsView: View {
 }
 
 struct APISettingsView: View {
-  @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
     @State private var showAPIKey = false
     @State private var tempAPIKey = ""
     @State private var tempEndpoint = ""
@@ -245,10 +245,10 @@ struct APISettingsView: View {
             .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
             .background(Color(nsColor: .controlBackgroundColor))
 
-      // Right panel - API Configuration
-      VStack(spacing: 0) {
-        // Provider Selection - Fixed at top
-        VStack(alignment: .leading, spacing: 20) {
+            // Right panel - API Configuration
+            VStack(spacing: 0) {
+                // Provider Selection - Fixed at top
+                VStack(alignment: .leading, spacing: 20) {
                     // Header
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Model Configuration")
@@ -257,7 +257,7 @@ struct APISettingsView: View {
                         Text("Configure AI provider settings and add models")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-          }
+                    }
 
                     // Provider Selection
                     VStack(alignment: .leading, spacing: 12) {
@@ -266,530 +266,127 @@ struct APISettingsView: View {
                             .foregroundStyle(.primary)
 
                         Picker("", selection: $openAIService.provider) {
-              ForEach(AIProvider.allCases, id: \.self) { provider  in
-                Text(provider.displayName)
-                  .tag(provider)
+                            ForEach(AIProvider.allCases, id: \.self) { provider in
+                                Text(provider.displayName)
+                                    .tag(provider)
                             }
                         }
                         .pickerStyle(.segmented)
                         .onChange(of: openAIService.provider) { _, _ in
                             validationStatus = .notChecked
                         }
-          }
-        }
-        .padding(20)
-        .background(Color(nsColor: .windowBackgroundColor))
-
-        Divider()
-            .padding(.bottom, 16)
-
-        // Scrollable configuration area
-        ScrollView {
-          VStack(alignment: .leading, spacing: 24) {
-
-                    // API Endpoint Type Selection (not applicable for Apple Intelligence or AIKit)
-                    if openAIService.provider != .appleIntelligence && openAIService.provider != .aikit {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("API Endpoint", systemImage: "arrow.left.arrow.right")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            Picker("", selection: Binding(
-                    get: {
-                                    if let modelName = selectedModelName {
-                                        return openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
-                                    } else {
-                                        return tempEndpointType
-                                    }
-                                },
-                                set: { newValue in
-                                    if let modelName = selectedModelName {
-                                        openAIService.modelEndpointTypes[modelName] = newValue
-                                    } else {
-                                        tempEndpointType = newValue
-                                    }
-                                }
-                            )) {
-                                ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
-                                    Text(endpointType.displayName).tag(endpointType)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-
-                            Text("Choose which API endpoint to use for this model")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal)
                     }
-
-                    if openAIService.provider == .openai {
-                        // OpenAI Configuration
-                        VStack(alignment: .leading, spacing: 16) {
-                            Label("OpenAI Configuration", systemImage: "key.fill")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            VStack(alignment: .leading, spacing: 16) {
-                                // Model Name
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Model Name")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                                    }
-                                    TextField("gpt-4o, gpt-4o-mini, o1", text: $tempModelName)
-                                        .textFieldStyle(.roundedBorder)
-                                        .onChange(of: tempModelName) { _, _ in
-                                            validationStatus = .notChecked
-                                        }
-                                    Text("The model identifier from OpenAI")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                // Endpoint URL
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Endpoint URL")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                    }
-                    TextField(
-                      "https://api.openai.com or http://localhost:8000", text: $tempEndpoint)
-                                        .textFieldStyle(.roundedBorder)
-                                        .onChange(of: tempEndpoint) { _, _ in
-                                            validationStatus = .notChecked
-                    }
-                    Text(
-                      "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000)")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                // API Key
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("API Key")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                      Spacer()
-                      Text("Optional")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                                    }
-                                    HStack(spacing: 8) {
-                                        if showAPIKey {
-                                            TextField("sk-proj-...", text: $tempAPIKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        } else {
-                                            SecureField("sk-proj-...", text: $tempAPIKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        }
-
-                                        Button(action: {
-                                            showAPIKey.toggle()
-                                        }) {
-                                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                                .font(.system(size: 14))
-                                                .foregroundStyle(.secondary)
-                                                .frame(width: 32, height: 32)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(6)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .onChange(of: tempAPIKey) { _, _ in
-                                        validationStatus = .notChecked
-                                    }
-                                    Text("Your OpenAI API key (stored securely)")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                            .padding(16)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(8)
-
-                            // Action Buttons
-                            HStack(spacing: 12) {
-                                Button {
-                                    Task {
-                                        await validateConfiguration()
-                                    }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "checkmark.circle")
-                                        Text("Validate")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                  }
-                  .disabled(
-                    tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      || tempEndpoint.isEmpty)
-                                .controlSize(.large)
-
-                                    if let selectedName = selectedModelName,
-                                        openAIService.customModels.contains(selectedName) {
-                    // Update existing model
-                    Button {
-                      let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                      let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                      if !modelName.isEmpty {
-                        // Update provider and endpoint type
-                        openAIService.modelProviders[modelName] = .openai
-                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                        // Update per-model API key
-                        if !apiKey.isEmpty {
-                          openAIService.modelAPIKeys[modelName] = apiKey
-                        } else {
-                          openAIService.modelAPIKeys.removeValue(forKey: modelName)
-                        }
-
-                        // Update custom endpoint
-                        if !endpoint.isEmpty {
-                          openAIService.modelEndpoints[modelName] = endpoint
-                        } else {
-                          openAIService.modelEndpoints.removeValue(forKey: modelName)
-                        }
-
-                        validationStatus = .notChecked
-                      }
-                    } label: {
-                      HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                        Text("Update Model")
-                      }
-                      .frame(maxWidth: .infinity)
-                    }
-                    .disabled(
-                      tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || tempEndpoint.isEmpty
-                    )
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                  } else {
-                    // Add new model
-                    Button {
-                      let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                      let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                      if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
-                        openAIService.customModels.append(modelName)
-                        openAIService.modelProviders[modelName] = .openai
-                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                        // Save per-model API key if provided
-                        if !apiKey.isEmpty {
-                          openAIService.modelAPIKeys[modelName] = apiKey
-                        }
-
-                        // Save custom endpoint if provided
-                        if !endpoint.isEmpty {
-                          openAIService.modelEndpoints[modelName] = endpoint
-                        }
-
-                        if openAIService.customModels.count == 1 {
-                          openAIService.selectedModel = modelName
-                        }
-                        selectedModelName = modelName
-                        validationStatus = .notChecked
-                      }
-                    } label: {
-                      HStack(spacing: 6) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add Model")
-                      }
-                      .frame(maxWidth: .infinity)
-                    }
-                    .disabled(
-                      tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || tempEndpoint.isEmpty
-                    )
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                  }
-                            }
-                        }
-                        .padding(.horizontal)
-                    } else if openAIService.provider == .azure {
-                        // Azure OpenAI Configuration
-                        VStack(alignment: .leading, spacing: 16) {
-                            Label("Azure OpenAI Configuration", systemImage: "cloud.fill")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            VStack(alignment: .leading, spacing: 16) {
-                                // API Key
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("API Key")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                                    }
-                                    HStack(spacing: 8) {
-                                        if showAPIKey {
-                                            TextField("Enter your Azure API key", text: $tempAPIKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        } else {
-                                            SecureField("Enter your Azure API key", text: $tempAPIKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        }
-
-                                        Button(action: {
-                                            showAPIKey.toggle()
-                                        }) {
-                                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                                .font(.system(size: 14))
-                                                .foregroundStyle(.secondary)
-                                                .frame(width: 32, height: 32)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(6)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .onChange(of: tempAPIKey) { _, _ in
-                                        validationStatus = .notChecked
-                                    }
-                                    Text("Your Azure OpenAI API key")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                // Endpoint
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Endpoint")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                                    }
-                                    TextField("https://your-resource.openai.azure.com", text: $tempAzureEndpoint)
-                                        .textFieldStyle(.roundedBorder)
-                                        .onChange(of: tempAzureEndpoint) { _, _ in
-                                            validationStatus = .notChecked
-                                        }
-                                    Text("Your Azure OpenAI resource endpoint")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                // Deployment Name
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Deployment Name")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(4)
-                                    }
-                                    TextField("gpt-4, gpt-35-turbo", text: $tempAzureDeployment)
-                                        .textFieldStyle(.roundedBorder)
-                                        .onChange(of: tempAzureDeployment) { _, _ in
-                                            validationStatus = .notChecked
-                                        }
-                                    Text("The deployment name in your Azure resource")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                // API Version
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("API Version")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Picker("", selection: $openAIService.azureAPIVersion) {
-                                        ForEach(openAIService.azureAPIVersions, id: \.self) { version in
-                                            Text(version).tag(version)
-                                        }
-                                    }
-                                    .labelsHidden()
-                                    .onChange(of: openAIService.azureAPIVersion) { _, _ in
-                                        validationStatus = .notChecked
-                                    }
-                                    Text("Azure OpenAI API version")
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                            .padding(16)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(8)
-
-                            // Action Buttons
-                            HStack(spacing: 12) {
-                                Button {
-                                    Task {
-                                        await validateConfiguration()
-                                    }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "checkmark.circle")
-                                        Text("Validate")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                  }
-                  .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                                .controlSize(.large)
-
-                                    if let selectedName = selectedModelName,
-                                        openAIService.customModels.contains(selectedName) {
-                    // Update existing model
-                    Button {
-                      openAIService.azureEndpoint = tempAzureEndpoint
-                      openAIService.azureDeploymentName = tempAzureDeployment
-
-                      let modelName = tempAzureDeployment.trimmingCharacters(
-                        in: .whitespacesAndNewlines)
-                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                      if !modelName.isEmpty {
-                        openAIService.modelProviders[modelName] = .azure
-                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                        // Update per-model API key
-                        if !apiKey.isEmpty {
-                          openAIService.modelAPIKeys[modelName] = apiKey
-                        } else {
-                          openAIService.modelAPIKeys.removeValue(forKey: modelName)
-                        }
-
-                        validationStatus = .notChecked
-                      }
-                    } label: {
-                      HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                        Text("Update Model")
-                      }
-                      .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                  } else {
-                    // Add new model
-                    Button {
-                      openAIService.azureEndpoint = tempAzureEndpoint
-                      openAIService.azureDeploymentName = tempAzureDeployment
-
-                      let modelName = tempAzureDeployment.trimmingCharacters(
-                        in: .whitespacesAndNewlines)
-                      let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                      if !modelName.isEmpty && !openAIService.customModels.contains(modelName) {
-                        openAIService.customModels.append(modelName)
-                        openAIService.modelProviders[modelName] = .azure
-                        openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                        // Save per-model API key if provided
-                        if !apiKey.isEmpty {
-                          openAIService.modelAPIKeys[modelName] = apiKey
-                        }
-
-                        if openAIService.customModels.count == 1 {
-                          openAIService.selectedModel = modelName
-                        }
-                        selectedModelName = modelName
-                        validationStatus = .notChecked
-                      }
-                    } label: {
-                      HStack(spacing: 6) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add Model")
-                      }
-                      .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                  }
                 }
-              }
-                        .padding(.horizontal)
-                    } else if openAIService.provider == .appleIntelligence {
-                        // Apple Intelligence Configuration
-                        VStack(alignment: .leading, spacing: 16) {
-                            Label("Apple Intelligence Configuration", systemImage: "apple.logo")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
+                .padding(20)
+                .background(Color(nsColor: .windowBackgroundColor))
 
-                            VStack(alignment: .leading, spacing: 16) {
-                                if #available(macOS 26.0, *) {
-                                    let service = AppleIntelligenceService.shared
+                Divider()
+                    .padding(.bottom, 16)
 
-                                    // Availability Status
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text("Availability")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
+                // Scrollable configuration area
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        // API Endpoint Type Selection (not applicable for Apple Intelligence or AIKit)
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("API Endpoint", systemImage: "arrow.left.arrow.right")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
 
-                                        HStack(spacing: 8) {
-                                            Image(systemName: service.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                                .foregroundStyle(service.isAvailable ? .green : .orange)
-                                            Text(service.availabilityDescription())
-                                                .font(.subheadline)
+                                Picker("", selection: Binding(
+                                    get: {
+                                        if let modelName = selectedModelName {
+                                            openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
+                                        } else {
+                                            tempEndpointType
                                         }
-                                        .padding(12)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color(nsColor: .controlBackgroundColor))
-                                        .cornerRadius(6)
-
-                                        if !service.isAvailable {
-                                            Text("Apple Intelligence must be enabled in System Settings → Apple Intelligence & Siri")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                    },
+                                    set: { newValue in
+                                        if let modelName = selectedModelName {
+                                            openAIService.modelEndpointTypes[modelName] = newValue
+                                        } else {
+                                            tempEndpointType = newValue
                                         }
                                     }
+                                )) {
+                                    ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
+                                        Text(endpointType.displayName).tag(endpointType)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
 
+                                Text("Choose which API endpoint to use for this model")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal)
+                        }
+
+                        if openAIService.provider == .openai {
+                            // OpenAI Configuration
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("OpenAI Configuration", systemImage: "key.fill")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+
+                                VStack(alignment: .leading, spacing: 16) {
                                     // Model Name
                                     VStack(alignment: .leading, spacing: 6) {
                                         HStack {
                                             Text("Model Name")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            Text("Required")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .cornerRadius(4)
+                                        }
+                                        TextField("gpt-4o, gpt-4o-mini, o1", text: $tempModelName)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onChange(of: tempModelName) { _, _ in
+                                                validationStatus = .notChecked
+                                            }
+                                        Text("The model identifier from OpenAI")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+
+                                    // Endpoint URL
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("Endpoint URL")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            Text("Required")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .cornerRadius(4)
+                                        }
+                                        TextField(
+                                            "https://api.openai.com or http://localhost:8000", text: $tempEndpoint
+                                        )
+                                        .textFieldStyle(.roundedBorder)
+                                        .onChange(of: tempEndpoint) { _, _ in
+                                            validationStatus = .notChecked
+                                        }
+                                        Text(
+                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000)")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+
+                                    // API Key
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("API Key")
                                                 .font(.subheadline)
                                                 .fontWeight(.medium)
                                             Spacer()
@@ -801,150 +398,555 @@ struct APISettingsView: View {
                                                 .background(Color.secondary.opacity(0.1))
                                                 .cornerRadius(4)
                                         }
-                                        TextField("apple-intelligence", text: $tempModelName)
-                                            .textFieldStyle(.roundedBorder)
-                                        Text("A friendly name for this model (e.g., 'apple-intelligence', 'on-device')")
+                                        HStack(spacing: 8) {
+                                            if showAPIKey {
+                                                TextField("sk-proj-...", text: $tempAPIKey)
+                                                    .textFieldStyle(.roundedBorder)
+                                            } else {
+                                                SecureField("sk-proj-...", text: $tempAPIKey)
+                                                    .textFieldStyle(.roundedBorder)
+                                            }
+
+                                            Button(action: {
+                                                showAPIKey.toggle()
+                                            }) {
+                                                Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                                    .font(.system(size: 14))
+                                                    .foregroundStyle(.secondary)
+                                                    .frame(width: 32, height: 32)
+                                                    .background(Color.secondary.opacity(0.1))
+                                                    .cornerRadius(6)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .onChange(of: tempAPIKey) { _, _ in
+                                            validationStatus = .notChecked
+                                        }
+                                        Text("Your OpenAI API key (stored securely)")
                                             .font(.caption)
                                             .foregroundStyle(.tertiary)
                                     }
-                                } else {
-                                    // macOS 26+ required message
-                                    VStack(spacing: 12) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .font(.system(size: 48))
-                                            .foregroundStyle(.orange)
-
-                                        Text("macOS 26.0 or later required")
-                                            .font(.headline)
-
-                                        Text("Apple Intelligence requires macOS Sequoia 26.0 or later with Apple Intelligence support.")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(24)
-                                    .background(Color.orange.opacity(0.1))
-                                    .cornerRadius(8)
                                 }
-                            }
-                            .padding(16)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(8)
+                                .padding(16)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
 
-                            // Action Buttons
-                            if #available(macOS 26.0, *) {
+                                // Action Buttons
                                 HStack(spacing: 12) {
                                     Button {
-                                        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
-
-                                        if !openAIService.customModels.contains(finalModelName) {
-                                            openAIService.customModels.append(finalModelName)
-                                            openAIService.modelProviders[finalModelName] = .appleIntelligence
-                                            if openAIService.customModels.count == 1 {
-                                                openAIService.selectedModel = finalModelName
-                                            }
-                                            selectedModelName = finalModelName
-                                            tempModelName = ""
+                                        Task {
+                                            await validateConfiguration()
                                         }
                                     } label: {
                                         HStack(spacing: 6) {
-                                            Image(systemName: "plus.circle.fill")
-                                            Text("Add Model")
+                                            Image(systemName: "checkmark.circle")
+                                            Text("Validate")
                                         }
                                         .frame(maxWidth: .infinity)
                                     }
-                                    .buttonStyle(.borderedProminent)
+                                    .disabled(
+                                        tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                            || tempEndpoint.isEmpty)
                                     .controlSize(.large)
+
+                                    if let selectedName = selectedModelName,
+                                       openAIService.customModels.contains(selectedName)
+                                    {
+                                        // Update existing model
+                                        Button {
+                                            let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                            if !modelName.isEmpty {
+                                                // Update provider and endpoint type
+                                                openAIService.modelProviders[modelName] = .openai
+                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                                                // Update per-model API key
+                                                if !apiKey.isEmpty {
+                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                } else {
+                                                    openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                                                }
+
+                                                // Update custom endpoint
+                                                if !endpoint.isEmpty {
+                                                    openAIService.modelEndpoints[modelName] = endpoint
+                                                } else {
+                                                    openAIService.modelEndpoints.removeValue(forKey: modelName)
+                                                }
+
+                                                validationStatus = .notChecked
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "arrow.clockwise.circle.fill")
+                                                Text("Update Model")
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .disabled(
+                                            tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                                || tempEndpoint.isEmpty
+                                        )
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.large)
+                                    } else {
+                                        // Add new model
+                                        Button {
+                                            let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                            if !modelName.isEmpty, !openAIService.customModels.contains(modelName) {
+                                                openAIService.customModels.append(modelName)
+                                                openAIService.modelProviders[modelName] = .openai
+                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                                                // Save per-model API key if provided
+                                                if !apiKey.isEmpty {
+                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                }
+
+                                                // Save custom endpoint if provided
+                                                if !endpoint.isEmpty {
+                                                    openAIService.modelEndpoints[modelName] = endpoint
+                                                }
+
+                                                if openAIService.customModels.count == 1 {
+                                                    openAIService.selectedModel = modelName
+                                                }
+                                                selectedModelName = modelName
+                                                validationStatus = .notChecked
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "plus.circle.fill")
+                                                Text("Add Model")
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .disabled(
+                                            tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                                || tempEndpoint.isEmpty
+                                        )
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.large)
+                                    }
                                 }
                             }
-                        }
-                        .padding(.horizontal)
-                    } else if openAIService.provider == .aikit {
-                        // AIKit Configuration
-                        AIKitConfigurationView(
-                            tempModelName: $tempModelName,
-                            selectedModelName: $selectedModelName
-                        )
-                        .padding(.horizontal)
-                    }
+                            .padding(.horizontal)
+                        } else if openAIService.provider == .azure {
+                            // Azure OpenAI Configuration
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Azure OpenAI Configuration", systemImage: "cloud.fill")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
 
-                    // Status Section
-                    if openAIService.provider != .appleIntelligence && openAIService.provider != .aikit {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Label("Validation Status", systemImage: "checkmark.seal.fill")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
+                                VStack(alignment: .leading, spacing: 16) {
+                                    // API Key
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("API Key")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            Text("Required")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .cornerRadius(4)
+                                        }
+                                        HStack(spacing: 8) {
+                                            if showAPIKey {
+                                                TextField("Enter your Azure API key", text: $tempAPIKey)
+                                                    .textFieldStyle(.roundedBorder)
+                                            } else {
+                                                SecureField("Enter your Azure API key", text: $tempAPIKey)
+                                                    .textFieldStyle(.roundedBorder)
+                                            }
 
-                        HStack(spacing: 12) {
-                            switch validationStatus {
-                            case .notChecked:
-                                Image(systemName: "circle.dotted")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Not Validated")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Text("Click 'Validate' to test your configuration")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                            Button(action: {
+                                                showAPIKey.toggle()
+                                            }) {
+                                                Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                                    .font(.system(size: 14))
+                                                    .foregroundStyle(.secondary)
+                                                    .frame(width: 32, height: 32)
+                                                    .background(Color.secondary.opacity(0.1))
+                                                    .cornerRadius(6)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .onChange(of: tempAPIKey) { _, _ in
+                                            validationStatus = .notChecked
+                                        }
+                                        Text("Your Azure OpenAI API key")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+
+                                    // Endpoint
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("Endpoint")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            Text("Required")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .cornerRadius(4)
+                                        }
+                                        TextField("https://your-resource.openai.azure.com", text: $tempAzureEndpoint)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onChange(of: tempAzureEndpoint) { _, _ in
+                                                validationStatus = .notChecked
+                                            }
+                                        Text("Your Azure OpenAI resource endpoint")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+
+                                    // Deployment Name
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("Deployment Name")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            Text("Required")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.1))
+                                                .cornerRadius(4)
+                                        }
+                                        TextField("gpt-4, gpt-35-turbo", text: $tempAzureDeployment)
+                                            .textFieldStyle(.roundedBorder)
+                                            .onChange(of: tempAzureDeployment) { _, _ in
+                                                validationStatus = .notChecked
+                                            }
+                                        Text("The deployment name in your Azure resource")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+
+                                    // API Version
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("API Version")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Picker("", selection: $openAIService.azureAPIVersion) {
+                                            ForEach(openAIService.azureAPIVersions, id: \.self) { version in
+                                                Text(version).tag(version)
+                                            }
+                                        }
+                                        .labelsHidden()
+                                        .onChange(of: openAIService.azureAPIVersion) { _, _ in
+                                            validationStatus = .notChecked
+                                        }
+                                        Text("Azure OpenAI API version")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
-                            case .checking:
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                                    .frame(width: 24, height: 24)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Validating...")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Text("Testing connection to API")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            case .valid:
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.green)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Configuration Valid")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.green)
-                                    Text("Ready to add model")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            case .invalid(let message):
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.red)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Configuration Invalid")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.red)
-                                    Text(message)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                .padding(16)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
+
+                                // Action Buttons
+                                HStack(spacing: 12) {
+                                    Button {
+                                        Task {
+                                            await validateConfiguration()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "checkmark.circle")
+                                            Text("Validate")
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                                    .controlSize(.large)
+
+                                    if let selectedName = selectedModelName,
+                                       openAIService.customModels.contains(selectedName)
+                                    {
+                                        // Update existing model
+                                        Button {
+                                            openAIService.azureEndpoint = tempAzureEndpoint
+                                            openAIService.azureDeploymentName = tempAzureDeployment
+
+                                            let modelName = tempAzureDeployment.trimmingCharacters(
+                                                in: .whitespacesAndNewlines)
+                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                            if !modelName.isEmpty {
+                                                openAIService.modelProviders[modelName] = .azure
+                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                                                // Update per-model API key
+                                                if !apiKey.isEmpty {
+                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                } else {
+                                                    openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                                                }
+
+                                                validationStatus = .notChecked
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "arrow.clockwise.circle.fill")
+                                                Text("Update Model")
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.large)
+                                    } else {
+                                        // Add new model
+                                        Button {
+                                            openAIService.azureEndpoint = tempAzureEndpoint
+                                            openAIService.azureDeploymentName = tempAzureDeployment
+
+                                            let modelName = tempAzureDeployment.trimmingCharacters(
+                                                in: .whitespacesAndNewlines)
+                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                            if !modelName.isEmpty, !openAIService.customModels.contains(modelName) {
+                                                openAIService.customModels.append(modelName)
+                                                openAIService.modelProviders[modelName] = .azure
+                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+
+                                                // Save per-model API key if provided
+                                                if !apiKey.isEmpty {
+                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                }
+
+                                                if openAIService.customModels.count == 1 {
+                                                    openAIService.selectedModel = modelName
+                                                }
+                                                selectedModelName = modelName
+                                                validationStatus = .notChecked
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "plus.circle.fill")
+                                                Text("Add Model")
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.large)
+                                    }
                                 }
                             }
-                            Spacer()
+                            .padding(.horizontal)
+                        } else if openAIService.provider == .appleIntelligence {
+                            // Apple Intelligence Configuration
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Apple Intelligence Configuration", systemImage: "apple.logo")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+
+                                VStack(alignment: .leading, spacing: 16) {
+                                    if #available(macOS 26.0, *) {
+                                        let service = AppleIntelligenceService.shared
+
+                                        // Availability Status
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Availability")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+
+                                            HStack(spacing: 8) {
+                                                Image(systemName: service.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                                    .foregroundStyle(service.isAvailable ? .green : .orange)
+                                                Text(service.availabilityDescription())
+                                                    .font(.subheadline)
+                                            }
+                                            .padding(12)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .background(Color(nsColor: .controlBackgroundColor))
+                                            .cornerRadius(6)
+
+                                            if !service.isAvailable {
+                                                Text("Apple Intelligence must be enabled in System Settings → Apple Intelligence & Siri")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+
+                                        // Model Name
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            HStack {
+                                                Text("Model Name")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                Spacer()
+                                                Text("Optional")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.secondary.opacity(0.1))
+                                                    .cornerRadius(4)
+                                            }
+                                            TextField("apple-intelligence", text: $tempModelName)
+                                                .textFieldStyle(.roundedBorder)
+                                            Text("A friendly name for this model (e.g., 'apple-intelligence', 'on-device')")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    } else {
+                                        // macOS 26+ required message
+                                        VStack(spacing: 12) {
+                                            Image(systemName: "exclamationmark.triangle.fill")
+                                                .font(.system(size: 48))
+                                                .foregroundStyle(.orange)
+
+                                            Text("macOS 26.0 or later required")
+                                                .font(.headline)
+
+                                            Text("Apple Intelligence requires macOS Sequoia 26.0 or later with Apple Intelligence support.")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                                .multilineTextAlignment(.center)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(24)
+                                        .background(Color.orange.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                }
+                                .padding(16)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
+
+                                // Action Buttons
+                                if #available(macOS 26.0, *) {
+                                    HStack(spacing: 12) {
+                                        Button {
+                                            let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
+
+                                            if !openAIService.customModels.contains(finalModelName) {
+                                                openAIService.customModels.append(finalModelName)
+                                                openAIService.modelProviders[finalModelName] = .appleIntelligence
+                                                if openAIService.customModels.count == 1 {
+                                                    openAIService.selectedModel = finalModelName
+                                                }
+                                                selectedModelName = finalModelName
+                                                tempModelName = ""
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "plus.circle.fill")
+                                                Text("Add Model")
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.large)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        } else if openAIService.provider == .aikit {
+                            // AIKit Configuration
+                            AIKitConfigurationView(
+                                tempModelName: $tempModelName,
+                                selectedModelName: $selectedModelName
+                            )
+                            .padding(.horizontal)
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .cornerRadius(8)
+
+                        // Status Section
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Label("Validation Status", systemImage: "checkmark.seal.fill")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+
+                                HStack(spacing: 12) {
+                                    switch validationStatus {
+                                    case .notChecked:
+                                        Image(systemName: "circle.dotted")
+                                            .font(.system(size: 24))
+                                            .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Not Validated")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Text("Click 'Validate' to test your configuration")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    case .checking:
+                                        ProgressView()
+                                            .scaleEffect(1.2)
+                                            .frame(width: 24, height: 24)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Validating...")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Text("Testing connection to API")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    case .valid:
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundStyle(.green)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Configuration Valid")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundStyle(.green)
+                                            Text("Ready to add model")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    case let .invalid(message):
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundStyle(.red)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Configuration Invalid")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundStyle(.red)
+                                            Text(message)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .cornerRadius(8)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom)
                     }
                 }
+            } // End of outer VStack wrapping provider selection and scroll view
         }
-      }  // End of outer VStack wrapping provider selection and scroll view
-    }
         .onAppear {
             tempAPIKey = openAIService.apiKey
             tempEndpoint = "https://api.openai.com/"
@@ -970,38 +972,38 @@ struct APISettingsView: View {
 
         do {
             if openAIService.provider == .openai {
-        // Validate OpenAI configuration
+                // Validate OpenAI configuration
                 let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !modelName.isEmpty else {
-          validationStatus = .invalid("Model name is required")
+                    validationStatus = .invalid("Model name is required")
                     return
-        }
+                }
 
-        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !endpoint.isEmpty else {
-          validationStatus = .invalid("Endpoint is required")
-          return
-        }
+                let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !endpoint.isEmpty else {
+                    validationStatus = .invalid("Endpoint is required")
+                    return
+                }
 
-        // Use custom endpoint for validation if provided
-        let baseEndpoint =
-          endpoint.contains("api.openai.com")
-          ? "https://api.openai.com"
-          : endpoint.replacingOccurrences(of: "/v1/chat/completions", with: "")
-        let modelsURL = "\(baseEndpoint)/v1/models"
+                // Use custom endpoint for validation if provided
+                let baseEndpoint =
+                    endpoint.contains("api.openai.com")
+                        ? "https://api.openai.com"
+                        : endpoint.replacingOccurrences(of: "/v1/chat/completions", with: "")
+                let modelsURL = "\(baseEndpoint)/v1/models"
 
-        guard let url = URL(string: modelsURL) else {
-          validationStatus = .invalid("Invalid endpoint URL")
-          return
-        }
+                guard let url = URL(string: modelsURL) else {
+                    validationStatus = .invalid("Invalid endpoint URL")
+                    return
+                }
 
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
 
-        // Only add auth header if API key is provided
-        if !tempAPIKey.isEmpty {
-          request.setValue("Bearer \(tempAPIKey)", forHTTPHeaderField: "Authorization")
-        }
+                // Only add auth header if API key is provided
+                if !tempAPIKey.isEmpty {
+                    request.setValue("Bearer \(tempAPIKey)", forHTTPHeaderField: "Authorization")
+                }
 
                 let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -1013,7 +1015,8 @@ struct APISettingsView: View {
                 if httpResponse.statusCode == 200 {
                     // Parse response to check if model exists
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let models = json["data"] as? [[String: Any]] {
+                       let models = json["data"] as? [[String: Any]]
+                    {
                         let modelIds = models.compactMap { $0["id"] as? String }
                         if modelIds.contains(modelName) {
                             validationStatus = .valid
@@ -1064,8 +1067,8 @@ struct APISettingsView: View {
                 // Minimal test request
                 let testPayload: [String: Any] = [
                     "messages": [
-                        ["role": "user", "content": "test"]
-                    ]
+                        ["role": "user", "content": "test"],
+                    ],
                 ]
 
                 request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
@@ -1086,7 +1089,8 @@ struct APISettingsView: View {
                     // Parse error message to see if it's a deployment issue
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String {
+                       let message = error["message"] as? String
+                    {
                         if message.contains("deployment") || message.contains("not found") {
                             validationStatus = .invalid("Deployment '\(deploymentName)' not found")
                         } else {
@@ -1099,7 +1103,8 @@ struct APISettingsView: View {
                     // Try to get error message from response
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String {
+                       let message = error["message"] as? String
+                    {
                         validationStatus = .invalid(message)
                     } else {
                         validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
@@ -1123,13 +1128,13 @@ struct APISettingsView: View {
         }
 
         tempModelName = model
-    // Load per-model API key if available, otherwise use global
-    tempAPIKey = openAIService.modelAPIKeys[model] ?? openAIService.apiKey
+        // Load per-model API key if available, otherwise use global
+        tempAPIKey = openAIService.modelAPIKeys[model] ?? openAIService.apiKey
         tempEndpointType = openAIService.modelEndpointTypes[model] ?? .chatCompletions
 
         if openAIService.provider == .openai {
-      // Load custom endpoint if available, otherwise use default
-      tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
+            // Load custom endpoint if available, otherwise use default
+            tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
         } else {
             tempAzureDeployment = model
             tempAzureEndpoint = openAIService.azureEndpoint
@@ -1138,18 +1143,18 @@ struct APISettingsView: View {
 
     private func removeModel(_ model: String) {
         openAIService.customModels.removeAll { $0 == model }
-    // Also remove from provider mapping and per-model settings
+        // Also remove from provider mapping and per-model settings
         openAIService.modelProviders.removeValue(forKey: model)
-    openAIService.modelEndpoints.removeValue(forKey: model)
-    openAIService.modelAPIKeys.removeValue(forKey: model)
+        openAIService.modelEndpoints.removeValue(forKey: model)
+        openAIService.modelAPIKeys.removeValue(forKey: model)
 
-    // If we removed the selected default model, pick the next available one or clear it
-    if openAIService.selectedModel == model {
-      if let nextModel = openAIService.customModels.first {
-        openAIService.selectedModel = nextModel
-      } else {
-        openAIService.selectedModel = ""
-      }
+        // If we removed the selected default model, pick the next available one or clear it
+        if openAIService.selectedModel == model {
+            if let nextModel = openAIService.customModels.first {
+                openAIService.selectedModel = nextModel
+            } else {
+                openAIService.selectedModel = ""
+            }
         }
 
         if selectedModelName == model {
@@ -1165,7 +1170,7 @@ struct APISettingsView: View {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         let result = FlowResult(
             in: proposal.replacingUnspecifiedDimensions().width,
             subviews: subviews,
@@ -1174,7 +1179,7 @@ struct FlowLayout: Layout {
         return result.size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         let result = FlowResult(
             in: bounds.width,
             subviews: subviews,
@@ -1197,7 +1202,7 @@ struct FlowLayout: Layout {
             for subview in subviews {
                 let size = subview.sizeThatFits(.unspecified)
 
-                if currentX + size.width > maxWidth && currentX > 0 {
+                if currentX + size.width > maxWidth, currentX > 0 {
                     currentX = 0
                     currentY += lineHeight + spacing
                     lineHeight = 0
@@ -1208,7 +1213,7 @@ struct FlowLayout: Layout {
                 currentX += size.width + spacing
             }
 
-            self.size = CGSize(width: maxWidth, height: currentY + lineHeight)
+            size = CGSize(width: maxWidth, height: currentY + lineHeight)
         }
     }
 }
@@ -1297,9 +1302,10 @@ struct InfoRow: View {
 }
 
 // MARK: - AIKit Configuration View
+
 struct AIKitConfigurationView: View {
-  @ObservedObject private var aikitService = AIKitService.shared
-  @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aikitService = AIKitService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var tempModelName: String
     @Binding var selectedModelName: String?
 
@@ -1336,18 +1342,18 @@ struct AIKitConfigurationView: View {
                     }
                     .labelsHidden()
                     .onChange(of: aikitService.selectedModelId) { _, _ in
-            Task {
-              await aikitService.updateContainerStatus()
-            }
+                        Task {
+                            await aikitService.updateContainerStatus()
+                        }
                     }
 
                     if let model = aikitService.selectedModel {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Image: \(model.imageURL)")
                                 .font(.caption)
-                .foregroundStyle(.tertiary)
-            }
-          }
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
                 }
 
                 // Container Status
@@ -1437,26 +1443,26 @@ struct AIKitConfigurationView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-    }
-    .task {
-      let service = AIKitService.shared
-      await service.checkPodmanAvailability()
-      await service.updateContainerStatus()
-    }
+        }
+        .task {
+            let service = AIKitService.shared
+            await service.checkPodmanAvailability()
+            await service.updateContainerStatus()
+        }
     }
 
     private var statusColor: Color {
         switch aikitService.containerStatus {
         case .notPulled, .stopped:
-            return .gray
+            .gray
         case .pulling, .starting, .stopping:
-            return .orange
+            .orange
         case .pulled:
-            return .yellow
+            .yellow
         case .running:
-            return .green
+            .green
         case .error, .notSupported:
-            return .red
+            .red
         }
     }
 

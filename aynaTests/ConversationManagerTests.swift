@@ -1,91 +1,91 @@
-import XCTest
 @testable import Ayna
+import XCTest
 
 final class ConversationManagerTests: XCTestCase {
-  private var defaults: UserDefaults!
+    private var defaults: UserDefaults!
 
-  override func setUp() {
-    super.setUp()
-    guard let suite = UserDefaults(suiteName: "ConversationManagerTests") else {
-      fatalError("Failed to create UserDefaults suite for tests")
-    }
-    defaults = suite
-    defaults.removePersistentDomain(forName: "ConversationManagerTests")
-    AppPreferences.use(defaults)
-    defaults.set(false, forKey: "autoGenerateTitle")
-  }
-
-  override func tearDown() {
-    defaults.removePersistentDomain(forName: "ConversationManagerTests")
-    AppPreferences.reset()
-    defaults = nil
-    super.tearDown()
-  }
-
-  func makeManager(directory: URL) -> ConversationManager {
-    let keychain = InMemoryKeychainStorage()
-    let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
-    return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
-  }
-
-  func testCreateNewConversationUsesSelectedModel() throws {
-    let directory = try TestHelpers.makeTemporaryDirectory()
-    let expectedModel = "unit-test-model"
-    OpenAIService.shared.selectedModel = expectedModel
-
-    let manager = makeManager(directory: directory)
-    manager.createNewConversation()
-
-    XCTAssertEqual(manager.conversations.count, 1)
-    XCTAssertEqual(manager.conversations.first?.model, expectedModel)
-  }
-
-  func testAddMessageAppendsAndUpdatesTimestamp() throws {
-    let directory = try TestHelpers.makeTemporaryDirectory()
-    let manager = makeManager(directory: directory)
-    manager.createNewConversation()
-    guard let conversation = manager.conversations.first else {
-      return XCTFail("Conversation missing")
+    override func setUp() {
+        super.setUp()
+        guard let suite = UserDefaults(suiteName: "ConversationManagerTests") else {
+            fatalError("Failed to create UserDefaults suite for tests")
+        }
+        defaults = suite
+        defaults.removePersistentDomain(forName: "ConversationManagerTests")
+        AppPreferences.use(defaults)
+        defaults.set(false, forKey: "autoGenerateTitle")
     }
 
-    let message = Message(role: .user, content: "Ping")
-    manager.addMessage(to: conversation, message: message)
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: "ConversationManagerTests")
+        AppPreferences.reset()
+        defaults = nil
+        super.tearDown()
+    }
 
-    XCTAssertEqual(manager.conversations.first?.messages.count, 1)
-    XCTAssertEqual(manager.conversations.first?.messages.first?.content, "Ping")
-  }
+    func makeManager(directory: URL) -> ConversationManager {
+        let keychain = InMemoryKeychainStorage()
+        let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
+        return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+    }
 
-  func testClearAllConversationsEmptiesEncryptedStore() throws {
-    let directory = try TestHelpers.makeTemporaryDirectory()
-    let keychain = InMemoryKeychainStorage()
-    let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
-    let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+    func testCreateNewConversationUsesSelectedModel() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let expectedModel = "unit-test-model"
+        OpenAIService.shared.selectedModel = expectedModel
 
-    manager.conversations = [TestHelpers.sampleConversation()]
-    try store.save(manager.conversations)
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
 
-    manager.clearAllConversations()
+        XCTAssertEqual(manager.conversations.count, 1)
+        XCTAssertEqual(manager.conversations.first?.model, expectedModel)
+    }
 
-    XCTAssertTrue(manager.conversations.isEmpty)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
-  }
+    func testAddMessageAppendsAndUpdatesTimestamp() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        guard let conversation = manager.conversations.first else {
+            return XCTFail("Conversation missing")
+        }
 
-  func testSearchFindsMatchesInTitleAndMessages() throws {
-    let directory = try TestHelpers.makeTemporaryDirectory()
-    let manager = makeManager(directory: directory)
+        let message = Message(role: .user, content: "Ping")
+        manager.addMessage(to: conversation, message: message)
 
-    var first = TestHelpers.sampleConversation(title: "Swift Tips")
-    first.messages[0].content = "How to use SwiftUI?"
-    var second = TestHelpers.sampleConversation(title: "Random Chat")
-    second.messages[0].content = "Discussing movies"
-    manager.conversations = [first, second]
+        XCTAssertEqual(manager.conversations.first?.messages.count, 1)
+        XCTAssertEqual(manager.conversations.first?.messages.first?.content, "Ping")
+    }
 
-    let titleResults = manager.searchConversations(query: "Swift")
-    let bodyResults = manager.searchConversations(query: "movies")
+    func testClearAllConversationsEmptiesEncryptedStore() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
+        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
 
-    XCTAssertEqual(titleResults.count, 1)
-    XCTAssertEqual(titleResults.first?.title, "Swift Tips")
-    XCTAssertEqual(bodyResults.count, 1)
-    XCTAssertEqual(bodyResults.first?.title, "Random Chat")
-  }
+        manager.conversations = [TestHelpers.sampleConversation()]
+        try store.save(manager.conversations)
+
+        manager.clearAllConversations()
+
+        XCTAssertTrue(manager.conversations.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
+    }
+
+    func testSearchFindsMatchesInTitleAndMessages() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+
+        var first = TestHelpers.sampleConversation(title: "Swift Tips")
+        first.messages[0].content = "How to use SwiftUI?"
+        var second = TestHelpers.sampleConversation(title: "Random Chat")
+        second.messages[0].content = "Discussing movies"
+        manager.conversations = [first, second]
+
+        let titleResults = manager.searchConversations(query: "Swift")
+        let bodyResults = manager.searchConversations(query: "movies")
+
+        XCTAssertEqual(titleResults.count, 1)
+        XCTAssertEqual(titleResults.first?.title, "Swift Tips")
+        XCTAssertEqual(bodyResults.count, 1)
+        XCTAssertEqual(bodyResults.first?.title, "Random Chat")
+    }
 }

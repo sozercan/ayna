@@ -29,6 +29,8 @@
 		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
 		C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
 		C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
+		C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */; };
+		C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */; };
 		C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */; };
 		C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */; };
 		C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */; };
@@ -77,6 +79,8 @@
 		C9A200013091061300ABCD01 /* TestIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestIdentifiers.swift; sourceTree = "<group>"; };
 		C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
 		C9A200033091061300ABCD01 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
+		C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
+		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +116,7 @@
 		06000008 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */,
 				C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */,
 				C90000032F01A00100ABCDE0 /* AppPreferences.swift */,
 				C9A200013091061300ABCD01 /* TestIdentifiers.swift */,
@@ -179,6 +184,7 @@
 		C8F1F0012ED5B4F500B5BC45 /* aynaTests */ = {
 			isa = PBXGroup;
 			children = (
+				C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */,
 				C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */,
 				C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */,
 				C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */,
@@ -341,6 +347,7 @@
 				C9A210013091061300ABCD01 /* TestIdentifiers.swift in Sources */,
 				C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */,
 				C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */,
+				C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */,
 				C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */,
 				C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */,
 				01000001 /* aynaApp.swift in Sources */,
@@ -367,6 +374,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */,
 				C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */,
 				C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */,
 				C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */,

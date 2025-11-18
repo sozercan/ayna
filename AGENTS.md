@@ -37,6 +37,7 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 
 ### Linting
 - Run `swiftlint --strict` from the repo root after every non-trivial change and before handing work back to the user.
+- Run `swiftformat .` from the repo root whenever you touch Swift files so formatting stays consistent with the rest of the project.
 - Fix every reported warning; only add `// swiftlint:disable` annotations when there is a documented reason in-code.
 - Do **not** raise lint thresholds or comment out rules to “get green.” If a rule is noisy, discuss with the user before changing `.swiftlint.yml`.
 - When editing large files (e.g., `Views/SettingsView.swift`), keep existing scoped disables intact and avoid introducing new violations elsewhere.

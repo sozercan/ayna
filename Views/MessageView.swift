@@ -52,7 +52,8 @@ struct MessageView: View {
                         ForEach(attachments.indices, id: \.self) { index in
                             let attachment = attachments[index]
                             if attachment.mimeType.starts(with: "image/"),
-                               let nsImage = NSImage(data: attachment.data) {
+                               let nsImage = NSImage(data: attachment.data)
+                            {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Image(nsImage: nsImage)
                                         .resizable()
@@ -100,7 +101,7 @@ struct MessageView: View {
                     }
 
                     // Show typing indicator for empty assistant messages
-                    if message.role == .assistant && message.content.isEmpty && message.mediaType != .image {
+                    if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
                         TypingIndicatorView()
                     }
 
@@ -188,7 +189,7 @@ struct MessageView: View {
 
                         Divider()
 
-                        if let onRetry = onRetry {
+                        if let onRetry {
                             Button(action: onRetry) {
                                 Label("Try Again", systemImage: "arrow.clockwise")
                             }
@@ -224,15 +225,15 @@ struct MessageView: View {
                     .fixedSize()
                 }
             }
-      .opacity(isHovered ? 1 : 0)
+            .opacity(isHovered ? 1 : 0)
             .frame(width: message.role == .assistant ? 72 : 32)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(isHovered ? Color.primary.opacity(0.03) : Color.clear)
         .contentShape(Rectangle())
-    .onHover { hovering in
-      isHovered = hovering
+        .onHover { hovering in
+            isHovered = hovering
         }
         .onAppear {
             updateCachedBlocks()
@@ -277,7 +278,8 @@ struct MessageView: View {
             if response == .OK, let url = savePanel.url {
                 if let tiffData = image.tiffRepresentation,
                    let bitmapImage = NSBitmapImageRep(data: tiffData),
-                   let pngData = bitmapImage.representation(using: .png, properties: [:]) {
+                   let pngData = bitmapImage.representation(using: .png, properties: [:])
+                {
                     try? pngData.write(to: url)
                 }
             }
@@ -302,7 +304,7 @@ struct MessageView: View {
 
         for line in lines {
             // Check for tool call markers
-            if line.hasPrefix("[Tool:") && line.hasSuffix("]") {
+            if line.hasPrefix("[Tool:"), line.hasSuffix("]") {
                 // Save any pending text
                 if !currentText.isEmpty {
                     blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
@@ -311,9 +313,9 @@ struct MessageView: View {
                 // Extract tool name
                 let toolNameStart = line.index(line.startIndex, offsetBy: 6)
                 let toolNameEnd = line.index(line.endIndex, offsetBy: -1)
-                toolName = String(line[toolNameStart..<toolNameEnd]).trimmingCharacters(in: .whitespaces)
+                toolName = String(line[toolNameStart ..< toolNameEnd]).trimmingCharacters(in: .whitespaces)
                 inToolBlock = true
-            } else if inToolBlock && line.isEmpty {
+            } else if inToolBlock, line.isEmpty {
                 // End of tool block (empty line after tool result)
                 if !currentToolResult.isEmpty {
                     blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
@@ -341,7 +343,7 @@ struct MessageView: View {
             } else if inCodeBlock {
                 currentCode += line + "\n"
                 // Update the last code block with new content
-        if let lastIndex = blocks.lastIndex(where: {
+                if let lastIndex = blocks.lastIndex(where: {
                     if case .code = $0.type { return true }
                     return false
                 }) {
@@ -360,11 +362,12 @@ struct MessageView: View {
             blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
         }
         // Handle unclosed code block (still streaming)
-    if inCodeBlock
-      && !blocks.contains(where: {
-            if case .code = $0.type { return true }
-            return false
-        }) {
+        if inCodeBlock,
+           !blocks.contains(where: {
+               if case .code = $0.type { return true }
+               return false
+           })
+        {
             blocks.append(ContentBlock(type: .code(currentCode, codeLanguage)))
         }
 
@@ -386,10 +389,10 @@ struct ContentBlock: Identifiable {
     init(type: BlockType) {
         self.type = type
         // Pre-split text lines for better rendering performance
-        if case .text(let text) = type {
-            self.cachedLines = text.components(separatedBy: "\n")
+        if case let .text(text) = type {
+            cachedLines = text.components(separatedBy: "\n")
         } else {
-            self.cachedLines = nil
+            cachedLines = nil
         }
     }
 
@@ -425,7 +428,7 @@ struct ContentBlock: Identifiable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-        case .code(let code, let language):
+        case let .code(code, language):
             VStack(alignment: .leading, spacing: 0) {
                 // Header with language and copy button
                 HStack {
@@ -472,7 +475,7 @@ struct ContentBlock: Identifiable {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-        case .tool(let name, let result):
+        case let .tool(name, result):
             VStack(alignment: .leading, spacing: 0) {
                 // Tool header
                 HStack(spacing: 8) {
@@ -575,7 +578,7 @@ struct ImageGeneratingView: View {
         VStack(spacing: 16) {
             // Animated sparkles icon
             ZStack {
-                ForEach(0..<3) { index in
+                ForEach(0 ..< 3) { index in
                     Image(systemName: "sparkle")
                         .font(.system(size: 20))
                         .foregroundStyle(.blue.opacity(0.6))
@@ -825,7 +828,7 @@ struct TypingIndicatorView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(0..<3) { index in
+            ForEach(0 ..< 3) { index in
                 Circle()
                     .fill(Color.secondary.opacity(0.5))
                     .frame(width: 8, height: 8)

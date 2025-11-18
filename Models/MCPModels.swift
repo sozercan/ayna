@@ -59,13 +59,13 @@ struct MCPTool: Identifiable, Codable, Equatable {
 
     // Convert to OpenAI function format
     func toOpenAIFunction() -> [String: Any] {
-        return [
+        [
             "type": "function",
             "function": [
                 "name": name,
                 "description": description,
-                "parameters": inputSchema.toJSON()
-            ]
+                "parameters": inputSchema.toJSON(),
+            ],
         ]
     }
 }
@@ -84,16 +84,16 @@ struct JSONSchema: Codable, Equatable {
         let `enum`: [String]?
 
         static func == (lhs: Property, rhs: Property) -> Bool {
-            return lhs.type == rhs.type &&
-                   lhs.description == rhs.description &&
-                   lhs.enum == rhs.enum
+            lhs.type == rhs.type &&
+                lhs.description == rhs.description &&
+                lhs.enum == rhs.enum
         }
     }
 
     func toJSON() -> [String: Any] {
         var result: [String: Any] = ["type": type]
 
-        if let properties = properties {
+        if let properties {
             var propsDict: [String: Any] = [:]
             for (key, prop) in properties {
                 propsDict[key] = prop.value
@@ -101,11 +101,11 @@ struct JSONSchema: Codable, Equatable {
             result["properties"] = propsDict
         }
 
-        if let required = required {
+        if let required {
             result["required"] = required
         }
 
-        if let items = items {
+        if let items {
             result["items"] = items.value
         }
 
@@ -117,11 +117,11 @@ extension JSONSchema.Property {
     func toJSON() -> [String: Any] {
         var result: [String: Any] = ["type": type]
 
-        if let description = description {
+        if let description {
             result["description"] = description
         }
 
-        if let `enum` = `enum` {
+        if let `enum` {
             result["enum"] = `enum`
         }
 
@@ -232,7 +232,7 @@ struct AnyCodable: Codable, Equatable {
         } else if let string = try? container.decode(String.self) {
             value = string
         } else if let array = try? container.decode([AnyCodable].self) {
-            value = array.map { $0.value }
+            value = array.map(\.value)
         } else if let dictionary = try? container.decode([String: AnyCodable].self) {
             value = dictionary.mapValues { $0.value }
         } else {
@@ -264,15 +264,15 @@ struct AnyCodable: Codable, Equatable {
     static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
         switch (lhs.value, rhs.value) {
         case let (lhs as Bool, rhs as Bool):
-            return lhs == rhs
+            lhs == rhs
         case let (lhs as Int, rhs as Int):
-            return lhs == rhs
+            lhs == rhs
         case let (lhs as Double, rhs as Double):
-            return lhs == rhs
+            lhs == rhs
         case let (lhs as String, rhs as String):
-            return lhs == rhs
+            lhs == rhs
         default:
-            return false
+            false
         }
     }
 }

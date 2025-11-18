@@ -5,8 +5,9 @@
 //  Created on 11/2/25.
 //
 
-import SwiftUI
+import AppKit
 import OSLog
+import SwiftUI
 
 @main
 struct aynaApp: App {
@@ -18,6 +19,15 @@ struct aynaApp: App {
             _conversationManager = StateObject(wrappedValue: UITestEnvironment.makeConversationManager())
         } else {
             _conversationManager = StateObject(wrappedValue: ConversationManager())
+        }
+
+        if UITestEnvironment.isEnabled {
+            Task { @MainActor in
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                for window in NSApplication.shared.windows {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
         }
 
         guard !UITestEnvironment.shouldSkipMCPInitialization else { return }

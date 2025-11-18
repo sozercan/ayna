@@ -224,7 +224,7 @@ struct ServerConfigRow: View {
             }
 
             // Error message
-            if let error = error {
+            if let error {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -241,7 +241,7 @@ struct ServerConfigRow: View {
             }
 
             // Tools list (expandable)
-            if showingTools && !tools.isEmpty {
+            if showingTools, !tools.isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 

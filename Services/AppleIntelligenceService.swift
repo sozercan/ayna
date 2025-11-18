@@ -20,17 +20,17 @@ enum AppleIntelligenceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .deviceNotEligible:
-            return "This device is not eligible for Apple Intelligence"
+            "This device is not eligible for Apple Intelligence"
         case .appleIntelligenceNotEnabled:
-            return "Apple Intelligence is not enabled in System Settings"
+            "Apple Intelligence is not enabled in System Settings"
         case .modelNotReady:
-            return "Apple Intelligence model assets are not downloaded yet"
-        case .unavailable(let reason):
-            return "Apple Intelligence is unavailable: \(reason)"
+            "Apple Intelligence model assets are not downloaded yet"
+        case let .unavailable(reason):
+            "Apple Intelligence is unavailable: \(reason)"
         case .sessionCreationFailed:
-            return "Failed to create Apple Intelligence session"
-        case .generationFailed(let error):
-            return "Response generation failed: \(error)"
+            "Failed to create Apple Intelligence session"
+        case let .generationFailed(error):
+            "Response generation failed: \(error)"
         }
     }
 }
@@ -41,7 +41,7 @@ class AppleIntelligenceService: ObservableObject {
 
     @Published var model = SystemLanguageModel.default
     private var sessions: [String: LanguageModelSession] = [:]
-  private let sessionsLock = NSLock()
+    private let sessionsLock = NSLock()
     private func log(
         _ message: String,
         level: OSLogType = .default,
@@ -59,18 +59,18 @@ class AppleIntelligenceService: ObservableObject {
 
     // Check if Apple Intelligence is available on this device
     var isAvailable: Bool {
-        return model.isAvailable
+        model.isAvailable
     }
 
     var availability: SystemLanguageModel.Availability {
-        return model.availability
+        model.availability
     }
 
     func availabilityDescription() -> String {
         switch availability {
         case .available:
             return "Available"
-        case .unavailable(let reason):
+        case let .unavailable(reason):
             switch reason {
             case .deviceNotEligible:
                 return "Device not eligible for Apple Intelligence"
@@ -91,10 +91,10 @@ class AppleIntelligenceService: ObservableObject {
         conversationId: String,
         systemInstructions: String
     ) -> LanguageModelSession {
-    sessionsLock.lock()
-    defer { sessionsLock.unlock() }
+        sessionsLock.lock()
+        defer { sessionsLock.unlock() }
 
-    if let existingSession = sessions[conversationId] {
+        if let existingSession = sessions[conversationId] {
             return existingSession
         }
 
@@ -105,18 +105,18 @@ class AppleIntelligenceService: ObservableObject {
 
     // Clear session for a conversation
     func clearSession(conversationId: String) {
-    sessionsLock.lock()
-    defer { sessionsLock.unlock() }
+        sessionsLock.lock()
+        defer { sessionsLock.unlock() }
         sessions.removeValue(forKey: conversationId)
-    log("Cleared Apple Intelligence session", metadata: ["conversationId": conversationId])
+        log("Cleared Apple Intelligence session", metadata: ["conversationId": conversationId])
     }
 
     // Clear all sessions
     func clearAllSessions() {
-    sessionsLock.lock()
-    defer { sessionsLock.unlock() }
+        sessionsLock.lock()
+        defer { sessionsLock.unlock() }
         sessions.removeAll()
-    log("Cleared all Apple Intelligence sessions")
+        log("Cleared all Apple Intelligence sessions")
     }
 
     // Stream response
@@ -245,7 +245,7 @@ class AppleIntelligenceService: ObservableObject {
         switch availability {
         case .available:
             return AppleIntelligenceError.unavailable("Unknown")
-        case .unavailable(let reason):
+        case let .unavailable(reason):
             switch reason {
             case .deviceNotEligible:
                 return AppleIntelligenceError.deviceNotEligible

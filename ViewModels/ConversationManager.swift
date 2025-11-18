@@ -6,11 +6,11 @@
 //
 
 import Foundation
-import SwiftUI
 import OSLog
+import SwiftUI
 
 class ConversationManager: ObservableObject {
-        @Published var conversations: [Conversation] = []
+    @Published var conversations: [Conversation] = []
 
     private let store: EncryptedConversationStore
     private var saveTask: Task<Void, Never>?
@@ -66,13 +66,14 @@ class ConversationManager: ObservableObject {
 
             // Auto-generate title from first user message
             let autoGenerateTitle = AppPreferences.storage.object(forKey: "autoGenerateTitle") as? Bool ?? true
-            let userMessageCount = conversations[index].messages.filter({ $0.role == .user }).count
+            let userMessageCount = conversations[index].messages.filter { $0.role == .user }.count
             let currentTitle = conversations[index].title
 
-            if autoGenerateTitle
-                && userMessageCount == 1
-                && currentTitle == "New Conversation"
-                && message.role == .user {
+            if autoGenerateTitle,
+               userMessageCount == 1,
+               currentTitle == "New Conversation",
+               message.role == .user
+            {
                 generateTitle(for: conversations[index])
             }
 
@@ -89,7 +90,8 @@ class ConversationManager: ObservableObject {
 
     func updateMessage(in conversation: Conversation, messageId: UUID, update: (inout Message) -> Void) {
         if let convIndex = conversations.firstIndex(where: { $0.id == conversation.id }),
-           let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) {
+           let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
+        {
             var message = conversations[convIndex].messages[msgIndex]
             update(&message)
             conversations[convIndex].messages[msgIndex] = message
@@ -167,11 +169,11 @@ class ConversationManager: ObservableObject {
     // MARK: - Persistence
 
     func saveConversations() {
-    // Debounce saves to batch rapid updates (e.g., during streaming)
-    saveTask?.cancel()
-    saveTask = Task { @MainActor in
-      try? await Task.sleep(for: saveDebounceDuration)
-      guard !Task.isCancelled else { return }
+        // Debounce saves to batch rapid updates (e.g., during streaming)
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(for: saveDebounceDuration)
+            guard !Task.isCancelled else { return }
 
             do {
                 try store.save(conversations)
@@ -182,12 +184,12 @@ class ConversationManager: ObservableObject {
                     metadata: ["error": error.localizedDescription]
                 )
             }
+        }
     }
-  }
 
-  func saveConversationsImmediately() {
-    // For critical saves that shouldn't be debounced
-    saveTask?.cancel()
+    func saveConversationsImmediately() {
+        // For critical saves that shouldn't be debounced
+        saveTask?.cancel()
         do {
             try store.save(conversations)
         } catch {
@@ -260,9 +262,9 @@ class ConversationManager: ObservableObject {
 
         return conversations.filter { conversation in
             conversation.title.localizedCaseInsensitiveContains(query) ||
-            conversation.messages.contains { message in
-                message.content.localizedCaseInsensitiveContains(query)
-            }
+                conversation.messages.contains { message in
+                    message.content.localizedCaseInsensitiveContains(query)
+                }
         }
     }
 }
