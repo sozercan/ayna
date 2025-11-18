@@ -150,6 +150,15 @@ struct MessageView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    Text(
+                        verbatim: message.content.isEmpty
+                            ? (message.role == .assistant ? "Assistant response" : "User message")
+                            : message.content
+                    )
+                )
+                .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
             }
 
             Spacer()

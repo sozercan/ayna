@@ -10,9 +10,18 @@ import OSLog
 
 @main
 struct aynaApp: App {
-    @StateObject private var conversationManager = ConversationManager()
+    @StateObject private var conversationManager: ConversationManager
 
     init() {
+        UITestEnvironment.configureIfNeeded()
+        if UITestEnvironment.isEnabled {
+            _conversationManager = StateObject(wrappedValue: UITestEnvironment.makeConversationManager())
+        } else {
+            _conversationManager = StateObject(wrappedValue: ConversationManager())
+        }
+
+        guard !UITestEnvironment.shouldSkipMCPInitialization else { return }
+
         // Initialize MCP servers on app launch with error handling
         Task {
             do {

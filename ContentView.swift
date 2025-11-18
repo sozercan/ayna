@@ -100,8 +100,7 @@ struct NewChatView: View {
 
     if let conversationModel = currentConversation?.model.trimmingCharacters(
       in: .whitespacesAndNewlines),
-      !conversationModel.isEmpty
-    {
+      !conversationModel.isEmpty {
       return conversationModel
     }
 
@@ -213,7 +212,11 @@ struct NewChatView: View {
 
             HStack(spacing: 0) {
               ZStack(alignment: .bottomLeading) {
-                DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
+                DynamicTextEditor(
+                  text: $messageText,
+                  onSubmit: sendMessage,
+                  accessibilityIdentifier: TestIdentifiers.NewChatComposer.textEditor
+                )
                   .frame(height: calculateTextHeight())
                   .font(.system(size: 15))
                   .scrollContentBackground(.hidden)
@@ -241,8 +244,7 @@ struct NewChatView: View {
                   }
                   .routeSettings(to: .models)
                 } else {
-                  ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) {
-                    _, model in
+                  ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) { _, model in
                     Button(action: {
                       selectedModel = model
                       openAIService.selectedModel = model
@@ -297,6 +299,7 @@ struct NewChatView: View {
               }
               .buttonStyle(.plain)
               .allowsHitTesting(isGenerating || !messageText.isEmpty)
+              .accessibilityIdentifier(TestIdentifiers.NewChatComposer.sendButton)
               .padding(.horizontal, 12)
               .frame(height: calculateTextHeight() + 24)
             }
@@ -368,8 +371,7 @@ struct NewChatView: View {
   private func syncSelectedModelState() {
     if let conversationModel = currentConversation?.model.trimmingCharacters(
       in: .whitespacesAndNewlines),
-      !conversationModel.isEmpty
-    {
+      !conversationModel.isEmpty {
       selectedModel = conversationModel
     } else {
       selectedModel = openAIService.selectedModel

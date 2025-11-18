@@ -31,6 +31,7 @@ struct SidebarView: View {
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
+                    .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
 
                 if !searchText.isEmpty {
                     Button(action: {
@@ -50,6 +51,20 @@ struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 8)
+
+            if UITestEnvironment.isEnabled {
+                HStack {
+                    Spacer()
+                    Button(action: startNewConversation) {
+                        Label("New Conversation", systemImage: "square.and.pencil")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+            }
 
             // Conversation List
             if filteredConversations.isEmpty {
@@ -98,6 +113,7 @@ struct SidebarView: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
         .scrollContentBackground(.hidden)
         .onChange(of: selectedConversations) { _, newSelection in
                     // Keep single selection in sync for chat view
@@ -109,12 +125,7 @@ struct SidebarView: View {
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Button(action: {
-          // Enter new conversation creation mode
-          selectedConversationId = nil
-          selectedConversations.removeAll()
-          NotificationCenter.default.post(name: .newConversationRequested, object: nil)
-                }) {
+                Button(action: startNewConversation) {
                     Image(systemName: "square.and.pencil")
                 }
             }
@@ -132,6 +143,12 @@ struct SidebarView: View {
             selectedConversationId = nil
             selectedConversations.removeAll()
         }
+    }
+
+    private func startNewConversation() {
+        selectedConversationId = nil
+        selectedConversations.removeAll()
+        NotificationCenter.default.post(name: .newConversationRequested, object: nil)
     }
 
     private func deleteSelectedConversations() {
@@ -178,6 +195,7 @@ struct ConversationRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
         .contentShape(Rectangle())
     }
 }

@@ -20,13 +20,13 @@ open ayna.xcodeproj
 - Swift 5.9
 
 ### Testing
-The repository ships with the `aynaTests` XCTest bundle.
+The repository ships with the `aynaTests` unit bundle plus a deterministic `aynaUITests` UI bundle.
 
 - Run the entire suite with:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
-- Tests live under `aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network.
+- Tests live under `aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 

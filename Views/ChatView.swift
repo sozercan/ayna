@@ -269,7 +269,11 @@ struct ChatView: View {
 
           HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-              DynamicTextEditor(text: $messageText, onSubmit: sendMessage)
+              DynamicTextEditor(
+                text: $messageText,
+                onSubmit: sendMessage,
+                accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
+              )
                 .frame(height: calculateTextHeight())
                 .font(.system(size: 15))
                 .scrollContentBackground(.hidden)
@@ -350,6 +354,7 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .allowsHitTesting(isGenerating || !messageText.isEmpty)
+            .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
             .padding(.horizontal, 12)
             .frame(height: calculateTextHeight() + 24)
           }
@@ -1130,8 +1135,9 @@ struct ChatView: View {
 
 // Dynamic Text Editor with auto-sizing and keyboard shortcuts
 struct DynamicTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    let onSubmit: () -> Void
+  @Binding var text: String
+  let onSubmit: () -> Void
+  let accessibilityIdentifier: String?
 
   typealias Coordinator = DynamicTextEditorCoordinator
 
@@ -1162,6 +1168,11 @@ struct DynamicTextEditor: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
 
+        if let identifier = accessibilityIdentifier {
+          textView.setAccessibilityIdentifier(identifier)
+          scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
+        }
+
         return scrollView
     }
 
@@ -1175,6 +1186,10 @@ struct DynamicTextEditor: NSViewRepresentable {
         }
 
         context.coordinator.onSubmit = onSubmit
+        if let identifier = accessibilityIdentifier {
+          textView.setAccessibilityIdentifier(identifier)
+          scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
+        }
     }
 
     func makeCoordinator() -> Coordinator {

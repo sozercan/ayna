@@ -56,6 +56,21 @@ open ayna.xcodeproj
 - Conversations are encrypted (AES-GCM) inside Application Support.
 - No telemetry or analytics; everything stays on your Mac unless you call a cloud provider.
 
+## Testing
+
+Run lint + test locally before pushing changes:
+
+```bash
+swiftlint --strict
+xcodebuild -scheme Ayna -destination 'platform=macOS' test
+```
+
+To focus on the new UI smoke tests (which launch the app with the deterministic `AYNA_UI_TESTING=1` environment and stubbed network calls):
+
+```bash
+xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
+```
+
 ## Support & Contributing
 
 Questions or bugs? Open an [issue](https://github.com/sozercan/ayna/issues) on GitHub.

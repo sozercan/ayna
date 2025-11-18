@@ -38,6 +38,16 @@
                ReferencedContainer = "container:Ayna.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C9A1C1013090F5E900ABCD01"
+               BuildableName = "aynaUITests.xctest"
+               BlueprintName = "aynaUITests"
+               ReferencedContainer = "container:Ayna.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <MacroExpansion>
          <BuildableReference

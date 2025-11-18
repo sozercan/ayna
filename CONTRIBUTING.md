@@ -25,17 +25,23 @@ open ayna.xcodeproj
 
 ## Testing
 
-All unit tests live under the `aynaTests/` bundle and exercise the core services (encrypted store, conversation manager, OpenAI service).
-
-- Run the full suite with:
+- Run SwiftLint before committing:
+  ```bash
+  swiftlint --strict
+  ```
+- Run the full suite (unit + UI tests) with:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
-- Tests never touch the system Keychain or network. Use the provided helpers:
+- UI tests live under `aynaUITests/`. They launch the app with `--ui-testing` plus `AYNA_UI_TESTING=1`, which swaps in-memory storage, deterministic models, and mocked OpenAI responses. You can run only the UI bundle with:
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
+  ```
+- Unit tests remain in `aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
   - `InMemoryKeychainStorage` keeps credentials in-memory during tests.
   - `MockURLProtocol` intercepts `URLSession` traffic for `OpenAIService`.
   - `EncryptedConversationStore` and `ConversationManager` accept dependency-injected stores/file URLs for isolation.
-- Keep new tests deterministic—avoid real network calls, timers, or file system writes outside temporary directories.
+- Keep every test deterministic—avoid real network calls, timers, or writes outside temporary directories.
 
 ## Continuous Integration
 

@@ -712,6 +712,16 @@ class OpenAIService: ObservableObject {
     onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
     onReasoning: ((String) -> Void)? = nil
   ) {
+    if UITestEnvironment.isEnabled {
+      simulateUITestResponse(
+        messages: messages,
+        stream: stream,
+        onChunk: onChunk,
+        onComplete: onComplete
+      )
+      return
+    }
+
     let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !requestModel.isEmpty else {
       onError(OpenAIError.missingModel)
@@ -813,6 +823,28 @@ class OpenAIService: ObservableObject {
       nonStreamResponse(
         request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
         onToolCall: onToolCall, onReasoning: onReasoning)
+    }
+  }
+
+  private func simulateUITestResponse(
+    messages: [Message],
+    stream: Bool,
+    onChunk: @escaping (String) -> Void,
+    onComplete: @escaping () -> Void
+  ) {
+    let fallback = "Mock response"
+    let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
+    let response = "UI Test Response: \(userContent)"
+
+    let deliverResponse = {
+      onChunk(response)
+      onComplete()
+    }
+
+    if stream {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: deliverResponse)
+    } else {
+      DispatchQueue.main.async(execute: deliverResponse)
     }
   }
 
