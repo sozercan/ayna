@@ -13,19 +13,19 @@ struct SidebarView: View {
     @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
-  @State private var searchText = ""
+    @State private var searchText = ""
 
-  private var filteredConversations: [Conversation] {
-    conversationManager
-      .searchConversations(query: searchText)
-      .sorted { $0.updatedAt > $1.updatedAt }
+    private var filteredConversations: [Conversation] {
+        conversationManager
+            .searchConversations(query: searchText)
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-  private var timelineSections: [ConversationTimelineSection] {
-    ConversationTimelineGrouper.sections(from: filteredConversations)
-  }
+    private var timelineSections: [ConversationTimelineSection] {
+        ConversationTimelineGrouper.sections(from: filteredConversations)
+    }
 
-  var body: some View {
+    var body: some View {
         VStack(spacing: 0) {
             // Search Box
             HStack(spacing: 8) {
@@ -56,20 +56,6 @@ struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 6)
-
-            if UITestEnvironment.isEnabled {
-                HStack {
-                    Spacer()
-                    Button(action: startNewConversation) {
-                        Label("New Conversation", systemImage: "square.and.pencil")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-            }
 
             // Conversation List
             if filteredConversations.isEmpty {
@@ -146,8 +132,9 @@ struct SidebarView: View {
                 Button(action: startNewConversation) {
                     Image(systemName: "square.and.pencil")
                 }
+                .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
             }
-    }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()
