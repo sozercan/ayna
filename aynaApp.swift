@@ -67,7 +67,7 @@ struct aynaApp: App {
             ContentView()
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 600)
-        .background(WindowAppearanceConfigurator())
+                .background(WindowAppearanceConfigurator())
         }
         .windowToolbarStyle(.unified)
         .commands {
@@ -106,7 +106,7 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
                 .frame(minWidth: 900, minHeight: 600),
         )
         fallbackWindow.center()
-    configureWindowAppearance(fallbackWindow)
+        configureWindowAppearance(fallbackWindow)
         uiTestFallbackWindow = fallbackWindow
         DiagnosticsLogger.log(
             .app,
@@ -132,9 +132,9 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
             level: .error,
             message: "⚠️ No windows available; creating fallback window for UI tests",
         )
-    ensureFallbackWindowIfNeeded()
-  }
-  NSApplication.shared.windows.forEach(configureWindowAppearance)
+        ensureFallbackWindowIfNeeded()
+    }
+    NSApplication.shared.windows.forEach(configureWindowAppearance)
 
     uiTestWindowObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didBecomeKeyNotification,
@@ -142,39 +142,39 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         queue: nil,
     ) { notification in
         guard let window = notification.object as? NSWindow else { return }
-    Task { await configureWindowAppearance(window) }
-  }
+        Task { await configureWindowAppearance(window) }
+    }
 }
 
 @MainActor
 private func configureWindowAppearance(_ window: NSWindow) {
-  window.styleMask.insert([.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView])
-  window.titleVisibility = .hidden
-  window.titlebarAppearsTransparent = true
-  window.isOpaque = false
-  window.backgroundColor = .clear
-  window.title = ""
-  window.makeKeyAndOrderFront(nil)
+    window.styleMask.insert([.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView])
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
+    window.isOpaque = false
+    window.backgroundColor = .clear
+    window.title = ""
+    window.makeKeyAndOrderFront(nil)
 }
 
 private struct WindowAppearanceConfigurator: NSViewRepresentable {
-  func makeNSView(context: Context) -> NSView {
-    let view = WindowObservingView()
-    view.onWindowChange = { window in
-      guard let window else { return }
-      Task { await configureWindowAppearance(window) }
+    func makeNSView(context _: Context) -> NSView {
+        let view = WindowObservingView()
+        view.onWindowChange = { window in
+            guard let window else { return }
+            Task { await configureWindowAppearance(window) }
+        }
+        return view
     }
-    return view
-  }
 
-  func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_: NSView, context _: Context) {}
 }
 
 private final class WindowObservingView: NSView {
-  var onWindowChange: ((NSWindow?) -> Void)?
+    var onWindowChange: ((NSWindow?) -> Void)?
 
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    onWindowChange?(window)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?(window)
     }
 }

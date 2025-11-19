@@ -101,8 +101,7 @@ class MCPServerManager: ObservableObject {
                 // Filter out any non-string values that might have been corrupted
                 var validEnv: [String: String] = [:]
                 for (key, value) in config.env {
-                    // Only include if both key and value are valid strings
-                    if !key.isEmpty, !value.isEmpty {
+                    if !key.isEmpty {
                         validEnv[key] = value
                     }
                 }
@@ -117,6 +116,7 @@ class MCPServerManager: ObservableObject {
                 )
             }
             serverConfigs = validatedConfigs
+            ensureDefaultEnvVariables()
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .info,
@@ -149,7 +149,7 @@ class MCPServerManager: ObservableObject {
                 name: "brave-search",
                 command: "/opt/homebrew/bin/npx",
                 args: ["-y", "@modelcontextprotocol/server-brave-search"],
-                env: ["BRAVE_API_KEY": ""], // Add your Brave Search API key here: https://brave.com/search/api/
+                env: defaultBraveSearchEnv(), // Add your Brave Search API key here: https://brave.com/search/api/
                 enabled: false,
             ),
             MCPServerConfig(
@@ -160,6 +160,25 @@ class MCPServerManager: ObservableObject {
                 enabled: false,
             ),
         ]
+    }
+
+    private func defaultBraveSearchEnv() -> [String: String] {
+        let apiKey = ProcessInfo.processInfo.environment["BRAVE_API_KEY"] ?? ""
+        return ["BRAVE_API_KEY": apiKey]
+    }
+
+    private func ensureDefaultEnvVariables() {
+        var didMutate = false
+        if let index = serverConfigs.firstIndex(where: { $0.name == "brave-search" }) {
+            if serverConfigs[index].env["BRAVE_API_KEY"] == nil {
+                serverConfigs[index].env["BRAVE_API_KEY"] = ProcessInfo.processInfo.environment["BRAVE_API_KEY"] ?? ""
+                didMutate = true
+            }
+        }
+
+        if didMutate {
+            saveServerConfigs()
+        }
     }
 
     // MARK: - Connection Management
