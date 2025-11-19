@@ -3,8 +3,25 @@ import SwiftUI
 
 /// Converts markdown text into renderable content blocks tailored for the chat UI.
 enum MarkdownRenderer {
+    // Cache for parsed content blocks to improve performance
+    private nonisolated(unsafe) static let cache = NSCache<NSString, ContentBlockWrapper>()
+
+    private class ContentBlockWrapper {
+        let blocks: [ContentBlock]
+        init(blocks: [ContentBlock]) {
+            self.blocks = blocks
+        }
+    }
+
     static func parse(_ content: String) -> [ContentBlock] {
         var blocks: [ContentBlock] = []
+
+        // Check cache first
+        let cacheKey = content as NSString
+        if let cachedWrapper = cache.object(forKey: cacheKey) {
+            return cachedWrapper.blocks
+        }
+
         let lines = content.components(separatedBy: .newlines)
         var index = 0
         var paragraphBuffer: [String] = []
@@ -12,7 +29,8 @@ enum MarkdownRenderer {
         var pendingToolResult = ""
 
         func flushParagraph() {
-            guard paragraphBuffer.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
+            guard paragraphBuffer.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+            else {
                 paragraphBuffer.removeAll()
                 return
             }
@@ -41,7 +59,9 @@ enum MarkdownRenderer {
                 continue
             }
 
-            if trimmed.hasPrefix("[Tool:"), trimmed.hasSuffix("]"), let toolName = extractToolName(from: trimmed) {
+            if trimmed.hasPrefix("[Tool:"), trimmed.hasSuffix("]"),
+               let toolName = extractToolName(from: trimmed)
+            {
                 flushParagraph()
                 pendingToolName = toolName
                 pendingToolResult = ""
@@ -73,10 +93,11 @@ enum MarkdownRenderer {
                         // 2. Must have at least backtickCount backticks
                         // 3. Must consist ONLY of backticks (no info string allowed on closing fence)
                         let lineBackticks = codeTrimmed.prefix(while: { $0 == "`" }).count
-                        let isClosingFence = lineBackticks >= backtickCount && codeTrimmed.count == lineBackticks
+                        let isClosingFence =
+                            lineBackticks >= backtickCount && codeTrimmed.count == lineBackticks
 
                         if isClosingFence {
-                            if isMarkdown && nestedDepth > 0 {
+                            if isMarkdown, nestedDepth > 0 {
                                 // It's a closing fence for a nested block
                                 nestedDepth -= 1
                                 codeLines.append(codeLine)
@@ -93,12 +114,13 @@ enum MarkdownRenderer {
                         // Check for nested opening fence (only if isMarkdown)
                         // If it starts with fence and has content after (language), it's an opening fence.
                         if isMarkdown {
-                             if codeTrimmed.hasPrefix(fence) {
-                                 let after = codeTrimmed.dropFirst(backtickCount).trimmingCharacters(in: .whitespaces)
-                                 if !after.isEmpty {
-                                     nestedDepth += 1
-                                 }
-                             }
+                            if codeTrimmed.hasPrefix(fence) {
+                                let after = codeTrimmed.dropFirst(backtickCount).trimmingCharacters(
+                                    in: .whitespaces)
+                                if !after.isEmpty {
+                                    nestedDepth += 1
+                                }
+                            }
                         }
 
                         codeLines.append(codeLine)
@@ -166,6 +188,10 @@ enum MarkdownRenderer {
             let result = pendingToolResult.trimmingCharacters(in: .newlines)
             blocks.append(ContentBlock(type: .tool(toolName, result)))
         }
+
+        // Update cache
+        cache.setObject(ContentBlockWrapper(blocks: blocks), forKey: cacheKey)
+
         return blocks
     }
 
@@ -186,10 +212,13 @@ enum MarkdownRenderer {
     private static func isHorizontalRule(_ line: String) -> Bool {
         if line.count < 3 { return false }
         let allowed = CharacterSet(charactersIn: "-_* ")
-        return line.trimmingCharacters(in: allowed).isEmpty && line.replacingOccurrences(of: " ", with: "").count >= 3
+        return line.trimmingCharacters(in: allowed).isEmpty
+            && line.replacingOccurrences(of: " ", with: "").count >= 3
     }
 
-    private static func parseBlockquote(from lines: [String], startingAt index: Int) -> (attributed: AttributedString, nextIndex: Int)? {
+    private static func parseBlockquote(from lines: [String], startingAt index: Int) -> (
+        attributed: AttributedString, nextIndex: Int,
+    )? {
         var collected: [String] = []
         var current = index
         while current < lines.count {
@@ -210,7 +239,9 @@ enum MarkdownRenderer {
         return (attributed, current)
     }
 
-    private static func parseList(from lines: [String], startingAt index: Int) -> (block: ContentBlock, nextIndex: Int)? {
+    private static func parseList(from lines: [String], startingAt index: Int) -> (
+        block: ContentBlock, nextIndex: Int,
+    )? {
         var items: [AttributedString] = []
         var current = index
         var ordered = true
@@ -243,11 +274,14 @@ enum MarkdownRenderer {
         }
 
         guard !items.isEmpty else { return nil }
-        let blockType: ContentBlock.BlockType = ordered ? .orderedList(start: startIndex, items: items) : .unorderedList(items)
+        let blockType: ContentBlock.BlockType =
+            ordered ? .orderedList(start: startIndex, items: items) : .unorderedList(items)
         return (ContentBlock(type: blockType), current)
     }
 
-    private static func parseTable(from lines: [String], startingAt index: Int) -> (table: MarkdownTable, nextIndex: Int)? {
+    private static func parseTable(from lines: [String], startingAt index: Int) -> (
+        table: MarkdownTable, nextIndex: Int,
+    )? {
         guard index + 1 < lines.count else { return nil }
         let headerLine = lines[index]
         let dividerLine = lines[index + 1]
@@ -255,7 +289,11 @@ enum MarkdownRenderer {
         let headerCells = splitTableLine(headerLine)
         let dividerCells = splitTableLine(dividerLine)
         guard headerCells.count == dividerCells.count else { return nil }
-        guard dividerCells.allSatisfy({ $0.range(of: "^\\s*:?-+:?\\s*$", options: .regularExpression) != nil }) else { return nil }
+        guard
+            dividerCells.allSatisfy({
+                $0.range(of: "^\\s*:?-+:?\\s*$", options: .regularExpression) != nil
+            })
+        else { return nil }
 
         let alignments: [MarkdownTable.ColumnAlignment] = dividerCells.map { cell in
             let trimmed = cell.trimmingCharacters(in: .whitespaces)
@@ -269,7 +307,9 @@ enum MarkdownRenderer {
             return .leading
         }
 
-        let headers = headerCells.map { makeInlineAttributedString(from: $0.trimmingCharacters(in: .whitespaces)) }
+        let headers = headerCells.map {
+            makeInlineAttributedString(from: $0.trimmingCharacters(in: .whitespaces))
+        }
         var rows: [[AttributedString]] = []
         var current = index + 2
         while current < lines.count {
@@ -281,7 +321,9 @@ enum MarkdownRenderer {
             if rowCells.count != headers.count {
                 break
             }
-            let attributedRow = rowCells.map { makeInlineAttributedString(from: $0.trimmingCharacters(in: .whitespaces)) }
+            let attributedRow = rowCells.map {
+                makeInlineAttributedString(from: $0.trimmingCharacters(in: .whitespaces))
+            }
             rows.append(attributedRow)
             current += 1
         }
@@ -312,7 +354,8 @@ enum MarkdownRenderer {
     private static func makeInlineAttributedString(from markdown: String) -> AttributedString {
         var options = AttributedString.MarkdownParsingOptions()
         options.interpretedSyntax = .inlineOnlyPreservingWhitespace
-        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        return (try? AttributedString(markdown: markdown, options: options))
+            ?? AttributedString(markdown)
     }
 }
 

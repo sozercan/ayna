@@ -467,7 +467,7 @@ class OpenAIService: ObservableObject {
         model: String? = nil,
         onComplete: @escaping (Data) -> Void,
         onError: @escaping (Error) -> Void,
-        attempt: Int = 0
+    attempt: Int = 0,
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -536,7 +536,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription]
+              metadata: ["error": error.localizedDescription],
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -546,7 +546,7 @@ class OpenAIService: ObservableObject {
                                     model: model,
                                     onComplete: onComplete,
                                     onError: onError,
-                                    attempt: attempt + 1
+                  attempt: attempt + 1,
                                 )
                             }
                         }
@@ -886,7 +886,7 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0
+    attempt: Int = 0,
     ) {
         // Check if this model has a provider override
         let effectiveProvider = modelProviders[model] ?? provider
@@ -990,7 +990,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription]
+              metadata: ["error": error.localizedDescription],
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -1002,7 +1002,7 @@ class OpenAIService: ObservableObject {
                                     onComplete: onComplete,
                                     onError: onError,
                                     onReasoning: onReasoning,
-                                    attempt: attempt + 1
+                  attempt: attempt + 1,
                                 )
                             }
                         }
@@ -1210,7 +1210,7 @@ class OpenAIService: ObservableObject {
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0
+    attempt: Int = 0,
     ) {
         // Capture values for async context
         let currentProvider = provider
@@ -1294,7 +1294,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .info,
                         message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
-                        metadata: ["error": error.localizedDescription]
+            metadata: ["error": error.localizedDescription],
                     )
                     await delay(for: attempt)
                     await MainActor.run {
@@ -1306,7 +1306,7 @@ class OpenAIService: ObservableObject {
                             onToolCall: onToolCall,
                             onToolCallRequested: onToolCallRequested,
                             onReasoning: onReasoning,
-                            attempt: attempt + 1
+              attempt: attempt + 1,
                         )
                     }
                 } else {
@@ -1345,7 +1345,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0
+    attempt: Int = 0,
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             DispatchQueue.main.async {
@@ -1355,7 +1355,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying non-stream request (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription]
+              metadata: ["error": error.localizedDescription],
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -1366,8 +1366,8 @@ class OpenAIService: ObservableObject {
                                     onComplete: onComplete,
                                     onError: onError,
                                     onToolCall: onToolCall,
-                                    onReasoning: onReasoning,
-                                    attempt: attempt + 1
+                  onReasoning: onReasoning,
+                  attempt: attempt + 1,
                                 )
                             }
                         }
@@ -1557,8 +1557,8 @@ class OpenAIService: ObservableObject {
         }
 
         if let openAIError = error as? OpenAIError {
-            switch openAIError {
-            case .apiError(let message):
+      switch openAIError {
+      case let .apiError(message):
                 if message.contains("429") || message.contains("500") || message.contains("502") || message.contains("503") || message.contains("504") {
                     return true
                 }
@@ -1572,7 +1572,7 @@ class OpenAIService: ObservableObject {
 
     private func delay(for attempt: Int) async {
         let delay = min(initialRetryDelay * pow(2.0, Double(attempt)), maxRetryDelay)
-        let jitter = Double.random(in: 0...0.1)
+    let jitter = Double.random(in: 0 ... 0.1)
         try? await Task.sleep(nanoseconds: UInt64((delay + jitter) * 1_000_000_000))
     }
 

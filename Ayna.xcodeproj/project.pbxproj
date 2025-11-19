@@ -43,6 +43,7 @@
 		C9A210013091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
 		C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */; };
 		C9A210033091061300ABCD01 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200033091061300ABCD01 /* UITestEnvironment.swift */; };
+		C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +86,7 @@
 		C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
 		C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
+		C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +129,7 @@
 				C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */,
 				C9A200033091061300ABCD01 /* UITestEnvironment.swift */,
 				C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */,
+				C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -374,6 +377,7 @@
 				C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */,
 				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
 				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
+				C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

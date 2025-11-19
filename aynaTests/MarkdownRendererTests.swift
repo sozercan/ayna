@@ -145,7 +145,7 @@ final class MarkdownRendererTests: XCTestCase {
         """
         let blocks = MarkdownRenderer.parse(content)
         XCTAssertEqual(blocks.count, 1)
-        if case .code(let code, let lang) = blocks.first?.type {
+        if case let .code(code, lang) = blocks.first?.type {
             XCTAssertEqual(lang, "markdown")
             XCTAssertTrue(code.contains("## Usage"))
         } else {
@@ -161,7 +161,7 @@ final class MarkdownRendererTests: XCTestCase {
         """
         let blocks = MarkdownRenderer.parse(content)
         XCTAssertEqual(blocks.count, 1)
-        if case .code(let code, _) = blocks.first?.type {
+        if case let .code(code, _) = blocks.first?.type {
             XCTAssertEqual(code.trimmingCharacters(in: .whitespacesAndNewlines), "code")
         }
     }

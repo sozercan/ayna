@@ -9,6 +9,9 @@ Native macOS ChatGPT client built with SwiftUI.
 - 🏠 Run local models through AIKit + Podman when you prefer everything on device
 - 🛠️ Model Context Protocol (MCP) tools for search and filesystem access
 - 🗂️ Conversation management with search, titles, and keyboard shortcuts
+- 📤 Export conversations to Markdown or PDF
+- 🎨 Image generation support (Azure OpenAI)
+- 📝 Rich Markdown rendering with syntax highlighting
 
 ## Requirements
 
@@ -44,6 +47,16 @@ open ayna.xcodeproj
 1. Head to Settings → MCP Tools.
 2. Enable servers like `brave-search` or `filesystem` and supply any required keys.
 3. Ayna automatically calls tools when a response benefits from them.
+
+### Export Conversations
+1. Open a conversation.
+2. Click the **Export** icon (square with arrow) in the toolbar.
+3. Choose **Export as Markdown** or **Export as PDF**.
+
+### Image Generation
+1. Configure Azure OpenAI in Settings.
+2. Select a DALL-E model (e.g., `dall-e-3`).
+3. Type a prompt to generate an image.
 
 ## Keyboard Shortcuts
 

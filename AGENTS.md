@@ -191,7 +191,7 @@ API keys (global and per-model) are stored in the macOS Keychain via `KeychainSt
 ### App Sandbox
 App uses `App Sandbox` entitlement (`ayna.entitlements`) with:
 - Network client access (for API calls)
-- User selected file read/write (for future export features)
+- User selected file read/write (for export features)
 
 - All conversations stored locally in an encrypted file under Application Support
 - No telemetry or analytics
@@ -286,10 +286,7 @@ do {
 
 ### Planned Features (Roadmap)
 The README outlines features ready for implementation due to extensible architecture:
-- Markdown rendering for messages (replace `Text` views with `AttributedString` or markdown library)
-- Export conversations (data already structured, add PDF/Markdown formatters)
 - Voice input (add AVFoundation speech recognition)
-- Image generation (extend `OpenAIService` for DALL-E endpoints)
 - iCloud sync (models already `Codable`, switch from `UserDefaults` to CloudKit)
 
 ### Known Limitations
