@@ -22,16 +22,27 @@ private final class DefaultsState: @unchecked Sendable {
 
 enum AppPreferences {
     private static let state = DefaultsState()
+    private static var defaultValues: [String: Any] {
+        [
+            "autoGenerateTitle": true,
+        ]
+    }
 
     static var storage: UserDefaults {
         state.storage()
     }
 
+    static func registerDefaults() {
+        storage.register(defaults: defaultValues)
+    }
+
     static func use(_ defaults: UserDefaults) {
+        defaults.register(defaults: defaultValues)
         state.use(defaults)
     }
 
     static func reset() {
         state.reset()
+        registerDefaults()
     }
 }

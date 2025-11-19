@@ -34,12 +34,6 @@ struct SettingsView: View {
                     Label("MCP Tools", systemImage: "wrench.and.screwdriver")
                 }
                 .tag(SettingsTab.mcp)
-
-            AboutView()
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
-                .tag(SettingsTab.about)
         }
         .frame(width: 650, height: 500)
         .onReceive(settingsRouter.$requestedTab) { tab in
@@ -99,13 +93,13 @@ struct GeneralSettingsView: View {
                 }
                 .help("Image compression level (100 = no compression)")
             } header: {
-        Text("Image Generation")
+                Text("Image Generation")
             } footer: {
-        Text("These settings apply when using image generation models")
+                Text("These settings apply when using image generation models")
                     .font(.caption)
-      }
+            }
 
-      Section {
+            Section {
                 Button("Clear All Conversations") {
                     conversationManager.clearAllConversations()
                 }
@@ -1209,89 +1203,6 @@ struct FlowLayout: Layout {
             }
 
             size = CGSize(width: maxWidth, height: currentY + lineHeight)
-        }
-    }
-}
-
-struct AboutView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue)
-
-            Text("ayna")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("Version 1.0.0")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Text("A native macOS ChatGPT client")
-                .font(.body)
-                .foregroundStyle(.secondary)
-
-            Divider()
-                .frame(width: 200)
-
-            VStack(spacing: 12) {
-                Text("Features")
-                    .font(.headline)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    FeatureRow(icon: "bubble.left.and.bubble.right", text: "Native chat interface")
-                    FeatureRow(icon: "key", text: "Secure API key storage")
-                    FeatureRow(icon: "text.badge.plus", text: "Prompt templates")
-                    FeatureRow(icon: "folder", text: "Conversation management")
-                    FeatureRow(icon: "cpu", text: "Multiple AI models")
-                    FeatureRow(icon: "cloud", text: "OpenAI & Azure OpenAI")
-                    FeatureRow(icon: "apple.logo", text: "Apple Intelligence (macOS 26+)")
-                }
-                .font(.caption)
-            }
-
-            Spacer()
-
-            Text("Built with SwiftUI for macOS")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct FeatureRow: View {
-    let icon: String
-    let text: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .frame(width: 20)
-                .foregroundStyle(.blue)
-            Text(text)
-        }
-    }
-}
-
-struct InfoRow: View {
-    let icon: String
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .frame(width: 20)
-                .foregroundStyle(.blue)
-            Text(label)
-                .font(.caption)
-            Spacer()
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 }

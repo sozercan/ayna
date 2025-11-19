@@ -20,6 +20,7 @@ struct aynaApp: App {
     @StateObject private var conversationManager: ConversationManager
 
     init() {
+        AppPreferences.registerDefaults()
         UITestEnvironment.configureIfNeeded()
 
         let manager: ConversationManager = if UITestEnvironment.isEnabled {
