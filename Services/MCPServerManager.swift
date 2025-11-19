@@ -100,10 +100,8 @@ class MCPServerManager: ObservableObject {
                 // Ensure env is a proper [String: String] dictionary
                 // Filter out any non-string values that might have been corrupted
                 var validEnv: [String: String] = [:]
-                for (key, value) in config.env {
-                    if !key.isEmpty {
-                        validEnv[key] = value
-                    }
+                for (key, value) in config.env where !key.isEmpty {
+                    validEnv[key] = value
                 }
 
                 return MCPServerConfig(

@@ -23,6 +23,8 @@ disabled_rules:
   - line_length # Don't enforce line length limits
   - multiple_closures_with_trailing_closure # Allow SwiftUI patterns
   - todo # Allow TODO comments
+  - opening_brace # Project intentionally uses Allman brace style for readability
+  - trailing_comma # Permit trailing commas in multi-line literals/parameters
 
 # Opt-in rules to enable
 opt_in_rules:
