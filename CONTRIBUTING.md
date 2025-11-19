@@ -43,6 +43,59 @@ open ayna.xcodeproj
   - `EncryptedConversationStore` and `ConversationManager` accept dependency-injected stores/file URLs for isolation.
 - Keep every test deterministic—avoid real network calls, timers, or writes outside temporary directories.
 
+## Architecture
+
+### Core Structure
+The codebase follows clean SwiftUI architecture with clear separation:
+
+```
+Models → ViewModels → Views → Services
+```
+
+**Models** (`Models/Conversation.swift`, `Models/Message.swift`)
+- Pure data structures conforming to `Codable` for persistence
+- All models use `UUID` for identification
+- `Conversation` contains array of `Message` objects and metadata
+
+**ViewModels** (`ViewModels/ConversationManager.swift`)
+- `ConversationManager`: Single source of truth for all conversation state
+- Manages CRUD operations, search, and persistence
+- Uses `@Published` properties for reactive UI updates
+
+**Views**
+- `ContentView`: Root view with `NavigationSplitView`
+- `SidebarView`: Conversation list
+- `ChatView`: Main chat interface
+- `SettingsView`: Configuration tabs
+
+**Services**
+- `OpenAIService`: Manages API communication (OpenAI, Azure, AIKit)
+- `MCPServerManager`: Handles Model Context Protocol tools
+- `KeychainStorage`: Securely stores API keys
+
+### State Management
+- `@StateObject` in App entry point for `ConversationManager`
+- `.environmentObject()` to inject throughout view hierarchy
+- Access via `@EnvironmentObject` in child views
+
+## Code Style and Patterns
+
+- **SwiftUI**: Use `NavigationSplitView` for layout. Use `@StateObject`, `@EnvironmentObject` for state.
+- **Linting**: Run `swiftlint --strict` and `swiftformat .` before committing.
+- **Logging**: Use `DiagnosticsLogger` with emoji prefixes for easy scanning.
+- **Error Handling**: Display user-friendly errors in the UI; log detailed errors with context.
+
+## Common Development Tasks
+
+### Adding a New AI Model
+1. Add the model identifier to `OpenAIService.availableModels`.
+2. The model will automatically appear in the Settings picker.
+
+### Modifying UI Layout
+- The app uses a minimum window size of 900x600.
+- Sidebar minimum width is 260px.
+- Use native SwiftUI controls for consistency.
+
 ## Continuous Integration
 
 Two GitHub Actions run automatically on pushes and pull requests:

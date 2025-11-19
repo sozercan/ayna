@@ -1,92 +1,63 @@
 # Ayna
 
-Native macOS ChatGPT client built with SwiftUI.
+A native macOS ChatGPT client built for speed and simplicity.
 
-## Highlights
+## Features
 
-- 💬 Fast, streaming chat interface tailored for macOS
-- ☁️ Works with OpenAI and Azure OpenAI out of the box
-- 🏠 Run local models through AIKit + Podman when you prefer everything on device
-- 🛠️ Model Context Protocol (MCP) tools for search and filesystem access
-- 🗂️ Conversation management with search, titles, and keyboard shortcuts
-- 📤 Export conversations to Markdown or PDF
-- 🎨 Image generation support (Azure OpenAI)
-- 📝 Rich Markdown rendering with syntax highlighting
+- 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
+- ☁️ **Multi-Provider**: Works with OpenAI and Azure OpenAI out of the box.
+- 🏠 **Local Models**: Run models locally for complete privacy.
+- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools
+- 🎨 **Image Generation**: Create images using models like `gpt-image-1`.
+- 🗂️ **Organization**: Searchable conversations with auto-generated titles.
+- 🔒 **Secure**: API keys stored in Keychain; conversations encrypted on disk.
+- 📝 **Export**: Save chats as Markdown or PDF.
 
-## Requirements
+## Getting Started
 
-- macOS 14.0 or newer
-- Xcode 15.0+ to build from source
-- Swift 6.2.1 toolchain
-- OpenAI or Azure OpenAI API key (optional if using local AIKit models)
-- [Podman](https://podman-desktop.io/docs/installation) for AIKit containers (optional)
+### Installation
 
-## Install & Run
+1. Clone the repository.
+2. Open `ayna.xcodeproj` in Xcode.
+3. Run the app (`Cmd+R`).
 
-Clone the repo, open the project in Xcode, and press `Cmd+R` with the “My Mac” target selected.
+### Requirements
 
-```bash
-git clone https://github.com/yourusername/ayna.git
-cd ayna
-open ayna.xcodeproj
-```
+- macOS 14.0 (Sonoma) or newer.
+- An API key for OpenAI or Azure OpenAI (optional if using local models).
 
-## Using Ayna
+## User Guide
 
-### Connect to OpenAI or Azure OpenAI
-1. Launch the app and open Settings (`Cmd+,`).
-2. In the API tab, pick a provider and add your API key (and Azure endpoint/deployment if needed).
-3. Start a new chat with `Cmd+N` and begin messaging.
+### Connect to AI Providers
+1. Open **Settings** (`Cmd+,`) → **API**.
+2. Select your provider (OpenAI or Azure) and enter your API key.
+3. Start chatting!
 
-### Run Local Models with AIKit
-1. Install Podman (GPU support recommended for speed).
-2. In Settings → Models → AIKit, choose a model and select **Pull & Run**.
-3. Chats sent while AIKit is running stay fully local.
+### Run Local Models (AIKit)
+1. Install [Podman](https://podman-desktop.io/) configured with [GPU access](https://podman-desktop.io/docs/podman/gpu).
+2. In **Settings** → **Models** → **AIKit**, select a model and click **Pull & Run**.
+3. Chats will now be processed locally on your machine.
 
-### Use MCP Tools
-1. Head to Settings → MCP Tools.
-2. Enable servers like `brave-search` or `filesystem` and supply any required keys.
-3. Ayna automatically calls tools when a response benefits from them.
+### Enable Tools (MCP)
+1. Go to **Settings** → **MCP Tools**.
+2. Enable tools like `brave-search` or `filesystem` to give the AI more capabilities.
 
-### Export Conversations
-1. Open a conversation.
-2. Click the **Export** icon (square with arrow) in the toolbar.
-3. Choose **Export as Markdown** or **Export as PDF**.
+### Keyboard Shortcuts
+- `Cmd+N`: New conversation
+- `Cmd+,`: Open Settings
+- `Enter`: Send message
+- `Shift+Enter`: New line
 
-### Image Generation
-1. Configure Azure OpenAI in Settings.
-2. Select a DALL-E model (e.g., `dall-e-3`).
-3. Type a prompt to generate an image.
+## Privacy
 
-## Keyboard Shortcuts
+- **No Telemetry**: We don't track your usage.
+- **Local Storage**: Conversations are encrypted and stored only on your Mac if using local models.
+- **Secure Keys**: API keys are stored securely in the macOS Keychain.
 
-- `Cmd+N` — new conversation
-- `Cmd+,` — open Settings
-- `Enter` — send message (use `Shift+Enter` for a new line)
+## Contributing
 
-## Privacy & Security
+Developers, please see [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, architecture details, and testing guidelines.
 
-- API keys live in the macOS Keychain, not on disk.
-- Conversations are encrypted (AES-GCM) inside Application Support.
-- No telemetry or analytics; everything stays on your Mac unless you call a cloud provider.
+## Support
 
-## Testing
-
-Run lint + test locally before pushing changes:
-
-```bash
-swiftlint --strict
-xcodebuild -scheme Ayna -destination 'platform=macOS' test
-```
-
-To focus on the new UI smoke tests (which launch the app with the deterministic `AYNA_UI_TESTING=1` environment and stubbed network calls):
-
-```bash
-xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
-```
-
-## Support & Contributing
-
-Questions or bugs? Open an [issue](https://github.com/sozercan/ayna/issues) on GitHub.
-
-Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Found a bug? Open an [issue](https://github.com/sozercan/ayna/issues).
