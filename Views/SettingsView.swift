@@ -99,18 +99,13 @@ struct GeneralSettingsView: View {
                 }
                 .help("Image compression level (100 = no compression)")
             } header: {
-                Text("Image Generation (gpt-image-1)")
+        Text("Image Generation")
             } footer: {
-                Text("These settings apply when using image generation models like gpt-image-1")
+        Text("These settings apply when using image generation models")
                     .font(.caption)
-            }
+      }
 
-            Section {
-                LabeledContent("Storage Location") {
-                    Text("User Defaults")
-                        .foregroundStyle(.secondary)
-                }
-
+      Section {
                 Button("Clear All Conversations") {
                     conversationManager.clearAllConversations()
                 }
