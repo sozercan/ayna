@@ -249,7 +249,7 @@ struct MessageView: View {
     private func updateCachedBlocks() {
         let newHash = message.content.hashValue
         if newHash != lastContentHash {
-            cachedContentBlocks = parseMessageContent(message.content)
+            cachedContentBlocks = MarkdownRenderer.parse(message.content)
             lastContentHash = newHash
         }
     }
@@ -258,7 +258,7 @@ struct MessageView: View {
         if let reasoning = message.reasoning {
             let newHash = reasoning.hashValue
             if newHash != lastReasoningHash {
-                cachedReasoningBlocks = parseMessageContent(reasoning)
+                cachedReasoningBlocks = MarkdownRenderer.parse(reasoning)
                 lastReasoningHash = newHash
             }
         }
@@ -290,143 +290,123 @@ struct MessageView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
     }
-
-    private func parseMessageContent(_ content: String) -> [ContentBlock] {
-        var blocks: [ContentBlock] = []
-        let lines = content.components(separatedBy: .newlines)
-        var currentText = ""
-        var currentCode = ""
-        var currentToolResult = ""
-        var inCodeBlock = false
-        var inToolBlock = false
-        var codeLanguage = ""
-        var toolName = ""
-
-        for line in lines {
-            // Check for tool call markers
-            if line.hasPrefix("[Tool:"), line.hasSuffix("]") {
-                // Save any pending text
-                if !currentText.isEmpty {
-                    blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
-                    currentText = ""
-                }
-                // Extract tool name
-                let toolNameStart = line.index(line.startIndex, offsetBy: 6)
-                let toolNameEnd = line.index(line.endIndex, offsetBy: -1)
-                toolName = String(line[toolNameStart ..< toolNameEnd]).trimmingCharacters(in: .whitespaces)
-                inToolBlock = true
-            } else if inToolBlock, line.isEmpty {
-                // End of tool block (empty line after tool result)
-                if !currentToolResult.isEmpty {
-                    blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
-                    currentToolResult = ""
-                    toolName = ""
-                }
-                inToolBlock = false
-            } else if inToolBlock {
-                currentToolResult += line + "\n"
-            } else if line.hasPrefix("```") {
-                if inCodeBlock {
-                    // End of code block - just mark it as ended
-                    inCodeBlock = false
-                } else {
-                    // Start of code block
-                    if !currentText.isEmpty {
-                        blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
-                        currentText = ""
-                    }
-                    inCodeBlock = true
-                    codeLanguage = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                    // Immediately add the code block (even if empty) so it appears during streaming
-                    blocks.append(ContentBlock(type: .code(currentCode, codeLanguage)))
-                }
-            } else if inCodeBlock {
-                currentCode += line + "\n"
-                // Update the last code block with new content
-                if let lastIndex = blocks.lastIndex(where: {
-                    if case .code = $0.type { return true }
-                    return false
-                }) {
-                    blocks[lastIndex] = ContentBlock(type: .code(currentCode, codeLanguage))
-                }
-            } else {
-                currentText += line + "\n"
-            }
-        }
-
-        // Add remaining content
-        if !currentText.isEmpty {
-            blocks.append(ContentBlock(type: .text(currentText.trimmingCharacters(in: .newlines))))
-        }
-        if !currentToolResult.isEmpty {
-            blocks.append(ContentBlock(type: .tool(toolName, currentToolResult.trimmingCharacters(in: .newlines))))
-        }
-        // Handle unclosed code block (still streaming)
-        if inCodeBlock,
-           !blocks.contains(where: {
-               if case .code = $0.type { return true }
-               return false
-           })
-        {
-            blocks.append(ContentBlock(type: .code(currentCode, codeLanguage)))
-        }
-
-        return blocks
-    }
 }
 
 struct ContentBlock: Identifiable {
     let id = UUID()
     let type: BlockType
-    let cachedLines: [String]? // Performance: cache split lines for text blocks
 
     enum BlockType {
-        case text(String)
-        case code(String, String) // code, language
-        case tool(String, String) // tool name, result
-    }
-
-    init(type: BlockType) {
-        self.type = type
-        // Pre-split text lines for better rendering performance
-        if case let .text(text) = type {
-            cachedLines = text.components(separatedBy: "\n")
-        } else {
-            cachedLines = nil
-        }
+        case paragraph(AttributedString)
+        case heading(level: Int, text: AttributedString)
+        case unorderedList([AttributedString])
+        case orderedList(start: Int, items: [AttributedString])
+        case blockquote(AttributedString)
+        case table(MarkdownTable)
+        case divider
+        case code(String, String)
+        case tool(String, String)
     }
 
     @ViewBuilder
     var view: some View {
         switch type {
-        case .text:
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(cachedLines ?? [], id: \.self) { line in
-                    if line.hasPrefix("### ") {
-                        Text(line.replacingOccurrences(of: "### ", with: ""))
+        case let .paragraph(text):
+            Text(text)
+                .font(.system(size: 15))
+                .lineSpacing(4)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+        case let .heading(level, text):
+            let font: Font = switch level {
+            case 1:
+                .system(size: 22, weight: .bold)
+            case 2:
+                .system(size: 20, weight: .semibold)
+            case 3:
+                .system(size: 18, weight: .semibold)
+            default:
+                .system(size: 16, weight: .semibold)
+            }
+            Text(text)
+                .font(font)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, level == 1 ? 4 : 2)
+
+        case let .unorderedList(items):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("•")
                             .font(.system(size: 16, weight: .semibold))
+                            .accessibilityHidden(true)
+                        Text(item)
+                            .font(.system(size: 15))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if line.hasPrefix("## ") {
-                        Text(line.replacingOccurrences(of: "## ", with: ""))
-                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .padding(.leading, 2)
+                    .accessibilityLabel("Bullet item \(index + 1)")
+                }
+            }
+
+        case let .orderedList(start, items):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: "\(start + offset).")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 32, alignment: .trailing)
+                            .accessibilityHidden(true)
+                        Text(item)
+                            .font(.system(size: 15))
                             .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if line.hasPrefix("# ") {
-                        Text(line.replacingOccurrences(of: "# ", with: ""))
-                            .font(.system(size: 18, weight: .bold))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if !line.isEmpty {
-                        Text(LocalizedStringKey(line))
-                            .textSelection(.enabled)
-                            .font(.system(size: 15, weight: .regular))
-                            .lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+        case let .blockquote(text):
+            HStack(alignment: .top, spacing: 12) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.4))
+                    .frame(width: 3)
+                    .cornerRadius(3)
+
+                Text(text)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(10)
+
+        case let .table(table):
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    tableRowView(table.headers, alignments: table.alignments, isHeader: true)
+                        .background(Color.secondary.opacity(0.12))
+                    Divider()
+                    ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
+                        tableRowView(row, alignments: table.alignments, isHeader: false)
+                        if rowIndex < table.rows.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .background(Color.secondary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .divider:
+            Divider()
+                .overlay(Color.secondary.opacity(0.2))
 
         case let .code(code, language):
             VStack(alignment: .leading, spacing: 0) {
@@ -532,6 +512,36 @@ struct ContentBlock: Identifiable {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: Color.blue.opacity(0.1), radius: 4, x: 0, y: 2)
+        }
+    }
+
+    @ViewBuilder
+    private func tableRowView(
+        _ cells: [AttributedString],
+        alignments: [MarkdownTable.ColumnAlignment],
+        isHeader: Bool,
+    ) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                let columnAlignment = alignments.indices.contains(index) ? alignments[index] : .leading
+                Text(cell)
+                    .font(.system(size: 13, weight: isHeader ? .semibold : .regular))
+                    .textSelection(.enabled)
+                    .frame(minWidth: 80, alignment: horizontalAlignment(for: columnAlignment))
+            }
+        }
+        .padding(.vertical, isHeader ? 10 : 8)
+        .padding(.horizontal, 12)
+    }
+
+    private func horizontalAlignment(for alignment: MarkdownTable.ColumnAlignment) -> Alignment {
+        switch alignment {
+        case .leading:
+            .leading
+        case .center:
+            .center
+        case .trailing:
+            .trailing
         }
     }
 }

@@ -19,6 +19,7 @@
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
+		C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
 		C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
 		C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
@@ -34,6 +35,7 @@
 		C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */; };
 		C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */; };
 		C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */; };
+		C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */; };
 		C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
 		C9A1A0013090F5E900ABCD01 /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */; };
 		C9A1A0023090F5E900ABCD01 /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */; };
@@ -80,7 +82,9 @@
 		C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
 		C9A200033091061300ABCD01 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
 		C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
+		C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
+		C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +126,7 @@
 				C9A200013091061300ABCD01 /* TestIdentifiers.swift */,
 				C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */,
 				C9A200033091061300ABCD01 /* UITestEnvironment.swift */,
+				C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -188,6 +193,7 @@
 				C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */,
 				C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */,
 				C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */,
+				C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */,
 			);
 			path = aynaTests;
 			sourceTree = "<group>";
@@ -341,6 +347,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */,
 				C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */,
 				C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */,
 				C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */,
@@ -374,6 +381,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */,
 				C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */,
 				C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */,
 				C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */,
