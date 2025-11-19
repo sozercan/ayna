@@ -295,7 +295,6 @@ The README outlines features ready for implementation due to extensible architec
 ### Known Limitations
 - No actual Keychain implementation despite comments
 - No unit tests
-- No retry logic for network failures
 - No token usage tracking or cost calculation
 - Streaming response parsing is simplistic (may fail on complex SSE formats)
 - Azure OpenAI API version hardcoded list (may need updates for new Azure releases)

@@ -58,23 +58,23 @@ enum MarkdownRenderer {
                     var codeLines: [String] = []
                     index += 1
                     var closed = false
-                    
+
                     // Heuristic: If language is markdown, we track nested depth to support
                     // nested code blocks even if the LLM uses the same number of backticks.
                     let isMarkdown = language.lowercased() == "markdown" || language.lowercased() == "md"
                     var nestedDepth = 0
-                    
+
                     while index < lines.count {
                         let codeLine = lines[index]
                         let codeTrimmed = codeLine.trimmingCharacters(in: .whitespaces)
-                        
+
                         // Check for closing fence:
                         // 1. Must start with backticks
                         // 2. Must have at least backtickCount backticks
                         // 3. Must consist ONLY of backticks (no info string allowed on closing fence)
                         let lineBackticks = codeTrimmed.prefix(while: { $0 == "`" }).count
                         let isClosingFence = lineBackticks >= backtickCount && codeTrimmed.count == lineBackticks
-                        
+
                         if isClosingFence {
                             if isMarkdown && nestedDepth > 0 {
                                 // It's a closing fence for a nested block
@@ -89,7 +89,7 @@ enum MarkdownRenderer {
                                 break
                             }
                         }
-                        
+
                         // Check for nested opening fence (only if isMarkdown)
                         // If it starts with fence and has content after (language), it's an opening fence.
                         if isMarkdown {
@@ -100,7 +100,7 @@ enum MarkdownRenderer {
                                  }
                              }
                         }
-                        
+
                         codeLines.append(codeLine)
                         index += 1
                     }

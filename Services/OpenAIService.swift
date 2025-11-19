@@ -467,6 +467,7 @@ class OpenAIService: ObservableObject {
         model: String? = nil,
         onComplete: @escaping (Data) -> Void,
         onError: @escaping (Error) -> Void,
+        attempt: Int = 0
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -527,9 +528,30 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        urlSession.dataTask(with: request) { data, _, error in
+        urlSession.dataTask(with: request) { [weak self] data, _, error in
             if let error {
                 DispatchQueue.main.async {
+                    if self?.shouldRetry(error: error, attempt: attempt) == true {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .info,
+                            message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
+                            metadata: ["error": error.localizedDescription]
+                        )
+                        Task {
+                            await self?.delay(for: attempt)
+                            await MainActor.run {
+                                self?.generateImage(
+                                    prompt: prompt,
+                                    model: model,
+                                    onComplete: onComplete,
+                                    onError: onError,
+                                    attempt: attempt + 1
+                                )
+                            }
+                        }
+                        return
+                    }
                     onError(error)
                 }
                 return
@@ -864,6 +886,7 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void,
         onReasoning: ((String) -> Void)? = nil,
+        attempt: Int = 0
     ) {
         // Check if this model has a provider override
         let effectiveProvider = modelProviders[model] ?? provider
@@ -961,6 +984,31 @@ class OpenAIService: ObservableObject {
                     if (error as NSError).code == NSURLErrorCancelled {
                         return
                     }
+
+                    if self?.shouldRetry(error: error, attempt: attempt) == true {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .info,
+                            message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
+                            metadata: ["error": error.localizedDescription]
+                        )
+                        Task {
+                            await self?.delay(for: attempt)
+                            await MainActor.run {
+                                self?.responsesAPIRequest(
+                                    messages: messages,
+                                    model: model,
+                                    onChunk: onChunk,
+                                    onComplete: onComplete,
+                                    onError: onError,
+                                    onReasoning: onReasoning,
+                                    attempt: attempt + 1
+                                )
+                            }
+                        }
+                        return
+                    }
+
                     onError(error)
                     return
                 }
@@ -1162,6 +1210,7 @@ class OpenAIService: ObservableObject {
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
         onReasoning: ((String) -> Void)? = nil,
+        attempt: Int = 0
     ) {
         // Capture values for async context
         let currentProvider = provider
@@ -1169,14 +1218,12 @@ class OpenAIService: ObservableObject {
         let currentAzureAPIVersion = azureAPIVersion
 
         let task = Task {
+            var hasReceivedData = false
             do {
                 let (bytes, response) = try await urlSession.bytes(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    await MainActor.run {
-                        onError(OpenAIError.invalidResponse)
-                    }
-                    return
+                    throw OpenAIError.invalidResponse
                 }
 
                 guard httpResponse.statusCode == 200 else {
@@ -1186,10 +1233,7 @@ class OpenAIService: ObservableObject {
                         azureDeployment: currentAzureDeployment,
                         azureVersion: currentAzureAPIVersion,
                     )
-                    await MainActor.run {
-                        onError(OpenAIError.apiError(errorMessage))
-                    }
-                    return
+                    throw OpenAIError.apiError(errorMessage)
                 }
 
                 var buffer = Data()
@@ -1197,6 +1241,7 @@ class OpenAIService: ObservableObject {
                 var toolCallId = ""
 
                 for try await byte in bytes {
+                    hasReceivedData = true
                     // Check if task was cancelled
                     if Task.isCancelled {
                         DiagnosticsLogger.log(
@@ -1244,32 +1289,52 @@ class OpenAIService: ObservableObject {
                     onComplete()
                 }
             } catch {
-                await MainActor.run {
-                    self.currentStreamTask = nil
-                    // Check if it's a timeout error and provide a better message
-                    if let urlError = error as? URLError, urlError.code == .timedOut {
-                        onError(
-                            OpenAIError.apiError(
-                                "Request timed out. The model may be slow or overloaded. Please try again."))
-                    } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                        onError(
-                            OpenAIError.apiError(
-                                "Network connection was lost. The server may have rejected the request."))
-                    } else if (error as? CancellationError) != nil {
-                        // Task was cancelled, don't report as error
-                        DiagnosticsLogger.log(
-                            .openAIService,
-                            level: .info,
-                            message: "Stream task cancelled successfully",
+                if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                    await delay(for: attempt)
+                    await MainActor.run {
+                        streamResponse(
+                            request: request,
+                            onChunk: onChunk,
+                            onComplete: onComplete,
+                            onError: onError,
+                            onToolCall: onToolCall,
+                            onToolCallRequested: onToolCallRequested,
+                            onReasoning: onReasoning,
+                            attempt: attempt + 1
                         )
-                    } else {
-                        onError(error)
+                    }
+                } else {
+                    await MainActor.run {
+                        self.currentStreamTask = nil
+                        // Check if it's a timeout error and provide a better message
+                        if let urlError = error as? URLError, urlError.code == .timedOut {
+                            onError(
+                                OpenAIError.apiError(
+                                    "Request timed out. The model may be slow or overloaded. Please try again."))
+                        } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
+                            onError(
+                                OpenAIError.apiError(
+                                    "Network connection was lost. The server may have rejected the request."))
+                        } else if (error as? CancellationError) != nil {
+                            // Task was cancelled, don't report as error
+                            DiagnosticsLogger.log(
+                                .openAIService,
+                                level: .info,
+                                message: "Stream task cancelled via CancellationError",
+                            )
+                        } else {
+                            onError(error)
+                        }
                     }
                 }
             }
         }
-
-        // Store the task for cancellation
         currentStreamTask = task
     }
 
@@ -1280,10 +1345,34 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onReasoning: ((String) -> Void)? = nil,
+        attempt: Int = 0
     ) {
-        let task = urlSession.dataTask(with: request) { data, _, error in
+        let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             DispatchQueue.main.async {
                 if let error {
+                    if self?.shouldRetry(error: error, attempt: attempt) == true {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .info,
+                            message: "⚠️ Retrying non-stream request (attempt \(attempt + 1))",
+                            metadata: ["error": error.localizedDescription]
+                        )
+                        Task {
+                            await self?.delay(for: attempt)
+                            await MainActor.run {
+                                self?.nonStreamResponse(
+                                    request: request,
+                                    onChunk: onChunk,
+                                    onComplete: onComplete,
+                                    onError: onError,
+                                    onToolCall: onToolCall,
+                                    onReasoning: onReasoning,
+                                    attempt: attempt + 1
+                                )
+                            }
+                        }
+                        return
+                    }
                     onError(error)
                     return
                 }
@@ -1438,6 +1527,53 @@ class OpenAIService: ObservableObject {
                 )
             }
         }
+    }
+
+    // Retry configuration
+    private let maxRetries = 3
+    private let initialRetryDelay: TimeInterval = 1.0
+    private let maxRetryDelay: TimeInterval = 8.0
+
+    private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
+        guard attempt < maxRetries else { return false }
+        guard !hasReceivedData else { return false }
+
+        // Check for cancellation
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            return false
+        }
+        if (error as NSError).code == NSURLErrorCancelled {
+            return false
+        }
+
+        // Check for specific error types to retry
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed:
+                return true
+            default:
+                return false
+            }
+        }
+
+        if let openAIError = error as? OpenAIError {
+            switch openAIError {
+            case .apiError(let message):
+                if message.contains("429") || message.contains("500") || message.contains("502") || message.contains("503") || message.contains("504") {
+                    return true
+                }
+            default:
+                return false
+            }
+        }
+
+        return false
+    }
+
+    private func delay(for attempt: Int) async {
+        let delay = min(initialRetryDelay * pow(2.0, Double(attempt)), maxRetryDelay)
+        let jitter = Double.random(in: 0...0.1)
+        try? await Task.sleep(nanoseconds: UInt64((delay + jitter) * 1_000_000_000))
     }
 
     enum OpenAIError: LocalizedError {
