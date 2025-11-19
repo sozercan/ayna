@@ -13,21 +13,19 @@ struct SidebarView: View {
     @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
-    @State private var searchText = ""
-    @State private var filteredConversations: [Conversation] = []
+  @State private var searchText = ""
 
-    private var timelineSections: [ConversationTimelineSection] {
-        ConversationTimelineGrouper.sections(from: filteredConversations)
+  private var filteredConversations: [Conversation] {
+    conversationManager
+      .searchConversations(query: searchText)
+      .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private func updateFilteredConversations() {
-        filteredConversations =
-            conversationManager
-                .searchConversations(query: searchText)
-                .sorted { $0.updatedAt > $1.updatedAt }
-    }
+  private var timelineSections: [ConversationTimelineSection] {
+    ConversationTimelineGrouper.sections(from: filteredConversations)
+  }
 
-    var body: some View {
+  var body: some View {
         VStack(spacing: 0) {
             // Search Box
             HStack(spacing: 8) {
@@ -149,16 +147,7 @@ struct SidebarView: View {
                     Image(systemName: "square.and.pencil")
                 }
             }
-        }
-        .onChange(of: searchText) { _, _ in
-            updateFilteredConversations()
-        }
-        .onReceive(conversationManager.$conversations) { _ in
-            updateFilteredConversations()
-        }
-        .onAppear {
-            updateFilteredConversations()
-        }
+    }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()

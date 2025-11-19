@@ -867,6 +867,23 @@ class OpenAIService: ObservableObject {
     ) {
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
+
+    // Handle title generation
+    if userContent.starts(with: "Generate a very short title") {
+      // Extract the original content from the prompt
+      // Prompt format: ... starts with: "CONTENT". Only respond ...
+      if let range = userContent.range(of: "starts with: \""),
+        let endRange = userContent.range(of: "\". Only respond")
+      {
+        let content = String(userContent[range.upperBound..<endRange.lowerBound])
+        // Return just the content as the title (or a shortened version)
+        let title = String(content.prefix(50))
+        onChunk(title)
+        onComplete()
+        return
+      }
+    }
+
         let response = "UI Test Response: \(userContent)"
 
         let deliverResponse = {

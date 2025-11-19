@@ -53,7 +53,7 @@ enum UITestEnvironment {
         guard let suite = UserDefaults(suiteName: suiteName) else { return }
         suite.removePersistentDomain(forName: suiteName)
         suite.synchronize()
-        suite.set(false, forKey: "autoGenerateTitle")
+    suite.set(true, forKey: "autoGenerateTitle")
         AppPreferences.use(suite)
     }
 

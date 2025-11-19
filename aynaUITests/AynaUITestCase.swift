@@ -1,5 +1,6 @@
 import XCTest
 
+@MainActor
 class AynaUITestCase: XCTestCase {
     var app: XCUIApplication!
 

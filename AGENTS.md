@@ -22,7 +22,15 @@ open ayna.xcodeproj
 ### Testing
 The repository ships with the `aynaTests` unit bundle plus a deterministic `aynaUITests` UI bundle.
 
-- Run the entire suite with:
+- Run unit tests (logic/backend):
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+  ```
+- Run UI tests (views/interactions):
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
+  ```
+- Run the entire suite:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
@@ -31,7 +39,10 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 
 ### Build & Test Expectations
-- Unless your change is strictly documentation (e.g., Markdown copy edits with zero code or config impact), run both `xcodebuild -scheme Ayna -destination 'platform=macOS' build` and `xcodebuild -scheme Ayna -destination 'platform=macOS' test` before handing work back.
+- Unless your change is strictly documentation (e.g., Markdown copy edits with zero code or config impact), run `xcodebuild -scheme Ayna -destination 'platform=macOS' build`.
+- For logic or backend changes, run unit tests (`-only-testing:aynaTests`).
+- For UI changes, run UI tests (`-only-testing:aynaUITests`).
+- If changes span both or you are unsure, run the full suite.
 - Fix every build, lint, or test failure you hit; do not skip failures unless the user explicitly waives them for that task.
 - Note any deviations (such as intentionally skipping tests for docs-only edits) in your final handoff so the user knows what ran.
 
