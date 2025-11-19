@@ -13,9 +13,13 @@ class AynaUITestCase: XCTestCase {
         app.launchEnvironment["AYNA_UI_TESTING"] = "1"
         app.launch()
         app.activate()
-    }
 
-    override func tearDownWithError() throws {
+    // Wait for the main window to appear before querying children
+    let window = app.windows.firstMatch
+    XCTAssertTrue(window.waitForExistence(timeout: 10), "App window did not appear in time")
+  }
+
+  override func tearDownWithError() throws {
         app?.terminate()
         app = nil
         try super.tearDownWithError()

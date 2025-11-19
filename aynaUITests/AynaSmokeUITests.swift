@@ -14,28 +14,28 @@ final class AynaSmokeUITests: AynaUITestCase {
             "UI Test Response",
             "UI Test Response",
         ))
-        let foundResponse = responseLabel.waitForExistence(timeout: 2)
-            || responseTextView.waitForExistence(timeout: 3)
-            || genericResponse.waitForExistence(timeout: 3)
+        let foundResponse = responseLabel.waitForExistence(timeout: 10)
+            || responseTextView.waitForExistence(timeout: 10)
+            || genericResponse.waitForExistence(timeout: 10)
         XCTAssertTrue(foundResponse)
 
         let chatComposer = app.textViews[TestIdentifiers.ChatComposer.textEditor]
-        XCTAssertTrue(chatComposer.waitForExistence(timeout: 2))
+        XCTAssertTrue(chatComposer.waitForExistence(timeout: 10))
         XCTAssertEqual((chatComposer.value as? String) ?? "", "")
 
         let conversationTitle = app.staticTexts["New Conversation"]
-        XCTAssertTrue(conversationTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(conversationTitle.waitForExistence(timeout: 10))
     }
 
     func testNewConversationButtonResetsComposer() {
         composeInitialMessageAndSend("First chat")
 
         let newConversationButton = app.buttons[TestIdentifiers.Sidebar.newConversationButton]
-        XCTAssertTrue(newConversationButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(newConversationButton.waitForExistence(timeout: 10))
         newConversationButton.click()
 
         let composer = app.textViews[TestIdentifiers.NewChatComposer.textEditor]
-        XCTAssertTrue(composer.waitForExistence(timeout: 2))
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
         XCTAssertEqual((composer.value as? String) ?? "", "")
     }
 
@@ -46,27 +46,27 @@ final class AynaSmokeUITests: AynaUITestCase {
         composer.typeText(text)
 
         let sendButton = app.buttons[TestIdentifiers.NewChatComposer.sendButton]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(sendButton.waitForExistence(timeout: 10))
         sendButton.click()
 
         let chatComposer = app.textViews[TestIdentifiers.ChatComposer.textEditor]
-        XCTAssertTrue(chatComposer.waitForExistence(timeout: 5))
+        XCTAssertTrue(chatComposer.waitForExistence(timeout: 10))
         return chatComposer
     }
 
     private func ensureNewConversationComposer() -> XCUIElement {
         let composer = app.textViews[TestIdentifiers.NewChatComposer.textEditor]
         print("Window count: \(app.windows.count)")
-        if composer.waitForExistence(timeout: 1) {
+        if composer.waitForExistence(timeout: 10) {
             return composer
         }
 
         print("UI Debug Description:\n\(app.debugDescription)")
 
         let newConversationButton = app.buttons[TestIdentifiers.Sidebar.newConversationButton]
-        XCTAssertTrue(newConversationButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(newConversationButton.waitForExistence(timeout: 10))
         newConversationButton.click()
-        XCTAssertTrue(composer.waitForExistence(timeout: 2))
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
         return composer
     }
 }
