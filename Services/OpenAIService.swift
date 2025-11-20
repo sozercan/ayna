@@ -742,7 +742,6 @@ class OpenAIService: ObservableObject {
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
         onReasoning: ((String) -> Void)? = nil,
-        trackTask: Bool = true
     ) {
         if UITestEnvironment.isEnabled {
             simulateUITestResponse(
@@ -797,7 +796,6 @@ class OpenAIService: ObservableObject {
                 onComplete: onComplete,
                 onError: onError,
                 onReasoning: onReasoning,
-                trackTask: trackTask
             )
             return
         }
@@ -852,13 +850,11 @@ class OpenAIService: ObservableObject {
             streamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
                 onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning,
-                trackTask: trackTask
             )
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
                 onToolCall: onToolCall, onReasoning: onReasoning,
-                trackTask: trackTask
             )
         }
     }
@@ -912,7 +908,6 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onReasoning: ((String) -> Void)? = nil,
         attempt: Int = 0,
-        trackTask: Bool = true
     ) {
         // Check if this model has a provider override
         let effectiveProvider = modelProviders[model] ?? provider
@@ -1002,10 +997,8 @@ class OpenAIService: ObservableObject {
 
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             DispatchQueue.main.async {
-                // Clear the task reference if we were tracking it
-                if trackTask {
-                    self?.currentTask = nil
-                }
+                // Clear the task reference
+                self?.currentTask = nil
 
                 if let error {
                     // Don't report error if it was cancelled
@@ -1031,7 +1024,6 @@ class OpenAIService: ObservableObject {
                                     onError: onError,
                                     onReasoning: onReasoning,
                                     attempt: attempt + 1,
-                                    trackTask: trackTask
                                 )
                             }
                         }
@@ -1103,9 +1095,7 @@ class OpenAIService: ObservableObject {
         }
 
         // Store and start the task
-        if trackTask {
-            currentTask = task
-        }
+        currentTask = task
         task.resume()
     }
 
@@ -1242,7 +1232,6 @@ class OpenAIService: ObservableObject {
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
         onReasoning: ((String) -> Void)? = nil,
         attempt: Int = 0,
-        trackTask: Bool = true
     ) {
         // Capture values for async context
         let currentProvider = provider
@@ -1282,9 +1271,7 @@ class OpenAIService: ObservableObject {
                             message: "Stream task cancelled; stopping iteration",
                         )
                         await MainActor.run {
-                            if trackTask {
-                                self.currentStreamTask = nil
-                            }
+                            self.currentStreamTask = nil
                         }
                         return
                     }
@@ -1308,9 +1295,7 @@ class OpenAIService: ObservableObject {
 
                             if result.shouldComplete {
                                 await MainActor.run {
-                                    if trackTask {
-                                        self.currentStreamTask = nil
-                                    }
+                                    self.currentStreamTask = nil
                                     onComplete()
                                 }
                                 return
@@ -1321,9 +1306,7 @@ class OpenAIService: ObservableObject {
                 }
 
                 await MainActor.run {
-                    if trackTask {
-                        self.currentStreamTask = nil
-                    }
+                    self.currentStreamTask = nil
                     onComplete()
                 }
             } catch {
@@ -1345,14 +1328,11 @@ class OpenAIService: ObservableObject {
                             onToolCallRequested: onToolCallRequested,
                             onReasoning: onReasoning,
                             attempt: attempt + 1,
-                            trackTask: trackTask
                         )
                     }
                 } else {
                     await MainActor.run {
-                        if trackTask {
-                            self.currentStreamTask = nil
-                        }
+                        self.currentStreamTask = nil
                         // Check if it's a timeout error and provide a better message
                         if let urlError = error as? URLError, urlError.code == .timedOut {
                             onError(
@@ -1376,9 +1356,7 @@ class OpenAIService: ObservableObject {
                 }
             }
         }
-        if trackTask {
-            currentStreamTask = task
-        }
+        currentStreamTask = task
     }
 
     private func nonStreamResponse(
@@ -1389,14 +1367,9 @@ class OpenAIService: ObservableObject {
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onReasoning: ((String) -> Void)? = nil,
         attempt: Int = 0,
-        trackTask: Bool = true
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             DispatchQueue.main.async {
-                if trackTask {
-                    self?.currentTask = nil
-                }
-
                 if let error {
                     if self?.shouldRetry(error: error, attempt: attempt) == true {
                         DiagnosticsLogger.log(
@@ -1416,7 +1389,6 @@ class OpenAIService: ObservableObject {
                                     onToolCall: onToolCall,
                                     onReasoning: onReasoning,
                                     attempt: attempt + 1,
-                                    trackTask: trackTask
                                 )
                             }
                         }
@@ -1506,9 +1478,6 @@ class OpenAIService: ObservableObject {
             }
         }
 
-        if trackTask {
-            currentTask = task
-        }
         task.resume()
     }
 
