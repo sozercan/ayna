@@ -6,8 +6,9 @@ A native macOS ChatGPT client built for speed and simplicity.
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
 - ☁️ **Multi-Provider**: Works with OpenAI and Azure OpenAI out of the box.
+- 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
 - 🏠 **Local Models**: Run models locally for complete privacy.
-- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools
+- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
 - 🎨 **Image Generation**: Create images using models like `gpt-image-1`.
 - 🗂️ **Organization**: Searchable conversations with auto-generated titles.
 - 🔒 **Secure**: API keys stored in Keychain; conversations encrypted on disk.
@@ -17,9 +18,13 @@ A native macOS ChatGPT client built for speed and simplicity.
 
 ### Installation
 
-1. Clone the repository.
-2. Open `ayna.xcodeproj` in Xcode.
-3. Run the app (`Cmd+R`).
+1. Grab the latest `.dmg` from the [Releases page](https://github.com/sozercan/ayna/releases).
+2. Open the disk image and drag **Ayna.app** into your **Applications** folder.
+3. App is quarantined because it's not notarized. To remove the quarantine, run this command in Terminal:
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Ayna.app
+  ```
+4. Launch **Ayna** from Applications.
 
 ### Requirements
 

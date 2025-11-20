@@ -14,6 +14,17 @@ cd ayna
 open ayna.xcodeproj
 ```
 
+## Build from Source
+
+1. Open `ayna.xcodeproj` in Xcode.
+2. Select the **Ayna** scheme with the **My Mac** destination.
+3. Run with **Cmd+R** or click the Run button. Xcode will deploy the debug build straight to your Mac.
+4. Prefer running from Terminal? Use:
+
+  ```bash
+  xcodebuild -project ayna.xcodeproj -scheme Ayna -destination 'platform=macOS' build
+  ```
+
 ## Local Development
 
 1. Select the **Ayna** scheme and the **My Mac** destination in Xcode.

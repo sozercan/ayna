@@ -122,7 +122,7 @@ struct ChatView: View {
     }
 
     var body: some View {
-        ZStack {
+    ZStack(alignment: .topTrailing) {
             // Chat background with subtle gradient
             LinearGradient(
                 colors: [
@@ -393,24 +393,36 @@ struct ChatView: View {
                 }
                 .padding(.vertical, 20)
                 .background(.ultraThinMaterial)
-            }
+      }
+      Menu {
+        Button(action: { exportConversation(format: .markdown) }) {
+          Label("Export as Markdown", systemImage: "doc.text")
         }
-        .onAppear {
-            isComposerFocused = true
+        Button(action: { exportConversation(format: .pdf) }) {
+          Label("Export as PDF", systemImage: "doc.text.image")
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(action: { exportConversation(format: .markdown) }) {
-                        Label("Export as Markdown", systemImage: "doc.text")
-                    }
-                    Button(action: { exportConversation(format: .pdf) }) {
-                        Label("Export as PDF", systemImage: "doc.text.image")
-                    }
-                } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
-                }
-            }
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "square.and.arrow.up")
+            .imageScale(.medium)
+          Image(systemName: "chevron.down")
+            .imageScale(.small)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+          Capsule().stroke(Color.white.opacity(0.2)),
+        )
+        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 6)
+        .accessibilityLabel("Export conversation")
+      }
+      .padding(.top, 16)
+      .padding(.trailing, 24)
+    }
+    .onAppear {
+      isComposerFocused = true
         }
     }
 
