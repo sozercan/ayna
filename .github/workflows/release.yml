@@ -1,8 +1,6 @@
 name: Release Build
 
 on:
-  release:
-    types: [ published ]
   workflow_dispatch:
     inputs:
       tag:
@@ -88,9 +86,7 @@ jobs:
     - name: Determine artifact name
       id: artifact
       run: |
-        if [ "${{ github.event_name }}" = "release" ]; then
-          TAG="${{ github.event.release.tag_name }}"
-        elif [ -n "${{ inputs.tag }}" ]; then
+        if [ -n "${{ inputs.tag }}" ]; then
           TAG="${{ inputs.tag }}"
         elif [ -n "${{ github.ref_name }}" ]; then
           TAG="${{ github.ref_name }}"
@@ -115,13 +111,22 @@ jobs:
         path: ${{ steps.artifact.outputs.filename }}
         retention-days: 30
 
-    - name: Attach DMG to GitHub release
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+    - name: Create GitHub release and upload DMG
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ${{ steps.artifact.outputs.filename }}
-        asset_name: ${{ steps.artifact.outputs.filename }}
-        asset_content_type: application/x-apple-diskimage
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -eo pipefail
+
+        TAG="${{ steps.artifact.outputs.tag }}"
+        FILE="${{ steps.artifact.outputs.filename }}"
+        TITLE="Ayna ${TAG}"
+        NOTES="Automated release for ${TAG} (build ${GITHUB_SHA})"
+
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "Release $TAG already exists, uploading asset instead"
+          gh release upload "$TAG" "$FILE" --clobber
+        else
+          gh release create "$TAG" "$FILE" \
+            --title "$TITLE" \
+            --notes "$NOTES"
+        fi
