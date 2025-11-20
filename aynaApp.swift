@@ -69,6 +69,7 @@ struct aynaApp: App {
                 .frame(minWidth: 900, minHeight: 600)
                 .background(WindowAppearanceConfigurator())
         }
+        .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -151,8 +152,8 @@ private func configureWindowAppearance(_ window: NSWindow) {
     window.styleMask.insert([.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView])
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
-    window.isOpaque = false
-    window.backgroundColor = .clear
+    window.isOpaque = true
+    window.backgroundColor = NSColor.windowBackgroundColor
     window.title = ""
     window.makeKeyAndOrderFront(nil)
 }
