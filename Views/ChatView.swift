@@ -77,8 +77,15 @@ struct ChatView: View {
     // Helper to filter visible messages
     private func updateVisibleMessages() {
         visibleMessages = currentConversation.messages.filter { message in
-            // Hide system and tool messages (tool messages are internal only)
-            guard message.role != .system && message.role != .tool else { return false }
+            // Hide system messages entirely
+            if message.role == .system {
+                return false
+            }
+
+            // Always show tool messages when they have content (tool replies are the "first" assistant response)
+            if message.role == .tool {
+                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
 
             // Show if: has content, has image data, or is generating image
             // Don't show empty assistant messages unless we're actively generating

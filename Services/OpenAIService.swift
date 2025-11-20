@@ -1119,6 +1119,97 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    private func extractTextSegments(
+        from contentField: Any,
+        source: String,
+        metadata: [String: String] = [:],
+    ) -> [String] {
+        if let stringContent = contentField as? String {
+            return [stringContent]
+        }
+
+        if let contentArray = contentField as? [[String: Any]] {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .debug,
+                message: "🧩 Received structured content array",
+                metadata: mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"]),
+            )
+
+            var segments: [String] = []
+            for (index, part) in contentArray.enumerated() {
+                guard let type = part["type"] as? String else {
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .debug,
+                        message: "⚠️ Structured content part missing type",
+                        metadata: mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"]),
+                    )
+                    continue
+                }
+
+                if let text = part["text"] as? String, !text.isEmpty {
+                    segments.append(text)
+                    continue
+                }
+
+                if let nested = part["content"] {
+                    let nestedMetadata = mergedMetadata(
+                        metadata,
+                        additions: ["source": source, "parentType": type, "parentIndex": "\(index)"],
+                    )
+                    segments.append(contentsOf: extractTextSegments(from: nested, source: source, metadata: nestedMetadata))
+                    continue
+                }
+
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "⚠️ Structured content part missing text",
+                    metadata: mergedMetadata(
+                        metadata,
+                        additions: [
+                            "source": source,
+                            "type": type,
+                            "index": "\(index)",
+                        ],
+                    ),
+                )
+            }
+
+            return segments
+        }
+
+        if let singlePart = contentField as? [String: Any] {
+            return extractTextSegments(from: [singlePart], source: source, metadata: metadata)
+        }
+
+        if !(contentField is NSNull) {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .debug,
+                message: "⚠️ Unsupported content payload",
+                metadata: mergedMetadata(
+                    metadata,
+                    additions: ["source": source, "payloadType": "\(type(of: contentField))"],
+                ),
+            )
+        }
+
+        return []
+    }
+
+    private func mergedMetadata(
+        _ metadata: [String: String],
+        additions: [String: String],
+    ) -> [String: String] {
+        var combined = metadata
+        for (key, value) in additions {
+            combined[key] = value
+        }
+        return combined
+    }
+
     private func processStreamLine(
         _ line: String,
         toolCallBuffer: [String: Any],
@@ -1150,9 +1241,17 @@ class OpenAIService: ObservableObject {
                let delta = firstChoice["delta"] as? [String: Any]
             {
                 // Handle regular content
-                if let content = delta["content"] as? String {
-                    await MainActor.run {
-                        onChunk(content)
+                if let contentField = delta["content"], !(contentField is NSNull) {
+                    let textSegments = extractTextSegments(
+                        from: contentField,
+                        source: "stream.chat",
+                        metadata: ["phase": "delta"],
+                    )
+
+                    if !textSegments.isEmpty {
+                        await MainActor.run {
+                            textSegments.forEach { onChunk($0) }
+                        }
                     }
                 }
 
@@ -1437,8 +1536,16 @@ class OpenAIService: ObservableObject {
                         }
 
                         // Handle regular content
-                        if let content = message["content"] as? String {
-                            onChunk(content)
+                        if let contentField = message["content"], !(contentField is NSNull) {
+                            let textSegments = (self?.extractTextSegments(
+                                from: contentField,
+                                source: "nonstream.chat",
+                                metadata: ["phase": "final"],
+                            )) ?? []
+
+                            for segment in textSegments where !segment.isEmpty {
+                                onChunk(segment)
+                            }
                         }
 
                         // Handle tool calls

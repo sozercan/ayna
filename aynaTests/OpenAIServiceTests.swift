@@ -135,6 +135,48 @@ final class OpenAIServiceTests: XCTestCase {
         XCTAssertEqual(content, "Hi")
         XCTAssertEqual(receivedChunk, "Hello")
     }
+
+    func testSendMessageParsesStructuredContentResponse() {
+        let service = makeService()
+        service.apiKey = "sk-unit-test"
+
+        let completionExpectation = expectation(description: "Structured response parsed")
+
+        MockURLProtocol.requestHandler = { request in
+            MockURLProtocol.lastRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = """
+            {"choices":[{"message":{"content":[{"type":"text","text":"Structured hello"}]}}]}
+            """.data(using: .utf8)!
+            return (response, body)
+        }
+
+        var receivedChunk = ""
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Hello")],
+            model: nil,
+            temperature: nil,
+            stream: false,
+            tools: nil,
+            conversationId: nil,
+            onChunk: { chunk in
+                receivedChunk += chunk
+            },
+            onComplete: {
+                XCTAssertEqual(receivedChunk, "Structured hello")
+                completionExpectation.fulfill()
+            },
+            onError: { error in
+                XCTFail("Unexpected error: \(error)")
+            },
+            onToolCall: nil,
+            onToolCallRequested: nil,
+            onReasoning: nil,
+        )
+
+        wait(for: [completionExpectation], timeout: 1)
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

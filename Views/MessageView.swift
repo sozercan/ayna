@@ -24,141 +24,311 @@ struct MessageView: View {
     @State private var lastContentHash: Int = 0
     @State private var lastReasoningHash: Int = 0
 
+    private var primaryToolCall: MCPToolCall? {
+        message.toolCalls?.first
+    }
+
+    private var toolDisplayName: String {
+        primaryToolCall?.toolName ?? "Tool Result"
+    }
+
+    private var formattedToolArguments: String? {
+        guard let arguments = primaryToolCall?.arguments, !arguments.isEmpty else {
+            return nil
+        }
+
+        let rawArguments = arguments.reduce(into: [String: Any]()) { result, entry in
+            result[entry.key] = entry.value.value
+        }
+
+        guard JSONSerialization.isValidJSONObject(rawArguments),
+              let data = try? JSONSerialization.data(withJSONObject: rawArguments, options: [.prettyPrinted]),
+              let jsonString = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+
+        return jsonString
+    }
+
+    private struct AvatarAppearance {
+        let background: Color
+        let icon: String
+        let iconColor: Color
+    }
+
+    private func avatarAppearance(for role: Message.Role) -> AvatarAppearance {
+        switch role {
+        case .assistant:
+            AvatarAppearance(background: Color.green.opacity(0.15), icon: "sparkles", iconColor: .green)
+        case .tool:
+            AvatarAppearance(background: Color.orange.opacity(0.15), icon: "wrench.and.screwdriver", iconColor: .orange)
+        default:
+            AvatarAppearance(background: Color.blue.opacity(0.15), icon: "person.fill", iconColor: .blue)
+        }
+    }
+
+    @MainActor private struct ToolCallResultCard: View {
+        let toolName: String
+        let arguments: String?
+        let contentBlocks: [ContentBlock]
+        let fallbackText: String
+        @State private var isExpanded = false
+
+        private var previewText: String {
+            let trimmed = fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Tool returned no output." : trimmed
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Color.orange)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Tool Result")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                            Text(toolName)
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+
+                        Spacer()
+
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                if !isExpanded {
+                    Text(previewText)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    if let arguments, !arguments.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Arguments")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                Text(arguments)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.08))
+                            .cornerRadius(8)
+                        }
+                    }
+
+                    Divider()
+
+                    if contentBlocks.isEmpty {
+                        Text(previewText)
+                            .font(.system(size: 13))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(contentBlocks, id: \.id) { block in
+                                block.view
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color.orange.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.25), lineWidth: 1),
+            )
+        }
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        let isAssistant = message.role == .assistant
+        let isToolMessage = message.role == .tool
+        let avatar = avatarAppearance(for: message.role)
+        let avatarFontSize: CGFloat = switch message.role {
+        case .assistant, .tool:
+            13
+        default:
+            14
+        }
+
+        let accessibilityText: String = {
+            if isToolMessage {
+                let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                let summary = trimmed.isEmpty ? "Tool returned no visible text." : trimmed
+                return "Tool \(toolDisplayName) result. \(summary)"
+            }
+            if message.content.isEmpty {
+                return isAssistant ? "Assistant response" : "User message"
+            }
+            return message.content
+        }()
+
+        return HStack(alignment: .top, spacing: 0) {
             HStack(alignment: .top, spacing: 16) {
                 // Avatar
                 Circle()
-                    .fill(message.role == .assistant ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
+                    .fill(avatar.background)
                     .frame(width: 30, height: 30)
                     .overlay(
-                        Image(systemName: message.role == .assistant ? "sparkles" : "person.fill")
-                            .font(.system(size: message.role == .assistant ? 13 : 14, weight: .medium))
-                            .foregroundStyle(message.role == .assistant ? Color.green : Color.blue),
+                        Image(systemName: avatar.icon)
+                            .font(.system(size: avatarFontSize, weight: .medium))
+                            .foregroundStyle(avatar.iconColor),
                     )
 
                 // Content with markdown support
                 VStack(alignment: .leading, spacing: 8) {
                     // Show model name for assistant messages
-                    if message.role == .assistant, let model = modelName {
+                    if isAssistant, let model = modelName {
                         Text(model)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 4)
+                    } else if isToolMessage {
+                        Text(toolDisplayName)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 4)
                     }
 
-                    // Show attached images for user messages
-                    if let attachments = message.attachments, !attachments.isEmpty {
-                        ForEach(attachments.indices, id: \.self) { index in
-                            let attachment = attachments[index]
-                            if attachment.mimeType.starts(with: "image/"),
-                               let nsImage = NSImage(data: attachment.data)
-                            {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Image(nsImage: nsImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(maxWidth: 400)
-                                        .cornerRadius(8)
-                                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                                        .contextMenu {
-                                            Button("Save Image...") {
-                                                saveImage(nsImage)
+                    if isToolMessage {
+                        ToolCallResultCard(
+                            toolName: toolDisplayName,
+                            arguments: formattedToolArguments,
+                            contentBlocks: cachedContentBlocks,
+                            fallbackText: message.content,
+                        )
+                    } else {
+                        // Show attached images for user messages
+                        if let attachments = message.attachments, !attachments.isEmpty {
+                            ForEach(attachments.indices, id: \.self) { index in
+                                let attachment = attachments[index]
+                                if attachment.mimeType.starts(with: "image/"),
+                                   let nsImage = NSImage(data: attachment.data)
+                                {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Image(nsImage: nsImage)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(maxWidth: 400)
+                                            .cornerRadius(8)
+                                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                            .contextMenu {
+                                                Button("Save Image...") {
+                                                    saveImage(nsImage)
+                                                }
+                                                Button("Copy Image") {
+                                                    copyImage(nsImage)
+                                                }
                                             }
-                                            Button("Copy Image") {
-                                                copyImage(nsImage)
-                                            }
+                                        Text(attachment.fileName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Show generated image if present
+                        if message.mediaType == .image {
+                            if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(maxWidth: 512)
+                                    .cornerRadius(12)
+                                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                    .contextMenu {
+                                        Button("Save Image...") {
+                                            saveImage(nsImage)
                                         }
-                                    Text(attachment.fileName)
-                                        .font(.caption)
+                                        Button("Copy Image") {
+                                            copyImage(nsImage)
+                                        }
+                                    }
+                            } else {
+                                // Show loading animation while generating
+                                ImageGeneratingView()
+                            }
+                        }
+
+                        // Show typing indicator for empty assistant messages
+                        if isAssistant, message.content.isEmpty, message.mediaType != .image {
+                            TypingIndicatorView()
+                        }
+
+                        // Show reasoning toggle if reasoning exists
+                        if let reasoning = message.reasoning, !reasoning.isEmpty {
+                            Button(action: {
+                                withAnimation {
+                                    showReasoning.toggle()
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 11, weight: .medium))
+                                    Text("Thinking")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                    Text("\(reasoning.count) chars")
+                                        .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                 }
+                                .foregroundStyle(.blue)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 10)
+                                .background(Color.blue.opacity(0.08))
+                                .cornerRadius(6)
                             }
-                        }
-                    }
+                            .buttonStyle(.plain)
 
-                    // Show generated image if present
-                    if message.mediaType == .image {
-                        if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(maxWidth: 512)
-                                .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                                .contextMenu {
-                                    Button("Save Image...") {
-                                        saveImage(nsImage)
-                                    }
-                                    Button("Copy Image") {
-                                        copyImage(nsImage)
+                            if showReasoning {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(cachedReasoningBlocks, id: \.id) { block in
+                                        block.view
                                     }
                                 }
-                        } else {
-                            // Show loading animation while generating
-                            ImageGeneratingView()
-                        }
-                    }
-
-                    // Show typing indicator for empty assistant messages
-                    if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
-                        TypingIndicatorView()
-                    }
-
-                    // Show reasoning toggle if reasoning exists
-                    if let reasoning = message.reasoning, !reasoning.isEmpty {
-                        Button(action: {
-                            withAnimation {
-                                showReasoning.toggle()
+                                .padding(12)
+                                .background(Color.secondary.opacity(0.05))
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1),
+                                )
                             }
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 11, weight: .medium))
-                                Text("Thinking")
-                                    .font(.system(size: 13, weight: .medium))
-                                Spacer()
-                                Text("\(reasoning.count) chars")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .foregroundStyle(.blue)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 10)
-                            .background(Color.blue.opacity(0.08))
-                            .cornerRadius(6)
                         }
-                        .buttonStyle(.plain)
 
-                        if showReasoning {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(cachedReasoningBlocks, id: \.id) { block in
-                                    block.view
-                                }
-                            }
-                            .padding(12)
-                            .background(Color.secondary.opacity(0.05))
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1),
-                            )
+                        ForEach(cachedContentBlocks, id: \.id) { block in
+                            block.view
                         }
-                    }
-
-                    ForEach(cachedContentBlocks, id: \.id) { block in
-                        block.view
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(
-                    Text(
-                        verbatim: message.content.isEmpty
-                            ? (message.role == .assistant ? "Assistant response" : "User message")
-                            : message.content,
-                    ),
-                )
+                .accessibilityLabel(Text(verbatim: accessibilityText))
                 .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
             }
 
@@ -318,7 +488,7 @@ struct ContentBlock: Identifiable {
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
 
         case let .heading(level, text):
             let font: Font = switch level {
@@ -335,7 +505,7 @@ struct ContentBlock: Identifiable {
                 .font(font)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, level == 1 ? 4 : 2)
 
         case let .unorderedList(items):
@@ -349,7 +519,7 @@ struct ContentBlock: Identifiable {
                             .font(.system(size: 15))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-              .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, 2)
                     .accessibilityLabel("Bullet item \(index + 1)")
@@ -368,7 +538,7 @@ struct ContentBlock: Identifiable {
                             .font(.system(size: 15))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-              .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -386,7 +556,7 @@ struct ContentBlock: Identifiable {
                     .lineSpacing(4)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-          .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08))
@@ -438,7 +608,7 @@ struct ContentBlock: Identifiable {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PlainButtonStyle())
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)

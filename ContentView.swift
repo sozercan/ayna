@@ -55,6 +55,8 @@ struct NewChatView: View {
     @State private var isGenerating = false
     @State private var currentConversationId: UUID?
     @State private var selectedModel = OpenAIService.shared.selectedModel
+    @State private var toolCallDepth = 0
+    @State private var currentToolName: String?
 
     // Cached font for text height calculation (computed property to avoid lazy initialization issues)
     private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -70,7 +72,14 @@ struct NewChatView: View {
     private var visibleMessages: [Message] {
         guard let conversation = currentConversation else { return [] }
         return conversation.messages.filter { message in
-            guard message.role != .system && message.role != .tool else { return false }
+            if message.role == .system {
+                return false
+            }
+
+            if message.role == .tool {
+                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
                 return message.id == conversation.messages.last?.id && isGenerating
             }
@@ -159,6 +168,25 @@ struct NewChatView: View {
                                 }
                             }
                         }
+                    }
+
+                    if let toolName = currentToolName {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .controlSize(.small)
+                            Text(
+                                toolName.hasPrefix("Analyzing")
+                                    ? "🔄 \(toolName)..."
+                                    : "🔧 Using tool: \(toolName)...",
+                            )
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.1))
                     }
 
                     // Input Area
@@ -529,22 +557,41 @@ struct NewChatView: View {
         let mcpManager = MCPServerManager.shared
         let enabledTools = mcpManager.getEnabledTools()
         let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
+        toolCallDepth = 0
 
-        // Send the message using the public API
-        // Capture conversation ID for validation in closure
-        let expectedConversationId = conversation.id
-        openAIService.sendMessage(
+        sendMessageWithToolSupport(
+            conversation: conversation,
             messages: currentMessages,
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
+        )
+    }
+
+    // swiftlint:disable:next function_body_length
+    private func sendMessageWithToolSupport(
+        conversation: Conversation,
+        messages: [Message],
+        model: String,
+        temperature: Double,
+        tools: [[String: Any]]?,
+    ) {
+        let maxToolCallDepth = 10
+        let conversationId = conversation.id
+        let mcpManager = MCPServerManager.shared
+
+        openAIService.sendMessage(
+            messages: messages,
+            model: model,
+            temperature: temperature,
+            tools: tools,
             conversationId: conversation.id,
             onChunk: { chunk in
-                guard let index = conversationManager.conversations.firstIndex(where: { $0.id == expectedConversationId }) else {
+                guard let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) else {
                     logNewChat(
-                        "⚠️ Conversation \(expectedConversationId) no longer exists, ignoring chunk",
-                        level: .default,
-                        metadata: ["conversationId": expectedConversationId.uuidString],
+                        "⚠️ Conversation \(conversationId) no longer exists, ignoring chunk",
+                        level: .info,
+                        metadata: ["conversationId": conversationId.uuidString],
                     )
                     return
                 }
@@ -557,29 +604,164 @@ struct NewChatView: View {
                         conversationManager.conversations[index].messages.count - 1,
                     ] = lastMessage
                 }
+
+                if currentToolName != nil {
+                    currentToolName = nil
+                }
             },
             onComplete: {
-                isGenerating = false
-                logNewChat(
-                    "✅ Message sent successfully, isGenerating set to FALSE",
-                    level: .info,
-                    metadata: ["conversationId": conversation.id.uuidString],
-                )
-
-                selectedConversationId = conversation.id
+                if currentToolName == nil {
+                    currentToolName = nil
+                    isGenerating = false
+                    logNewChat(
+                        "✅ Initial message finished streaming, switching to ChatView",
+                        level: .info,
+                        metadata: ["conversationId": conversationId.uuidString],
+                    )
+                    selectedConversationId = conversationId
+                }
             },
             onError: { error in
                 isGenerating = false
+                currentToolName = nil
+                toolCallDepth = 0
                 logNewChat(
-                    "❌ Error sending message: \(error.localizedDescription)",
+                    "❌ Error sending initial message: \(error.localizedDescription)",
                     level: .error,
                     metadata: [
-                        "conversationId": conversation.id.uuidString,
+                        "conversationId": conversationId.uuidString,
                         "error": error.localizedDescription,
                     ],
                 )
+                selectedConversationId = conversationId
+            },
+            onToolCallRequested: { toolCallId, toolName, arguments in
+                guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
+                    logNewChat(
+                        "⚠️ Tool call requested but conversation \(conversationId) no longer exists",
+                        level: .error,
+                    )
+                    return
+                }
 
-                selectedConversationId = conversation.id
+                currentToolName = toolName
+                logNewChat(
+                    "🔧 Tool call requested: \(toolName)",
+                    level: .info,
+                    metadata: ["toolName": toolName],
+                )
+
+                guard toolCallDepth < maxToolCallDepth else {
+                    logNewChat("⚠️ Max tool call depth reached in NewChatView", level: .error)
+                    isGenerating = false
+                    currentToolName = nil
+                    selectedConversationId = conversationId
+                    return
+                }
+
+                toolCallDepth += 1
+
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant
+                {
+                    let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                        result[pair.key] = AnyCodable(pair.value)
+                    }
+
+                    let toolCall = MCPToolCall(
+                        id: toolCallId,
+                        toolName: toolName,
+                        arguments: anyCodableArgs,
+                    )
+                    lastMessage.toolCalls = [toolCall]
+                    conversationManager.conversations[index].messages[
+                        conversationManager.conversations[index].messages.count - 1,
+                    ] = lastMessage
+                    conversationManager.saveConversations()
+                }
+
+                Task {
+                    do {
+                        logNewChat(
+                            "⚙️ Executing tool: \(toolName)",
+                            level: .info,
+                            metadata: ["toolName": toolName],
+                        )
+                        let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
+                        await MainActor.run {
+                            let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                                result[pair.key] = AnyCodable(pair.value)
+                            }
+
+                            var toolMessage = Message(
+                                role: .tool,
+                                content: result,
+                            )
+                            toolMessage.toolCalls = [
+                                MCPToolCall(
+                                    id: toolCallId,
+                                    toolName: toolName,
+                                    arguments: anyCodableArgs,
+                                    result: result,
+                                ),
+                            ]
+                            conversationManager.addMessage(to: conversation, message: toolMessage)
+
+                            guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                currentToolName = nil
+                                isGenerating = false
+                                selectedConversationId = conversationId
+                                return
+                            }
+
+                            let newAssistantMessage = Message(role: .assistant, content: "", model: model)
+                            conversationManager.addMessage(to: conversation, message: newAssistantMessage)
+
+                            currentToolName = "Analyzing \(toolName) results"
+
+                            logNewChat(
+                                "🔄 Sending follow-up request with tool output",
+                                level: .info,
+                                metadata: [
+                                    "conversationId": conversationId.uuidString,
+                                    "toolName": toolName,
+                                ],
+                            )
+
+                            sendMessageWithToolSupport(
+                                conversation: conversation,
+                                messages: updatedConversation.messages,
+                                model: model,
+                                temperature: temperature,
+                                tools: tools,
+                            )
+                        }
+                    } catch {
+                        await MainActor.run {
+                            logNewChat(
+                                "❌ Tool execution failed: \(error.localizedDescription)",
+                                level: .error,
+                                metadata: ["toolName": toolName, "error": error.localizedDescription],
+                            )
+                            isGenerating = false
+                            currentToolName = nil
+                            selectedConversationId = conversationId
+                        }
+                    }
+                }
+            },
+            onReasoning: { reasoning in
+                if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                   var lastMessage = conversationManager.conversations[index].messages.last,
+                   lastMessage.role == .assistant
+                {
+                    let currentReasoning = lastMessage.reasoning ?? ""
+                    lastMessage.reasoning = currentReasoning + reasoning
+                    conversationManager.conversations[index].messages[
+                        conversationManager.conversations[index].messages.count - 1,
+                    ] = lastMessage
+                }
             },
         )
     }
