@@ -43,6 +43,7 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 - For logic or backend changes, run unit tests (`-only-testing:aynaTests`).
 - For UI changes, run UI tests (`-only-testing:aynaUITests`).
 - If changes span both or you are unsure, run the full suite.
+- When introducing new functionality or bug fixes, add or update unit tests wherever possible so coverage grows alongside the feature.
 - Fix every build, lint, or test failure you hit; do not skip failures unless the user explicitly waives them for that task.
 - Note any deviations (such as intentionally skipping tests for docs-only edits) in your final handoff so the user knows what ran.
 
