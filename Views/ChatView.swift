@@ -12,6 +12,7 @@ import SwiftUI
 // ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
 // tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
 // the larger body here until the view hierarchy is modularized.
+
 // swiftlint:disable:next type_body_length
 struct ChatView: View {
     let conversation: Conversation
@@ -23,6 +24,7 @@ struct ChatView: View {
 
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var mcpManager = MCPServerManager.shared
 
     @State private var messageText = ""
     @State private var isGenerating = false
@@ -234,6 +236,8 @@ struct ChatView: View {
 
                 // Input Area
                 VStack(spacing: 8) {
+                    MCPToolSummaryView()
+
                     // Attached files preview
                     if !attachedFiles.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {

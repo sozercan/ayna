@@ -1,7 +1,6 @@
 @testable import Ayna
 import XCTest
 
-@MainActor
 final class ConversationManagerTests: XCTestCase {
     private var defaults: UserDefaults!
 
@@ -23,17 +22,19 @@ final class ConversationManagerTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
     func makeManager(directory: URL) -> ConversationManager {
         let keychain = InMemoryKeychainStorage()
         let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
 
+    @MainActor
     func testCreateNewConversationUsesSelectedModel() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let expectedModel = "unit-test-model"
-        OpenAIService.shared.selectedModel = expectedModel
 
+        OpenAIService.shared.selectedModel = expectedModel
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
 
@@ -41,8 +42,10 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(manager.conversations.first?.model, expectedModel)
     }
 
+    @MainActor
     func testAddMessageAppendsAndUpdatesTimestamp() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
+
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
         guard let conversation = manager.conversations.first else {
@@ -56,12 +59,13 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(manager.conversations.first?.messages.first?.content, "Ping")
     }
 
+    @MainActor
     func testClearAllConversationsEmptiesEncryptedStore() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
-        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
 
+        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         manager.conversations = [TestHelpers.sampleConversation()]
         try store.save(manager.conversations)
 
@@ -71,8 +75,10 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
     }
 
+    @MainActor
     func testSearchFindsMatchesInTitleAndMessages() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
+
         let manager = makeManager(directory: directory)
 
         var first = TestHelpers.sampleConversation(title: "Swift Tips")

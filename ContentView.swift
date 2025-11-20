@@ -191,6 +191,8 @@ struct NewChatView: View {
 
                     // Input Area
                     VStack(spacing: 8) {
+                        MCPToolSummaryView()
+
                         // Attached files preview
                         if !attachedFiles.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
