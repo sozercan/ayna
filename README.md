@@ -5,7 +5,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
-- ☁️ **Multi-Provider**: Works with OpenAI and Azure OpenAI out of the box.
+- ☁️ **Multi-Provider**: Works with OpenAI, Azure OpenAI, [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) (using OpenAI API) out of the box.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
 - 🏠 **Local Models**: Run models locally for complete privacy.
 - 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
