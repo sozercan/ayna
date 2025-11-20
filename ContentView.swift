@@ -51,6 +51,7 @@ struct NewChatView: View {
     @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
+    @State private var isComposerFocused = true
     @State private var attachedFiles: [URL] = []
     @State private var isGenerating = false
     @State private var currentConversationId: UUID?
@@ -168,6 +169,9 @@ struct NewChatView: View {
                                 }
                             }
                         }
+                        .onAppear {
+                            isComposerFocused = true
+                        }
                     }
 
                     if let toolName = currentToolName {
@@ -248,6 +252,7 @@ struct NewChatView: View {
                             ZStack(alignment: .bottomLeading) {
                                 DynamicTextEditor(
                                     text: $messageText,
+                                    isFirstResponder: $isComposerFocused,
                                     onSubmit: sendMessage,
                                     accessibilityIdentifier: TestIdentifiers.NewChatComposer.textEditor,
                                 )
@@ -446,10 +451,12 @@ struct NewChatView: View {
             OpenAIService.shared.cancelCurrentRequest()
             isGenerating = false
             logNewChat("✅ isGenerating set to FALSE after stop", level: .info)
+            isComposerFocused = true
             return
         }
 
         guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            isComposerFocused = true
             return
         }
 
@@ -518,6 +525,7 @@ struct NewChatView: View {
 
         // Clear input first
         messageText = ""
+        isComposerFocused = true
         attachedFiles.removeAll()
 
         // DON'T switch views yet - stay in NewChatView so the stop button remains visible

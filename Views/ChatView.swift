@@ -33,6 +33,7 @@ struct ChatView: View {
     @State private var attachedFiles: [URL] = []
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
+    @State private var isComposerFocused = true
 
     // Performance optimizations
     @State private var scrollDebounceTask: Task<Void, Never>?
@@ -294,6 +295,7 @@ struct ChatView: View {
                         ZStack(alignment: .bottomLeading) {
                             DynamicTextEditor(
                                 text: $messageText,
+                                isFirstResponder: $isComposerFocused,
                                 onSubmit: sendMessage,
                                 accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor,
                             )
@@ -392,6 +394,9 @@ struct ChatView: View {
                 .padding(.vertical, 20)
                 .background(.ultraThinMaterial)
             }
+        }
+        .onAppear {
+            isComposerFocused = true
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -598,10 +603,12 @@ struct ChatView: View {
             currentToolName = nil
             toolCallDepth = 0
             logChat("✅ isGenerating set to FALSE after stop", level: .info)
+            isComposerFocused = true
             return
         }
 
         guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            isComposerFocused = true
             return
         }
 
@@ -655,6 +662,7 @@ struct ChatView: View {
 
         let promptText = messageText
         messageText = ""
+        isComposerFocused = true
         attachedFiles = [] // Clear attached files after sending
         errorMessage = nil
         isGenerating = true
@@ -1288,95 +1296,6 @@ struct ChatView: View {
             tools: tools,
             isInitialRequest: true,
         )
-    }
-}
-
-// Dynamic Text Editor with auto-sizing and keyboard shortcuts
-struct DynamicTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    let onSubmit: () -> Void
-    let accessibilityIdentifier: String?
-
-    typealias Coordinator = DynamicTextEditorCoordinator
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
-
-        textView.delegate = context.coordinator
-        textView.isRichText = false
-        textView.font = .systemFont(ofSize: 15)
-        textView.textColor = .labelColor
-        textView.backgroundColor = .clear
-        textView.drawsBackground = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-
-        // Remove default scroll view padding
-        textView.textContainerInset = NSSize(width: 0, height: 2)
-        textView.textContainer?.lineFragmentPadding = 0
-
-        // Configure scroll view
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-
-        if let identifier = accessibilityIdentifier {
-            textView.setAccessibilityIdentifier(identifier)
-            scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
-        }
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return
-        }
-
-        if textView.string != text {
-            textView.string = text
-        }
-
-        context.coordinator.onSubmit = onSubmit
-        if let identifier = accessibilityIdentifier {
-            textView.setAccessibilityIdentifier(identifier)
-            scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        DynamicTextEditorCoordinator(self)
-    }
-}
-
-final class DynamicTextEditorCoordinator: NSObject, NSTextViewDelegate {
-    let parent: DynamicTextEditor
-    var onSubmit: (() -> Void)?
-
-    init(_ parent: DynamicTextEditor) {
-        self.parent = parent
-    }
-
-    func textDidChange(_ notification: Notification) {
-        guard let textView = notification.object as? NSTextView else { return }
-        parent.text = textView.string
-    }
-
-    func textView(_: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if commandSelector == #selector(NSTextView.insertNewline(_:)) {
-            let event = NSApp.currentEvent
-            if event?.modifierFlags.isDisjoint(with: [.shift, .command, .option, .control]) ?? true {
-                onSubmit?()
-                return true
-            }
-        }
-        return false
     }
 }
 

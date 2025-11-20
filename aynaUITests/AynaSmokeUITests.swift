@@ -197,6 +197,23 @@ final class AynaSmokeUITests: AynaUITestCase {
         XCTAssertTrue(copyButton.waitForExistence(timeout: 2))
     }
 
+    func testChatPromptAutoFocusOnLaunchAndAfterSend() {
+        let newChatComposer = app.textViews[TestIdentifiers.NewChatComposer.textEditor]
+        XCTAssertTrue(newChatComposer.waitForExistence(timeout: 5))
+        assertHasKeyboardFocus(newChatComposer)
+
+        let message = "Focus test message"
+        newChatComposer.typeText(message)
+
+        let sendButton = app.buttons[TestIdentifiers.NewChatComposer.sendButton]
+        XCTAssertTrue(sendButton.waitForExistence(timeout: 5))
+        sendButton.click()
+
+        let chatComposer = app.textViews[TestIdentifiers.ChatComposer.textEditor]
+        XCTAssertTrue(chatComposer.waitForExistence(timeout: 10))
+        assertHasKeyboardFocus(chatComposer)
+    }
+
     @discardableResult
     private func composeInitialMessageAndSend(_ text: String) -> XCUIElement {
         let composer = ensureNewConversationComposer()
@@ -234,5 +251,17 @@ final class AynaSmokeUITests: AynaUITestCase {
         newConversationButton.click()
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         return composer
+    }
+
+    private func assertHasKeyboardFocus(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let predicate = NSPredicate(format: "hasKeyboardFocus == true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        XCTAssertEqual(result, .completed, "Expected element to have keyboard focus", file: file, line: line)
     }
 }
