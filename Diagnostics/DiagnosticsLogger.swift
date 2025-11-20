@@ -20,6 +20,7 @@ enum DiagnosticsCategory: String, CaseIterable, Codable {
     case conversationManager = "ConversationManager"
     case chatView = "ChatView"
     case contentView = "ContentView"
+    case llamaCppService = "LlamaCppService"
 }
 
 enum BreadcrumbLevel: String, Codable {

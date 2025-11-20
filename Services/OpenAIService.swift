@@ -16,6 +16,7 @@ enum AIProvider: String, CaseIterable, Codable {
     case azure = "Azure OpenAI"
     case appleIntelligence = "Apple Intelligence"
     case aikit = "AIKit"
+    case llamaCpp = "Llama.cpp"
 
     var displayName: String { rawValue }
 }
@@ -129,6 +130,12 @@ class OpenAIService: ObservableObject {
     @Published var modelAPIKeys: [String: String] {
         didSet {
             persistModelAPIKeys()
+        }
+    }
+
+    @Published var llamaModelMappings: [String: String] {
+        didSet {
+            AppPreferences.storage.set(llamaModelMappings, forKey: "llamaModelMappings")
         }
     }
 
@@ -269,6 +276,9 @@ class OpenAIService: ObservableObject {
         outputCompression =
             AppPreferences.storage.integer(forKey: "outputCompression") == 0
                 ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
+
+        // Initialize Llama mappings
+        llamaModelMappings = AppPreferences.storage.dictionary(forKey: "llamaModelMappings") as? [String: String] ?? [:]
     }
 
     private func saveAPIKey() {
@@ -394,6 +404,9 @@ class OpenAIService: ObservableObject {
         case .aikit:
             // AIKit provides OpenAI-compatible endpoint on localhost
             return "http://localhost:8080/v1/chat/completions"
+        case .llamaCpp:
+            // Llama.cpp provides OpenAI-compatible endpoint on localhost
+            return "http://localhost:8081/v1/chat/completions"
         }
     }
 
@@ -428,6 +441,8 @@ class OpenAIService: ObservableObject {
         case .aikit:
             // AIKit provides OpenAI-compatible endpoint on localhost
             return "http://localhost:8080/v1/responses"
+        case .llamaCpp:
+            return "http://localhost:8081/v1/responses"
         }
     }
 
@@ -711,8 +726,8 @@ class OpenAIService: ObservableObject {
     }
 
     private func validateProviderSettings(for provider: AIProvider) throws {
-        // Skip API key check for Apple Intelligence and AIKit (local)
-        if provider != .appleIntelligence, provider != .aikit {
+        // Skip API key check for Apple Intelligence, AIKit (local), and Llama.cpp (local)
+        if provider != .appleIntelligence, provider != .aikit, provider != .llamaCpp {
             guard !apiKey.isEmpty else {
                 throw OpenAIError.missingAPIKey
             }
@@ -778,6 +793,65 @@ class OpenAIService: ObservableObject {
             return
         }
 
+        // Handle Llama.cpp separately to ensure server is running
+        if effectiveProvider == .llamaCpp {
+            Task {
+                do {
+                    guard let ggufName = llamaModelMappings[requestModel] else {
+                        throw OpenAIError.apiError("No GGUF file mapped for model \(requestModel)")
+                    }
+                    try await LlamaCppService.shared.ensureServerRunning(modelName: ggufName)
+
+                    await MainActor.run {
+                        self.executeMessageRequest(
+                            messages: messages,
+                            requestModel: requestModel,
+                            effectiveProvider: effectiveProvider,
+                            stream: stream,
+                            tools: tools,
+                            onChunk: onChunk,
+                            onComplete: onComplete,
+                            onError: onError,
+                            onToolCall: onToolCall,
+                            onToolCallRequested: onToolCallRequested,
+                            onReasoning: onReasoning
+                        )
+                    }
+                } catch {
+                    onError(error)
+                }
+            }
+            return
+        }
+
+        executeMessageRequest(
+            messages: messages,
+            requestModel: requestModel,
+            effectiveProvider: effectiveProvider,
+            stream: stream,
+            tools: tools,
+            onChunk: onChunk,
+            onComplete: onComplete,
+            onError: onError,
+            onToolCall: onToolCall,
+            onToolCallRequested: onToolCallRequested,
+            onReasoning: onReasoning
+        )
+    }
+
+    private func executeMessageRequest(
+        messages: [Message],
+        requestModel: String,
+        effectiveProvider: AIProvider,
+        stream: Bool,
+        tools: [[String: Any]]?,
+        onChunk: @escaping (String) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (Error) -> Void,
+        onToolCall: ((String, String, [String: Any]) async -> String)?,
+        onToolCallRequested: ((String, String, [String: Any]) -> Void)?,
+        onReasoning: ((String) -> Void)?
+    ) {
         // Validate provider settings
         do {
             try validateProviderSettings(for: effectiveProvider)
@@ -823,7 +897,7 @@ class OpenAIService: ObservableObject {
             if !modelAPIKey.isEmpty {
                 request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
             }
-        case .appleIntelligence, .aikit:
+        case .appleIntelligence, .aikit, .llamaCpp:
             break // No authentication needed
         }
 
@@ -1639,7 +1713,7 @@ class OpenAIService: ObservableObject {
 extension OpenAIService {
     private func providerRequiresAPIKey(_ provider: AIProvider) -> Bool {
         switch provider {
-        case .aikit, .appleIntelligence:
+        case .aikit, .appleIntelligence, .llamaCpp:
             false
         case .openai, .azure:
             true

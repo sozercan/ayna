@@ -318,7 +318,7 @@ struct ContentBlock: Identifiable {
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
 
         case let .heading(level, text):
             let font: Font = switch level {
@@ -335,7 +335,7 @@ struct ContentBlock: Identifiable {
                 .font(font)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, level == 1 ? 4 : 2)
 
         case let .unorderedList(items):
@@ -349,7 +349,7 @@ struct ContentBlock: Identifiable {
                             .font(.system(size: 15))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-              .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, 2)
                     .accessibilityLabel("Bullet item \(index + 1)")
@@ -368,7 +368,7 @@ struct ContentBlock: Identifiable {
                             .font(.system(size: 15))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-              .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -386,7 +386,7 @@ struct ContentBlock: Identifiable {
                     .lineSpacing(4)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-          .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08))

@@ -44,8 +44,6 @@
 		C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */; };
 		C9A210033091061300ABCD01 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200033091061300ABCD01 /* UITestEnvironment.swift */; };
 		C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */; };
-		48B1DB0A797D404E86B773BA /* LlamaCppService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D682EF8D2844632A2786826 /* LlamaCppService.swift */; };
-		A61CD69DEAE34B3E8C5351DF /* LlamaCppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D792DBC4B2C146AAA495C08A /* LlamaCppSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,8 +87,6 @@
 		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
 		C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
 		C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
-		8D682EF8D2844632A2786826 /* LlamaCppService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppService.swift; sourceTree = "<group>"; };
-		D792DBC4B2C146AAA495C08A /* LlamaCppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -157,7 +153,6 @@
 				02000008 /* SidebarView.swift */,
 				02000009 /* SettingsView.swift */,
 				02000012 /* MessageView.swift */,
-				D792DBC4B2C146AAA495C08A /* LlamaCppSettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -182,7 +177,6 @@
 				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
 				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
 				02000006 /* OpenAIService.swift */,
-				8D682EF8D2844632A2786826 /* LlamaCppService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -384,9 +378,7 @@
 				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
 				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
 				C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */,
-			
-				48B1DB0A797D404E86B773BA /* LlamaCppService.swift in Sources */,
-				A61CD69DEAE34B3E8C5351DF /* LlamaCppSettingsView.swift in Sources */,);
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C8F1B0012ED5B4F500B5BC45 /* Sources */ = {
