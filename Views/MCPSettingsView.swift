@@ -5,6 +5,7 @@
 //  Created on 11/3/25.
 //
 
+import Foundation
 import SwiftUI
 
 struct MCPSettingsView: View {
@@ -80,8 +81,7 @@ struct MCPSettingsView: View {
                         ForEach(mcpManager.serverConfigs) { config in
                             ServerConfigRow(
                                 config: config,
-                                isConnected: mcpManager.isServerConnected(config.name),
-                                error: mcpManager.getServerError(config.name),
+                status: mcpManager.getServerStatus(config.name),
                                 tools: mcpManager.availableTools.filter { $0.serverName == config.name },
                                 onEdit: {
                                     editingServer = config
@@ -93,7 +93,12 @@ struct MCPSettingsView: View {
                                     var updated = config
                                     updated.enabled.toggle()
                                     mcpManager.updateServerConfig(updated)
-                                },
+                },
+                onRetry: {
+                  Task {
+                    await mcpManager.connectToServer(config, autoDisableOnFailure: false)
+                  }
+                },
                             )
                         }
                     }
@@ -132,38 +137,48 @@ struct MCPSettingsView: View {
 
 struct ServerConfigRow: View {
     let config: MCPServerConfig
-    let isConnected: Bool
-    let error: String?
+  let status: MCPServerStatus?
     let tools: [MCPTool]
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onToggle: () -> Void
+  let onRetry: () -> Void
 
     @State private var showingTools = false
     @State private var isEnabled: Bool
 
-    init(config: MCPServerConfig, isConnected: Bool, error: String?, tools: [MCPTool], onEdit: @escaping () -> Void, onDelete: @escaping () -> Void, onToggle: @escaping () -> Void) {
+  init(
+    config: MCPServerConfig,
+    status: MCPServerStatus?,
+    tools: [MCPTool],
+    onEdit: @escaping () -> Void,
+    onDelete: @escaping () -> Void,
+    onToggle: @escaping () -> Void,
+    onRetry: @escaping () -> Void,
+  ) {
         self.config = config
-        self.isConnected = isConnected
-        self.error = error
+    self.status = status
         self.tools = tools
         self.onEdit = onEdit
         self.onDelete = onDelete
         self.onToggle = onToggle
+    self.onRetry = onRetry
         _isEnabled = State(initialValue: config.enabled)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                // Status indicator
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-
-                // Name
+      HStack {
                 Text(config.name)
                     .font(.headline)
+
+        Text(statusDescription)
+          .font(.caption2)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 2)
+          .background(statusColor.opacity(0.15))
+          .foregroundStyle(statusColor)
+          .clipShape(Capsule())
 
                 Spacer()
 
@@ -189,7 +204,13 @@ struct ServerConfigRow: View {
                 Menu {
                     Button("Edit") {
                         onEdit()
-                    }
+          }
+
+          if canRetry {
+            Button("Retry Connection") {
+              onRetry()
+            }
+          }
 
                     if !tools.isEmpty {
                         Button("Show Tools") {
@@ -221,16 +242,22 @@ struct ServerConfigRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-            }
+      }
 
-            // Error message
-            if let error {
+      if let lastUpdatedText {
+        Text("Updated \(lastUpdatedText)")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+
+      // Error message
+      if let errorMessage = status?.lastError, !errorMessage.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                         .font(.caption)
 
-                    Text(error)
+          Text(errorMessage)
                         .font(.caption)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
@@ -272,17 +299,65 @@ struct ServerConfigRow: View {
     }
 
     private var statusColor: Color {
-        if !config.enabled {
-            return .gray
-        }
-        if isConnected {
-            return .green
-        }
-        if error != nil {
-            return .red
-        }
-        return .orange
+    switch status?.state {
+    case .connected:
+      .green
+    case .connecting:
+      .orange
+    case .reconnecting:
+      .yellow
+    case .error:
+      .red
+    case .disabled:
+      .gray
+    case .idle:
+      .secondary
+    case .none:
+      config.enabled ? .secondary : .gray
     }
+  }
+
+  private var statusDescription: String {
+    switch status?.state {
+    case .connected:
+      "Connected"
+    case .connecting:
+      "Connecting"
+    case .reconnecting:
+      "Reconnecting"
+    case .error:
+      "Error"
+    case .disabled:
+      "Disabled"
+    case .idle:
+      "Idle"
+    case .none:
+      config.enabled ? "Idle" : "Disabled"
+    }
+  }
+
+  private var lastUpdatedText: String? {
+    guard let lastUpdated = status?.lastUpdated else { return nil }
+    return Self.relativeFormatter.localizedString(for: lastUpdated, relativeTo: Date())
+  }
+
+  private var canRetry: Bool {
+    guard config.enabled else { return false }
+    switch status?.state {
+    case .connected, .connecting, .reconnecting:
+      return false
+    case .disabled:
+      return false
+    default:
+      return true
+    }
+  }
+
+  private static let relativeFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter
+  }()
 }
 
 // MARK: - Server Config Sheet

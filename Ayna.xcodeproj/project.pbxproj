@@ -26,6 +26,7 @@
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
 		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
 		C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */; };
+		C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500022F40000000ABCD01 /* MCPServerStatus.swift */; };
 		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
 		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
 		C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
@@ -70,6 +71,7 @@
 		C8E86EFD2EB9281300D601B5 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
+		C9D500022F40000000ABCD01 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
 		C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
 		C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
 				02000013 /* AppleIntelligenceService.swift */,
 				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
+				C9D500022F40000000ABCD01 /* MCPServerStatus.swift */,
 				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
 				02000006 /* OpenAIService.swift */,
 			);
@@ -377,6 +380,7 @@
 				C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */,
 				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
 				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
+				C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */,
 				C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

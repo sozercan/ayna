@@ -41,12 +41,15 @@ final class MCPServerManagerTests: XCTestCase {
             reconnectDelayProvider: { 0 },
         )
         manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
 
         await manager.connectToServer(config)
 
         XCTAssertEqual(stub.connectCallCount, 2)
         XCTAssertTrue(manager.isServerConnected(config.name))
         XCTAssertTrue(manager.serverConfigs.first?.enabled ?? false)
+        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .connected)
+        XCTAssertNil(manager.getServerStatus(config.name)?.lastError)
     }
 
     func testAutoDisableAfterRepeatedFailures() async {
@@ -66,11 +69,14 @@ final class MCPServerManagerTests: XCTestCase {
             reconnectDelayProvider: { 0 },
         )
         manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
 
         await manager.connectToServer(config)
 
         XCTAssertFalse(manager.isServerConnected(config.name))
         XCTAssertEqual(manager.serverConfigs.first?.enabled, false)
+        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .disabled)
+        XCTAssertNotNil(manager.getServerStatus(config.name)?.lastError)
     }
 
     func testSchedulesReconnectAfterUnexpectedTermination() async throws {
@@ -95,6 +101,7 @@ final class MCPServerManagerTests: XCTestCase {
             reconnectDelayProvider: { 0 },
         )
         manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
 
         await manager.connectToServer(config)
         primaryService.simulateUnexpectedTermination(error: "boom")
@@ -102,6 +109,46 @@ final class MCPServerManagerTests: XCTestCase {
         await fulfillment(of: [reconnectExpectation], timeout: 1.0)
         XCTAssertTrue(manager.isServerConnected(config.name))
         XCTAssertEqual(reconnectService.connectCallCount, 1)
+        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .connected)
+    }
+
+    func testUpdatingEnabledServerRestartsConnection() async {
+        let originalConfig = MCPServerConfig(name: "filesystem", command: "cmd", args: ["--foo"], enabled: true)
+        var updatedConfig = originalConfig
+        updatedConfig.args = ["--bar"]
+        updatedConfig.env = ["EXAMPLE": "1"]
+
+        let initialService = StubMCPService(config: originalConfig)
+        let restartedService = StubMCPService(config: updatedConfig)
+        let restartExpectation = expectation(description: "Restarted service connected")
+        restartedService.onConnect = {
+            restartExpectation.fulfill()
+        }
+
+        let manager = MCPServerManager(
+            serviceFactory: { config in
+                if config.args == updatedConfig.args {
+                    return restartedService
+                }
+                return initialService
+            },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 },
+        )
+        manager.serverConfigs = [originalConfig]
+        manager.updateServerConfig(originalConfig)
+
+        await manager.connectToServer(originalConfig)
+        XCTAssertEqual(initialService.connectCallCount, 1)
+        XCTAssertTrue(manager.isServerConnected(originalConfig.name))
+
+        manager.updateServerConfig(updatedConfig)
+
+        await fulfillment(of: [restartExpectation], timeout: 1.0)
+
+        XCTAssertEqual(initialService.disconnectCallCount, 1)
+        XCTAssertEqual(restartedService.connectCallCount, 1)
+        XCTAssertEqual(manager.getServerStatus(updatedConfig.name)?.state, .connected)
     }
 }
 
@@ -118,6 +165,7 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
     weak var delegate: MCPServiceDelegate?
 
     var connectCallCount = 0
+    var disconnectCallCount = 0
     var listToolsResult: Result<[MCPTool], Error> = .success([])
     var listResourcesResult: Result<[MCPResource], Error> = .success([])
     var onConnect: (() -> Void)?
@@ -141,6 +189,7 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
     }
 
     func disconnect() {
+        disconnectCallCount += 1
         isConnected = false
     }
 

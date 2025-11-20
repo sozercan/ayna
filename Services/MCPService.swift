@@ -12,21 +12,21 @@ import Foundation
 #endif
 
 protocol MCPServicing: AnyObject, Sendable {
-  var serverConfig: MCPServerConfig { get }
-  var isConnected: Bool { get }
-  var lastError: String? { get set }
-  var delegate: MCPServiceDelegate? { get set }
+    var serverConfig: MCPServerConfig { get }
+    var isConnected: Bool { get }
+    var lastError: String? { get set }
+    var delegate: MCPServiceDelegate? { get set }
 
-  func connect() async throws
-  func disconnect()
-  func listTools() async throws -> [MCPTool]
-  func listResources() async throws -> [MCPResource]
-  func callTool(name: String, arguments: [String: Any]) async throws -> String
+    func connect() async throws
+    func disconnect()
+    func listTools() async throws -> [MCPTool]
+    func listResources() async throws -> [MCPResource]
+    func callTool(name: String, arguments: [String: Any]) async throws -> String
 }
 
 @MainActor
 protocol MCPServiceDelegate: AnyObject {
-  func mcpService(_ service: MCPServicing, didTerminateWithError error: String?)
+    func mcpService(_ service: MCPServicing, didTerminateWithError error: String?)
 }
 
 /// Service for communicating with MCP servers via stdio
@@ -35,8 +35,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private var standardInput: Pipe?
     private var standardOutput: Pipe?
     private var standardError: Pipe?
-  private var healthCheckTimer: DispatchSourceTimer?
-  private var isDisconnectingManually = false
+    private var healthCheckTimer: DispatchSourceTimer?
+    private var isDisconnectingManually = false
 
     private var requestId = 0
     private var pendingRequests: [Int: CheckedContinuation<MCPResponse, Error>] = [:]
@@ -45,7 +45,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     let serverConfig: MCPServerConfig
     @Published var isConnected = false
     @Published var lastError: String?
-  weak var delegate: MCPServiceDelegate?
+    weak var delegate: MCPServiceDelegate?
 
     private var outputBuffer = ""
 
@@ -133,10 +133,10 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         standardInput = inputPipe
         standardOutput = outputPipe
         standardError = errorPipe
-    process.terminationHandler = { [weak self] process in
-      guard let self else { return }
-      handleProcessTermination(exitCode: process.terminationStatus)
-    }
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            handleProcessTermination(exitCode: process.terminationStatus)
+        }
 
         // Set up output reading with error handling
         let serverName = serverConfig.name
@@ -231,9 +231,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 metadata: ["server": serverName],
             )
             Task { @MainActor [weak self] in
-        guard let self else { return }
-        isConnected = true
-        startHealthCheckTimer()
+                guard let self else { return }
+                isConnected = true
+                startHealthCheckTimer()
             }
         } catch {
             DiagnosticsLogger.log(
@@ -251,17 +251,17 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     }
 
     func disconnect() {
-    isDisconnectingManually = true
-    stopHealthCheckTimer()
-    cleanupProcessResources()
-    process?.terminationHandler = nil
+        isDisconnectingManually = true
+        stopHealthCheckTimer()
+        cleanupProcessResources()
+        process?.terminationHandler = nil
         process?.terminate()
-    process = nil
+        process = nil
 
         Task { @MainActor [weak self] in
-      guard let self else { return }
-      isConnected = false
-      isDisconnectingManually = false
+            guard let self else { return }
+            isConnected = false
+            isDisconnectingManually = false
         }
     }
 
@@ -689,73 +689,73 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         throw MCPServiceError.initializationFailed(errorMsg)
     }
 
-  // MARK: - Connection Monitoring
+    // MARK: - Connection Monitoring
 
-  private func startHealthCheckTimer() {
-    stopHealthCheckTimer()
+    private func startHealthCheckTimer() {
+        stopHealthCheckTimer()
 
-    let queue = DispatchQueue(label: "com.ayna.mcp.healthcheck.\(serverConfig.name)")
-    let timer = DispatchSource.makeTimerSource(queue: queue)
-    timer.schedule(deadline: .now() + 5, repeating: 5)
-    timer.setEventHandler { [weak self] in
-      guard let self else { return }
-      if !(process?.isRunning ?? false) {
-        handleProcessTermination(exitCode: process?.terminationStatus)
-      }
+        let queue = DispatchQueue(label: "com.ayna.mcp.healthcheck.\(serverConfig.name)")
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            if !(process?.isRunning ?? false) {
+                handleProcessTermination(exitCode: process?.terminationStatus)
+            }
+        }
+        timer.resume()
+        healthCheckTimer = timer
     }
-    timer.resume()
-    healthCheckTimer = timer
-  }
 
-  private func stopHealthCheckTimer() {
-    healthCheckTimer?.cancel()
-    healthCheckTimer = nil
-  }
-
-  private func handleProcessTermination(exitCode: Int32?) {
-    stopHealthCheckTimer()
-    cleanupProcessResources()
-    process = nil
-    let message: String? =
-      if let exitCode, exitCode != 0 {
-        "Exited with code \(exitCode)"
-      } else {
-        nil
-      }
-    handleUnexpectedDisconnect(reason: message)
-  }
-
-  private func handleUnexpectedDisconnect(reason: String?) {
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      if isDisconnectingManually {
-        isDisconnectingManually = false
-        return
-      }
-
-      let message = reason ?? "MCP server process ended unexpectedly"
-      DiagnosticsLogger.log(
-        .mcpService,
-        level: .error,
-        message: "Lost MCP connection",
-        metadata: [
-          "server": serverConfig.name,
-          "reason": message,
-        ],
-      )
-      lastError = message
-      isConnected = false
-      delegate?.mcpService(self, didTerminateWithError: message)
+    private func stopHealthCheckTimer() {
+        healthCheckTimer?.cancel()
+        healthCheckTimer = nil
     }
-  }
 
-  private func cleanupProcessResources() {
-    standardOutput?.fileHandleForReading.readabilityHandler = nil
-    standardError?.fileHandleForReading.readabilityHandler = nil
-    standardInput = nil
-    standardOutput = nil
-    standardError = nil
-  }
+    private func handleProcessTermination(exitCode: Int32?) {
+        stopHealthCheckTimer()
+        cleanupProcessResources()
+        process = nil
+        let message: String? =
+            if let exitCode, exitCode != 0 {
+                "Exited with code \(exitCode)"
+            } else {
+                nil
+            }
+        handleUnexpectedDisconnect(reason: message)
+    }
+
+    private func handleUnexpectedDisconnect(reason: String?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if isDisconnectingManually {
+                isDisconnectingManually = false
+                return
+            }
+
+            let message = reason ?? "MCP server process ended unexpectedly"
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "Lost MCP connection",
+                metadata: [
+                    "server": serverConfig.name,
+                    "reason": message,
+                ],
+            )
+            lastError = message
+            isConnected = false
+            delegate?.mcpService(self, didTerminateWithError: message)
+        }
+    }
+
+    private func cleanupProcessResources() {
+        standardOutput?.fileHandleForReading.readabilityHandler = nil
+        standardError?.fileHandleForReading.readabilityHandler = nil
+        standardInput = nil
+        standardOutput = nil
+        standardError = nil
+    }
 }
 
 // MARK: - Errors

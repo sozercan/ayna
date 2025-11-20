@@ -12,18 +12,19 @@ import Foundation
 class MCPServerManager: ObservableObject {
     static let shared = MCPServerManager()
 
-  private let serviceFactory: (MCPServerConfig) -> MCPServicing
-  private let retryDelayProvider: (Int) -> TimeInterval
-  private let reconnectDelayProvider: () -> TimeInterval
+    private let serviceFactory: (MCPServerConfig) -> MCPServicing
+    private let retryDelayProvider: (Int) -> TimeInterval
+    private let reconnectDelayProvider: () -> TimeInterval
 
-  @Published var serverConfigs: [MCPServerConfig] = []
+    @Published var serverConfigs: [MCPServerConfig] = []
     @Published var availableTools: [MCPTool] = []
     @Published var availableResources: [MCPResource] = []
     @Published var isDiscovering = false
+    @Published private(set) var serverStatuses: [String: MCPServerStatus] = [:]
 
-  private var services: [String: MCPServicing] = [:]  // serverName -> service
-  private var connectingServers: Set<String> = []
-  private var pendingReconnects: Set<String> = []
+    private var services: [String: MCPServicing] = [:] // serverName -> service
+    private var connectingServers: Set<String> = []
+    private var pendingReconnects: Set<String> = []
 
     // Optimization: Cache enabled tools and their OpenAI function format
     private var cachedEnabledTools: [MCPTool] = []
@@ -31,15 +32,16 @@ class MCPServerManager: ObservableObject {
     private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
     private var cacheVersion = 0
 
-  init(
-    serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
-    retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
-    reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
-  ) {
-    self.serviceFactory = serviceFactory
-    self.retryDelayProvider = retryDelayProvider
-    self.reconnectDelayProvider = reconnectDelayProvider
+    init(
+        serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
+        retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
+        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
+    ) {
+        self.serviceFactory = serviceFactory
+        self.retryDelayProvider = retryDelayProvider
+        self.reconnectDelayProvider = reconnectDelayProvider
         loadServerConfigs()
+        initializeStatusEntries()
     }
 
     // MARK: - Server Configuration Management
@@ -47,6 +49,7 @@ class MCPServerManager: ObservableObject {
     func addServerConfig(_ config: MCPServerConfig) {
         serverConfigs.append(config)
         saveServerConfigs()
+        setStatus(for: config, state: config.enabled ? .idle : .disabled, clearExistingError: true)
 
         if config.enabled {
             Task {
@@ -58,13 +61,27 @@ class MCPServerManager: ObservableObject {
     func updateServerConfig(_ config: MCPServerConfig) {
         guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
 
-        let wasEnabled = serverConfigs[index].enabled
+        let previousConfig = serverConfigs[index]
+        let wasEnabled = previousConfig.enabled
         serverConfigs[index] = config
         saveServerConfigs()
+
+        if previousConfig.name != config.name {
+            let existingStatus = serverStatuses.removeValue(forKey: previousConfig.name)
+            if let existingStatus {
+                setStatus(for: config, state: existingStatus.state, error: existingStatus.lastError)
+            } else {
+                setStatus(for: config, state: config.enabled ? .idle : .disabled)
+            }
+        } else {
+            setStatus(for: config, state: nil)
+        }
 
         // Invalidate cache when server configs change
         cachedEnabledTools = []
         cachedOpenAIFunctions = []
+
+        let requiresRestart = shouldRestartServer(previousConfig: previousConfig, updatedConfig: config)
 
         // Handle connection state changes
         if wasEnabled, !config.enabled {
@@ -72,9 +89,15 @@ class MCPServerManager: ObservableObject {
             Task { @MainActor in
                 disconnectServer(config.name)
             }
+            setStatus(for: config, state: .disabled)
         } else if !wasEnabled, config.enabled {
+            setStatus(for: config, state: .idle, clearExistingError: true)
             Task {
                 await connectToServer(config)
+            }
+        } else if requiresRestart {
+            Task {
+                await restartServer(previousName: previousConfig.name, with: config)
             }
         }
     }
@@ -84,6 +107,7 @@ class MCPServerManager: ObservableObject {
         disconnectServer(config.name)
         serverConfigs.removeAll { $0.id == config.id }
         saveServerConfigs()
+        serverStatuses.removeValue(forKey: config.name)
     }
 
     private func saveServerConfigs() {
@@ -193,11 +217,14 @@ class MCPServerManager: ObservableObject {
 
     // MARK: - Connection Management
 
-  func connectToServer(_ config: MCPServerConfig, autoDisableOnFailure: Bool = true) async {
-        guard config.enabled else { return }
+    func connectToServer(_ config: MCPServerConfig, autoDisableOnFailure: Bool = true) async {
+        guard config.enabled else {
+            setStatus(for: config, state: .disabled)
+            return
+        }
 
-    if let existingService = services[config.name], existingService.isConnected {
-      let hasTools = !availableTools.filter { $0.serverName == config.name }.isEmpty
+        if let existingService = services[config.name], existingService.isConnected {
+            let hasTools = !availableTools.filter { $0.serverName == config.name }.isEmpty
 
             if !hasTools {
                 DiagnosticsLogger.log(
@@ -208,50 +235,53 @@ class MCPServerManager: ObservableObject {
                 )
                 await discoverTools(for: config.name)
             }
+            setStatus(for: config, state: .connected)
             return
         }
 
-    if connectingServers.contains(config.name) {
-      DiagnosticsLogger.log(
-        .mcpServerManager,
-        level: .debug,
-        message: "Connection attempt already in progress",
-        metadata: ["server": config.name],
-      )
-      return
-    }
+        setStatus(for: config, state: .connecting)
 
-    connectingServers.insert(config.name)
-    defer { connectingServers.remove(config.name) }
+        if connectingServers.contains(config.name) {
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .debug,
+                message: "Connection attempt already in progress",
+                metadata: ["server": config.name],
+            )
+            return
+        }
 
-    DiagnosticsLogger.log(
+        connectingServers.insert(config.name)
+        defer { connectingServers.remove(config.name) }
+
+        DiagnosticsLogger.log(
             .mcpServerManager,
             level: .info,
             message: "Attempting to connect to MCP server",
             metadata: ["server": config.name],
-    )
-
-    if let existing = services[config.name] {
-      existing.delegate = nil
-      existing.disconnect()
-    }
-    let service = serviceFactory(config)
-    service.delegate = self
-    services[config.name] = service
-
-    let maxAttempts = 3
-    for attempt in 1...maxAttempts {
-      do {
-        try await service.connect()
-        DiagnosticsLogger.log(
-          .mcpServerManager,
-          level: .info,
-          message: "Connected to MCP server",
-          metadata: [
-            "server": config.name,
-            "attempt": "#\(attempt)",
-          ],
         )
+
+        if let existing = services[config.name] {
+            existing.delegate = nil
+            existing.disconnect()
+        }
+        let service = serviceFactory(config)
+        service.delegate = self
+        services[config.name] = service
+
+        let maxAttempts = 3
+        for attempt in 1 ... maxAttempts {
+            do {
+                try await service.connect()
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "Connected to MCP server",
+                    metadata: [
+                        "server": config.name,
+                        "attempt": "#\(attempt)",
+                    ],
+                )
 
                 await discoverTools(for: config.name)
                 DiagnosticsLogger.log(
@@ -260,114 +290,157 @@ class MCPServerManager: ObservableObject {
                     message: "Tool discovery complete",
                     metadata: ["server": config.name],
                 )
-        return
+                setStatus(for: config, state: .connected, clearExistingError: true)
+                return
             } catch {
                 DiagnosticsLogger.log(
                     .mcpServerManager,
                     level: .error,
-          message: "Failed to connect to MCP server",
-          metadata: [
-            "server": config.name,
-            "attempt": "#\(attempt)",
-            "error": error.localizedDescription,
-          ],
+                    message: "Failed to connect to MCP server",
+                    metadata: [
+                        "server": config.name,
+                        "attempt": "#\(attempt)",
+                        "error": error.localizedDescription,
+                    ],
                 )
 
-        service.disconnect()
+                service.disconnect()
 
-        if attempt < maxAttempts {
-          let delay = max(TimeInterval.zero, retryDelayProvider(attempt))
-          DiagnosticsLogger.log(
-            .mcpServerManager,
-            level: .info,
-            message: "Retrying connection",
-            metadata: [
-              "server": config.name,
-              "delay": "\(delay)s",
-            ],
-          )
-          if delay > 0 {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-          }
-          continue
-        }
+                if attempt < maxAttempts {
+                    let delay = max(TimeInterval.zero, retryDelayProvider(attempt))
+                    DiagnosticsLogger.log(
+                        .mcpServerManager,
+                        level: .info,
+                        message: "Retrying connection",
+                        metadata: [
+                            "server": config.name,
+                            "delay": "\(delay)s",
+                        ],
+                    )
+                    if delay > 0 {
+                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    }
+                    continue
+                }
 
-        service.lastError = error.localizedDescription
-        services.removeValue(forKey: config.name)
+                service.lastError = error.localizedDescription
+                services.removeValue(forKey: config.name)
+                setStatus(for: config, state: .error(error.localizedDescription))
 
-        if autoDisableOnFailure,
-          let index = serverConfigs.firstIndex(where: { $0.name == config.name })
-        {
-          var updatedConfig = serverConfigs[index]
+                if autoDisableOnFailure,
+                   let index = serverConfigs.firstIndex(where: { $0.name == config.name })
+                {
+                    var updatedConfig = serverConfigs[index]
                     updatedConfig.enabled = false
-          serverConfigs[index] = updatedConfig
-          saveServerConfigs()
+                    serverConfigs[index] = updatedConfig
+                    saveServerConfigs()
                     DiagnosticsLogger.log(
                         .mcpServerManager,
                         level: .error,
-            message: "Auto-disabled server due to repeated connection failures",
+                        message: "Auto-disabled server due to repeated connection failures",
                         metadata: ["server": config.name],
                     )
+                    setStatus(for: updatedConfig, state: .disabled)
                 }
 
-        availableTools.removeAll { $0.serverName == config.name }
-        availableResources.removeAll { $0.serverName == config.name }
-        cachedEnabledTools = []
-        cachedOpenAIFunctions = []
-        break
-      }
-    }
-  }
-
-  private func scheduleReconnect(for config: MCPServerConfig) {
-    guard !pendingReconnects.contains(config.name) else {
-      return
+                availableTools.removeAll { $0.serverName == config.name }
+                availableResources.removeAll { $0.serverName == config.name }
+                cachedEnabledTools = []
+                cachedOpenAIFunctions = []
+                refreshStatusToolCount(for: config.name)
+                break
+            }
+        }
     }
 
-    pendingReconnects.insert(config.name)
-    let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
-    DiagnosticsLogger.log(
-      .mcpServerManager,
-      level: .info,
-      message: "Scheduling MCP reconnect",
-      metadata: [
-        "server": config.name,
-        "delay": "\(delaySeconds)s",
-      ],
-    )
+    private func shouldRestartServer(previousConfig: MCPServerConfig, updatedConfig: MCPServerConfig) -> Bool {
+        guard previousConfig.enabled, updatedConfig.enabled else { return false }
 
-    Task { [weak self] in
-      guard let self else { return }
-      if delaySeconds > 0 {
-        try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
-      }
+        let changedName = previousConfig.name != updatedConfig.name
+        let changedCommand = previousConfig.command != updatedConfig.command
+        let changedArgs = previousConfig.args != updatedConfig.args
+        let changedEnv = previousConfig.env != updatedConfig.env
 
-      await performScheduledReconnect(for: config.name)
+        return changedName || changedCommand || changedArgs || changedEnv
     }
-  }
 
-  @MainActor
-  private func performScheduledReconnect(for serverName: String) async {
-    pendingReconnects.remove(serverName)
+    private func restartServer(previousName: String?, with config: MCPServerConfig) async {
+        let nameToDisconnect = previousName ?? config.name
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "Restarting MCP server to apply config changes",
+            metadata: [
+                "server": config.name,
+                "previous": nameToDisconnect,
+            ],
+        )
 
-    guard let latestConfig = serverConfigs.first(where: { $0.name == serverName }),
-      latestConfig.enabled
-    else {
-      return
+        disconnectServer(nameToDisconnect)
+        setStatus(for: config, state: .connecting, clearExistingError: true)
+        await connectToServer(config, autoDisableOnFailure: false)
+    }
+
+    private func scheduleReconnect(for config: MCPServerConfig) {
+        guard !pendingReconnects.contains(config.name) else {
+            return
         }
 
-    await connectToServer(latestConfig, autoDisableOnFailure: false)
+        pendingReconnects.insert(config.name)
+        setStatus(for: config, state: .reconnecting)
+        let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .info,
+            message: "Scheduling MCP reconnect",
+            metadata: [
+                "server": config.name,
+                "delay": "\(delaySeconds)s",
+            ],
+        )
+
+        Task { [weak self] in
+            guard let self else { return }
+            if delaySeconds > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+
+            await performScheduledReconnect(for: config.name)
+        }
+    }
+
+    @MainActor
+    private func performScheduledReconnect(for serverName: String) async {
+        pendingReconnects.remove(serverName)
+
+        guard let latestConfig = serverConfigs.first(where: { $0.name == serverName }),
+              latestConfig.enabled
+        else {
+            if let config = serverConfigs.first(where: { $0.name == serverName }) {
+                setStatus(for: config, state: .disabled)
+            }
+            return
+        }
+
+        setStatus(for: latestConfig, state: .connecting)
+        await connectToServer(latestConfig, autoDisableOnFailure: false)
     }
 
     @MainActor
     func disconnectServer(_ serverName: String) {
         services[serverName]?.disconnect()
         services.removeValue(forKey: serverName)
-    pendingReconnects.remove(serverName)
+        pendingReconnects.remove(serverName)
 
         // Remove tools from this server
         availableTools.removeAll { $0.serverName == serverName }
         availableResources.removeAll { $0.serverName == serverName }
+        refreshStatusToolCount(for: serverName)
+
+        if let config = serverConfigs.first(where: { $0.name == serverName }) {
+            let newState: MCPServerStatus.State = config.enabled ? .idle : .disabled
+            setStatus(for: config, state: newState)
+        }
     }
 
     func connectToAllEnabledServers() async {
@@ -409,42 +482,43 @@ class MCPServerManager: ObservableObject {
             isDiscovering = true
         }
 
-    // Capture services snapshot to avoid concurrency issues
-    let servicesSnapshot = services
+        // Capture services snapshot to avoid concurrency issues
+        let servicesSnapshot = services
 
-    let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
-      for (serverName, service) in servicesSnapshot where service.isConnected {
-        group.addTask {
-          let tools = await (try? service.listTools()) ?? []
-          let resources = await (try? service.listResources()) ?? []
-          return (serverName, tools, resources)
+        let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
+            for (serverName, service) in servicesSnapshot where service.isConnected {
+                group.addTask {
+                    let tools = await (try? service.listTools()) ?? []
+                    let resources = await (try? service.listResources()) ?? []
+                    return (serverName, tools, resources)
+                }
+            }
+
+            var allTools: [MCPTool] = []
+            var allResources: [MCPResource] = []
+
+            for await (serverName, tools, resources) in group {
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "Discovered tools from server",
+                    metadata: ["server": serverName, "tools": "\(tools.count)"],
+                )
+                allTools.append(contentsOf: tools)
+                allResources.append(contentsOf: resources)
+            }
+
+            return (allTools, allResources)
         }
-      }
 
-      var allTools: [MCPTool] = []
-      var allResources: [MCPResource] = []
-
-      for await (serverName, tools, resources) in group {
-        DiagnosticsLogger.log(
-          .mcpServerManager,
-          level: .info,
-          message: "Discovered tools from server",
-          metadata: ["server": serverName, "tools": "\(tools.count)"],
-        )
-        allTools.append(contentsOf: tools)
-        allResources.append(contentsOf: resources)
-      }
-
-      return (allTools, allResources)
-    }
-
-    await MainActor.run {
-      self.availableTools = results.0
-      self.availableResources = results.1
-      self.isDiscovering = false
-      // Invalidate cache when tools change
-      self.cachedEnabledTools = []
-      self.cachedOpenAIFunctions = []
+        await MainActor.run {
+            self.availableTools = results.0
+            self.availableResources = results.1
+            self.isDiscovering = false
+            // Invalidate cache when tools change
+            self.cachedEnabledTools = []
+            self.cachedOpenAIFunctions = []
+            self.refreshAllStatusToolCounts()
         }
     }
 
@@ -514,6 +588,7 @@ class MCPServerManager: ObservableObject {
             // Invalidate cache when tools change
             self.cachedEnabledTools = []
             self.cachedOpenAIFunctions = []
+            self.refreshStatusToolCount(for: serverName)
         }
 
         DiagnosticsLogger.log(
@@ -531,8 +606,8 @@ class MCPServerManager: ObservableObject {
     // MARK: - Tool Execution
 
     nonisolated func executeTool(name: String, arguments: [String: Any]) async throws -> String {
-    struct ToolExecutionContext: @unchecked Sendable {
-      let service: MCPServicing
+        struct ToolExecutionContext: @unchecked Sendable {
+            let service: MCPServicing
             let arguments: [String: AnyCodable]
         }
 
@@ -569,15 +644,27 @@ class MCPServerManager: ObservableObject {
     // MARK: - Server Status
 
     func isServerConnected(_ serverName: String) -> Bool {
-        services[serverName]?.isConnected ?? false
+        if case .connected? = serverStatuses[serverName]?.state {
+            return true
+        }
+        return services[serverName]?.isConnected ?? false
     }
 
     func getServerError(_ serverName: String) -> String? {
-        services[serverName]?.lastError
+        serverStatuses[serverName]?.lastError ?? services[serverName]?.lastError
     }
 
     func getConnectedServerCount() -> Int {
-        services.values.filter(\.isConnected).count
+        serverStatuses.values.count(where: {
+            if case .connected = $0.state {
+                return true
+            }
+            return false
+        })
+    }
+
+    func getServerStatus(_ serverName: String) -> MCPServerStatus? {
+        serverStatuses[serverName]
     }
 
     // MARK: - Tool Helpers
@@ -633,28 +720,93 @@ enum MCPManagerError: LocalizedError {
 // MARK: - MCPServiceDelegate
 
 extension MCPServerManager: MCPServiceDelegate {
-  func mcpService(_ service: MCPServicing, didTerminateWithError error: String?) {
-    let serverName = service.serverConfig.name
-    DiagnosticsLogger.log(
-      .mcpServerManager,
-      level: .error,
-      message: "MCP service disconnected",
-      metadata: [
-        "server": serverName,
-        "error": error ?? "unknown",
-      ],
-    )
+    func mcpService(_ service: MCPServicing, didTerminateWithError error: String?) {
+        let serverName = service.serverConfig.name
+        DiagnosticsLogger.log(
+            .mcpServerManager,
+            level: .error,
+            message: "MCP service disconnected",
+            metadata: [
+                "server": serverName,
+                "error": error ?? "unknown",
+            ],
+        )
 
-    services.removeValue(forKey: serverName)
-    availableTools.removeAll { $0.serverName == serverName }
-    availableResources.removeAll { $0.serverName == serverName }
-    cachedEnabledTools = []
-    cachedOpenAIFunctions = []
+        services.removeValue(forKey: serverName)
+        availableTools.removeAll { $0.serverName == serverName }
+        availableResources.removeAll { $0.serverName == serverName }
+        cachedEnabledTools = []
+        cachedOpenAIFunctions = []
 
-    guard let config = serverConfigs.first(where: { $0.name == serverName }), config.enabled else {
-      return
+        guard let config = serverConfigs.first(where: { $0.name == serverName }), config.enabled else {
+            if let config = serverConfigs.first(where: { $0.name == serverName }) {
+                setStatus(for: config, state: .disabled, error: error)
+            }
+            return
+        }
+
+        setStatus(for: config, state: .reconnecting, error: error)
+        scheduleReconnect(for: config)
+    }
+}
+
+// MARK: - Status Helpers
+
+private extension MCPServerManager {
+    func initializeStatusEntries() {
+        let now = Date()
+        serverStatuses = Dictionary(
+            uniqueKeysWithValues: serverConfigs.map { config in
+                (
+                    config.name,
+                    MCPServerStatus(
+                        configID: config.id,
+                        name: config.name,
+                        state: config.enabled ? .idle : .disabled,
+                        lastError: nil,
+                        toolsCount: availableTools.count(where: { $0.serverName == config.name }),
+                        lastUpdated: now,
+                    ),
+                )
+            })
     }
 
-    scheduleReconnect(for: config)
-  }
+    func setStatus(
+        for config: MCPServerConfig,
+        state: MCPServerStatus.State?,
+        error: String? = nil,
+        clearExistingError: Bool = false,
+    ) {
+        let existingStatus = serverStatuses[config.name]
+        let resolvedState = state ?? existingStatus?.state ?? (config.enabled ? .idle : .disabled)
+
+        var resolvedError = error ?? existingStatus?.lastError
+        if clearExistingError {
+            resolvedError = nil
+        }
+        if case let .error(message) = resolvedState {
+            resolvedError = message
+        }
+
+        let toolCount = availableTools.count(where: { $0.serverName == config.name })
+        serverStatuses[config.name] = MCPServerStatus(
+            configID: config.id,
+            name: config.name,
+            state: resolvedState,
+            lastError: resolvedError,
+            toolsCount: toolCount,
+            lastUpdated: Date(),
+        )
+    }
+
+    func refreshStatusToolCount(for serverName: String) {
+        guard let config = serverConfigs.first(where: { $0.name == serverName }) else { return }
+        setStatus(for: config, state: nil)
+    }
+
+    func refreshAllStatusToolCounts() {
+        for config in serverConfigs {
+            setStatus(for: config, state: nil)
+        }
+    }
 }
