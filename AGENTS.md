@@ -54,6 +54,9 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 - Do **not** raise lint thresholds or comment out rules to “get green.” If a rule is noisy, discuss with the user before changing `.swiftlint.yml`.
 - When editing large files (e.g., `Views/SettingsView.swift`), keep existing scoped disables intact and avoid introducing new violations elsewhere.
 
+### Git Usage
+- Never run `git push`; leave publishing commits and branches to the user.
+
 ## Architecture
 
 ### Core Structure
