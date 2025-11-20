@@ -1,0 +1,127 @@
+name: Release Build
+
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional tag/label used for naming the release asset'
+        required: false
+        default: ''
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      XCODE_APP: /Applications/Xcode_26.0.app/Contents/Developer
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s "$XCODE_APP"
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Run unit tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme Ayna \
+          -destination 'platform=macOS' \
+          -derivedDataPath ./build \
+          -only-testing:aynaTests \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          test
+
+    - name: Run UI tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme Ayna \
+          -destination 'platform=macOS' \
+          -derivedDataPath ./build \
+          -only-testing:aynaUITests \
+          CODE_SIGN_IDENTITY="-" \
+          CODE_SIGNING_REQUIRED=YES \
+          CODE_SIGNING_ALLOWED=YES \
+          test
+
+    - name: Build release configuration
+      run: |
+        xcodebuild -project ayna.xcodeproj \
+          -scheme Ayna \
+          -configuration Release \
+          -destination 'platform=macOS' \
+          -derivedDataPath ./build \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          build
+
+    - name: Create DMG
+      run: |
+        APP_PATH=$(find ./build/Build/Products/Release -name "*.app" -type d | head -n 1)
+
+        if [ -z "$APP_PATH" ]; then
+          echo "Error: Could not find built app"
+          exit 1
+        fi
+
+        echo "Found app at: $APP_PATH"
+
+        mkdir -p dmg_contents
+        cp -R "$APP_PATH" dmg_contents/
+
+        hdiutil create -volname "Ayna" \
+          -srcfolder dmg_contents \
+          -ov -format UDZO \
+          ayna.dmg
+
+    - name: Determine artifact name
+      id: artifact
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          TAG="${{ github.event.release.tag_name }}"
+        elif [ -n "${{ inputs.tag }}" ]; then
+          TAG="${{ inputs.tag }}"
+        elif [ -n "${{ github.ref_name }}" ]; then
+          TAG="${{ github.ref_name }}"
+        else
+          TAG="${GITHUB_SHA::7}"
+        fi
+
+        if [ -z "$TAG" ]; then
+          TAG="release"
+        fi
+
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "filename=ayna-$TAG.dmg" >> "$GITHUB_OUTPUT"
+
+    - name: Rename DMG
+      run: mv ayna.dmg "${{ steps.artifact.outputs.filename }}"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: ${{ steps.artifact.outputs.filename }}
+        path: ${{ steps.artifact.outputs.filename }}
+        retention-days: 30
+
+    - name: Attach DMG to GitHub release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ${{ steps.artifact.outputs.filename }}
+        asset_name: ${{ steps.artifact.outputs.filename }}
+        asset_content_type: application/x-apple-diskimage

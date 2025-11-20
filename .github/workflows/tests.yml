@@ -12,7 +12,7 @@ jobs:
     runs-on: macos-26
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
     - name: Select Xcode version
       run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
@@ -38,7 +38,7 @@ jobs:
     runs-on: macos-26
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
     - name: Select Xcode version
       run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
