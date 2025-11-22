@@ -122,7 +122,7 @@ struct ChatView: View {
     }
 
     var body: some View {
-    ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .topTrailing) {
             // Chat background with subtle gradient
             LinearGradient(
                 colors: [
@@ -393,29 +393,29 @@ struct ChatView: View {
                 }
                 .padding(.vertical, 20)
                 .background(.ultraThinMaterial)
-      }
-    }
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        Spacer()
-      }
-      ToolbarItem(placement: .primaryAction) {
-        Menu {
-          Button(action: { exportConversation(format: .markdown) }) {
-            Label("Export as Markdown", systemImage: "doc.text")
-          }
-          Button(action: { exportConversation(format: .pdf) }) {
-            Label("Export as PDF", systemImage: "doc.text.image")
-          }
-        } label: {
-          Image(systemName: "square.and.arrow.up")
+            }
         }
-        .menuIndicator(.visible)
-        .accessibilityLabel("Export conversation")
-      }
-    }
-    .onAppear {
-      isComposerFocused = true
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Spacer()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(action: { exportConversation(format: .markdown) }) {
+                        Label("Export as Markdown", systemImage: "doc.text")
+                    }
+                    Button(action: { exportConversation(format: .pdf) }) {
+                        Label("Export as PDF", systemImage: "doc.text.image")
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .menuIndicator(.visible)
+                .accessibilityLabel("Export conversation")
+            }
+        }
+        .onAppear {
+            isComposerFocused = true
         }
     }
 
