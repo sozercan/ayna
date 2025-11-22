@@ -480,7 +480,7 @@ struct ContentBlock: Identifiable {
         case tool(String, String)
     }
 
-    @ViewBuilder
+    @MainActor @ViewBuilder
     var view: some View {
         switch type {
         case let .paragraph(text):
