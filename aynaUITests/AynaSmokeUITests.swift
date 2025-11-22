@@ -95,7 +95,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         let expectation = XCTNSPredicateExpectation(predicate: doesNotExist, object: title)
         // Increased timeout to 10s to account for potential animation or state update delays
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
-        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(result, XCTWaiter.Result.completed)
     }
 
     func testSettingsWindow() {
