@@ -13,7 +13,6 @@ import Foundation
 
 enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
-    case azure = "Azure OpenAI"
     case appleIntelligence = "Apple Intelligence"
     case aikit = "AIKit"
 
@@ -64,38 +63,8 @@ class OpenAIService: ObservableObject {
         }
     }
 
-    // Azure OpenAI specific settings
-    @Published var azureEndpoint: String {
-        didSet {
-            let trimmed = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed != azureEndpoint {
-                azureEndpoint = trimmed
-            }
-            AppPreferences.storage.set(trimmed, forKey: "azureEndpoint")
-        }
-    }
-
-    @Published var azureDeploymentName: String {
-        didSet {
-            let trimmed = azureDeploymentName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed != azureDeploymentName {
-                azureDeploymentName = trimmed
-            }
-            AppPreferences.storage.set(trimmed, forKey: "azureDeploymentName")
-        }
-    }
-
-    @Published var azureAPIVersion: String {
-        didSet {
-            let trimmed = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed != azureAPIVersion {
-                azureAPIVersion = trimmed
-            }
-            AppPreferences.storage.set(trimmed, forKey: "azureAPIVersion")
-        }
-    }
-
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
+    private let azureAPIVersion = "2025-04-01-preview"
 
     // Custom URLSession with longer timeout for slow models
     private let urlSession: URLSession
@@ -131,21 +100,6 @@ class OpenAIService: ObservableObject {
             persistModelAPIKeys()
         }
     }
-
-    let azureAPIVersions = [
-        "2025-04-01-preview",
-        "2025-03-01-preview",
-        "2025-02-01-preview",
-        "2025-01-01-preview",
-        "2024-12-01-preview",
-        "2024-10-21",
-        "2024-10-01-preview",
-        "2024-08-01-preview",
-        "2024-06-01",
-        "2024-05-01-preview",
-        "2024-02-01",
-        "2023-12-01-preview",
-    ]
 
     // Image generation settings
     @Published var imageSize: String {
@@ -253,15 +207,6 @@ class OpenAIService: ObservableObject {
             provider = .openai
         }
 
-        // Initialize Azure settings
-        azureEndpoint = (AppPreferences.storage.string(forKey: "azureEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        azureDeploymentName = (AppPreferences.storage.string(forKey: "azureDeploymentName") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        azureAPIVersion =
-            (AppPreferences.storage.string(forKey: "azureAPIVersion") ?? "2024-08-01-preview")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
         // Initialize image generation settings
         imageSize = AppPreferences.storage.string(forKey: "imageSize") ?? "1024x1024"
         imageQuality = AppPreferences.storage.string(forKey: "imageQuality") ?? "medium"
@@ -352,6 +297,68 @@ class OpenAIService: ObservableObject {
         try keychain.setData(data, for: KeychainKeys.modelAPIKeys)
     }
 
+    private func normalizedModelName(_ name: String?) -> String? {
+        guard let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func customEndpoint(for modelName: String?) -> (endpoint: String, model: String)? {
+        guard let normalizedName = normalizedModelName(modelName),
+              let endpoint = modelEndpoints[normalizedName]?
+              .trimmingCharacters(in: .whitespacesAndNewlines),
+              !endpoint.isEmpty
+        else {
+            return nil
+        }
+
+        return (endpoint, normalizedName)
+    }
+
+    private func isAzureEndpoint(_ endpoint: String?) -> Bool {
+        guard let endpoint else { return false }
+        return endpoint.lowercased().contains("openai.azure.com")
+    }
+
+    private func sanitizedBaseEndpoint(_ endpoint: String) -> String {
+        endpoint
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private func percentEncodedDeployment(_ deployment: String) -> String {
+        deployment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? deployment
+    }
+
+    private func azureChatCompletionsURL(baseEndpoint: String, deployment: String) -> String {
+        let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
+        let encodedDeployment = percentEncodedDeployment(deployment)
+        return
+            "\(cleanBase)/openai/deployments/\(encodedDeployment)/chat/completions?api-version=\(azureAPIVersion)"
+    }
+
+    private func azureResponsesURL(baseEndpoint: String) -> String {
+        let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
+        return "\(cleanBase)/openai/v1/responses?api-version=\(azureAPIVersion)"
+    }
+
+    private func azureImagesURL(baseEndpoint: String, deployment: String) -> String {
+        let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
+        let encodedDeployment = percentEncodedDeployment(deployment)
+        return
+            "\(cleanBase)/openai/deployments/\(encodedDeployment)/images/generations?api-version=\(azureAPIVersion)"
+    }
+
+    private func appendPathIfNeeded(_ endpoint: String, path: String) -> String {
+        let cleanBase = sanitizedBaseEndpoint(endpoint)
+        if cleanBase.hasSuffix(path) || cleanBase.contains(path) {
+            return cleanBase
+        }
+        return "\(cleanBase)\(path.hasPrefix("/") ? "" : "/")\(path)"
+    }
+
     // Get API key for a specific model, falling back to global key if not set
     func getAPIKey(for model: String?) -> String {
         guard let model else { return apiKey }
@@ -364,31 +371,17 @@ class OpenAIService: ObservableObject {
         // Check for custom endpoint first (for OpenAI provider)
         if effectiveProvider == .openai {
             let modelName = deploymentName ?? selectedModel
-            if let customEndpoint = modelEndpoints[modelName], !customEndpoint.isEmpty {
-                // Use custom endpoint with /v1/chat/completions path if not already included
-                let trimmedEndpoint = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                if trimmedEndpoint.contains("/v1/chat/completions") {
-                    return trimmedEndpoint
-                } else {
-                    return "\(trimmedEndpoint)/v1/chat/completions"
+            if let (customEndpoint, normalizedModel) = customEndpoint(for: modelName) {
+                if isAzureEndpoint(customEndpoint) {
+                    return azureChatCompletionsURL(baseEndpoint: customEndpoint, deployment: normalizedModel)
                 }
+                return appendPathIfNeeded(customEndpoint, path: "/v1/chat/completions")
             }
         }
 
         switch effectiveProvider {
         case .openai:
             return openAIURL
-        case .azure:
-            // Azure OpenAI URL format: https://{endpoint}/openai/deployments/{deployment-name}/chat/completions?api-version={version}
-            let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            // Use the provided deployment name (from conversation model) or fall back to the global setting
-            let cleanDeployment = (deploymentName ?? azureDeploymentName).trimmingCharacters(
-                in: .whitespacesAndNewlines)
-            let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-            return
-                "\(cleanEndpoint)/openai/deployments/\(cleanDeployment)/chat/completions?api-version=\(cleanVersion)"
         case .appleIntelligence:
             return "" // Not used for Apple Intelligence
         case .aikit:
@@ -403,26 +396,17 @@ class OpenAIService: ObservableObject {
         // Check for custom endpoint first (for OpenAI provider)
         if effectiveProvider == .openai {
             let modelName = deploymentName ?? selectedModel
-            if let customEndpoint = modelEndpoints[modelName], !customEndpoint.isEmpty {
-                // Use custom endpoint with /v1/responses path if not already included
-                let trimmedEndpoint = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                if trimmedEndpoint.contains("/v1/responses") {
-                    return trimmedEndpoint
-                } else {
-                    return "\(trimmedEndpoint)/v1/responses"
+            if let (customEndpoint, _) = customEndpoint(for: modelName) {
+                if isAzureEndpoint(customEndpoint) {
+                    return azureResponsesURL(baseEndpoint: customEndpoint)
                 }
+                return appendPathIfNeeded(customEndpoint, path: "/v1/responses")
             }
         }
 
         switch effectiveProvider {
         case .openai:
             return "https://api.openai.com/v1/responses"
-        case .azure:
-            // Azure OpenAI Responses API format: https://{endpoint}/openai/v1/responses
-            let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            return "\(cleanEndpoint)/openai/v1/responses"
         case .appleIntelligence:
             return "" // Not used for Apple Intelligence
         case .aikit:
@@ -462,7 +446,7 @@ class OpenAIService: ObservableObject {
         )
     }
 
-    // The Azure image generation workflow keeps all guard rails together for easier auditing.
+    // Image generation handles standard OpenAI endpoints plus Azure-compatible custom endpoints.
     // swiftlint:disable:next function_body_length
     func generateImage(
         prompt: String,
@@ -483,22 +467,26 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        guard provider == .azure else {
+        let effectiveProvider = modelProviders[requestModel] ?? provider
+
+        guard effectiveProvider == .openai else {
             onError(OpenAIError.unsupportedProvider)
             return
         }
 
-        guard !azureEndpoint.isEmpty else {
-            onError(OpenAIError.missingAzureEndpoint)
-            return
-        }
+        let endpointInfo = customEndpoint(for: requestModel)
+        let usesAzureEndpoint = endpointInfo.flatMap { isAzureEndpoint($0.endpoint) } ?? false
 
-        // Image generation endpoint: {endpoint}/openai/deployments/{model}/images/generations?api-version={version}
-        let cleanEndpoint = azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let cleanVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-        let imageURL =
-            "\(cleanEndpoint)/openai/deployments/\(requestModel)/images/generations?api-version=\(cleanVersion)"
+        let imageURL: String =
+            if let endpointInfo {
+                if usesAzureEndpoint {
+                    azureImagesURL(baseEndpoint: endpointInfo.endpoint, deployment: endpointInfo.model)
+                } else {
+                    appendPathIfNeeded(endpointInfo.endpoint, path: "/v1/images/generations")
+                }
+            } else {
+                "https://api.openai.com/v1/images/generations"
+            }
 
         guard let url = URL(string: imageURL) else {
             onError(OpenAIError.invalidURL)
@@ -509,19 +497,34 @@ class OpenAIService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Only add Authorization header if API key is provided
-        if !modelAPIKey.isEmpty {
+        if usesAzureEndpoint {
+            if !modelAPIKey.isEmpty {
+                request.setValue(modelAPIKey, forHTTPHeaderField: "api-key")
+            }
+        } else if !modelAPIKey.isEmpty {
             request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
         }
 
-        let body: [String: Any] = [
-            "prompt": prompt,
-            "size": imageSize,
-            "quality": imageQuality,
-            "output_format": outputFormat,
-            "output_compression": outputCompression,
-            "n": 1,
-        ]
+        let body: [String: Any] =
+            if usesAzureEndpoint {
+                [
+                    "prompt": prompt,
+                    "size": imageSize,
+                    "quality": imageQuality,
+                    "output_format": outputFormat,
+                    "output_compression": outputCompression,
+                    "n": 1,
+                ]
+            } else {
+                [
+                    "prompt": prompt,
+                    "model": requestModel,
+                    "size": imageSize,
+                    "quality": imageQuality,
+                    "n": 1,
+                    "response_format": "b64_json",
+                ]
+            }
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -710,22 +713,11 @@ class OpenAIService: ObservableObject {
         return payload
     }
 
-    private func validateProviderSettings(for provider: AIProvider) throws {
-        // Skip API key check for Apple Intelligence and AIKit (local)
-        if provider != .appleIntelligence, provider != .aikit {
-            guard !apiKey.isEmpty else {
-                throw OpenAIError.missingAPIKey
-            }
-        }
+    private func validateProviderSettings(for provider: AIProvider, model: String?) throws {
+        guard providerRequiresAPIKey(provider) else { return }
 
-        // Validate Azure settings if using Azure
-        if provider == .azure {
-            guard !azureEndpoint.isEmpty else {
-                throw OpenAIError.missingAzureEndpoint
-            }
-            guard !azureDeploymentName.isEmpty else {
-                throw OpenAIError.missingAzureDeployment
-            }
+        if !isAPIKeyConfigured(for: provider, model: model) {
+            throw OpenAIError.missingAPIKey
         }
     }
 
@@ -759,6 +751,8 @@ class OpenAIService: ObservableObject {
             return
         }
         let effectiveProvider = modelProviders[requestModel] ?? provider
+        let endpointInfo = customEndpoint(for: requestModel)
+        let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
 
         // Handle Apple Intelligence separately
         if effectiveProvider == .appleIntelligence {
@@ -780,7 +774,7 @@ class OpenAIService: ObservableObject {
 
         // Validate provider settings
         do {
-            try validateProviderSettings(for: effectiveProvider)
+            try validateProviderSettings(for: effectiveProvider, model: requestModel)
         } catch {
             onError(error)
             return
@@ -801,10 +795,7 @@ class OpenAIService: ObservableObject {
         }
 
         // Build API request
-        let apiURL =
-            effectiveProvider == .azure
-                ? getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
-                : getAPIURL(provider: effectiveProvider)
+        let apiURL = getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
 
         guard let url = URL(string: apiURL) else {
             onError(OpenAIError.invalidURL)
@@ -818,9 +809,12 @@ class OpenAIService: ObservableObject {
         // Set authentication header based on provider
         let modelAPIKey = getAPIKey(for: requestModel)
         switch effectiveProvider {
-        case .openai, .azure:
-            // Only add Authorization header if API key is provided
-            if !modelAPIKey.isEmpty {
+        case .openai:
+            if usesAzureEndpoint {
+                if !modelAPIKey.isEmpty {
+                    request.setValue(modelAPIKey, forHTTPHeaderField: "api-key")
+                }
+            } else if !modelAPIKey.isEmpty {
                 request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
             }
         case .appleIntelligence, .aikit:
@@ -898,56 +892,14 @@ class OpenAIService: ObservableObject {
         }
     }
 
-    // The Responses API flow handles multimodal payload assembly in one place for debugging clarity.
-    // swiftlint:disable:next function_body_length
-    private func responsesAPIRequest(
-        messages: [Message],
-        model: String,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
-        onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0,
-    ) {
-        // Check if this model has a provider override
-        let effectiveProvider = modelProviders[model] ?? provider
-
-        // Apple Intelligence doesn't support the responses API
-        if effectiveProvider == .appleIntelligence {
-            onError(OpenAIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
-            return
-        }
-
-        let requestModel = model
-        let modelAPIKey = getAPIKey(for: requestModel)
-        let apiURL = getResponsesAPIURL(provider: effectiveProvider)
-
-        guard let url = URL(string: apiURL) else {
-            onError(OpenAIError.invalidURL)
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Only add Authorization header if API key is provided
-        if !modelAPIKey.isEmpty {
-            request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
-        }
-
-        // Build input array with proper multimodal support
+    private func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
         var inputArray: [[String: Any]] = []
 
         for message in messages {
-            // Skip system messages or handle them as instructions
             if message.role == .system {
                 continue
             }
 
-            // Create message item in Responses API format
-            // Format for user: { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "..." }, { "type": "input_image", "image_url": "..." }] }
-            // Format for assistant: { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "..." }] }
             var messageItem: [String: Any] = [
                 "type": "message",
                 "role": message.role.rawValue,
@@ -955,8 +907,6 @@ class OpenAIService: ObservableObject {
 
             var contentArray: [[String: Any]] = []
 
-            // Add text content if present
-            // Use correct content type based on role: input_text for user, output_text for assistant
             if !message.content.isEmpty {
                 let contentType = message.role == .user ? "input_text" : "output_text"
                 contentArray.append([
@@ -965,8 +915,6 @@ class OpenAIService: ObservableObject {
                 ])
             }
 
-            // Add image attachments with proper format for Responses API
-            // Note: Images are only valid for user messages in the Responses API
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
                     let base64Data = attachment.data.base64EncodedString()
@@ -981,6 +929,91 @@ class OpenAIService: ObservableObject {
             inputArray.append(messageItem)
         }
 
+        return inputArray
+    }
+
+    private func deliverResponsesOutput(
+        _ outputArray: [[String: Any]],
+        onChunk: @escaping (String) -> Void,
+        onReasoning: ((String) -> Void)?,
+    ) {
+        for outputItem in outputArray {
+            let itemType = outputItem["type"] as? String
+
+            if itemType == "reasoning" {
+                if let summaryArray = outputItem["summary"] as? [[String: Any]],
+                   let onReasoning
+                {
+                    for summaryPart in summaryArray {
+                        if let type = summaryPart["type"] as? String,
+                           type == "summary_text",
+                           let text = summaryPart["text"] as? String
+                        {
+                            onReasoning(text)
+                        }
+                    }
+                }
+            } else if itemType == "message",
+                      let content = outputItem["content"] as? [[String: Any]]
+            {
+                for contentPart in content {
+                    if let type = contentPart["type"] as? String,
+                       type == "output_text",
+                       let text = contentPart["text"] as? String
+                    {
+                        onChunk(text)
+                    }
+                }
+            }
+        }
+    }
+
+    // The Responses API flow handles multimodal payload assembly in one place for debugging clarity.
+    // swiftlint:disable superfluous_disable_command
+    // swiftlint:disable:next function_body_length
+    private func responsesAPIRequest(
+        messages: [Message],
+        model: String,
+        onChunk: @escaping (String) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (Error) -> Void,
+        onReasoning: ((String) -> Void)? = nil,
+        attempt: Int = 0,
+    ) {
+        // Check if this model has a provider override
+        let effectiveProvider = modelProviders[model] ?? provider
+        let endpointInfo = customEndpoint(for: model)
+        let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
+
+        // Apple Intelligence doesn't support the responses API
+        if effectiveProvider == .appleIntelligence {
+            onError(OpenAIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
+            return
+        }
+
+        let requestModel = model
+        let modelAPIKey = getAPIKey(for: requestModel)
+        let apiURL = getResponsesAPIURL(deploymentName: model, provider: effectiveProvider)
+
+        guard let url = URL(string: apiURL) else {
+            onError(OpenAIError.invalidURL)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if usesAzureEndpoint {
+            if !modelAPIKey.isEmpty {
+                request.setValue(modelAPIKey, forHTTPHeaderField: "api-key")
+            }
+        } else if !modelAPIKey.isEmpty {
+            request.setValue("Bearer \(modelAPIKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        let inputArray = buildResponsesInput(from: messages)
+
         let body: [String: Any] = [
             "model": model,
             "input": inputArray,
@@ -989,8 +1022,15 @@ class OpenAIService: ObservableObject {
         ]
 
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let bodyData = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = bodyData
         } catch {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "❌ Failed to encode Responses API body",
+                metadata: ["model": model],
+            )
             onError(error)
             return
         }
@@ -1049,42 +1089,8 @@ class OpenAIService: ObservableObject {
                         return
                     }
 
-                    // Parse responses API format
-                    // Structure: { "output": [{ "type": "message" | "reasoning", "content": [...] }], "reasoning": { "summary": "...", "effort": "..." } }
-
-                    // Extract from output array
                     if let outputArray = json?["output"] as? [[String: Any]] {
-                        for outputItem in outputArray {
-                            let itemType = outputItem["type"] as? String
-
-                            // Handle reasoning items - summary is an array of content parts
-                            if itemType == "reasoning" {
-                                if let summaryArray = outputItem["summary"] as? [[String: Any]],
-                                   let onReasoning
-                                {
-                                    for summaryPart in summaryArray {
-                                        if let type = summaryPart["type"] as? String,
-                                           type == "summary_text",
-                                           let text = summaryPart["text"] as? String
-                                        {
-                                            onReasoning(text)
-                                        }
-                                    }
-                                }
-                            }
-                            // Handle message items
-                            else if itemType == "message" {
-                                if let content = outputItem["content"] as? [[String: Any]] {
-                                    for contentPart in content {
-                                        if let type = contentPart["type"] as? String, type == "output_text",
-                                           let text = contentPart["text"] as? String
-                                        {
-                                            onChunk(text)
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        self?.deliverResponsesOutput(outputArray, onChunk: onChunk, onReasoning: onReasoning)
                     }
 
                     onComplete()
@@ -1099,6 +1105,8 @@ class OpenAIService: ObservableObject {
         task.resume()
     }
 
+    // swiftlint:enable superfluous_disable_command
+
     // MARK: - Helper Methods for streamResponse
 
     private struct StreamLineResult {
@@ -1107,16 +1115,15 @@ class OpenAIService: ObservableObject {
         let toolCallId: String
     }
 
-    private func getHTTPErrorMessage(statusCode: Int, provider: AIProvider, azureDeployment: String, azureVersion: String) -> String {
+    private func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
         if statusCode == 400 {
-            if provider == .azure {
-                "HTTP \(statusCode) - Invalid Azure deployment name '\(azureDeployment)'. Check that this deployment exists in your Azure portal and supports the API version \(azureVersion)."
-            } else {
-                "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
+            if requestURL?.absoluteString.lowercased().contains("openai.azure.com") == true {
+                return "HTTP \(statusCode) - Invalid Azure deployment or API version (\(azureAPIVersion))."
             }
-        } else {
-            "HTTP \(statusCode)"
+            return "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
         }
+
+        return "HTTP \(statusCode)"
     }
 
     private func extractTextSegments(
@@ -1332,11 +1339,6 @@ class OpenAIService: ObservableObject {
         onReasoning: ((String) -> Void)? = nil,
         attempt: Int = 0,
     ) {
-        // Capture values for async context
-        let currentProvider = provider
-        let currentAzureDeployment = azureDeploymentName
-        let currentAzureAPIVersion = azureAPIVersion
-
         let task = Task {
             var hasReceivedData = false
             do {
@@ -1349,9 +1351,7 @@ class OpenAIService: ObservableObject {
                 guard httpResponse.statusCode == 200 else {
                     let errorMessage = getHTTPErrorMessage(
                         statusCode: httpResponse.statusCode,
-                        provider: currentProvider,
-                        azureDeployment: currentAzureDeployment,
-                        azureVersion: currentAzureAPIVersion,
+                        requestURL: request.url,
                     )
                     throw OpenAIError.apiError(errorMessage)
                 }
@@ -1710,8 +1710,6 @@ class OpenAIService: ObservableObject {
         case invalidResponse
         case apiError(String)
         case invalidURL
-        case missingAzureEndpoint
-        case missingAzureDeployment
         case unsupportedProvider
         case noData
         case contentFiltered(String)
@@ -1728,12 +1726,8 @@ class OpenAIService: ObservableObject {
                 message
             case .invalidURL:
                 "Invalid API endpoint URL"
-            case .missingAzureEndpoint:
-                "Please configure Azure OpenAI endpoint in Settings"
-            case .missingAzureDeployment:
-                "Please configure Azure deployment name in Settings"
             case .unsupportedProvider:
-                "Image generation is only supported with Azure OpenAI provider"
+                "Image generation is only supported for OpenAI-compatible providers"
             case .noData:
                 "No data received from API"
             case let .contentFiltered(message):
@@ -1748,7 +1742,7 @@ extension OpenAIService {
         switch provider {
         case .aikit, .appleIntelligence:
             false
-        case .openai, .azure:
+        case .openai:
             true
         }
     }
@@ -1756,6 +1750,8 @@ extension OpenAIService {
     var requiresAPIKey: Bool {
         providerRequiresAPIKey(provider)
     }
+
+    var latestAzureAPIVersion: String { azureAPIVersion }
 
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard providerRequiresAPIKey(provider) else { return true }
@@ -1783,21 +1779,6 @@ extension OpenAIService {
         return isAPIKeyConfigured(for: provider, model: normalizedModel)
     }
 
-    private func missingAzureConfigurationFields(for provider: AIProvider) -> [String] {
-        guard provider == .azure else { return [] }
-        var fields: [String] = []
-        if azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("endpoint URL")
-        }
-        if azureDeploymentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("deployment name")
-        }
-        if azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("API version")
-        }
-        return fields
-    }
-
     var configurationIssues: [String] {
         var issues: [String] = []
         let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1814,12 +1795,6 @@ extension OpenAIService {
            !isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
         {
             issues.append("Add an API key for \(activeProvider.displayName)")
-        }
-
-        if activeProvider == .azure {
-            issues.append(contentsOf: missingAzureConfigurationFields(for: activeProvider).map {
-                "Set Azure \($0)"
-            })
         }
         return issues
     }

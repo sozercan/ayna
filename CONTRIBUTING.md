@@ -80,7 +80,7 @@ Models → ViewModels → Views → Services
 - `SettingsView`: Configuration tabs
 
 **Services**
-- `OpenAIService`: Manages API communication (OpenAI, Azure, AIKit)
+- `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection, Apple Intelligence, and AIKit via local OpenAI-compatible endpoint)
 - `MCPServerManager`: Handles Model Context Protocol tools
 - `KeychainStorage`: Securely stores API keys
 

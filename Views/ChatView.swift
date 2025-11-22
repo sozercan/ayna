@@ -394,32 +394,25 @@ struct ChatView: View {
                 .padding(.vertical, 20)
                 .background(.ultraThinMaterial)
       }
-      Menu {
-        Button(action: { exportConversation(format: .markdown) }) {
-          Label("Export as Markdown", systemImage: "doc.text")
-        }
-        Button(action: { exportConversation(format: .pdf) }) {
-          Label("Export as PDF", systemImage: "doc.text.image")
-        }
-      } label: {
-        HStack(spacing: 6) {
+    }
+    .toolbar {
+      ToolbarItem(placement: .principal) {
+        Spacer()
+      }
+      ToolbarItem(placement: .primaryAction) {
+        Menu {
+          Button(action: { exportConversation(format: .markdown) }) {
+            Label("Export as Markdown", systemImage: "doc.text")
+          }
+          Button(action: { exportConversation(format: .pdf) }) {
+            Label("Export as PDF", systemImage: "doc.text.image")
+          }
+        } label: {
           Image(systemName: "square.and.arrow.up")
-            .imageScale(.medium)
-          Image(systemName: "chevron.down")
-            .imageScale(.small)
-            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-          Capsule().stroke(Color.white.opacity(0.2)),
-        )
-        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 6)
+        .menuIndicator(.visible)
         .accessibilityLabel("Export conversation")
       }
-      .padding(.top, 16)
-      .padding(.trailing, 24)
     }
     .onAppear {
       isComposerFocused = true

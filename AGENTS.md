@@ -4,14 +4,13 @@ This file provides guidance to AI coding assistants (Claude, GitHub Copilot, etc
 
 ## Project Overview
 
-ayna is a native macOS ChatGPT client built with SwiftUI for macOS 14+. It supports both OpenAI and Azure OpenAI providers, featuring a conversation management system and streaming responses with a clean, simplified interface.
+ayna is a native macOS ChatGPT client built with SwiftUI for macOS 14+. It supports OpenAI-compatible endpoints, Apple Intelligence, and AIKit with a conversation management system and streaming responses in a clean interface.
 
 ## Build and Development
 
 ### Building the App
 ```bash
-open ayna.xcodeproj
-# In Xcode: Select "My Mac" target and press Cmd+R
+xcodebuild -scheme Ayna -destination 'platform=macOS' build
 ```
 
 ### Requirements
@@ -87,11 +86,15 @@ Models → ViewModels → Views → Services
 
 **Services** (`Services/OpenAIService.swift`, `Services/MCPServerManager.swift`, `Services/MCPService.swift`)
 - `OpenAIService.shared`: Singleton managing API communication with OpenAI-compatible endpoints
-- Supports OpenAI, Azure OpenAI, AIKit with provider-specific authentication
+- Auto-detects Azure resources (any endpoint containing `openai.azure.com`) and applies Azure-specific URLs/auth. Also supports AIKit via OpenAI-compatible local endpoints.
 - Tool calling support via `onToolCallRequested` callback
 - `MCPServerManager.shared`: Manages MCP server connections, tool discovery, and execution with performance optimizations
 - `MCPService`: Individual MCP server communication via stdio
 - API keys are retrieved via `KeychainStorage` (global and per-model) and never written to UserDefaults
+
+**Utilities & Diagnostics** (`Utilities/`, `Diagnostics/`)
+- `Utilities`: Helper classes for preferences, markdown rendering, and keychain storage
+- `Diagnostics`: Centralized logging via `DiagnosticsLogger`
 
 ### State Management Pattern
 - `@StateObject` in App entry point for `ConversationManager`
@@ -102,20 +105,14 @@ Models → ViewModels → Views → Services
 ### Multi-Provider Support
 The app supports multiple AI providers via the `AIProvider` enum:
 
-**OpenAI**: Standard OpenAI API
-- Endpoint: `https://api.openai.com/v1/chat/completions`
+**OpenAI**: Standard OpenAI API (plus any OpenAI-compatible endpoint)
+- Default endpoint: `https://api.openai.com/v1/chat/completions`
 - Auth: `Authorization: Bearer {key}`
 - Model specified in request body
+- Azure detection: if a custom endpoint contains `openai.azure.com`, `OpenAIService` automatically builds Azure deployment URLs, appends `api-version=2025-04-01-preview`, and swaps headers to `api-key`
 
-**Azure OpenAI**: Enterprise Azure service
-- Endpoint: `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}`
-- Auth: `api-key: {key}` header
-- Model determined by deployment name in URL
-- Requires: endpoint URL, deployment name, API version
-- Settings auto-trim whitespace from all Azure configuration fields
-
-**AIKit**: Local containerized AI models via Podman
-- Endpoint: `http://localhost:8080/v1/chat/completions` (OpenAI-compatible)
+**AIKit**: Local containerized AI models via Podman (uses OpenAI-compatible endpoint)
+- Endpoint: `http://localhost:8080/v1/chat/completions`
 - Auth: None required (local endpoint)
 - Uses Podman to run container images
 - Requires: Podman installed, and GPU access configured (recommended)
@@ -135,9 +132,12 @@ The app supports tool calling via MCP servers for extended functionality:
 - `MCPModels.swift`: Data models for tools, resources, and tool calls
 - Tool calling flow: User message → LLM requests tool → Execute via MCP → LLM processes result → Response
 
-**Supported MCP Servers**:
+**MCP Servers**:
+The app comes with default configurations for:
 - `brave-search`: Web search capabilities (requires Brave Search API key)
 - `filesystem`: File system access for reading/writing files
+
+Users can add any other MCP server via Settings.
 
 **Tool Calling Flow**:
 1. User sends message with available tools in context
@@ -183,7 +183,7 @@ The interface has been streamlined to focus on core chat functionality:
 ### Adding a New AI Model
 1. Add model identifier to `OpenAIService.availableModels` array
 2. Model will automatically appear in Settings → Model tab picker
-3. Ensure model is available for selected provider (OpenAI vs Azure)
+3. Ensure the endpoint and authentication align with the provider (Azure deployments should use the deployment name as the model name plus `https://<resource>.openai.azure.com` as the endpoint)
 
 ### Modifying UI Layout
 - Window size constraints set in `aynaApp.swift`: `.frame(minWidth: 900, minHeight: 600)`
@@ -204,9 +204,9 @@ The interface has been streamlined to focus on core chat functionality:
 API keys (global and per-model) are stored in the macOS Keychain via `KeychainStorage`. No plaintext copies remain in `UserDefaults`.
 
 ### App Sandbox
-App uses `App Sandbox` entitlement (`ayna.entitlements`) with:
-- Network client access (for API calls)
-- User selected file read/write (for export features)
+App has `App Sandbox` disabled (`com.apple.security.app-sandbox` set to `false`) to allow:
+- Execution of external MCP servers (e.g. via `npx` or `uvx`)
+- File system access for MCP tools
 
 - All conversations stored locally in an encrypted file under Application Support
 - No telemetry or analytics
@@ -305,11 +305,9 @@ The README outlines features ready for implementation due to extensible architec
 - iCloud sync (models already `Codable`, switch from `UserDefaults` to CloudKit)
 
 ### Known Limitations
-- No actual Keychain implementation despite comments
-- No unit tests
 - No token usage tracking or cost calculation
 - Streaming response parsing is simplistic (may fail on complex SSE formats)
-- Azure OpenAI API version hardcoded list (may need updates for new Azure releases)
+- Azure OpenAI API version hardcoded to `2025-04-01-preview` (update the constant in `OpenAIService` when Azure ships a newer requirement)
 
 ## Project Files Reference
 

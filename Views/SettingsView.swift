@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+// swiftlint:disable:next superfluous_disable_command
 // swiftlint:disable file_length type_body_length
 
 struct SettingsView: View {
@@ -118,8 +119,6 @@ struct APISettingsView: View {
     @State private var showAPIKey = false
     @State private var tempAPIKey = ""
     @State private var tempEndpoint = ""
-    @State private var tempAzureEndpoint = ""
-    @State private var tempAzureDeployment = ""
     @State private var tempModelName = ""
     @State private var selectedModelName: String?
     @State private var tempEndpointType: APIEndpointType = .chatCompletions
@@ -367,7 +366,7 @@ struct APISettingsView: View {
                                             validationStatus = .notChecked
                                         }
                                         Text(
-                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000)")
+                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name.")
                                             .font(.caption)
                                             .foregroundStyle(.tertiary)
                                     }
@@ -520,222 +519,6 @@ struct APISettingsView: View {
                                             tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                                 || tempEndpoint.isEmpty,
                                         )
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.large)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                        } else if openAIService.provider == .azure {
-                            // Azure OpenAI Configuration
-                            VStack(alignment: .leading, spacing: 16) {
-                                Label("Azure OpenAI Configuration", systemImage: "cloud.fill")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-
-                                VStack(alignment: .leading, spacing: 16) {
-                                    // API Key
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text("API Key")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            Spacer()
-                                            Text("Required")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
-                                        }
-                                        HStack(spacing: 8) {
-                                            if showAPIKey {
-                                                TextField("Enter your Azure API key", text: $tempAPIKey)
-                                                    .textFieldStyle(.roundedBorder)
-                                            } else {
-                                                SecureField("Enter your Azure API key", text: $tempAPIKey)
-                                                    .textFieldStyle(.roundedBorder)
-                                            }
-
-                                            Button(action: {
-                                                showAPIKey.toggle()
-                                            }) {
-                                                Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                                    .font(.system(size: 14))
-                                                    .foregroundStyle(.secondary)
-                                                    .frame(width: 32, height: 32)
-                                                    .background(Color.secondary.opacity(0.1))
-                                                    .cornerRadius(6)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                        .onChange(of: tempAPIKey) { _, _ in
-                                            validationStatus = .notChecked
-                                        }
-                                        Text("Your Azure OpenAI API key")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                    }
-
-                                    // Endpoint
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text("Endpoint")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            Spacer()
-                                            Text("Required")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
-                                        }
-                                        TextField("https://your-resource.openai.azure.com", text: $tempAzureEndpoint)
-                                            .textFieldStyle(.roundedBorder)
-                                            .onChange(of: tempAzureEndpoint) { _, _ in
-                                                validationStatus = .notChecked
-                                            }
-                                        Text("Your Azure OpenAI resource endpoint")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                    }
-
-                                    // Deployment Name
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text("Deployment Name")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            Spacer()
-                                            Text("Required")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
-                                        }
-                                        TextField("gpt-4, gpt-35-turbo", text: $tempAzureDeployment)
-                                            .textFieldStyle(.roundedBorder)
-                                            .onChange(of: tempAzureDeployment) { _, _ in
-                                                validationStatus = .notChecked
-                                            }
-                                        Text("The deployment name in your Azure resource")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                    }
-
-                                    // API Version
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text("API Version")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Picker("", selection: $openAIService.azureAPIVersion) {
-                                            ForEach(openAIService.azureAPIVersions, id: \.self) { version in
-                                                Text(version).tag(version)
-                                            }
-                                        }
-                                        .labelsHidden()
-                                        .onChange(of: openAIService.azureAPIVersion) { _, _ in
-                                            validationStatus = .notChecked
-                                        }
-                                        Text("Azure OpenAI API version")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                }
-                                .padding(16)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(8)
-
-                                // Action Buttons
-                                HStack(spacing: 12) {
-                                    Button {
-                                        Task {
-                                            await validateConfiguration()
-                                        }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "checkmark.circle")
-                                            Text("Validate")
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                                    .controlSize(.large)
-
-                                    if let selectedName = selectedModelName,
-                                       openAIService.customModels.contains(selectedName)
-                                    {
-                                        // Update existing model
-                                        Button {
-                                            openAIService.azureEndpoint = tempAzureEndpoint
-                                            openAIService.azureDeploymentName = tempAzureDeployment
-
-                                            let modelName = tempAzureDeployment.trimmingCharacters(
-                                                in: .whitespacesAndNewlines)
-                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                                            if !modelName.isEmpty {
-                                                openAIService.modelProviders[modelName] = .azure
-                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                                                // Update per-model API key
-                                                if !apiKey.isEmpty {
-                                                    openAIService.modelAPIKeys[modelName] = apiKey
-                                                } else {
-                                                    openAIService.modelAPIKeys.removeValue(forKey: modelName)
-                                                }
-
-                                                validationStatus = .notChecked
-                                            }
-                                        } label: {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "arrow.clockwise.circle.fill")
-                                                Text("Update Model")
-                                            }
-                                            .frame(maxWidth: .infinity)
-                                        }
-                                        .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.large)
-                                    } else {
-                                        // Add new model
-                                        Button {
-                                            openAIService.azureEndpoint = tempAzureEndpoint
-                                            openAIService.azureDeploymentName = tempAzureDeployment
-
-                                            let modelName = tempAzureDeployment.trimmingCharacters(
-                                                in: .whitespacesAndNewlines)
-                                            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                                            if !modelName.isEmpty, !openAIService.customModels.contains(modelName) {
-                                                openAIService.customModels.append(modelName)
-                                                openAIService.modelProviders[modelName] = .azure
-                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
-
-                                                // Save per-model API key if provided
-                                                if !apiKey.isEmpty {
-                                                    openAIService.modelAPIKeys[modelName] = apiKey
-                                                }
-
-                                                if openAIService.customModels.count == 1 {
-                                                    openAIService.selectedModel = modelName
-                                                }
-                                                selectedModelName = modelName
-                                                validationStatus = .notChecked
-                                            }
-                                        } label: {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "plus.circle.fill")
-                                                Text("Add Model")
-                                            }
-                                            .frame(maxWidth: .infinity)
-                                        }
-                                        .disabled(tempAzureEndpoint.isEmpty || tempAzureDeployment.isEmpty)
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.large)
                                     }
@@ -939,8 +722,6 @@ struct APISettingsView: View {
         .onAppear {
             tempAPIKey = openAIService.apiKey
             tempEndpoint = "https://api.openai.com/"
-            tempAzureEndpoint = openAIService.azureEndpoint
-            tempAzureDeployment = openAIService.azureDeploymentName
         }
     }
 
@@ -950,8 +731,6 @@ struct APISettingsView: View {
         tempModelName = ""
         tempAPIKey = ""
         tempEndpoint = "https://api.openai.com/"
-        tempAzureEndpoint = ""
-        tempAzureDeployment = ""
         tempEndpointType = .chatCompletions
         validationStatus = .notChecked
     }
@@ -959,22 +738,88 @@ struct APISettingsView: View {
     private func validateConfiguration() async {
         validationStatus = .checking
 
+        guard openAIService.provider == .openai else {
+            validationStatus = .invalid("Validation is only available for OpenAI-compatible models")
+            return
+        }
+
         do {
-            if openAIService.provider == .openai {
-                // Validate OpenAI configuration
-                let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !modelName.isEmpty else {
-                    validationStatus = .invalid("Model name is required")
+            let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !modelName.isEmpty else {
+                validationStatus = .invalid("Model name is required")
+                return
+            }
+
+            let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !endpoint.isEmpty else {
+                validationStatus = .invalid("Endpoint is required")
+                return
+            }
+
+            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isAzureEndpoint = endpoint.lowercased().contains("openai.azure.com")
+
+            if isAzureEndpoint {
+                guard !apiKey.isEmpty else {
+                    validationStatus = .invalid("API key is required for Azure endpoints")
                     return
                 }
 
-                let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !endpoint.isEmpty else {
-                    validationStatus = .invalid("Endpoint is required")
+                let urlString =
+                    "\(endpoint)/openai/deployments/\(modelName)/chat/completions?api-version=\(openAIService.latestAzureAPIVersion)"
+                guard let url = URL(string: urlString) else {
+                    validationStatus = .invalid("Invalid endpoint URL")
                     return
                 }
 
-                // Use custom endpoint for validation if provided
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue(apiKey, forHTTPHeaderField: "api-key")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+                let testPayload: [String: Any] = [
+                    "messages": [["role": "user", "content": "test"]],
+                    "model": modelName,
+                ]
+
+                request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    validationStatus = .invalid("Invalid response from server")
+                    return
+                }
+
+                switch httpResponse.statusCode {
+                case 200:
+                    validationStatus = .valid
+                case 401, 403:
+                    validationStatus = .invalid("Invalid API key or permissions")
+                case 404:
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String
+                    {
+                        if message.contains("deployment") || message.contains("not found") {
+                            validationStatus = .invalid("Deployment '\(modelName)' not found")
+                        } else {
+                            validationStatus = .invalid(message)
+                        }
+                    } else {
+                        validationStatus = .invalid("Deployment not found")
+                    }
+                default:
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String
+                    {
+                        validationStatus = .invalid(message)
+                    } else {
+                        validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
+                    }
+                }
+            } else {
                 let baseEndpoint =
                     endpoint.contains("api.openai.com")
                         ? "https://api.openai.com"
@@ -989,9 +834,8 @@ struct APISettingsView: View {
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
 
-                // Only add auth header if API key is provided
-                if !tempAPIKey.isEmpty {
-                    request.setValue("Bearer \(tempAPIKey)", forHTTPHeaderField: "Authorization")
+                if !apiKey.isEmpty {
+                    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                 }
 
                 let (data, response) = try await URLSession.shared.data(for: request)
@@ -1002,102 +846,11 @@ struct APISettingsView: View {
                 }
 
                 if httpResponse.statusCode == 200 {
-                    // Parse response to check if model exists
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let models = json["data"] as? [[String: Any]]
-                    {
-                        let modelIds = models.compactMap { $0["id"] as? String }
-                        if modelIds.contains(modelName) {
-                            validationStatus = .valid
-                        } else {
-                            // Model not found in list, but API key is valid - allow it anyway for custom models
-                            validationStatus = .valid
-                        }
-                    } else {
-                        validationStatus = .valid // API key is valid even if we can't parse models
-                    }
+                    validationStatus = .valid
                 } else if httpResponse.statusCode == 401 {
                     validationStatus = .invalid("Invalid API key")
                 } else {
                     validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
-                }
-
-            } else {
-                // Validate Azure OpenAI configuration
-                guard !tempAPIKey.isEmpty else {
-                    validationStatus = .invalid("API key is required")
-                    return
-                }
-
-                guard !tempAzureEndpoint.isEmpty else {
-                    validationStatus = .invalid("Endpoint is required")
-                    return
-                }
-
-                let deploymentName = tempAzureDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !deploymentName.isEmpty else {
-                    validationStatus = .invalid("Deployment name is required")
-                    return
-                }
-
-                // Test Azure deployment by making a minimal chat completions request
-                let endpoint = tempAzureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-                let urlString = "\(endpoint)/openai/deployments/\(deploymentName)/chat/completions?api-version=\(openAIService.azureAPIVersion)"
-                guard let url = URL(string: urlString) else {
-                    validationStatus = .invalid("Invalid endpoint URL")
-                    return
-                }
-
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue(tempAPIKey, forHTTPHeaderField: "api-key")
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-                // Minimal test request
-                let testPayload: [String: Any] = [
-                    "messages": [
-                        ["role": "user", "content": "test"],
-                    ],
-                ]
-
-                request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
-
-                let (data, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    validationStatus = .invalid("Invalid response from server")
-                    return
-                }
-
-                if httpResponse.statusCode == 200 {
-                    // Successfully reached the deployment
-                    validationStatus = .valid
-                } else if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                    validationStatus = .invalid("Invalid API key or permissions")
-                } else if httpResponse.statusCode == 404 {
-                    // Parse error message to see if it's a deployment issue
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String
-                    {
-                        if message.contains("deployment") || message.contains("not found") {
-                            validationStatus = .invalid("Deployment '\(deploymentName)' not found")
-                        } else {
-                            validationStatus = .invalid(message)
-                        }
-                    } else {
-                        validationStatus = .invalid("Deployment not found")
-                    }
-                } else {
-                    // Try to get error message from response
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String
-                    {
-                        validationStatus = .invalid(message)
-                    } else {
-                        validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
-                    }
                 }
             }
         } catch {
@@ -1124,9 +877,6 @@ struct APISettingsView: View {
         if openAIService.provider == .openai {
             // Load custom endpoint if available, otherwise use default
             tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
-        } else {
-            tempAzureDeployment = model
-            tempAzureEndpoint = openAIService.azureEndpoint
         }
     }
 
@@ -1150,7 +900,6 @@ struct APISettingsView: View {
             selectedModelName = nil
             tempModelName = ""
             tempEndpoint = "https://api.openai.com/"
-            tempAzureDeployment = ""
         }
     }
 }

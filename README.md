@@ -5,7 +5,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
-- ☁️ **Multi-Provider**: Works with OpenAI, Azure OpenAI, [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) (using OpenAI API) out of the box.
+- ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
 - 🏠 **Local Models**: Run models locally for complete privacy.
 - 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
@@ -29,13 +29,13 @@ A native macOS ChatGPT client built for speed and simplicity.
 ### Requirements
 
 - macOS 14.0 (Sonoma) or newer.
-- An API key for OpenAI or Azure OpenAI (optional if using local models).
+- An API key for OpenAI, Azure OpenAI, Gemini or Claude (optional if using local models).
 
 ## User Guide
 
 ### Connect to AI Providers
 1. Open **Settings** (`Cmd+,`) → **API**.
-2. Select your provider (OpenAI or Azure) and enter your API key.
+2. Select **OpenAI** (Apple Intelligence or AIKit for on-device/local) and add a model. Use your OpenAI endpoint (or `https://<resource>.openai.azure.com` for Azure, using the deployment name as the model name) plus API key.
 3. Start chatting!
 
 ### Run Local Models (AIKit)
@@ -45,7 +45,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 
 ### Enable Tools (MCP)
 1. Go to **Settings** → **MCP Tools**.
-2. Enable tools like `brave-search` or `filesystem` to give the AI more capabilities.
+2. Enable default tools like `brave-search` or `filesystem`, or add any other MCP server to give the AI more capabilities.
 
 ### Keyboard Shortcuts
 - `Cmd+N`: New conversation
