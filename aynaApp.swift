@@ -17,6 +17,7 @@ private var uiTestFallbackWindow: NSWindow?
 
 @main
 struct aynaApp: App {
+    @NSApplicationDelegateAdaptor(AynaAppDelegate.self) private var appDelegate
     @StateObject private var conversationManager: ConversationManager
 
     init() {
@@ -84,6 +85,18 @@ struct aynaApp: App {
             SettingsView()
                 .environmentObject(conversationManager)
         }
+    }
+}
+
+@MainActor
+final class AynaAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_: Notification) {
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "🛑 Application terminating; disconnecting MCP servers",
+        )
+        MCPServerManager.shared.disconnectAllServers()
     }
 }
 

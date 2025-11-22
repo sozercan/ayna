@@ -42,6 +42,7 @@ class MCPServerManager: ObservableObject {
         self.reconnectDelayProvider = reconnectDelayProvider
         loadServerConfigs()
         initializeStatusEntries()
+        MCPProcessTracker.shared.cleanupOrphanedProcesses()
     }
 
     // MARK: - Server Configuration Management

@@ -14,12 +14,18 @@ jobs:
       matrix:
         include:
           - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
           - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
       uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
 
     - name: Show Xcode version
       run: xcodebuild -version
@@ -44,12 +50,18 @@ jobs:
       matrix:
         include:
           - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
           - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
       uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
 
     - name: Show Xcode version
       run: xcodebuild -version

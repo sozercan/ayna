@@ -192,6 +192,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
         do {
             try process.run()
+            MCPProcessTracker.shared.register(serverName: serverName, pid: process.processIdentifier)
         } catch {
             disconnect()
             let errorMsg = "Failed to start process: \(error.localizedDescription)"
@@ -253,6 +254,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     func disconnect() {
         isDisconnectingManually = true
         stopHealthCheckTimer()
+        MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
         cleanupProcessResources()
         process?.terminationHandler = nil
         process?.terminate()
@@ -743,6 +745,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     "reason": message,
                 ],
             )
+            MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
             lastError = message
             isConnected = false
             delegate?.mcpService(self, didTerminateWithError: message)
