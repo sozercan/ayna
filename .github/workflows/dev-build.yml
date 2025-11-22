@@ -50,7 +50,7 @@ jobs:
         hdiutil create -volname "Ayna-dev" \
           -srcfolder dmg_contents \
           -ov -format UDZO \
-          ayna.dmg
+          ayna-dev.dmg
 
     - name: Get short SHA
       id: slug
