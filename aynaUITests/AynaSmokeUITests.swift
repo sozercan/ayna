@@ -78,10 +78,19 @@ final class AynaSmokeUITests: AynaUITestCase {
         let title = sidebarList.staticTexts[msg]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
 
-        title.rightClick()
+        // Trigger context menu via coordinate tap to reduce hit-point errors
+        let titleCoordinate = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        titleCoordinate.rightClick()
 
-        // Context menu item "Delete" (identifier: trash)
-        let deleteButton = app.menuItems["trash"]
+        // Context menu label may include counts ("Delete" vs "Delete 2 Conversations")
+        let deleteMenuItems = app.menuItems.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Delete")
+        )
+        let deleteButton = deleteMenuItems.firstMatch
+        if !deleteButton.waitForExistence(timeout: 5) {
+            // Retry once in case the first right-click didn't register on CI
+            titleCoordinate.rightClick()
+        }
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
         deleteButton.click()
 
@@ -132,7 +141,8 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Wait for keyboard focus
         let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
         let focusExpectation = XCTNSPredicateExpectation(predicate: hasFocus, object: composer)
-        XCTWaiter.wait(for: [focusExpectation], timeout: 5)
+        let focusWaitResult = XCTWaiter.wait(for: [focusExpectation], timeout: 5)
+        XCTAssertEqual(focusWaitResult, .completed)
 
         composer.typeText("Topic Beta")
         app.buttons[TestIdentifiers.NewChatComposer.sendButton].click()
@@ -156,10 +166,6 @@ final class AynaSmokeUITests: AynaUITestCase {
         // The message bubble is also a static text (or text view).
         // We can check that we have at least 2 occurrences of "Topic Alpha" (one sidebar, one chat)
         // and only 1 occurrence of "Topic Beta" (sidebar only).
-
-        let alphaTexts = app.staticTexts.matching(identifier: "Topic Alpha")
-        // This might not work if identifier isn't set to content.
-        // Let's rely on the fact that clicking the sidebar row changes the selection.
 
         // Let's verify the copy button exists for the current chat, which implies a chat is loaded.
         // And verify the content text exists in the chat area (not sidebar)
@@ -223,7 +229,8 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Wait for focus
         let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
         let focusExpectation = XCTNSPredicateExpectation(predicate: hasFocus, object: composer)
-        XCTWaiter.wait(for: [focusExpectation], timeout: 5)
+        let composeFocusResult = XCTWaiter.wait(for: [focusExpectation], timeout: 5)
+        XCTAssertEqual(composeFocusResult, .completed)
 
         composer.typeText(text)
 
