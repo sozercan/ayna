@@ -45,7 +45,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 
 ### Enable Tools (MCP)
 1. Go to **Settings** → **MCP Tools**.
-2. Enable default tools like `brave-search` or `filesystem`, or add any other MCP server to give the AI more capabilities.
+2. Enable the default `wassette` runtime (requires the [Wassette CLI](https://github.com/microsoft/wassette) and runs `wassette serve --stdio`) or add any other MCP server to give the AI more capabilities.
 
 ### Keyboard Shortcuts
 - `Cmd+N`: New conversation

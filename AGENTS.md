@@ -133,9 +133,8 @@ The app supports tool calling via MCP servers for extended functionality:
 - Tool calling flow: User message → LLM requests tool → Execute via MCP → LLM processes result → Response
 
 **MCP Servers**:
-The app comes with default configurations for:
-- `brave-search`: Web search capabilities (requires Brave Search API key)
-- `filesystem`: File system access for reading/writing files
+The app ships with a single default configuration:
+- `wassette`: Runs the [Wassette](https://github.com/microsoft/wassette) MCP runtime (`wassette serve --stdio`) so users can load secure WebAssembly tools without manual setup.
 
 Users can add any other MCP server via Settings.
 

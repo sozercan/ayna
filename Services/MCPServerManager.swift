@@ -151,7 +151,6 @@ class MCPServerManager: ObservableObject {
                 )
             }
             serverConfigs = validatedConfigs
-            ensureDefaultEnvVariables()
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .info,
@@ -181,39 +180,13 @@ class MCPServerManager: ObservableObject {
         // Use npx directly with full path
         [
             MCPServerConfig(
-                name: "brave-search",
-                command: "/opt/homebrew/bin/npx",
-                args: ["-y", "@modelcontextprotocol/server-brave-search"],
-                env: defaultBraveSearchEnv(), // Add your Brave Search API key here: https://brave.com/search/api/
-                enabled: false,
-            ),
-            MCPServerConfig(
-                name: "filesystem",
-                command: "/opt/homebrew/bin/npx",
-                args: ["-y", "@modelcontextprotocol/server-filesystem", NSHomeDirectory()],
-                env: [:],
+                name: "wassette",
+                command: "wassette",
+                args: ["serve", "--stdio"],
+                env: ["BRAVE_SEARCH_API_KEY": ""],
                 enabled: false,
             ),
         ]
-    }
-
-    private func defaultBraveSearchEnv() -> [String: String] {
-        let apiKey = ProcessInfo.processInfo.environment["BRAVE_API_KEY"] ?? ""
-        return ["BRAVE_API_KEY": apiKey]
-    }
-
-    private func ensureDefaultEnvVariables() {
-        var didMutate = false
-        if let index = serverConfigs.firstIndex(where: { $0.name == "brave-search" }) {
-            if serverConfigs[index].env["BRAVE_API_KEY"] == nil {
-                serverConfigs[index].env["BRAVE_API_KEY"] = ProcessInfo.processInfo.environment["BRAVE_API_KEY"] ?? ""
-                didMutate = true
-            }
-        }
-
-        if didMutate {
-            saveServerConfigs()
-        }
     }
 
     // MARK: - Connection Management
