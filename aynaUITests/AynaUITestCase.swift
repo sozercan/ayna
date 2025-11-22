@@ -1,8 +1,10 @@
 import XCTest
 
+@MainActor
 class AynaUITestCase: XCTestCase {
-    var app: XCUIApplication!
+    @MainActor var app: XCUIApplication!
 
+    @MainActor
     override func setUpWithError() throws {
         try super.setUpWithError()
         continueAfterFailure = false
@@ -21,6 +23,7 @@ class AynaUITestCase: XCTestCase {
         app = application
     }
 
+    @MainActor
     override func tearDownWithError() throws {
         app?.terminate()
         app = nil
