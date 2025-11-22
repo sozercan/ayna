@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct MessageView: View {
     let message: Message
     var modelName: String?
@@ -164,7 +165,7 @@ struct MessageView: View {
         }
     }
 
-    var body: some View {
+    @MainActor var body: some View {
         let isAssistant = message.role == .assistant
         let isToolMessage = message.role == .tool
         let avatar = avatarAppearance(for: message.role)
