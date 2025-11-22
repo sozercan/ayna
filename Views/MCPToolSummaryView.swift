@@ -12,7 +12,7 @@ struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
     @State private var isToolSectionExpanded = false
 
-    var body: some View {
+    @MainActor var body: some View {
         if shouldShowToolSummary {
             VStack(alignment: .leading, spacing: 8) {
                 if isToolSectionExpanded {
@@ -216,7 +216,7 @@ struct ToolStatusChipModel: Identifiable {
 struct ToolStatusChip: View {
     let model: ToolStatusChipModel
 
-    var body: some View {
+    @MainActor var body: some View {
         HStack(spacing: 10) {
             Circle()
                 .fill(model.statusColor)
