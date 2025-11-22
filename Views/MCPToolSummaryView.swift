@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
     @State private var isToolSectionExpanded = false
@@ -211,6 +212,7 @@ struct ToolStatusChipModel: Identifiable {
     let hasTools: Bool
 }
 
+@MainActor
 struct ToolStatusChip: View {
     let model: ToolStatusChipModel
 
