@@ -31,14 +31,14 @@ final class MCPServerManagerTests: XCTestCase {
             config: config,
             connectResults: [
                 .failure(MCPTestError.expected),
-                .success(()),
-            ],
+                .success(())
+            ]
         )
 
         let manager = MCPServerManager(
             serviceFactory: { _ in stub },
             retryDelayProvider: { _ in 0 },
-            reconnectDelayProvider: { 0 },
+            reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
@@ -59,14 +59,14 @@ final class MCPServerManagerTests: XCTestCase {
             connectResults: [
                 .failure(MCPTestError.expected),
                 .failure(MCPTestError.expected),
-                .failure(MCPTestError.expected),
-            ],
+                .failure(MCPTestError.expected)
+            ]
         )
 
         let manager = MCPServerManager(
             serviceFactory: { _ in stub },
             retryDelayProvider: { _ in 0 },
-            reconnectDelayProvider: { 0 },
+            reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
@@ -98,7 +98,7 @@ final class MCPServerManagerTests: XCTestCase {
                 return serviceQueue.removeFirst()
             },
             retryDelayProvider: { _ in 0 },
-            reconnectDelayProvider: { 0 },
+            reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
@@ -133,7 +133,7 @@ final class MCPServerManagerTests: XCTestCase {
                 return initialService
             },
             retryDelayProvider: { _ in 0 },
-            reconnectDelayProvider: { 0 },
+            reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [originalConfig]
         manager.updateServerConfig(originalConfig)

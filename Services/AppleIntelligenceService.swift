@@ -48,13 +48,13 @@ enum AppleIntelligenceError: LocalizedError {
         private func log(
             _ message: String,
             level: OSLogType = .default,
-            metadata: [String: String] = [:],
+            metadata: [String: String] = [:]
         ) {
             DiagnosticsLogger.log(
                 .appleIntelligence,
                 level: level,
                 message: message,
-                metadata: metadata,
+                metadata: metadata
             )
         }
 
@@ -92,7 +92,7 @@ enum AppleIntelligenceError: LocalizedError {
         // Get or create a session for a conversation
         private func getSession(
             conversationId: String,
-            systemInstructions: String,
+            systemInstructions: String
         ) -> LanguageModelSession {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -130,14 +130,14 @@ enum AppleIntelligenceError: LocalizedError {
             temperature: Double = 0.7,
             onChunk: @escaping (String) -> Void,
             onComplete: @escaping () -> Void,
-            onError: @escaping (Error) -> Void,
+            onError: @escaping (Error) -> Void
         ) async {
             // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence stream unavailable",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()],
+                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
                 )
                 onError(getAvailabilityError())
                 return
@@ -148,7 +148,7 @@ enum AppleIntelligenceError: LocalizedError {
             // Get or create session
             let session = getSession(
                 conversationId: conversationId,
-                systemInstructions: systemInstructions,
+                systemInstructions: systemInstructions
             )
 
             // Create generation options
@@ -185,7 +185,7 @@ enum AppleIntelligenceError: LocalizedError {
                 log(
                     "Apple Intelligence stream failed",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "error": error.localizedDescription],
+                    metadata: ["conversationId": conversationId, "error": error.localizedDescription]
                 )
                 await MainActor.run {
                     onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
@@ -200,14 +200,14 @@ enum AppleIntelligenceError: LocalizedError {
             systemInstructions: String = "You are a helpful assistant.",
             temperature: Double = 0.7,
             onComplete: @escaping (String) -> Void,
-            onError: @escaping (Error) -> Void,
+            onError: @escaping (Error) -> Void
         ) async {
             // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence response unavailable",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()],
+                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
                 )
                 onError(getAvailabilityError())
                 return
@@ -218,7 +218,7 @@ enum AppleIntelligenceError: LocalizedError {
             // Get or create session
             let session = getSession(
                 conversationId: conversationId,
-                systemInstructions: systemInstructions,
+                systemInstructions: systemInstructions
             )
 
             // Create generation options
@@ -236,7 +236,7 @@ enum AppleIntelligenceError: LocalizedError {
                 log(
                     "Apple Intelligence generation failed",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "error": error.localizedDescription],
+                    metadata: ["conversationId": conversationId, "error": error.localizedDescription]
                 )
                 await MainActor.run {
                     onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
@@ -289,13 +289,13 @@ enum AppleIntelligenceError: LocalizedError {
             temperature _: Double = 0.7,
             onChunk _: @escaping (String) -> Void,
             onComplete _: @escaping () -> Void,
-            onError: @escaping (Error) -> Void,
+            onError: @escaping (Error) -> Void
         ) async {
             DiagnosticsLogger.log(
                 .appleIntelligence,
                 level: .error,
                 message: "Apple Intelligence unavailable on this platform",
-                metadata: ["conversationId": conversationId],
+                metadata: ["conversationId": conversationId]
             )
 
             await MainActor.run {
@@ -309,13 +309,13 @@ enum AppleIntelligenceError: LocalizedError {
             systemInstructions _: String = "You are a helpful assistant.",
             temperature _: Double = 0.7,
             onComplete _: @escaping (String) -> Void,
-            onError: @escaping (Error) -> Void,
+            onError: @escaping (Error) -> Void
         ) async {
             DiagnosticsLogger.log(
                 .appleIntelligence,
                 level: .error,
                 message: "Apple Intelligence unavailable on this platform",
-                metadata: ["conversationId": conversationId],
+                metadata: ["conversationId": conversationId]
             )
 
             await MainActor.run {

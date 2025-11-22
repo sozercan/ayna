@@ -68,7 +68,7 @@ struct ChatView: View {
     private func logChat(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         var combinedMetadata = metadata
         if combinedMetadata["conversationId"] == nil {
@@ -127,10 +127,10 @@ struct ChatView: View {
             LinearGradient(
                 colors: [
                     Color(nsColor: .windowBackgroundColor),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.95),
+                    Color(nsColor: .windowBackgroundColor).opacity(0.95)
                 ],
                 startPoint: .top,
-                endPoint: .bottom,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
 
@@ -150,7 +150,7 @@ struct ChatView: View {
                                     onSwitchModel: message.role == .assistant
                                         ? { newModel in
                                             switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                        } : nil,
+                                        } : nil
                                 )
                                 .id(message.id)
                             }
@@ -224,7 +224,7 @@ struct ChatView: View {
                             .scaleEffect(0.8)
                             .controlSize(.small)
                         Text(
-                            toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)...",
+                            toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)..."
                         )
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -268,8 +268,8 @@ struct ChatView: View {
                                             {
                                                 Text(
                                                     ByteCountFormatter.string(
-                                                        fromByteCount: Int64(fileSize), countStyle: .file,
-                                                    ),
+                                                        fromByteCount: Int64(fileSize), countStyle: .file
+                                                    )
                                                 )
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
@@ -297,7 +297,7 @@ struct ChatView: View {
                                 text: $messageText,
                                 isFirstResponder: $isComposerFocused,
                                 onSubmit: sendMessage,
-                                accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor,
+                                accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
                             )
                             .frame(height: calculateTextHeight())
                             .font(.system(size: 15))
@@ -386,7 +386,7 @@ struct ChatView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5),
+                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
                     )
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                     .padding(.horizontal, 24)
@@ -435,7 +435,7 @@ struct ChatView: View {
         let boundingRect = (messageText as NSString).boundingRect(
             with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttributes,
+            attributes: textAttributes
         )
 
         let calculatedHeight = ceil(boundingRect.height) + 4 // Add small padding
@@ -590,12 +590,12 @@ struct ChatView: View {
                 {
                     lastMessage.content += remainingChunks
                     conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1,
+                        conversationManager.conversations[index].messages.count - 1
                     ] = lastMessage
                     logChat(
                         "💾 Flushed \(remainingChunks.count) chars before cancellation",
                         level: .info,
-                        metadata: ["chunkLength": "\(remainingChunks.count)"],
+                        metadata: ["chunkLength": "\(remainingChunks.count)"]
                     )
                 }
             }
@@ -625,7 +625,7 @@ struct ChatView: View {
                 let attachment = Message.FileAttachment(
                     fileName: fileURL.lastPathComponent,
                     mimeType: mimeType,
-                    data: fileData,
+                    data: fileData
                 )
                 attachments.append(attachment)
                 logChat(
@@ -634,8 +634,8 @@ struct ChatView: View {
                     metadata: [
                         "fileName": fileURL.lastPathComponent,
                         "mimeType": mimeType,
-                        "fileSize": "\(fileData.count)",
-                    ],
+                        "fileSize": "\(fileData.count)"
+                    ]
                 )
             }
         }
@@ -650,18 +650,18 @@ struct ChatView: View {
         logChat(
             "🎯 Sending message with model \(activeModel)",
             level: .info,
-            metadata: ["model": activeModel],
+            metadata: ["model": activeModel]
         )
 
         let userMessage = Message(
             role: .user,
             content: messageText,
-            attachments: attachments.isEmpty ? nil : attachments,
+            attachments: attachments.isEmpty ? nil : attachments
         )
         logChat(
             "📨 Creating message with \(attachments.count) attachments",
             level: .info,
-            metadata: ["attachmentCount": "\(attachments.count)"],
+            metadata: ["attachmentCount": "\(attachments.count)"]
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
@@ -702,7 +702,7 @@ struct ChatView: View {
 
         logChat(
             "📊 Total available tools in manager: \(mcpManager.availableTools.count)",
-            metadata: ["availableTools": "\(mcpManager.availableTools.count)"],
+            metadata: ["availableTools": "\(mcpManager.availableTools.count)"]
         )
         logChat(
             "📊 Enabled server configs: \(mcpManager.serverConfigs.filter(\.enabled).map(\.name))",
@@ -710,8 +710,8 @@ struct ChatView: View {
                 "enabledServers": mcpManager.serverConfigs
                     .filter(\.enabled)
                     .map(\.name)
-                    .joined(separator: ","),
-            ],
+                    .joined(separator: ",")
+            ]
         )
 
         let enabledTools = mcpManager.getEnabledTools()
@@ -729,7 +729,7 @@ struct ChatView: View {
                     logChat(
                         "⏳ After delay: \(updatedTools.count) tools available",
                         level: .info,
-                        metadata: ["availableTools": "\(updatedTools.count)"],
+                        metadata: ["availableTools": "\(updatedTools.count)"]
                     )
                 }
             }
@@ -743,7 +743,7 @@ struct ChatView: View {
             logChat(
                 "🔧 Available MCP tools: \(enabledTools.map(\.name).joined(separator: ", "))",
                 level: .info,
-                metadata: ["tools": enabledTools.map(\.name).joined(separator: ", ")],
+                metadata: ["tools": enabledTools.map(\.name).joined(separator: ", ")]
             )
         } else {
             logChat("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools", level: .info)
@@ -757,7 +757,7 @@ struct ChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true,
+            isInitialRequest: true
         )
     }
 
@@ -769,7 +769,7 @@ struct ChatView: View {
             role: .assistant,
             content: "",
             model: model,
-            mediaType: .image,
+            mediaType: .image
         )
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
@@ -795,7 +795,7 @@ struct ChatView: View {
                 }) {
                     conversationManager.conversations[index].messages.removeLast()
                 }
-            },
+            }
         )
     }
 
@@ -806,7 +806,7 @@ struct ChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
-        isInitialRequest _: Bool,
+        isInitialRequest _: Bool
     ) {
         let maxToolCallDepth = 10 // Prevent infinite loops
         let mcpManager = MCPServerManager.shared
@@ -845,7 +845,7 @@ struct ChatView: View {
                     guard let index = getConversationIndex() else {
                         logChat(
                             "⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk",
-                            level: .info,
+                            level: .info
                         )
                         return
                     }
@@ -855,7 +855,7 @@ struct ChatView: View {
                     if lastMessage?.role == .assistant {
                         lastMessage?.content += combinedChunk
                         conversationManager.conversations[index].messages[
-                            conversationManager.conversations[index].messages.count - 1,
+                            conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage!
                     }
 
@@ -883,7 +883,7 @@ struct ChatView: View {
                     {
                         lastMessage.content += remainingChunks
                         conversationManager.conversations[index].messages[
-                            conversationManager.conversations[index].messages.count - 1,
+                            conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
                     }
                 }
@@ -900,7 +900,7 @@ struct ChatView: View {
                 else {
                     logChat(
                         "✅ onComplete for conversation \(conversation.id) (background)",
-                        level: .info,
+                        level: .info
                     )
                     return
                 }
@@ -915,7 +915,7 @@ struct ChatView: View {
                     logChat(
                         "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))",
                         level: .info,
-                        metadata: ["toolName": currentToolName ?? "unknown"],
+                        metadata: ["toolName": currentToolName ?? "unknown"]
                     )
                 }
             },
@@ -941,7 +941,7 @@ struct ChatView: View {
                     logChat(
                         "❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)",
                         level: .error,
-                        metadata: ["error": error.localizedDescription],
+                        metadata: ["error": error.localizedDescription]
                     )
                     return
                 }
@@ -956,7 +956,7 @@ struct ChatView: View {
                 guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
                     logChat(
                         "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
-                        level: .default,
+                        level: .default
                     )
                     return
                 }
@@ -965,7 +965,7 @@ struct ChatView: View {
                 logChat(
                     "🔧 Tool call requested: \(toolName) for conversation \(conversation.id)",
                     level: .info,
-                    metadata: ["toolName": toolName],
+                    metadata: ["toolName": toolName]
                 )
 
                 // Only update UI state if we're currently viewing this conversation
@@ -1002,11 +1002,11 @@ struct ChatView: View {
                     let toolCall = MCPToolCall(
                         id: toolCallId,
                         toolName: toolName,
-                        arguments: anyCodableArgs,
+                        arguments: anyCodableArgs
                     )
                     lastMessage.toolCalls = [toolCall]
                     conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1,
+                        conversationManager.conversations[index].messages.count - 1
                     ] = lastMessage
                     conversationManager.saveConversations()
                 }
@@ -1017,13 +1017,13 @@ struct ChatView: View {
                         logChat(
                             "⚙️ Executing tool: \(toolName)",
                             level: .info,
-                            metadata: ["toolName": toolName],
+                            metadata: ["toolName": toolName]
                         )
                         let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
                         logChat(
                             "✅ Tool result received (\(result.count) chars)",
                             level: .info,
-                            metadata: ["resultLength": "\(result.count)"],
+                            metadata: ["resultLength": "\(result.count)"]
                         )
 
                         // Create a tool message with the result
@@ -1034,15 +1034,15 @@ struct ChatView: View {
 
                             var toolMessage = Message(
                                 role: .tool,
-                                content: result,
+                                content: result
                             )
                             toolMessage.toolCalls = [
                                 MCPToolCall(
                                     id: toolCallId,
                                     toolName: toolName,
                                     arguments: anyCodableArgs,
-                                    result: result,
-                                ),
+                                    result: result
+                                )
                             ]
                             conversationManager.addMessage(to: conversation, message: toolMessage)
 
@@ -1085,7 +1085,7 @@ struct ChatView: View {
                                 model: model,
                                 temperature: temperature,
                                 tools: tools,
-                                isInitialRequest: false,
+                                isInitialRequest: false
                             )
                         }
                     } catch {
@@ -1093,7 +1093,7 @@ struct ChatView: View {
                             logChat(
                                 "❌ Tool execution error: \(error.localizedDescription)",
                                 level: .error,
-                                metadata: ["error": error.localizedDescription],
+                                metadata: ["error": error.localizedDescription]
                             )
 
                             // Only update UI state if viewing this conversation
@@ -1121,10 +1121,10 @@ struct ChatView: View {
                     let currentReasoning = lastMessage.reasoning ?? ""
                     lastMessage.reasoning = currentReasoning + reasoning
                     conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1,
+                        conversationManager.conversations[index].messages.count - 1
                     ] = lastMessage
                 }
-            },
+            }
         )
     }
 
@@ -1253,7 +1253,7 @@ struct ChatView: View {
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true,
+            isInitialRequest: true
         )
     }
 
@@ -1299,7 +1299,7 @@ struct ChatView: View {
             model: model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true,
+            isInitialRequest: true
         )
     }
 }

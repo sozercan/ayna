@@ -19,7 +19,7 @@ final class EncryptedConversationStore {
     init(
         fileURL: URL? = nil,
         keyIdentifier: String = "conversation_encryption_key",
-        keychain: KeychainStoring = KeychainStorage.shared,
+        keychain: KeychainStoring = KeychainStorage.shared
     ) {
         if let explicitURL = fileURL {
             self.fileURL = explicitURL
@@ -42,7 +42,7 @@ final class EncryptedConversationStore {
     private func log(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         DiagnosticsLogger.log(.encryptedStore, level: level, message: message, metadata: metadata)
     }
@@ -64,7 +64,7 @@ final class EncryptedConversationStore {
             log(
                 "Failed to load encrypted conversations",
                 level: .error,
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
             throw error
         }
@@ -83,7 +83,7 @@ final class EncryptedConversationStore {
             log(
                 "Failed to save encrypted conversations",
                 level: .error,
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
             throw error
         }
@@ -98,7 +98,7 @@ final class EncryptedConversationStore {
                 log(
                     "Failed to clear encrypted conversation file",
                     level: .error,
-                    metadata: ["error": error.localizedDescription],
+                    metadata: ["error": error.localizedDescription]
                 )
                 throw error
             }
@@ -119,7 +119,7 @@ final class EncryptedConversationStore {
             log(
                 "Failed to persist encryption key",
                 level: .error,
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
             throw error
         }

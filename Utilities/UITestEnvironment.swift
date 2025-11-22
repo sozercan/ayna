@@ -25,7 +25,7 @@ enum UITestEnvironment {
         DiagnosticsLogger.log(
             .app,
             level: .info,
-            message: "🧪 UI test environment enabled",
+            message: "🧪 UI test environment enabled"
         )
 
         configureUserDefaults()
@@ -40,7 +40,7 @@ enum UITestEnvironment {
         let store = EncryptedConversationStore(
             fileURL: conversationFileURL,
             keyIdentifier: "uitest-conversation-key",
-            keychain: OpenAIService.keychain,
+            keychain: OpenAIService.keychain
         )
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }

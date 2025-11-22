@@ -151,7 +151,7 @@ struct AIKitSettingsView: View {
                         !aikitService.isPodmanAvailable || isPulling || aikitService.containerStatus == .running
                             ||
                             aikitService.containerStatus == .notSupported ||
-                            aikitService.pulledImages.contains(aikitService.selectedModelId),
+                            aikitService.pulledImages.contains(aikitService.selectedModelId)
                     )
 
                     HStack(spacing: 12) {
@@ -173,7 +173,7 @@ struct AIKitSettingsView: View {
                                 aikitService.containerStatus == .running ||
                                 aikitService.containerStatus == .notPulled ||
                                 aikitService.containerStatus == .pulling ||
-                                aikitService.containerStatus == .notSupported,
+                                aikitService.containerStatus == .notSupported
                         )
 
                         // Stop button
@@ -411,7 +411,7 @@ struct InstallationInstructionsView: View {
                             """
                             podman machine init
                             podman machine start
-                            """,
+                            """
                         )
                         .font(.system(.caption, design: .monospaced))
                         .padding(8)

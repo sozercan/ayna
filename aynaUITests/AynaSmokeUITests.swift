@@ -14,8 +14,8 @@ final class AynaSmokeUITests: AynaUITestCase {
             NSPredicate(
                 format: "label CONTAINS %@ OR value CONTAINS %@",
                 "UI Test Response",
-                "UI Test Response",
-            ),
+                "UI Test Response"
+            )
         ).firstMatch
 
         let foundResponse = responseLabel.waitForExistence(timeout: 10)
@@ -172,7 +172,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Check for message bubble content
         // User message is an 'Other' element with label == content
         let messageBubble = app.otherElements.containing(
-            NSPredicate(format: "label == %@", "Topic Alpha"),
+            NSPredicate(format: "label == %@", "Topic Alpha")
         ).firstMatch
         XCTAssertTrue(messageBubble.waitForExistence(timeout: 5))
     }
@@ -257,7 +257,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         _ element: XCUIElement,
         timeout: TimeInterval = 5,
         file: StaticString = #filePath,
-        line: UInt = #line,
+        line: UInt = #line
     ) {
         let predicate = NSPredicate(format: "hasKeyboardFocus == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)

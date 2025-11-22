@@ -159,7 +159,7 @@ struct MessageView: View {
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.orange.opacity(0.25), lineWidth: 1),
+                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
             )
         }
     }
@@ -196,7 +196,7 @@ struct MessageView: View {
                     .overlay(
                         Image(systemName: avatar.icon)
                             .font(.system(size: avatarFontSize, weight: .medium))
-                            .foregroundStyle(avatar.iconColor),
+                            .foregroundStyle(avatar.iconColor)
                     )
 
                 // Content with markdown support
@@ -219,7 +219,7 @@ struct MessageView: View {
                             toolName: toolDisplayName,
                             arguments: formattedToolArguments,
                             contentBlocks: cachedContentBlocks,
-                            fallbackText: message.content,
+                            fallbackText: message.content
                         )
                     } else {
                         // Show attached images for user messages
@@ -316,7 +316,7 @@ struct MessageView: View {
                                 .cornerRadius(8)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1),
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                                 )
                             }
                         }
@@ -627,7 +627,7 @@ struct ContentBlock: Identifiable {
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1),
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -643,8 +643,8 @@ struct ContentBlock: Identifiable {
                             LinearGradient(
                                 colors: [Color.blue, Color.blue.opacity(0.8)],
                                 startPoint: .topLeading,
-                                endPoint: .bottomTrailing,
-                            ),
+                                endPoint: .bottomTrailing
+                            )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 6))
 
@@ -684,7 +684,7 @@ struct ContentBlock: Identifiable {
             .background(Color.blue.opacity(0.03))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.blue.opacity(0.2), lineWidth: 1.5),
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 1.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: Color.blue.opacity(0.1), radius: 4, x: 0, y: 2)
@@ -695,7 +695,7 @@ struct ContentBlock: Identifiable {
     private func tableRowView(
         _ cells: [AttributedString],
         alignments: [MarkdownTable.ColumnAlignment],
-        isHeader: Bool,
+        isHeader: Bool
     ) -> some View {
         HStack(alignment: .top, spacing: 16) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
@@ -726,7 +726,7 @@ struct ContentBlock: Identifiable {
     VStack(spacing: 16) {
         MessageView(message: Message(
             role: .user,
-            content: "What is SwiftUI?",
+            content: "What is SwiftUI?"
         ))
 
         MessageView(message: Message(
@@ -746,7 +746,7 @@ struct ContentBlock: Identifiable {
                 }
             }
             ```
-            """,
+            """
         ))
     }
     .padding()
@@ -775,7 +775,7 @@ struct ImageGeneratingView: View {
                             Animation.easeInOut(duration: 1.5)
                                 .repeatForever(autoreverses: true)
                                 .delay(Double(index) * 0.2),
-                            value: isAnimating,
+                            value: isAnimating
                         )
                 }
 

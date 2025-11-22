@@ -85,11 +85,11 @@ struct SidebarView: View {
                                                 role: .destructive,
                                                 action: {
                                                     deleteSelectedConversations()
-                                                },
+                                                }
                                             ) {
                                                 Label(
                                                     "Delete \(selectedConversations.count) Conversations",
-                                                    systemImage: "trash",
+                                                    systemImage: "trash"
                                                 )
                                             }
                                         } else {
@@ -100,7 +100,7 @@ struct SidebarView: View {
                                                     if selectedConversationId == conversation.id {
                                                         selectedConversationId = nil
                                                     }
-                                                },
+                                                }
                                             ) {
                                                 Label("Delete", systemImage: "trash")
                                             }

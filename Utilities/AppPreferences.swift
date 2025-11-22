@@ -24,7 +24,7 @@ enum AppPreferences {
     private static let state = DefaultsState()
     private static var defaultValues: [String: Any] {
         [
-            "autoGenerateTitle": true,
+            "autoGenerateTitle": true
         ]
     }
 

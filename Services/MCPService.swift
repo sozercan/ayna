@@ -76,7 +76,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             .mcpService,
             level: .info,
             message: "Looking for executable",
-            metadata: ["command": serverConfig.command],
+            metadata: ["command": serverConfig.command]
         )
         let commandPath: String
         do {
@@ -85,14 +85,14 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "Using executable path",
-                metadata: ["path": commandPath],
+                metadata: ["path": commandPath]
             )
         } catch {
             let errorMsg = "Executable not found: \(serverConfig.command) - \(error.localizedDescription)"
             DiagnosticsLogger.log(
                 .mcpService,
                 level: .error,
-                message: errorMsg,
+                message: errorMsg
             )
             Task { @MainActor [weak self] in
                 self?.lastError = errorMsg
@@ -111,7 +111,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             "/usr/bin",
             "/bin",
             "/opt/homebrew/opt/node/bin",
-            NSHomeDirectory() + "/.nvm/versions/node/*/bin",
+            NSHomeDirectory() + "/.nvm/versions/node/*/bin"
         ]
         let existingPath = environment["PATH"] ?? ""
         let newPath = (commonPaths + [existingPath]).joined(separator: ":")
@@ -155,7 +155,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     .mcpService,
                     level: .error,
                     message: "Error reading MCP output",
-                    metadata: ["server": serverName, "error": error.localizedDescription],
+                    metadata: ["server": serverName, "error": error.localizedDescription]
                 )
             }
         }
@@ -171,7 +171,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                         .mcpService,
                         level: .info,
                         message: "MCP server stderr",
-                        metadata: ["server": serverName, "output": output],
+                        metadata: ["server": serverName, "output": output]
                     )
                     // Only treat it as an error if it contains error keywords
                     if output.lowercased().contains("error") || output.lowercased().contains("failed") {
@@ -185,7 +185,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     .mcpService,
                     level: .error,
                     message: "Error reading stderr",
-                    metadata: ["server": serverName, "error": error.localizedDescription],
+                    metadata: ["server": serverName, "error": error.localizedDescription]
                 )
             }
         }
@@ -199,7 +199,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             DiagnosticsLogger.log(
                 .mcpService,
                 level: .error,
-                message: errorMsg,
+                message: errorMsg
             )
             Task { @MainActor [weak self] in
                 self?.lastError = errorMsg
@@ -217,7 +217,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "Initializing MCP server",
-                metadata: ["server": serverName],
+                metadata: ["server": serverName]
             )
             try await withTimeout(seconds: 5) { [weak self] in
                 guard let self else {
@@ -229,7 +229,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "MCP server initialized",
-                metadata: ["server": serverName],
+                metadata: ["server": serverName]
             )
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -241,7 +241,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "MCP initialization failed",
-                metadata: ["server": serverName, "error": error.localizedDescription],
+                metadata: ["server": serverName, "error": error.localizedDescription]
             )
             disconnect()
             Task { @MainActor [weak self] in
@@ -276,13 +276,13 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 "protocolVersion": AnyCodable("2024-11-05"),
                 "capabilities": AnyCodable([
                     "roots": ["list_changed": true],
-                    "sampling": [:],
+                    "sampling": [:]
                 ] as [String: Any]),
                 "clientInfo": AnyCodable([
                     "name": "ayna",
-                    "version": "1.0.0",
-                ] as [String: String]),
-            ],
+                    "version": "1.0.0"
+                ] as [String: String])
+            ]
         )
 
         guard response.error == nil else {
@@ -316,8 +316,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     metadata: [
                         "server": serverConfig.name,
                         "index": "\(index)",
-                        "error": error.localizedDescription,
-                    ],
+                        "error": error.localizedDescription
+                    ]
                 )
             }
         }
@@ -330,8 +330,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             method: "tools/call",
             params: [
                 "name": AnyCodable(name),
-                "arguments": AnyCodable(arguments),
-            ],
+                "arguments": AnyCodable(arguments)
+            ]
         )
 
         guard let result = response.result?.value as? [String: Any] else {
@@ -417,7 +417,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         let notification: [String: Any] = [
             "jsonrpc": "2.0",
             "method": method,
-            "params": params?.mapValues { $0.value } ?? [:],
+            "params": params?.mapValues { $0.value } ?? [:]
         ]
 
         let data = try JSONSerialization.data(withJSONObject: notification)
@@ -462,7 +462,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Error handling MCP output",
-                metadata: ["server": serverConfig.name, "error": error.localizedDescription],
+                metadata: ["server": serverConfig.name, "error": error.localizedDescription]
             )
         }
     }
@@ -473,7 +473,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Failed to convert JSON string to data",
-                metadata: ["server": serverConfig.name],
+                metadata: ["server": serverConfig.name]
             )
             return
         }
@@ -491,7 +491,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                             .mcpService,
                             level: .error,
                             message: "Received response for unknown request",
-                            metadata: ["id": "\(id)"],
+                            metadata: ["id": "\(id)"]
                         )
                     }
                 }
@@ -501,7 +501,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Failed to decode MCP response",
-                metadata: ["server": serverConfig.name, "error": error.localizedDescription, "payload": json],
+                metadata: ["server": serverConfig.name, "error": error.localizedDescription, "payload": json]
             )
         }
     }
@@ -528,7 +528,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 name: name,
                 description: description,
                 inputSchema: schema,
-                serverName: serverConfig.name,
+                serverName: serverConfig.name
             )
         } catch {
             throw MCPServiceError.invalidResponse("Failed to parse schema for tool '\(name)': \(error.localizedDescription)")
@@ -558,7 +558,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             type: type,
             properties: properties,
             required: required,
-            items: items,
+            items: items
         )
     }
 
@@ -570,7 +570,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Skipping invalid resource",
-                metadata: ["server": serverConfig.name],
+                metadata: ["server": serverConfig.name]
             )
             return nil
         }
@@ -580,7 +580,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             name: name,
             description: dict["description"] as? String,
             mimeType: dict["mimeType"] as? String,
-            serverName: serverConfig.name,
+            serverName: serverConfig.name
         )
     }
 
@@ -600,7 +600,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             "/opt/homebrew/bin",
             "/usr/local/bin",
             "/usr/bin",
-            "/bin",
+            "/bin"
         ]
 
         // Search in common paths
@@ -610,7 +610,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .debug,
                 message: "Checking executable path",
-                metadata: ["path": fullPath],
+                metadata: ["path": fullPath]
             )
             let exists = FileManager.default.fileExists(atPath: fullPath)
             let isExecutable = FileManager.default.isExecutableFile(atPath: fullPath)
@@ -618,7 +618,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .debug,
                 message: "Executable candidate",
-                metadata: ["exists": "\(exists)", "executable": "\(isExecutable)", "path": fullPath],
+                metadata: ["exists": "\(exists)", "executable": "\(isExecutable)", "path": fullPath]
             )
 
             if isExecutable {
@@ -626,7 +626,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     .mcpService,
                     level: .info,
                     message: "Found executable",
-                    metadata: ["command": command, "path": fullPath],
+                    metadata: ["command": command, "path": fullPath]
                 )
                 return fullPath
             }
@@ -663,7 +663,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                         .mcpService,
                         level: .info,
                         message: "Found executable via shell",
-                        metadata: ["command": command, "path": path],
+                        metadata: ["command": command, "path": path]
                     )
                     return path
                 }
@@ -673,7 +673,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Failed to find executable via shell",
-                metadata: ["command": command, "error": "\(error)"],
+                metadata: ["command": command, "error": "\(error)"]
             )
         }
 
@@ -742,8 +742,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 message: "Lost MCP connection",
                 metadata: [
                     "server": serverConfig.name,
-                    "reason": message,
-                ],
+                    "reason": message
+                ]
             )
             MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
             lastError = message
@@ -793,7 +793,7 @@ enum MCPServiceError: LocalizedError {
 
 func withTimeout<T: Sendable>(
     seconds: TimeInterval,
-    operation: @Sendable @escaping () async throws -> T,
+    operation: @Sendable @escaping () async throws -> T
 ) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask {

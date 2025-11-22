@@ -35,7 +35,7 @@ class MCPServerManager: ObservableObject {
     init(
         serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
         retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
-        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
+        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 }
     ) {
         self.serviceFactory = serviceFactory
         self.retryDelayProvider = retryDelayProvider
@@ -123,7 +123,7 @@ class MCPServerManager: ObservableObject {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .info,
-                message: "No saved MCP server configs; using defaults",
+                message: "No saved MCP server configs; using defaults"
             )
             serverConfigs = defaultServerConfigs()
             saveServerConfigs()
@@ -147,7 +147,7 @@ class MCPServerManager: ObservableObject {
                     command: config.command,
                     args: config.args,
                     env: validEnv,
-                    enabled: config.enabled,
+                    enabled: config.enabled
                 )
             }
             serverConfigs = validatedConfigs
@@ -155,19 +155,19 @@ class MCPServerManager: ObservableObject {
                 .mcpServerManager,
                 level: .info,
                 message: "Loaded MCP server configs",
-                metadata: ["count": "\(serverConfigs.count)"],
+                metadata: ["count": "\(serverConfigs.count)"]
             )
         } catch {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
                 message: "Failed to load MCP server configs",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
-                message: "Clearing corrupted MCP config data and resetting to defaults",
+                message: "Clearing corrupted MCP config data and resetting to defaults"
             )
             // Clear corrupted data and use defaults
             AppPreferences.storage.removeObject(forKey: "mcp_server_configs")
@@ -184,8 +184,8 @@ class MCPServerManager: ObservableObject {
                 command: "wassette",
                 args: ["serve", "--stdio"],
                 env: ["BRAVE_SEARCH_API_KEY": ""],
-                enabled: false,
-            ),
+                enabled: false
+            )
         ]
     }
 
@@ -205,7 +205,7 @@ class MCPServerManager: ObservableObject {
                     .mcpServerManager,
                     level: .info,
                     message: "Server connected without tools; starting discovery",
-                    metadata: ["server": config.name],
+                    metadata: ["server": config.name]
                 )
                 await discoverTools(for: config.name)
             }
@@ -220,7 +220,7 @@ class MCPServerManager: ObservableObject {
                 .mcpServerManager,
                 level: .debug,
                 message: "Connection attempt already in progress",
-                metadata: ["server": config.name],
+                metadata: ["server": config.name]
             )
             return
         }
@@ -232,7 +232,7 @@ class MCPServerManager: ObservableObject {
             .mcpServerManager,
             level: .info,
             message: "Attempting to connect to MCP server",
-            metadata: ["server": config.name],
+            metadata: ["server": config.name]
         )
 
         if let existing = services[config.name] {
@@ -253,8 +253,8 @@ class MCPServerManager: ObservableObject {
                     message: "Connected to MCP server",
                     metadata: [
                         "server": config.name,
-                        "attempt": "#\(attempt)",
-                    ],
+                        "attempt": "#\(attempt)"
+                    ]
                 )
 
                 await discoverTools(for: config.name)
@@ -262,7 +262,7 @@ class MCPServerManager: ObservableObject {
                     .mcpServerManager,
                     level: .info,
                     message: "Tool discovery complete",
-                    metadata: ["server": config.name],
+                    metadata: ["server": config.name]
                 )
                 setStatus(for: config, state: .connected, clearExistingError: true)
                 return
@@ -274,8 +274,8 @@ class MCPServerManager: ObservableObject {
                     metadata: [
                         "server": config.name,
                         "attempt": "#\(attempt)",
-                        "error": error.localizedDescription,
-                    ],
+                        "error": error.localizedDescription
+                    ]
                 )
 
                 service.disconnect()
@@ -288,8 +288,8 @@ class MCPServerManager: ObservableObject {
                         message: "Retrying connection",
                         metadata: [
                             "server": config.name,
-                            "delay": "\(delay)s",
-                        ],
+                            "delay": "\(delay)s"
+                        ]
                     )
                     if delay > 0 {
                         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -312,7 +312,7 @@ class MCPServerManager: ObservableObject {
                         .mcpServerManager,
                         level: .error,
                         message: "Auto-disabled server due to repeated connection failures",
-                        metadata: ["server": config.name],
+                        metadata: ["server": config.name]
                     )
                     setStatus(for: updatedConfig, state: .disabled)
                 }
@@ -346,8 +346,8 @@ class MCPServerManager: ObservableObject {
             message: "Restarting MCP server to apply config changes",
             metadata: [
                 "server": config.name,
-                "previous": nameToDisconnect,
-            ],
+                "previous": nameToDisconnect
+            ]
         )
 
         disconnectServer(nameToDisconnect)
@@ -369,8 +369,8 @@ class MCPServerManager: ObservableObject {
             message: "Scheduling MCP reconnect",
             metadata: [
                 "server": config.name,
-                "delay": "\(delaySeconds)s",
-            ],
+                "delay": "\(delaySeconds)s"
+            ]
         )
 
         Task { [weak self] in
@@ -423,7 +423,7 @@ class MCPServerManager: ObservableObject {
             .mcpServerManager,
             level: .info,
             message: "Connecting to enabled MCP servers",
-            metadata: ["count": "\(enabledConfigs.count)", "servers": enabledConfigs.map(\.name).joined(separator: ",")],
+            metadata: ["count": "\(enabledConfigs.count)", "servers": enabledConfigs.map(\.name).joined(separator: ",")]
         )
 
         await withTaskGroup(of: Void.self) { group in
@@ -438,7 +438,7 @@ class MCPServerManager: ObservableObject {
             .mcpServerManager,
             level: .info,
             message: "All enabled servers connected",
-            metadata: ["tools": "\(availableTools.count)"],
+            metadata: ["tools": "\(availableTools.count)"]
         )
     }
 
@@ -476,7 +476,7 @@ class MCPServerManager: ObservableObject {
                     .mcpServerManager,
                     level: .info,
                     message: "Discovered tools from server",
-                    metadata: ["server": serverName, "tools": "\(tools.count)"],
+                    metadata: ["server": serverName, "tools": "\(tools.count)"]
                 )
                 allTools.append(contentsOf: tools)
                 allResources.append(contentsOf: resources)
@@ -507,7 +507,7 @@ class MCPServerManager: ObservableObject {
                 .mcpServerManager,
                 level: .error,
                 message: "Cannot discover tools; service not connected",
-                metadata: ["server": serverName],
+                metadata: ["server": serverName]
             )
             return
         }
@@ -522,14 +522,14 @@ class MCPServerManager: ObservableObject {
                 .mcpServerManager,
                 level: .info,
                 message: "Discovered tools",
-                metadata: ["server": serverName, "count": "\(tools.count)"],
+                metadata: ["server": serverName, "count": "\(tools.count)"]
             )
         } catch {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
                 message: "Failed to list tools",
-                metadata: ["server": serverName, "error": error.localizedDescription],
+                metadata: ["server": serverName, "error": error.localizedDescription]
             )
         }
 
@@ -539,14 +539,14 @@ class MCPServerManager: ObservableObject {
                 .mcpServerManager,
                 level: .info,
                 message: "Discovered resources",
-                metadata: ["server": serverName, "count": "\(resources.count)"],
+                metadata: ["server": serverName, "count": "\(resources.count)"]
             )
         } catch {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
                 message: "Failed to list resources",
-                metadata: ["server": serverName, "error": error.localizedDescription],
+                metadata: ["server": serverName, "error": error.localizedDescription]
             )
         }
 
@@ -572,8 +572,8 @@ class MCPServerManager: ObservableObject {
             metadata: [
                 "server": serverName,
                 "tools": "\(tools.count)",
-                "resources": "\(resources.count)",
-            ],
+                "resources": "\(resources.count)"
+            ]
         )
     }
 
@@ -702,8 +702,8 @@ extension MCPServerManager: MCPServiceDelegate {
             message: "MCP service disconnected",
             metadata: [
                 "server": serverName,
-                "error": error ?? "unknown",
-            ],
+                "error": error ?? "unknown"
+            ]
         )
 
         services.removeValue(forKey: serverName)
@@ -739,8 +739,8 @@ private extension MCPServerManager {
                         state: config.enabled ? .idle : .disabled,
                         lastError: nil,
                         toolsCount: availableTools.count(where: { $0.serverName == config.name }),
-                        lastUpdated: now,
-                    ),
+                        lastUpdated: now
+                    )
                 )
             })
     }
@@ -749,7 +749,7 @@ private extension MCPServerManager {
         for config: MCPServerConfig,
         state: MCPServerStatus.State?,
         error: String? = nil,
-        clearExistingError: Bool = false,
+        clearExistingError: Bool = false
     ) {
         let existingStatus = serverStatuses[config.name]
         let resolvedState = state ?? existingStatus?.state ?? (config.enabled ? .idle : .disabled)
@@ -769,7 +769,7 @@ private extension MCPServerManager {
             state: resolvedState,
             lastError: resolvedError,
             toolsCount: toolCount,
-            lastUpdated: Date(),
+            lastUpdated: Date()
         )
     }
 

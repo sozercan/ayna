@@ -61,78 +61,78 @@ class AIKitService: ObservableObject {
             name: "llama-3.2-1b-instruct",
             displayName: "🦙 Llama 3.2 1B Instruct",
             size: "1B",
-            imagePath: "llama3.2:1b",
+            imagePath: "llama3.2:1b"
         ),
         AIKitModel(
             id: "llama-3.2-3b",
             name: "llama-3.2-3b-instruct",
             displayName: "🦙 Llama 3.2 3B Instruct",
             size: "3B",
-            imagePath: "llama3.2:3b",
+            imagePath: "llama3.2:3b"
         ),
         AIKitModel(
             id: "llama-3.1-8b",
             name: "llama-3.1-8b-instruct",
             displayName: "🦙 Llama 3.1 8B Instruct",
             size: "8B",
-            imagePath: "llama3.1:8b",
+            imagePath: "llama3.1:8b"
         ),
         AIKitModel(
             id: "llama-3.3-70b",
             name: "llama-3.3-70b-instruct",
             displayName: "🦙 Llama 3.3 70B Instruct",
             size: "70B",
-            imagePath: "llama3.3:70b",
+            imagePath: "llama3.3:70b"
         ),
         AIKitModel(
             id: "mixtral-8x7b",
             name: "mixtral-8x7b-instruct",
             displayName: "Ⓜ️ Mixtral 8x7B Instruct",
             size: "8x7B",
-            imagePath: "mixtral:8x7b",
+            imagePath: "mixtral:8x7b"
         ),
         AIKitModel(
             id: "phi-4-14b",
             name: "phi-4-14b-instruct",
             displayName: "🅿️ Phi 4 14B Instruct",
             size: "14B",
-            imagePath: "phi4:14b",
+            imagePath: "phi4:14b"
         ),
         AIKitModel(
             id: "gemma-2-2b",
             name: "gemma-2-2b-instruct",
             displayName: "🔡 Gemma 2 2B Instruct",
             size: "2B",
-            imagePath: "gemma2:2b",
+            imagePath: "gemma2:2b"
         ),
         AIKitModel(
             id: "qwq-32b",
             name: "qwq-32b",
             displayName: "QwQ 32B",
             size: "32B",
-            imagePath: "qwq:32b",
+            imagePath: "qwq:32b"
         ),
         AIKitModel(
             id: "codestral-22b",
             name: "codestral-22b",
             displayName: "⌨️ Codestral 22B",
             size: "22B",
-            imagePath: "codestral:22b",
+            imagePath: "codestral:22b"
         ),
         AIKitModel(
             id: "gpt-oss-20b",
             name: "gpt-oss-20b",
             displayName: "🤖 GPT-OSS 20B",
             size: "20B",
-            imagePath: "gpt-oss:20b",
+            imagePath: "gpt-oss:20b"
         ),
         AIKitModel(
             id: "gpt-oss-120b",
             name: "gpt-oss-120b",
             displayName: "🤖 GPT-OSS 120B",
             size: "120B",
-            imagePath: "gpt-oss:120b",
-        ),
+            imagePath: "gpt-oss:120b"
+        )
     ]
 
     // Container management - stores the container name/ID
@@ -140,7 +140,7 @@ class AIKitService: ObservableObject {
     private func log(
         _ message: String,
         level: OSLogType = .default,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         DiagnosticsLogger.log(.aiKitService, level: level, message: message, metadata: metadata)
     }
@@ -171,7 +171,7 @@ class AIKitService: ObservableObject {
             "/opt/podman/bin/podman",
             "/usr/local/bin/podman",
             "/opt/homebrew/bin/podman",
-            "/usr/bin/podman",
+            "/usr/bin/podman"
         ]
 
         // First check if any of the common paths exist
@@ -196,7 +196,7 @@ class AIKitService: ObservableObject {
             log(
                 "Failed to resolve Podman path",
                 level: .error,
-                metadata: ["error": message],
+                metadata: ["error": message]
             )
         case .notFound:
             isPodmanAvailable = false
@@ -266,7 +266,7 @@ class AIKitService: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: podmanPath)
         process.arguments = [
-            "ps", "--filter", "name=\(containerName)", "--format", "{{.Names}}",
+            "ps", "--filter", "name=\(containerName)", "--format", "{{.Names}}"
         ]
 
         let outputPipe = Pipe()
@@ -293,7 +293,7 @@ class AIKitService: ObservableObject {
             log(
                 "Failed to inspect container state",
                 level: .error,
-                metadata: ["container": containerName, "error": error.localizedDescription],
+                metadata: ["container": containerName, "error": error.localizedDescription]
             )
             return false
         }
@@ -342,7 +342,7 @@ class AIKitService: ObservableObject {
                 log(
                     "Failed to pull AIKit model",
                     level: .error,
-                    metadata: ["model": model.id, "error": errorMessage],
+                    metadata: ["model": model.id, "error": errorMessage]
                 )
                 await MainActor.run {
                     containerStatus = .error
@@ -364,7 +364,7 @@ class AIKitService: ObservableObject {
             log(
                 "Unexpected failure while pulling model",
                 level: .error,
-                metadata: ["model": model.id, "error": error.localizedDescription],
+                metadata: ["model": model.id, "error": error.localizedDescription]
             )
             await MainActor.run {
                 containerStatus = .error
@@ -447,7 +447,7 @@ class AIKitService: ObservableObject {
                 log(
                     "Failed to start AIKit container",
                     level: .error,
-                    metadata: ["model": model.id, "error": errorMessage],
+                    metadata: ["model": model.id, "error": errorMessage]
                 )
                 throw AIKitError.containerStartFailed(errorMessage)
             }
@@ -475,7 +475,7 @@ class AIKitService: ObservableObject {
             log(
                 "Unexpected failure while starting container",
                 level: .error,
-                metadata: ["model": model.id, "error": error.localizedDescription],
+                metadata: ["model": model.id, "error": error.localizedDescription]
             )
             throw error
         }
@@ -517,7 +517,7 @@ class AIKitService: ObservableObject {
                 log(
                     "Failed to stop AIKit container",
                     level: .error,
-                    metadata: ["container": containerName, "error": errorMessage],
+                    metadata: ["container": containerName, "error": errorMessage]
                 )
                 throw AIKitError.containerStopFailed(errorMessage)
             }
@@ -539,7 +539,7 @@ class AIKitService: ObservableObject {
             log(
                 "Unexpected failure while stopping container",
                 level: .error,
-                metadata: ["container": containerName, "error": error.localizedDescription],
+                metadata: ["container": containerName, "error": error.localizedDescription]
             )
             throw error
         }

@@ -98,7 +98,7 @@ struct MCPSettingsView: View {
                                     Task {
                                         await mcpManager.connectToServer(config, autoDisableOnFailure: false)
                                     }
-                                },
+                                }
                             )
                         }
                     }
@@ -115,7 +115,7 @@ struct MCPSettingsView: View {
                 },
                 onCancel: {
                     showingAddServer = false
-                },
+                }
             )
         }
         .sheet(item: $editingServer) { config in
@@ -127,7 +127,7 @@ struct MCPSettingsView: View {
                 },
                 onCancel: {
                     editingServer = nil
-                },
+                }
             )
         }
     }
@@ -154,7 +154,7 @@ struct ServerConfigRow: View {
         onEdit: @escaping () -> Void,
         onDelete: @escaping () -> Void,
         onToggle: @escaping () -> Void,
-        onRetry: @escaping () -> Void,
+        onRetry: @escaping () -> Void
     ) {
         self.config = config
         self.status = status
@@ -460,7 +460,7 @@ struct ServerConfigSheet: View {
                     let envDict = Dictionary(
                         uniqueKeysWithValues: envVars
                             .filter { !$0.key.isEmpty }
-                            .map { ($0.key, $0.value) },
+                            .map { ($0.key, $0.value) }
                     )
 
                     let newConfig = MCPServerConfig(
@@ -469,7 +469,7 @@ struct ServerConfigSheet: View {
                         command: command,
                         args: argsArray,
                         env: envDict,
-                        enabled: config?.enabled ?? true,
+                        enabled: config?.enabled ?? true
                     )
 
                     onSave(newConfig)

@@ -29,7 +29,7 @@ final class ConversationTimelineGrouperTests: XCTestCase {
             Conversation(title: "Today A", updatedAt: now, model: "gpt-4o"),
             Conversation(title: "Two Days", updatedAt: twoDaysAgo, model: "gpt-4o"),
             Conversation(title: "Yesterday", updatedAt: yesterday, model: "gpt-4o"),
-            Conversation(title: "Today B", updatedAt: now.addingTimeInterval(-60), model: "gpt-4o"),
+            Conversation(title: "Today B", updatedAt: now.addingTimeInterval(-60), model: "gpt-4o")
         ]
 
         let sections = ConversationTimelineGrouper.sections(from: conversations, calendar: calendar, now: now)

@@ -217,7 +217,7 @@ enum MarkdownRenderer {
     }
 
     private static func parseBlockquote(from lines: [String], startingAt index: Int) -> (
-        attributed: AttributedString, nextIndex: Int,
+        attributed: AttributedString, nextIndex: Int
     )? {
         var collected: [String] = []
         var current = index
@@ -240,7 +240,7 @@ enum MarkdownRenderer {
     }
 
     private static func parseList(from lines: [String], startingAt index: Int) -> (
-        block: ContentBlock, nextIndex: Int,
+        block: ContentBlock, nextIndex: Int
     )? {
         var items: [AttributedString] = []
         var current = index
@@ -280,7 +280,7 @@ enum MarkdownRenderer {
     }
 
     private static func parseTable(from lines: [String], startingAt index: Int) -> (
-        table: MarkdownTable, nextIndex: Int,
+        table: MarkdownTable, nextIndex: Int
     )? {
         guard index + 1 < lines.count else { return nil }
         let headerLine = lines[index]

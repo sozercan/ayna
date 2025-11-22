@@ -45,19 +45,19 @@ struct aynaApp: App {
                     .app,
                     level: .info,
                     message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
-                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"],
+                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
                 )
             } catch {
                 DiagnosticsLogger.log(
                     .app,
                     level: .error,
                     message: "⚠️ MCP initialization encountered errors",
-                    metadata: ["error": error.localizedDescription],
+                    metadata: ["error": error.localizedDescription]
                 )
                 DiagnosticsLogger.log(
                     .app,
                     level: .info,
-                    message: "App will continue without MCP servers.",
+                    message: "App will continue without MCP servers."
                 )
             }
         }
@@ -94,7 +94,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
         DiagnosticsLogger.log(
             .app,
             level: .info,
-            message: "🛑 Application terminating; disconnecting MCP servers",
+            message: "🛑 Application terminating; disconnecting MCP servers"
         )
         MCPServerManager.shared.disconnectAllServers()
     }
@@ -112,12 +112,12 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
-            defer: false,
+            defer: false
         )
         fallbackWindow.contentView = NSHostingView(
             rootView: ContentView()
                 .environmentObject(manager)
-                .frame(minWidth: 900, minHeight: 600),
+                .frame(minWidth: 900, minHeight: 600)
         )
         fallbackWindow.center()
         configureWindowAppearance(fallbackWindow)
@@ -125,7 +125,7 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         DiagnosticsLogger.log(
             .app,
             level: .info,
-            message: "🪟 Created fallback UI test window",
+            message: "🪟 Created fallback UI test window"
         )
     }
 
@@ -138,13 +138,13 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         .app,
         level: .info,
         message: "🪟 Windows visible after wait: \(NSApplication.shared.windows.count)",
-        metadata: ["attempts": "\(attempts)"],
+        metadata: ["attempts": "\(attempts)"]
     )
     if NSApplication.shared.windows.isEmpty {
         DiagnosticsLogger.log(
             .app,
             level: .error,
-            message: "⚠️ No windows available; creating fallback window for UI tests",
+            message: "⚠️ No windows available; creating fallback window for UI tests"
         )
         ensureFallbackWindowIfNeeded()
     }
@@ -153,7 +153,7 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
     uiTestWindowObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didBecomeKeyNotification,
         object: nil,
-        queue: nil,
+        queue: nil
     ) { notification in
         guard let window = notification.object as? NSWindow else { return }
         Task { await configureWindowAppearance(window) }

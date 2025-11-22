@@ -68,13 +68,13 @@ enum ConversationExporter {
 
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: titleFont]
         let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: headerFont, .foregroundColor: NSColor.secondaryLabelColor,
+            .font: headerFont, .foregroundColor: NSColor.secondaryLabelColor
         ]
         let userRoleAttributes: [NSAttributedString.Key: Any] = [
-            .font: roleFont, .foregroundColor: NSColor.systemBlue,
+            .font: roleFont, .foregroundColor: NSColor.systemBlue
         ]
         let assistantRoleAttributes: [NSAttributedString.Key: Any] = [
-            .font: roleFont, .foregroundColor: NSColor.systemGreen,
+            .font: roleFont, .foregroundColor: NSColor.systemGreen
         ]
         let bodyAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
 
@@ -147,7 +147,7 @@ enum ConversationExporter {
             path.addRect(textRect)
 
             let frame = CTFramesetterCreateFrame(
-                framesetter, CFRange(location: currentTextRange.location, length: 0), path, nil,
+                framesetter, CFRange(location: currentTextRange.location, length: 0), path, nil
             )
             let frameRange = CTFrameGetVisibleStringRange(frame)
 

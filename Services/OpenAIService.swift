@@ -228,7 +228,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Failed to persist API key",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
         }
     }
@@ -241,7 +241,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Failed to persist model API keys",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
         }
     }
@@ -256,7 +256,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Unable to read API key from Keychain",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
         }
         return ""
@@ -272,7 +272,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .error,
                         message: "Failed to decode model API keys from Keychain",
-                        metadata: ["error": error.localizedDescription],
+                        metadata: ["error": error.localizedDescription]
                     )
                 }
             }
@@ -281,7 +281,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "Unable to read model API keys from Keychain",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
         }
         return [:]
@@ -433,7 +433,7 @@ class OpenAIService: ObservableObject {
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: "Canceling current request",
+            message: "Canceling current request"
         )
         currentTask?.cancel()
         currentTask = nil
@@ -442,7 +442,7 @@ class OpenAIService: ObservableObject {
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: "Request cancellation initiated",
+            message: "Request cancellation initiated"
         )
     }
 
@@ -453,7 +453,7 @@ class OpenAIService: ObservableObject {
         model: String? = nil,
         onComplete: @escaping (Data) -> Void,
         onError: @escaping (Error) -> Void,
-        attempt: Int = 0,
+        attempt: Int = 0
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -513,7 +513,7 @@ class OpenAIService: ObservableObject {
                     "quality": imageQuality,
                     "output_format": outputFormat,
                     "output_compression": outputCompression,
-                    "n": 1,
+                    "n": 1
                 ]
             } else {
                 [
@@ -522,7 +522,7 @@ class OpenAIService: ObservableObject {
                     "size": imageSize,
                     "quality": imageQuality,
                     "n": 1,
-                    "response_format": "b64_json",
+                    "response_format": "b64_json"
                 ]
             }
 
@@ -541,7 +541,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription],
+                            metadata: ["error": error.localizedDescription]
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -551,7 +551,7 @@ class OpenAIService: ObservableObject {
                                     model: model,
                                     onComplete: onComplete,
                                     onError: onError,
-                                    attempt: attempt + 1,
+                                    attempt: attempt + 1
                                 )
                             }
                         }
@@ -566,7 +566,7 @@ class OpenAIService: ObservableObject {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .error,
-                    message: "No data received",
+                    message: "No data received"
                 )
                 DispatchQueue.main.async {
                     onError(OpenAIError.noData)
@@ -586,7 +586,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .error,
                             message: "API error",
-                            metadata: ["code": code, "message": message],
+                            metadata: ["code": code, "message": message]
                         )
                         DispatchQueue.main.async {
                             if code == "contentFilter" {
@@ -660,7 +660,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .error,
                         message: "Failed to encode arguments for tool call",
-                        metadata: ["tool": toolCall.toolName],
+                        metadata: ["tool": toolCall.toolName]
                     )
                     return nil
                 }
@@ -670,8 +670,8 @@ class OpenAIService: ObservableObject {
                     "type": "function",
                     "function": [
                         "name": toolCall.toolName,
-                        "arguments": argumentsString,
-                    ],
+                        "arguments": argumentsString
+                    ]
                 ]
             }
 
@@ -689,7 +689,7 @@ class OpenAIService: ObservableObject {
             if !message.content.isEmpty {
                 contentArray.append([
                     "type": "text",
-                    "text": message.content,
+                    "text": message.content
                 ])
             }
 
@@ -699,8 +699,8 @@ class OpenAIService: ObservableObject {
                 contentArray.append([
                     "type": "image_url",
                     "image_url": [
-                        "url": "data:\(attachment.mimeType);base64,\(base64Image)",
-                    ],
+                        "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+                    ]
                 ])
             }
 
@@ -733,14 +733,14 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: ((String) -> Void)? = nil,
+        onReasoning: ((String) -> Void)? = nil
     ) {
         if UITestEnvironment.isEnabled {
             simulateUITestResponse(
                 messages: messages,
                 stream: stream,
                 onChunk: onChunk,
-                onComplete: onComplete,
+                onComplete: onComplete
             )
             return
         }
@@ -764,7 +764,7 @@ class OpenAIService: ObservableObject {
                     conversationId: conversationId,
                     onChunk: onChunk,
                     onComplete: onComplete,
-                    onError: onError,
+                    onError: onError
                 )
             } else {
                 onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or later"))
@@ -789,7 +789,7 @@ class OpenAIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
-                onReasoning: onReasoning,
+                onReasoning: onReasoning
             )
             return
         }
@@ -827,7 +827,7 @@ class OpenAIService: ObservableObject {
         let body: [String: Any] = [
             "messages": messagePayloads,
             "model": requestModel,
-            "stream": stream,
+            "stream": stream
         ]
 
         var finalBody = body
@@ -843,12 +843,12 @@ class OpenAIService: ObservableObject {
         if stream {
             streamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning,
+                onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning
             )
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onReasoning: onReasoning,
+                onToolCall: onToolCall, onReasoning: onReasoning
             )
         }
     }
@@ -857,7 +857,7 @@ class OpenAIService: ObservableObject {
         messages: [Message],
         stream: Bool,
         onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
+        onComplete: @escaping () -> Void
     ) {
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
@@ -902,7 +902,7 @@ class OpenAIService: ObservableObject {
 
             var messageItem: [String: Any] = [
                 "type": "message",
-                "role": message.role.rawValue,
+                "role": message.role.rawValue
             ]
 
             var contentArray: [[String: Any]] = []
@@ -911,7 +911,7 @@ class OpenAIService: ObservableObject {
                 let contentType = message.role == .user ? "input_text" : "output_text"
                 contentArray.append([
                     "type": contentType,
-                    "text": message.content,
+                    "text": message.content
                 ])
             }
 
@@ -920,7 +920,7 @@ class OpenAIService: ObservableObject {
                     let base64Data = attachment.data.base64EncodedString()
                     contentArray.append([
                         "type": "input_image",
-                        "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+                        "image_url": "data:\(attachment.mimeType);base64,\(base64Data)"
                     ])
                 }
             }
@@ -935,7 +935,7 @@ class OpenAIService: ObservableObject {
     private func deliverResponsesOutput(
         _ outputArray: [[String: Any]],
         onChunk: @escaping (String) -> Void,
-        onReasoning: ((String) -> Void)?,
+        onReasoning: ((String) -> Void)?
     ) {
         for outputItem in outputArray {
             let itemType = outputItem["type"] as? String
@@ -978,7 +978,7 @@ class OpenAIService: ObservableObject {
         onComplete: @escaping () -> Void,
         onError: @escaping (Error) -> Void,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0,
+        attempt: Int = 0
     ) {
         // Check if this model has a provider override
         let effectiveProvider = modelProviders[model] ?? provider
@@ -1018,7 +1018,7 @@ class OpenAIService: ObservableObject {
             "model": model,
             "input": inputArray,
             "reasoning": ["summary": "auto"],
-            "text": ["verbosity": "medium"],
+            "text": ["verbosity": "medium"]
         ]
 
         do {
@@ -1029,7 +1029,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .error,
                 message: "❌ Failed to encode Responses API body",
-                metadata: ["model": model],
+                metadata: ["model": model]
             )
             onError(error)
             return
@@ -1051,7 +1051,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription],
+                            metadata: ["error": error.localizedDescription]
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -1063,7 +1063,7 @@ class OpenAIService: ObservableObject {
                                     onComplete: onComplete,
                                     onError: onError,
                                     onReasoning: onReasoning,
-                                    attempt: attempt + 1,
+                                    attempt: attempt + 1
                                 )
                             }
                         }
@@ -1129,7 +1129,7 @@ class OpenAIService: ObservableObject {
     private func extractTextSegments(
         from contentField: Any,
         source: String,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) -> [String] {
         if let stringContent = contentField as? String {
             return [stringContent]
@@ -1140,7 +1140,7 @@ class OpenAIService: ObservableObject {
                 .openAIService,
                 level: .debug,
                 message: "🧩 Received structured content array",
-                metadata: mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"]),
+                metadata: mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"])
             )
 
             var segments: [String] = []
@@ -1150,7 +1150,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .debug,
                         message: "⚠️ Structured content part missing type",
-                        metadata: mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"]),
+                        metadata: mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"])
                     )
                     continue
                 }
@@ -1163,7 +1163,7 @@ class OpenAIService: ObservableObject {
                 if let nested = part["content"] {
                     let nestedMetadata = mergedMetadata(
                         metadata,
-                        additions: ["source": source, "parentType": type, "parentIndex": "\(index)"],
+                        additions: ["source": source, "parentType": type, "parentIndex": "\(index)"]
                     )
                     segments.append(contentsOf: extractTextSegments(from: nested, source: source, metadata: nestedMetadata))
                     continue
@@ -1178,9 +1178,9 @@ class OpenAIService: ObservableObject {
                         additions: [
                             "source": source,
                             "type": type,
-                            "index": "\(index)",
-                        ],
-                    ),
+                            "index": "\(index)"
+                        ]
+                    )
                 )
             }
 
@@ -1198,8 +1198,8 @@ class OpenAIService: ObservableObject {
                 message: "⚠️ Unsupported content payload",
                 metadata: mergedMetadata(
                     metadata,
-                    additions: ["source": source, "payloadType": "\(type(of: contentField))"],
-                ),
+                    additions: ["source": source, "payloadType": "\(type(of: contentField))"]
+                )
             )
         }
 
@@ -1208,7 +1208,7 @@ class OpenAIService: ObservableObject {
 
     private func mergedMetadata(
         _ metadata: [String: String],
-        additions: [String: String],
+        additions: [String: String]
     ) -> [String: String] {
         var combined = metadata
         for (key, value) in additions {
@@ -1224,7 +1224,7 @@ class OpenAIService: ObservableObject {
         onChunk: @escaping (String) -> Void,
         onReasoning: ((String) -> Void)?,
         onToolCall: ((String, String, [String: Any]) async -> String)?,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)?,
+        onToolCallRequested: ((String, String, [String: Any]) -> Void)?
     ) async -> StreamLineResult {
         var updatedToolCallBuffer = toolCallBuffer
         var updatedToolCallId = toolCallId
@@ -1237,7 +1237,7 @@ class OpenAIService: ObservableObject {
                 return StreamLineResult(
                     shouldComplete: true,
                     toolCallBuffer: updatedToolCallBuffer,
-                    toolCallId: updatedToolCallId,
+                    toolCallId: updatedToolCallId
                 ) // Signal completion
             }
 
@@ -1252,7 +1252,7 @@ class OpenAIService: ObservableObject {
                     let textSegments = extractTextSegments(
                         from: contentField,
                         source: "stream.chat",
-                        metadata: ["phase": "delta"],
+                        metadata: ["phase": "delta"]
                     )
 
                     if !textSegments.isEmpty {
@@ -1325,7 +1325,7 @@ class OpenAIService: ObservableObject {
         return StreamLineResult(
             shouldComplete: false,
             toolCallBuffer: updatedToolCallBuffer,
-            toolCallId: updatedToolCallId,
+            toolCallId: updatedToolCallId
         ) // Continue processing
     }
 
@@ -1337,7 +1337,7 @@ class OpenAIService: ObservableObject {
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0,
+        attempt: Int = 0
     ) {
         let task = Task {
             var hasReceivedData = false
@@ -1351,7 +1351,7 @@ class OpenAIService: ObservableObject {
                 guard httpResponse.statusCode == 200 else {
                     let errorMessage = getHTTPErrorMessage(
                         statusCode: httpResponse.statusCode,
-                        requestURL: request.url,
+                        requestURL: request.url
                     )
                     throw OpenAIError.apiError(errorMessage)
                 }
@@ -1367,7 +1367,7 @@ class OpenAIService: ObservableObject {
                         DiagnosticsLogger.log(
                             .openAIService,
                             level: .info,
-                            message: "Stream task cancelled; stopping iteration",
+                            message: "Stream task cancelled; stopping iteration"
                         )
                         await MainActor.run {
                             self.currentStreamTask = nil
@@ -1387,7 +1387,7 @@ class OpenAIService: ObservableObject {
                                 onChunk: onChunk,
                                 onReasoning: onReasoning,
                                 onToolCall: onToolCall,
-                                onToolCallRequested: onToolCallRequested,
+                                onToolCallRequested: onToolCallRequested
                             )
                             toolCallBuffer = result.toolCallBuffer
                             toolCallId = result.toolCallId
@@ -1414,7 +1414,7 @@ class OpenAIService: ObservableObject {
                         .openAIService,
                         level: .info,
                         message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
-                        metadata: ["error": error.localizedDescription],
+                        metadata: ["error": error.localizedDescription]
                     )
                     await delay(for: attempt)
                     await MainActor.run {
@@ -1426,7 +1426,7 @@ class OpenAIService: ObservableObject {
                             onToolCall: onToolCall,
                             onToolCallRequested: onToolCallRequested,
                             onReasoning: onReasoning,
-                            attempt: attempt + 1,
+                            attempt: attempt + 1
                         )
                     }
                 } else {
@@ -1446,7 +1446,7 @@ class OpenAIService: ObservableObject {
                             DiagnosticsLogger.log(
                                 .openAIService,
                                 level: .info,
-                                message: "Stream task cancelled via CancellationError",
+                                message: "Stream task cancelled via CancellationError"
                             )
                         } else {
                             onError(error)
@@ -1465,7 +1465,7 @@ class OpenAIService: ObservableObject {
         onError: @escaping (Error) -> Void,
         onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
         onReasoning: ((String) -> Void)? = nil,
-        attempt: Int = 0,
+        attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             DispatchQueue.main.async {
@@ -1475,7 +1475,7 @@ class OpenAIService: ObservableObject {
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying non-stream request (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription],
+                            metadata: ["error": error.localizedDescription]
                         )
                         Task {
                             await self?.delay(for: attempt)
@@ -1487,7 +1487,7 @@ class OpenAIService: ObservableObject {
                                     onError: onError,
                                     onToolCall: onToolCall,
                                     onReasoning: onReasoning,
-                                    attempt: attempt + 1,
+                                    attempt: attempt + 1
                                 )
                             }
                         }
@@ -1540,7 +1540,7 @@ class OpenAIService: ObservableObject {
                             let textSegments = (self?.extractTextSegments(
                                 from: contentField,
                                 source: "nonstream.chat",
-                                metadata: ["phase": "final"],
+                                metadata: ["phase": "final"]
                             )) ?? []
 
                             for segment in textSegments where !segment.isEmpty {
@@ -1596,7 +1596,7 @@ class OpenAIService: ObservableObject {
         conversationId: UUID?,
         onChunk: @escaping (String) -> Void,
         onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
+        onError: @escaping (Error) -> Void
     ) {
         let service = AppleIntelligenceService.shared
 
@@ -1637,7 +1637,7 @@ class OpenAIService: ObservableObject {
                     },
                     onError: { error in
                         onError(error)
-                    },
+                    }
                 )
             } else {
                 await service.generateResponse(
@@ -1651,7 +1651,7 @@ class OpenAIService: ObservableObject {
                     },
                     onError: { error in
                         onError(error)
-                    },
+                    }
                 )
             }
         }

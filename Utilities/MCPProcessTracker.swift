@@ -34,7 +34,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "📦 Tracking MCP server PID",
-                metadata: ["server": serverName, "pid": "\(pid)"],
+                metadata: ["server": serverName, "pid": "\(pid)"]
             )
         }
     }
@@ -47,7 +47,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "🧹 Untracked MCP server PID",
-                metadata: ["server": serverName, "pid": "\(pid)"],
+                metadata: ["server": serverName, "pid": "\(pid)"]
             )
         }
     }
@@ -59,7 +59,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "🧼 Cleaning up orphaned MCP processes",
-                metadata: ["count": "\(trackedPIDs.count)"],
+                metadata: ["count": "\(trackedPIDs.count)"]
             )
 
             for (server, pid) in trackedPIDs {
@@ -78,7 +78,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "ℹ️ PID already gone",
-                metadata: ["server": serverName, "pid": "\(pid)"],
+                metadata: ["server": serverName, "pid": "\(pid)"]
             )
             return
         }
@@ -87,7 +87,7 @@ final class MCPProcessTracker: @unchecked Sendable {
             .mcpService,
             level: .info,
             message: "🛑 Sending SIGTERM to orphaned MCP process",
-            metadata: ["server": serverName, "pid": "\(pid)"],
+            metadata: ["server": serverName, "pid": "\(pid)"]
         )
         kill(pid, SIGTERM)
         waitForExit(pid: pid)
@@ -97,7 +97,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .info,
                 message: "⚠️ SIGTERM failed; sending SIGKILL",
-                metadata: ["server": serverName, "pid": "\(pid)"],
+                metadata: ["server": serverName, "pid": "\(pid)"]
             )
             kill(pid, SIGKILL)
             waitForExit(pid: pid)
@@ -123,7 +123,7 @@ final class MCPProcessTracker: @unchecked Sendable {
                 .mcpService,
                 level: .error,
                 message: "Failed to persist MCP process tracker",
-                metadata: ["error": error.localizedDescription],
+                metadata: ["error": error.localizedDescription]
             )
         }
     }

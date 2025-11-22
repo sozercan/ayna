@@ -62,7 +62,7 @@ final class OpenAIServiceTests: XCTestCase {
             },
             onToolCall: nil,
             onToolCallRequested: nil,
-            onReasoning: nil,
+            onReasoning: nil
         )
 
         wait(for: [errorExpectation], timeout: 1)
@@ -103,7 +103,7 @@ final class OpenAIServiceTests: XCTestCase {
             },
             onToolCall: nil,
             onToolCallRequested: nil,
-            onReasoning: nil,
+            onReasoning: nil
         )
 
         wait(for: [completionExpectation], timeout: 1)
@@ -172,7 +172,7 @@ final class OpenAIServiceTests: XCTestCase {
             },
             onToolCall: nil,
             onToolCallRequested: nil,
-            onReasoning: nil,
+            onReasoning: nil
         )
 
         wait(for: [completionExpectation], timeout: 1)

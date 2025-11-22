@@ -54,7 +54,7 @@ struct Message: Identifiable, Codable, Equatable {
         mediaType: MediaType? = nil,
         imageData: Data? = nil,
         attachments: [FileAttachment]? = nil,
-        reasoning: String? = nil,
+        reasoning: String? = nil
     ) {
         self.id = id
         self.role = role

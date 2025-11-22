@@ -25,7 +25,7 @@ struct Conversation: Identifiable, Codable {
         updatedAt: Date = Date(),
         model: String = "gpt-4o",
         systemPrompt: String? = nil,
-        temperature: Double = 0.7,
+        temperature: Double = 0.7
     ) {
         self.id = id
         self.title = title

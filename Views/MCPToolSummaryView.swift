@@ -106,7 +106,7 @@ struct MCPToolSummaryView: View {
                 lastError: status?.lastError,
                 isEnabled: config.enabled,
                 state: status?.state,
-                hasTools: (status?.toolsCount ?? 0) > 0,
+                hasTools: (status?.toolsCount ?? 0) > 0
             )
         }
     }
@@ -251,7 +251,7 @@ struct ToolStatusChip: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(model.statusColor.opacity(0.25), lineWidth: 1),
+                .stroke(model.statusColor.opacity(0.25), lineWidth: 1)
         )
     }
 }

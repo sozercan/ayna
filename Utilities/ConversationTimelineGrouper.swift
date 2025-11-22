@@ -11,7 +11,7 @@ enum ConversationTimelineGrouper {
     static func sections(
         from conversations: [Conversation],
         calendar: Calendar = .current,
-        now: Date = Date(),
+        now: Date = Date()
     ) -> [ConversationTimelineSection] {
         let sorted = conversations.sorted { $0.updatedAt > $1.updatedAt }
         var sections: [ConversationTimelineSection] = []
@@ -32,7 +32,7 @@ enum ConversationTimelineGrouper {
     static func title(
         for date: Date,
         calendar: Calendar = .current,
-        now: Date = Date(),
+        now: Date = Date()
     ) -> String {
         let startOfNow = calendar.startOfDay(for: now)
         let startOfDate = calendar.startOfDay(for: date)

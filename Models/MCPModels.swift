@@ -23,7 +23,7 @@ struct MCPServerConfig: Identifiable, Codable, Equatable, Sendable {
         command: String,
         args: [String] = [],
         env: [String: String] = [:],
-        enabled: Bool = true,
+        enabled: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -48,7 +48,7 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
         name: String,
         description: String,
         inputSchema: JSONSchema,
-        serverName: String,
+        serverName: String
     ) {
         self.id = id
         self.name = name
@@ -64,8 +64,8 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
             "function": [
                 "name": name,
                 "description": description,
-                "parameters": inputSchema.toJSON(),
-            ],
+                "parameters": inputSchema.toJSON()
+            ]
         ]
     }
 }
@@ -145,7 +145,7 @@ struct MCPResource: Identifiable, Codable, Equatable, Sendable {
         name: String,
         description: String? = nil,
         mimeType: String? = nil,
-        serverName: String,
+        serverName: String
     ) {
         self.id = id
         self.uri = uri
@@ -200,7 +200,7 @@ struct MCPToolCall: Identifiable, Codable, Equatable, Sendable {
         arguments: [String: AnyCodable],
         result: String? = nil,
         error: String? = nil,
-        timestamp: Date = Date(),
+        timestamp: Date = Date()
     ) {
         self.id = id
         self.toolName = toolName

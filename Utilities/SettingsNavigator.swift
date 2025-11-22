@@ -36,7 +36,7 @@ extension View {
         simultaneousGesture(
             TapGesture().onEnded {
                 SettingsRouter.shared.route(to: tab)
-            },
+            }
         )
     }
 }
