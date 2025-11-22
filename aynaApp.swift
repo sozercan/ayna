@@ -37,29 +37,15 @@ struct aynaApp: App {
 
         guard !UITestEnvironment.shouldSkipMCPInitialization else { return }
 
-        // Initialize MCP servers on app launch with error handling
+        // Initialize MCP servers on app launch and log availability
         Task {
-            do {
-                await MCPServerManager.shared.connectToAllEnabledServers()
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .info,
-                    message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
-                    metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
-                )
-            } catch {
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .error,
-                    message: "⚠️ MCP initialization encountered errors",
-                    metadata: ["error": error.localizedDescription]
-                )
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .info,
-                    message: "App will continue without MCP servers."
-                )
-            }
+            await MCPServerManager.shared.connectToAllEnabledServers()
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
+                metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
+            )
         }
     }
 
@@ -148,7 +134,9 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         )
         ensureFallbackWindowIfNeeded()
     }
-    NSApplication.shared.windows.forEach(configureWindowAppearance)
+    for window in NSApplication.shared.windows {
+        configureWindowAppearance(window)
+    }
 
     uiTestWindowObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didBecomeKeyNotification,
@@ -156,7 +144,9 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         queue: nil
     ) { notification in
         guard let window = notification.object as? NSWindow else { return }
-        Task { await configureWindowAppearance(window) }
+        Task { @MainActor in
+            configureWindowAppearance(window)
+        }
     }
 }
 
@@ -176,7 +166,9 @@ private struct WindowAppearanceConfigurator: NSViewRepresentable {
         let view = WindowObservingView()
         view.onWindowChange = { window in
             guard let window else { return }
-            Task { await configureWindowAppearance(window) }
+            Task { @MainActor in
+                configureWindowAppearance(window)
+            }
         }
         return view
     }
