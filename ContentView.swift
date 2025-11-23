@@ -23,30 +23,30 @@ struct ContentView: View {
             SidebarView(selectedConversationId: $selectedConversationId)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {
-      Group {
-        if let conversationId = selectedConversationId,
-          let conversation = conversationManager.conversations.first(where: {
-            $0.id == conversationId
-          })
-        {
-          ChatView(conversation: conversation)
-            .id(conversationId)
-        } else {
-          NewChatView(
-            selectedConversationId: $selectedConversationId
-          )
-        }
-      }
-      .toolbar {
-        ToolbarItem(placement: .navigation) {
-          Button(action: {
-            selectedConversationId = nil
-            NotificationCenter.default.post(name: .newConversationRequested, object: nil)
-          }) {
-            Image(systemName: "square.and.pencil")
-          }
-          .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
-        }
+            Group {
+                if let conversationId = selectedConversationId,
+                   let conversation = conversationManager.conversations.first(where: {
+                       $0.id == conversationId
+                   })
+                {
+                    ChatView(conversation: conversation)
+                        .id(conversationId)
+                } else {
+                    NewChatView(
+                        selectedConversationId: $selectedConversationId
+                    )
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: {
+                        selectedConversationId = nil
+                        NotificationCenter.default.post(name: .newConversationRequested, object: nil)
+                    }) {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
+                }
             }
         }
         .transaction { transaction in

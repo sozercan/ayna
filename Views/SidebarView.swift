@@ -124,7 +124,7 @@ struct SidebarView: View {
                 }
                 .onDeleteCommand(perform: handleDeleteCommand)
             }
-    }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()

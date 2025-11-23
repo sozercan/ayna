@@ -383,9 +383,9 @@ struct ChatView: View {
                         .padding(.horizontal, 12)
                         .frame(height: calculateTextHeight() + 24)
                     }
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 26)
                             .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
                     )
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)

@@ -98,22 +98,6 @@ struct MessageView: View {
                     }
                 }) {
                     HStack(spacing: 10) {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(Color.orange)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Tool Result")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                            Text(toolName)
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-
                         Spacer()
 
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -171,7 +155,7 @@ struct MessageView: View {
     @MainActor var body: some View {
         messageContent
             .padding(.horizontal, 24)
-            .padding(.vertical, 12)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: accessibilityText))
