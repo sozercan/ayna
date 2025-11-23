@@ -23,9 +23,10 @@ final class ConversationManagerTests: XCTestCase {
     }
 
     @MainActor
-    func makeManager(directory: URL) -> ConversationManager {
-        let keychain = InMemoryKeychainStorage()
-        let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
+    func makeManager(directory: URL, keychain: KeychainStoring? = nil, keyIdentifier: String? = nil) -> ConversationManager {
+        let keychainToUse = keychain ?? InMemoryKeychainStorage()
+        let keyId = keyIdentifier ?? UUID().uuidString
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychainToUse)
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
 
@@ -98,5 +99,36 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(titleResults.first?.title, "Swift Tips")
         XCTAssertEqual(bodyResults.count, 1)
         XCTAssertEqual(bodyResults.first?.title, "Random Chat")
+    }
+
+    @MainActor
+    func testSaveImmediatelyPersistsManualChanges() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-key-id"
+        let manager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)
+
+        manager.createNewConversation()
+        guard let conversation = manager.conversations.first else {
+            return XCTFail("Conversation missing")
+        }
+
+        // Manually update the conversation in the array (simulating what ChatView does with chunks)
+        if let index = manager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+            manager.conversations[index].messages.append(Message(role: .assistant, content: "Partial content"))
+        }
+
+        // Save immediately
+        manager.saveImmediately(manager.conversations.first!)
+
+        // Wait a bit for the async save task
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Create a new manager to load from disk using the SAME keychain and keyIdentifier
+        let newManager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)
+        _ = await newManager.loadingTask?.value
+
+        XCTAssertEqual(newManager.conversations.count, 1)
+        XCTAssertEqual(newManager.conversations.first?.messages.last?.content, "Partial content")
     }
 }

@@ -613,8 +613,12 @@ struct ChatView: View {
             }
 
             // Save conversations immediately to persist partial message
-            conversationManager.saveImmediately(conversation)
-            logChat("💾 Saved conversation after cancellation", level: .info)
+            if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+                conversationManager.saveImmediately(conversationManager.conversations[index])
+                logChat("💾 Saved conversation after cancellation", level: .info)
+            } else {
+                logChat("⚠️ Could not find conversation to save after cancellation", level: .error)
+            }
 
             isGenerating = false
             currentToolName = nil

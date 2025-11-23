@@ -9,8 +9,9 @@ import Foundation
 import UniformTypeIdentifiers
 
 extension UTType {
-  static let aynaConversation = UTType(
-    exportedAs: "com.sertacozercan.ayna.conversation", conformingTo: .content)
+    static let aynaConversation = UTType(
+        exportedAs: "com.sertacozercan.ayna.conversation", conformingTo: .content
+    )
 }
 
 struct Conversation: Identifiable, Codable, Equatable {

@@ -77,10 +77,10 @@ final class OpenAIServiceTests: XCTestCase {
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-      let body = Data(
-        """
-            {"choices":[{"message":{"content":"Hello"}}]}
-        """.utf8)
+            let body = Data(
+                """
+                    {"choices":[{"message":{"content":"Hello"}}]}
+                """.utf8)
             return (response, body)
         }
 
@@ -146,10 +146,10 @@ final class OpenAIServiceTests: XCTestCase {
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-      let body = Data(
-        """
-            {"choices":[{"message":{"content":[{"type":"text","text":"Structured hello"}]}}]}
-        """.utf8)
+            let body = Data(
+                """
+                    {"choices":[{"message":{"content":[{"type":"text","text":"Structured hello"}]}}]}
+                """.utf8)
             return (response, body)
         }
 
@@ -190,11 +190,11 @@ private final class MockURLProtocol: URLProtocol {
         lastRequest = nil
     }
 
-  override static func canInit(with _: URLRequest) -> Bool {
+    override static func canInit(with _: URLRequest) -> Bool {
         true
     }
 
-  override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
