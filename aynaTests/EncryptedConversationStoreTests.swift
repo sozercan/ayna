@@ -2,38 +2,44 @@
 import XCTest
 
 final class EncryptedConversationStoreTests: XCTestCase {
-    func testSaveAndLoadRoundTripsConversations() throws {
+  func testSaveAndLoadRoundTripsConversations() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
-        let conversations = [TestHelpers.sampleConversation(title: "Alpha")]
+    let conversation = TestHelpers.sampleConversation(title: "Alpha")
 
-        try store.save(conversations)
-        let loaded = try store.loadConversations()
+    try await store.save(conversation)
+    let loaded = try await store.loadConversations()
 
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded.first?.title, "Alpha")
-        XCTAssertEqual(loaded.first?.messages.count, conversations.first?.messages.count)
+    XCTAssertEqual(loaded.first?.messages.count, conversation.messages.count)
     }
 
-    func testClearRemovesEncryptedFile() throws {
+  func testClearRemovesEncryptedFiles() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
-        try store.save([TestHelpers.sampleConversation()])
+    let conversation = TestHelpers.sampleConversation()
+    try await store.save(conversation)
 
         try store.clear()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
+
+    let files = try FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: nil)
+    XCTAssertTrue(files.isEmpty)
     }
 
-    func testSecondStoreInstanceLoadsDataUsingSameKey() throws {
+  func testSecondStoreInstanceLoadsDataUsingSameKey() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
-        let keyIdentifier = UUID().uuidString
-        let fileURL = directory.appendingPathComponent("conversations.enc")
+    let keyIdentifier = UUID().uuidString
 
-        let firstStore = EncryptedConversationStore(fileURL: fileURL, keyIdentifier: keyIdentifier)
-        try firstStore.save([TestHelpers.sampleConversation(title: "Persisted")])
+    let firstStore = EncryptedConversationStore(
+      directoryURL: directory, keyIdentifier: keyIdentifier)
+    let conversation = TestHelpers.sampleConversation(title: "Persisted")
+    try await firstStore.save(conversation)
 
-        let secondStore = EncryptedConversationStore(fileURL: fileURL, keyIdentifier: keyIdentifier)
-        let loaded = try secondStore.loadConversations()
+    let secondStore = EncryptedConversationStore(
+      directoryURL: directory, keyIdentifier: keyIdentifier)
+    let loaded = try await secondStore.loadConversations()
 
         XCTAssertEqual(loaded.first?.title, "Persisted")
     }

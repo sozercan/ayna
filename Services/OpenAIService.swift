@@ -695,14 +695,16 @@ class OpenAIService: ObservableObject {
 
             // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                let base64Image = attachment.data.base64EncodedString()
-                contentArray.append([
-                    "type": "image_url",
-                    "image_url": [
-                        "url": "data:\(attachment.mimeType);base64,\(base64Image)"
-                    ]
-                ])
-            }
+        if let data = attachment.content {
+          let base64Image = data.base64EncodedString()
+          contentArray.append([
+            "type": "image_url",
+            "image_url": [
+              "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+            ],
+          ])
+        }
+      }
 
             payload["content"] = contentArray
         } else {
@@ -917,11 +919,13 @@ class OpenAIService: ObservableObject {
 
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                    let base64Data = attachment.data.base64EncodedString()
-                    contentArray.append([
-                        "type": "input_image",
-                        "image_url": "data:\(attachment.mimeType);base64,\(base64Data)"
-                    ])
+          if let data = attachment.content {
+            let base64Data = data.base64EncodedString()
+            contentArray.append([
+              "type": "input_image",
+              "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+            ])
+          }
                 }
             }
 

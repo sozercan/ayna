@@ -267,7 +267,8 @@ struct MessageView: View {
             ForEach(attachments.indices, id: \.self) { index in
                 let attachment = attachments[index]
                 if attachment.mimeType.starts(with: "image/"),
-                   let nsImage = NSImage(data: attachment.data)
+          let data = attachment.content,
+          let nsImage = NSImage(data: data)
                 {
                     VStack(alignment: .leading, spacing: 4) {
                         Image(nsImage: nsImage)
@@ -294,7 +295,7 @@ struct MessageView: View {
 
         // Generated images
         if message.mediaType == .image {
-            if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
+      if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)

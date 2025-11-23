@@ -49,7 +49,10 @@ struct ChatView: View {
 
     // Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
-        conversationManager.conversations.first(where: { $0.id == conversation.id }) ?? conversation
+    if let index = getConversationIndex() {
+      return conversationManager.conversations[index]
+    }
+    return conversation
     }
 
     // Helper to get conversation index with caching
@@ -600,8 +603,8 @@ struct ChatView: View {
                 }
             }
 
-            // Save conversations immediately to persist partial message
-            conversationManager.saveConversationsImmediately()
+      // Save conversations immediately to persist partial message
+      conversationManager.saveImmediately(conversation)
             logChat("💾 Saved conversation after cancellation", level: .info)
 
             isGenerating = false
@@ -622,10 +625,21 @@ struct ChatView: View {
         for fileURL in attachedFiles {
             if let fileData = try? Data(contentsOf: fileURL) {
                 let mimeType = getMimeType(for: fileURL)
+
+        // Save to AttachmentStorage
+        let pathExtension = fileURL.pathExtension
+        var localPath: String?
+        do {
+          localPath = try AttachmentStorage.shared.save(data: fileData, extension: pathExtension)
+        } catch {
+          logChat("❌ Failed to save attachment: \(error.localizedDescription)", level: .error)
+        }
+
                 let attachment = Message.FileAttachment(
                     fileName: fileURL.lastPathComponent,
-                    mimeType: mimeType,
-                    data: fileData
+          mimeType: mimeType,
+          data: nil,  // Don't store raw data in JSON
+          localPath: localPath
                 )
                 attachments.append(attachment)
                 logChat(
@@ -634,7 +648,8 @@ struct ChatView: View {
                     metadata: [
                         "fileName": fileURL.lastPathComponent,
                         "mimeType": mimeType,
-                        "fileSize": "\(fileData.count)"
+            "fileSize": "\(fileData.count)",
+            "localPath": localPath ?? "nil"
                     ]
                 )
             }
@@ -774,13 +789,23 @@ struct ChatView: View {
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
         openAIService.generateImage(
-            prompt: prompt,
-            model: model,
-            onComplete: { imageData in
+      prompt: prompt,
+      model: model,
+      onComplete: { imageData in
+        // Save image to disk
+        var imagePath: String?
+        do {
+          imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+        } catch {
+          self.logChat(
+            "❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
+                }
+
                 // Update the placeholder message with actual image using the proper method
                 conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                    message.content = ""
-                    message.imageData = imageData
+          message.content = ""
+          message.imageData = nil  // Don't store raw data
+          message.imagePath = imagePath
                 }
 
                 isGenerating = false
@@ -886,10 +911,14 @@ struct ChatView: View {
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
                     }
-                }
+        }
 
-                // Always save conversations
-                conversationManager.saveConversations()
+        // Always save conversations
+        if let index = conversationManager.conversations.firstIndex(where: {
+          $0.id == conversation.id
+        }) {
+          conversationManager.save(conversationManager.conversations[index])
+                }
 
                 // Only update UI state if we're viewing this conversation
                 guard
@@ -1007,8 +1036,8 @@ struct ChatView: View {
                     lastMessage.toolCalls = [toolCall]
                     conversationManager.conversations[index].messages[
                         conversationManager.conversations[index].messages.count - 1
-                    ] = lastMessage
-                    conversationManager.saveConversations()
+          ] = lastMessage
+          conversationManager.save(conversationManager.conversations[index])
                 }
 
                 // Execute the tool asynchronously
@@ -1158,8 +1187,8 @@ struct ChatView: View {
         if let convIndex = conversationManager.conversations.firstIndex(where: {
             $0.id == conversation.id
         }) {
-            conversationManager.conversations[convIndex].messages.removeSubrange(assistantIndex...)
-            conversationManager.saveConversations()
+      conversationManager.conversations[convIndex].messages.removeSubrange(assistantIndex...)
+      conversationManager.save(conversationManager.conversations[convIndex])
         }
 
         // Resend the user message
@@ -1203,8 +1232,8 @@ struct ChatView: View {
         if let convIndex = conversationManager.conversations.firstIndex(where: {
             $0.id == conversation.id
         }) {
-            conversationManager.conversations[convIndex].messages.removeSubrange(assistantIndex...)
-            conversationManager.saveConversations()
+      conversationManager.conversations[convIndex].messages.removeSubrange(assistantIndex...)
+      conversationManager.save(conversationManager.conversations[convIndex])
         }
 
         // Resend the user message with the specified model

@@ -700,8 +700,8 @@ struct NewChatView: View {
                     lastMessage.toolCalls = [toolCall]
                     conversationManager.conversations[index].messages[
                         conversationManager.conversations[index].messages.count - 1
-                    ] = lastMessage
-                    conversationManager.saveConversations()
+          ] = lastMessage
+          conversationManager.save(conversationManager.conversations[index])
                 }
 
                 Task {

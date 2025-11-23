@@ -48,6 +48,7 @@
 		C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */; };
 		C9D500042F40000000ABCD01 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */; };
 		C9E0F0023095000000ABCD01 /* MCPProcessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */; };
+		C9F0A00230A2C00100ABCD01 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,6 +96,7 @@
 		C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 		C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
 		C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPProcessTracker.swift; sourceTree = "<group>"; };
+		C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -181,6 +183,7 @@
 		06000006 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */,
 				C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */,
 				C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */,
 				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
@@ -394,6 +397,7 @@
 				C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */,
 				C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */,
 				C9D500042F40000000ABCD01 /* MCPToolSummaryView.swift in Sources */,
+				C9F0A00230A2C00100ABCD01 /* AttachmentStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

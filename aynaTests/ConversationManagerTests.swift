@@ -60,18 +60,22 @@ final class ConversationManagerTests: XCTestCase {
     }
 
     @MainActor
-    func testClearAllConversationsEmptiesEncryptedStore() throws {
+  func testClearAllConversationsEmptiesEncryptedStore() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
 
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+    _ = await manager.loadingTask?.value
         manager.conversations = [TestHelpers.sampleConversation()]
-        try store.save(manager.conversations)
+    try await store.save(manager.conversations)
 
         manager.clearAllConversations()
 
-        XCTAssertTrue(manager.conversations.isEmpty)
+    // Wait for async clear
+    try await Task.sleep(for: .milliseconds(100))
+
+    XCTAssertTrue(manager.conversations.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
     }
 

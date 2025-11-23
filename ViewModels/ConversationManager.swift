@@ -14,7 +14,9 @@ class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
 
     private let store: EncryptedConversationStore
-    private var saveTask: Task<Void, Never>?
+  private var saveTasks: [UUID: Task<Void, Never>] = [:]
+  internal var loadingTask: Task<Void, Never>?
+  private var isLoaded = false
     private let saveDebounceDuration: Duration
 
     private func logManager(
@@ -31,25 +33,140 @@ class ConversationManager: ObservableObject {
     ) {
         self.store = store
         self.saveDebounceDuration = saveDebounceDuration
-        loadConversations()
+    loadingTask = Task {
+      await loadConversations()
     }
+  }
+
+  // MARK: - Persistence
+
+  func save(_ conversation: Conversation) {
+    saveTasks[conversation.id]?.cancel()
+    saveTasks[conversation.id] = Task { @MainActor in
+      if !isLoaded {
+        _ = await loadingTask?.value
+      }
+
+      try? await Task.sleep(for: saveDebounceDuration)
+      guard !Task.isCancelled else { return }
+
+      do {
+        try await store.save(conversation)
+        saveTasks.removeValue(forKey: conversation.id)
+      } catch {
+        logManager(
+          "❌ Failed to save conversation",
+          level: .error,
+          metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
+        )
+      }
+    }
+  }
+
+  func saveImmediately(_ conversation: Conversation) {
+    saveTasks[conversation.id]?.cancel()
+    saveTasks.removeValue(forKey: conversation.id)
+
+    Task {
+      if !isLoaded {
+        _ = await loadingTask?.value
+      }
+
+      do {
+        try await store.save(conversation)
+      } catch {
+        logManager(
+          "❌ Failed to save conversation",
+          level: .error,
+          metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
+        )
+      }
+    }
+  }
+
+  private func loadConversations() async {
+    do {
+      var decoded = try await store.loadConversations()
+
+      // Validate and fix models that no longer exist
+      let availableModels = OpenAIService.shared.customModels
+      let defaultModel = OpenAIService.shared.selectedModel
+
+      for index in decoded.indices where !availableModels.contains(decoded[index].model) {
+        // Model no longer exists, update to default
+        decoded[index].model = defaultModel
+        let conversationToSave = decoded[index]
+        Task {
+          try? await store.save(conversationToSave)
+        }
+      }
+
+      // Merge with any conversations created while loading
+      let existingIds = Set(conversations.map { $0.id })
+      let newFromDisk = decoded.filter { !existingIds.contains($0.id) }
+      conversations.append(contentsOf: newFromDisk)
+
+      // Sort by updated date descending to ensure correct order
+      conversations.sort { $0.updatedAt > $1.updatedAt }
+
+      isLoaded = true
+
+      logManager(
+        "✅ Loaded \(conversations.count) conversations",
+        level: .info,
+        metadata: ["count": "\(conversations.count)"]
+      )
+    } catch {
+      logManager(
+        "❌ Failed to load conversations",
+        level: .error,
+        metadata: ["error": error.localizedDescription]
+      )
+      logManager("⚠️ Clearing corrupted conversation data", level: .default)
+      try? store.clear()
+      conversations = []
+      isLoaded = true
+    }
+  }
+
+  func clearAllConversations() {
+    conversations.removeAll()
+    saveTasks.values.forEach { $0.cancel() }
+    saveTasks.removeAll()
+    Task {
+      do {
+        try store.clear()
+        logManager("🧹 Cleared encrypted conversation store", level: .info)
+      } catch {
+        logManager(
+          "⚠️ Failed to clear conversation store",
+          level: .error,
+          metadata: ["error": error.localizedDescription]
+        )
+      }
+    }
+  }
 
     func createNewConversation(title: String = "New Conversation") {
         let defaultModel = OpenAIService.shared.selectedModel
         let conversation = Conversation(title: title, model: defaultModel)
         conversations.insert(conversation, at: 0)
-        saveConversations()
+    save(conversation)
     }
 
     func deleteConversation(_ conversation: Conversation) {
         conversations.removeAll { $0.id == conversation.id }
-        saveConversations()
+    saveTasks[conversation.id]?.cancel()
+    saveTasks.removeValue(forKey: conversation.id)
+    Task {
+      try? await store.delete(conversation.id)
+        }
     }
 
     func updateConversation(_ conversation: Conversation) {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index] = conversation
-            saveConversations()
+      save(conversation)
         }
     }
 
@@ -57,7 +174,7 @@ class ConversationManager: ObservableObject {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].title = newTitle
             conversations[index].updatedAt = Date()
-            saveConversations()
+      save(conversations[index])
         }
     }
 
@@ -76,16 +193,16 @@ class ConversationManager: ObservableObject {
                message.role == .user
             {
                 generateTitle(for: conversations[index])
-            }
+      }
 
-            saveConversations()
+      save(conversations[index])
         }
     }
 
     func updateLastMessage(in conversation: Conversation, content: String) {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].updateLastMessage(content)
-            saveConversations()
+      save(conversations[index])
         }
     }
 
@@ -97,7 +214,7 @@ class ConversationManager: ObservableObject {
             update(&message)
             conversations[convIndex].messages[msgIndex] = message
             conversations[convIndex].updatedAt = Date()
-            saveConversations()
+      save(conversations[convIndex])
         }
     }
 
@@ -105,7 +222,7 @@ class ConversationManager: ObservableObject {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].messages.removeAll()
             conversations[index].updatedAt = Date()
-            saveConversations()
+      save(conversations[index])
         }
     }
 
@@ -113,7 +230,7 @@ class ConversationManager: ObservableObject {
         if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[index].model = model
             conversations[index].updatedAt = Date()
-            saveConversations()
+      save(conversations[index])
         }
     }
 
@@ -162,101 +279,27 @@ class ConversationManager: ObservableObject {
                 )
                 let fallbackTitle = String(content.prefix(50))
                 self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
-            },
-            onReasoning: nil
-        )
+      },
+      onReasoning: nil
+    )
+  }
+
+  // MARK: - Search and Filter
+
+  nonisolated func searchConversationsAsync(query: String, conversations: [Conversation]) async
+    -> [Conversation]
+  {
+    guard !query.isEmpty else { return conversations }
+
+    return await Task.detached {
+      conversations.filter { conversation in
+        conversation.title.localizedCaseInsensitiveContains(query)
+          || conversation.messages.contains { message in
+            message.content.localizedCaseInsensitiveContains(query)
+          }
+      }
+        }.value
     }
-
-    // MARK: - Persistence
-
-    func saveConversations() {
-        // Debounce saves to batch rapid updates (e.g., during streaming)
-        saveTask?.cancel()
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: saveDebounceDuration)
-            guard !Task.isCancelled else { return }
-
-            do {
-                try store.save(conversations)
-            } catch {
-                logManager(
-                    "❌ Failed to save conversations",
-                    level: .error,
-                    metadata: ["error": error.localizedDescription]
-                )
-            }
-        }
-    }
-
-    func saveConversationsImmediately() {
-        // For critical saves that shouldn't be debounced
-        saveTask?.cancel()
-        do {
-            try store.save(conversations)
-        } catch {
-            logManager(
-                "❌ Failed to save conversations",
-                level: .error,
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-    }
-
-    private func loadConversations() {
-        do {
-            var decoded = try store.loadConversations()
-
-            // Validate and fix models that no longer exist
-            let availableModels = OpenAIService.shared.customModels
-            let defaultModel = OpenAIService.shared.selectedModel
-            var needsSave = false
-
-            for index in decoded.indices where !availableModels.contains(decoded[index].model) {
-                // Model no longer exists, update to default
-                decoded[index].model = defaultModel
-                needsSave = true
-            }
-
-            conversations = decoded
-
-            // Save if any models were updated
-            if needsSave {
-                saveConversations()
-            }
-
-            logManager(
-                "✅ Loaded \(conversations.count) conversations",
-                level: .info,
-                metadata: ["count": "\(conversations.count)"]
-            )
-        } catch {
-            logManager(
-                "❌ Failed to load conversations",
-                level: .error,
-                metadata: ["error": error.localizedDescription]
-            )
-            logManager("⚠️ Clearing corrupted conversation data", level: .default)
-            try? store.clear()
-            conversations = []
-        }
-    }
-
-    func clearAllConversations() {
-        conversations.removeAll()
-        saveTask?.cancel()
-        do {
-            try store.clear()
-            logManager("🧹 Cleared encrypted conversation store", level: .info)
-        } catch {
-            logManager(
-                "⚠️ Failed to clear conversation store",
-                level: .error,
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-    }
-
-    // MARK: - Search and Filter
 
     func searchConversations(query: String) -> [Conversation] {
         guard !query.isEmpty else { return conversations }

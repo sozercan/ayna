@@ -160,10 +160,10 @@ The `OpenAIService.streamResponse()` method:
 5. Completes when receiving `[DONE]` marker
 
 ### Conversation Persistence
-- Conversations are JSON-encoded via `Codable` and written to an encrypted file (`conversations.enc`) in `Application Support/Ayna`.
+- Conversations are JSON-encoded via `Codable` and written to individual encrypted files (`{UUID}.enc`) in `Application Support/Ayna/Conversations`.
 - Encryption uses AES-GCM with a 256-bit symmetric key stored in the Keychain.
-- Auto-saves after every mutation (create, delete, update, add message, etc.) with a debounce to reduce writes.
-- Loads on `ConversationManager.init()`; corrupted data wipes the encrypted file.
+- Auto-saves individual conversations after mutation (create, update, add message, etc.) with a per-conversation debounce to reduce writes.
+- Loads all valid conversation files on `ConversationManager.init()`; corrupted files are skipped or handled gracefully.
 
 ### Title Generation
 When the first user message is sent and title is still "New Conversation":
