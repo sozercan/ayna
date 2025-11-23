@@ -14,43 +14,44 @@ struct SidebarView: View {
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
-  @State private var searchResults: [Conversation] = []
-  @State private var searchTask: Task<Void, Never>?
+    @State private var searchResults: [Conversation] = []
+    @State private var searchTask: Task<Void, Never>?
 
     private var filteredConversations: [Conversation] {
-    let source = searchText.isEmpty ? conversationManager.conversations : searchResults
-    return source.sorted { $0.updatedAt > $1.updatedAt }
+        let source = searchText.isEmpty ? conversationManager.conversations : searchResults
+        return source.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var timelineSections: [ConversationTimelineSection] {
         ConversationTimelineGrouper.sections(from: filteredConversations)
     }
 
-  private func performSearch() {
-    searchTask?.cancel()
-    let query = searchText
+    private func performSearch() {
+        searchTask?.cancel()
+        let query = searchText
 
-    guard !query.isEmpty else {
-      searchResults = []
-      return
+        guard !query.isEmpty else {
+            searchResults = []
+            return
+        }
+
+        searchTask = Task {
+            // Debounce
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+
+            let currentConversations = conversationManager.conversations
+            let results = await conversationManager.searchConversationsAsync(
+                query: query, conversations: currentConversations
+            )
+
+            if !Task.isCancelled {
+                searchResults = results
+            }
+        }
     }
 
-    searchTask = Task {
-      // Debounce
-      try? await Task.sleep(for: .milliseconds(300))
-      guard !Task.isCancelled else { return }
-
-      let currentConversations = conversationManager.conversations
-      let results = await conversationManager.searchConversationsAsync(
-        query: query, conversations: currentConversations)
-
-      if !Task.isCancelled {
-        searchResults = results
-      }
-    }
-  }
-
-  var body: some View {
+    var body: some View {
         VStack(spacing: 0) {
             // Search Box
             HStack(spacing: 8) {
@@ -62,14 +63,14 @@ struct SidebarView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-          .onChange(of: searchText) { _ in
-            performSearch()
-          }
+                    .onChange(of: searchText) { _ in
+                        performSearch()
+                    }
 
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
-            performSearch()
+                        performSearch()
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -85,11 +86,11 @@ struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 6)
-      .onChange(of: conversationManager.conversations) { _ in
-        if !searchText.isEmpty {
-          performSearch()
-        }
-      }
+            .onChange(of: conversationManager.conversations) { _ in
+                if !searchText.isEmpty {
+                    performSearch()
+                }
+            }
 
             // Conversation List
             if filteredConversations.isEmpty {

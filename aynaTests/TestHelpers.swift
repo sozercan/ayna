@@ -50,7 +50,8 @@ enum TestHelpers {
         keyIdentifier: String = UUID().uuidString,
         keychain: KeychainStoring = InMemoryKeychainStorage()
     ) -> EncryptedConversationStore {
-    return EncryptedConversationStore(
-      directoryURL: directory, keyIdentifier: keyIdentifier, keychain: keychain)
+        EncryptedConversationStore(
+            directoryURL: directory, keyIdentifier: keyIdentifier, keychain: keychain
+        )
     }
 }

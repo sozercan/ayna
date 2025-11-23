@@ -8,6 +8,10 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
     runs-on: macos-26
@@ -124,4 +128,46 @@ jobs:
           gh release create "$TAG" "$FILE" \
             --title "$TITLE" \
             --notes "$NOTES"
+        fi
+
+    - name: Update Homebrew Cask
+      if: success()
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        FILE="${{ steps.artifact.outputs.filename }}"
+
+        # Strip 'v' prefix from tag for version
+        VERSION="${TAG#v}"
+
+        # Calculate SHA256
+        SHA256=$(shasum -a 256 "$FILE" | awk '{print $1}')
+
+        echo "Updating Cask to version $VERSION with sha256 $SHA256"
+
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Create new branch
+        BRANCH_NAME="bump-cask-${VERSION}"
+        git checkout -b "$BRANCH_NAME"
+
+        # Update Cask file
+        sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/ayna.rb
+        sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/ayna.rb
+
+        # Commit and push
+        if ! git diff --quiet Casks/ayna.rb; then
+          git add Casks/ayna.rb
+          git commit -m "Update Cask to version $VERSION"
+          git push origin "$BRANCH_NAME"
+
+          # Create PR
+          gh pr create \
+            --title "Update Cask to version $VERSION" \
+            --body "Automated update of Homebrew Cask for version $VERSION" \
+            --base main \
+            --head "$BRANCH_NAME"
         fi

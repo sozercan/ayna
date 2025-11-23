@@ -598,14 +598,17 @@ class OpenAIService: ObservableObject {
 
                     // Parse successful response: { "data": [{ "b64_json": "..." }] } or { "data": [{ "url": "..." }] }
                     if let dataArray = json["data"] as? [[String: Any]],
-                       let firstItem = dataArray.first {
+                       let firstItem = dataArray.first
+                    {
                         if let b64String = firstItem["b64_json"] as? String,
-                           let imageData = Data(base64Encoded: b64String) {
+                           let imageData = Data(base64Encoded: b64String)
+                        {
                             DispatchQueue.main.async {
                                 onComplete(imageData)
                             }
                         } else if let urlString = firstItem["url"] as? String,
-                                  let url = URL(string: urlString) {
+                                  let url = URL(string: urlString)
+                        {
                             // Download image from URL if b64_json is missing
                             Task {
                                 do {
@@ -712,16 +715,16 @@ class OpenAIService: ObservableObject {
 
             // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-        if let data = attachment.content {
-          let base64Image = data.base64EncodedString()
-          contentArray.append([
-            "type": "image_url",
-            "image_url": [
-              "url": "data:\(attachment.mimeType);base64,\(base64Image)"
-            ],
-          ])
-        }
-      }
+                if let data = attachment.content {
+                    let base64Image = data.base64EncodedString()
+                    contentArray.append([
+                        "type": "image_url",
+                        "image_url": [
+                            "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+                        ],
+                    ])
+                }
+            }
 
             payload["content"] = contentArray
         } else {
@@ -936,13 +939,13 @@ class OpenAIService: ObservableObject {
 
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-          if let data = attachment.content {
-            let base64Data = data.base64EncodedString()
-            contentArray.append([
-              "type": "input_image",
-              "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
-            ])
-          }
+                    if let data = attachment.content {
+                        let base64Data = data.base64EncodedString()
+                        contentArray.append([
+                            "type": "input_image",
+                            "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+                        ])
+                    }
                 }
             }
 

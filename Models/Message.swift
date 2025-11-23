@@ -19,9 +19,9 @@ struct Message: Identifiable, Codable, Equatable {
     // Image generation support
     var mediaType: MediaType?
     var imageData: Data?
-  var imagePath: String?  // Path relative to AttachmentStorage
+    var imagePath: String? // Path relative to AttachmentStorage
 
-  // File attachments for vision/multimodal support
+    // File attachments for vision/multimodal support
     var attachments: [FileAttachment]?
 
     // Reasoning/thinking support for o1/o3 models
@@ -34,19 +34,19 @@ struct Message: Identifiable, Codable, Equatable {
     struct FileAttachment: Codable, Equatable {
         let fileName: String
         let mimeType: String
-    var data: Data?
-    var localPath: String?  // Path relative to AttachmentStorage
+        var data: Data?
+        var localPath: String? // Path relative to AttachmentStorage
 
-    // Helper to get data regardless of storage method
-    var content: Data? {
-      if let data = data { return data }
-      if let path = localPath {
-        // This is a side effect in a property access, but necessary for transparent access
-        // In a real app, we might want async loading, but for now this bridges the gap
-        return AttachmentStorage.shared.load(path: path)
-      }
-      return nil
-    }
+        // Helper to get data regardless of storage method
+        var content: Data? {
+            if let data { return data }
+            if let path = localPath {
+                // This is a side effect in a property access, but necessary for transparent access
+                // In a real app, we might want async loading, but for now this bridges the gap
+                return AttachmentStorage.shared.load(path: path)
+            }
+            return nil
+        }
     }
 
     enum Role: String, Codable {
@@ -66,7 +66,7 @@ struct Message: Identifiable, Codable, Equatable {
         model: String? = nil,
         mediaType: MediaType? = nil,
         imageData: Data? = nil,
-    imagePath: String? = nil,
+        imagePath: String? = nil,
         attachments: [FileAttachment]? = nil,
         reasoning: String? = nil
     ) {
@@ -79,17 +79,17 @@ struct Message: Identifiable, Codable, Equatable {
         self.model = model
         self.mediaType = mediaType
         self.imageData = imageData
-    self.imagePath = imagePath
+        self.imagePath = imagePath
         self.attachments = attachments
         self.reasoning = reasoning
     }
 
-  // Helper to get image data regardless of storage method
-  var effectiveImageData: Data? {
-    if let data = imageData { return data }
-    if let path = imagePath {
-      return AttachmentStorage.shared.load(path: path)
+    // Helper to get image data regardless of storage method
+    var effectiveImageData: Data? {
+        if let data = imageData { return data }
+        if let path = imagePath {
+            return AttachmentStorage.shared.load(path: path)
+        }
+        return nil
     }
-    return nil
-  }
 }

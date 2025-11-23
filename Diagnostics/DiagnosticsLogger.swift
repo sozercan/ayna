@@ -20,7 +20,7 @@ enum DiagnosticsCategory: String, CaseIterable, Codable {
     case conversationManager = "ConversationManager"
     case chatView = "ChatView"
     case contentView = "ContentView"
-  case attachmentStorage = "AttachmentStorage"
+    case attachmentStorage = "AttachmentStorage"
 }
 
 enum BreadcrumbLevel: String, Codable {

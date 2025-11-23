@@ -267,8 +267,8 @@ struct MessageView: View {
             ForEach(attachments.indices, id: \.self) { index in
                 let attachment = attachments[index]
                 if attachment.mimeType.starts(with: "image/"),
-          let data = attachment.content,
-          let nsImage = NSImage(data: data)
+                   let data = attachment.content,
+                   let nsImage = NSImage(data: data)
                 {
                     VStack(alignment: .leading, spacing: 4) {
                         Image(nsImage: nsImage)
@@ -295,7 +295,7 @@ struct MessageView: View {
 
         // Generated images
         if message.mediaType == .image {
-      if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
+            if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -943,7 +943,7 @@ struct ImageGeneratingView: View {
                         .fill(Color.accentColor.opacity(0.1))
                         .frame(width: 64, height: 64)
                         .scaleEffect(1 + sin(phase) * 0.1)
-                    
+
                     if #available(macOS 15.0, *) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 30))

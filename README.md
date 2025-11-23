@@ -26,6 +26,15 @@ A native macOS ChatGPT client built for speed and simplicity.
   ```
 4. Launch **Ayna** from Applications.
 
+### Homebrew
+
+You can also install Ayna via Homebrew:
+
+```bash
+brew tap sozercan/ayna
+brew install --cask ayna
+```
+
 ### Requirements
 
 - macOS 14.0 (Sonoma) or newer.

@@ -38,7 +38,7 @@ enum UITestEnvironment {
     @MainActor
     static func makeConversationManager() -> ConversationManager {
         let store = EncryptedConversationStore(
-      directoryURL: conversationDirectoryURL,
+            directoryURL: conversationDirectoryURL,
             keyIdentifier: "uitest-conversation-key",
             keychain: OpenAIService.keychain
         )
@@ -80,13 +80,13 @@ enum UITestEnvironment {
     }
 
     private static func clearConversationArtifacts() {
-    try? FileManager.default.removeItem(at: conversationDirectoryURL)
-  }
+        try? FileManager.default.removeItem(at: conversationDirectoryURL)
+    }
 
-  private static var conversationDirectoryURL: URL {
+    private static var conversationDirectoryURL: URL {
         let directoryName = "Ayna-UITests-\(ProcessInfo.processInfo.processIdentifier)"
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(directoryName, isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    return directory
+        return directory
     }
 }

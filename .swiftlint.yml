@@ -14,6 +14,10 @@ included:
   - Services
   - ViewModels
   - Views
+  - Utilities
+  - Diagnostics
+  - aynaTests
+  - aynaUITests
   - aynaApp.swift
   - ContentView.swift
 
