@@ -9,6 +9,15 @@ import AppKit
 import OSLog
 import SwiftUI
 
+/// A wrapper to make non-Sendable types Sendable by unchecked conformance.
+/// Use this only when you are sure the value is thread-safe or accessed safely.
+private final class UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
 // ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
 // tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
 // the larger body here until the view hierarchy is modularized.
@@ -95,12 +104,12 @@ struct ChatView: View {
 
             // Show if: has content, has image data, or is generating image
             // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
                 // Only show empty assistant message if it's the last message and we're generating
                 return message.id == currentConversation.messages.last?.id && isGenerating
             }
 
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
     }
 
@@ -789,36 +798,46 @@ struct ChatView: View {
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
         openAIService.generateImage(
-      prompt: prompt,
-      model: model,
-      onComplete: { imageData in
-        // Save image to disk
-        var imagePath: String?
-        do {
-          imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-        } catch {
-          self.logChat(
-            "❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
-                }
+            prompt: prompt,
+            model: model,
+            onComplete: { imageData in
+                Task { @MainActor in
+                    // Save image to disk
+                    var imagePath: String?
+                    do {
+                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+                    } catch {
+                        self.logChat(
+                            "❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
+                    }
 
-                // Update the placeholder message with actual image using the proper method
-                conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-          message.content = ""
-          message.imageData = nil  // Don't store raw data
-          message.imagePath = imagePath
-                }
+                    // Update the placeholder message with actual image using the proper method
+                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                        message.content = ""
+                        if let path = imagePath {
+                            message.imagePath = path
+                            message.imageData = nil // Don't store raw data if saved to disk
+                        } else {
+                            // Fallback to storing in message if save failed
+                            message.imageData = imageData
+                            message.imagePath = nil
+                        }
+                    }
 
-                isGenerating = false
+                    isGenerating = false
+                }
             },
             onError: { error in
-                isGenerating = false
-                errorMessage = error.localizedDescription
+                Task { @MainActor in
+                    isGenerating = false
+                    errorMessage = error.localizedDescription
 
-                // Remove the placeholder message
-                if let index = conversationManager.conversations.firstIndex(where: {
-                    $0.id == conversation.id
-                }) {
-                    conversationManager.conversations[index].messages.removeLast()
+                    // Remove the placeholder message
+                    if let index = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversation.id
+                    }) {
+                        conversationManager.conversations[index].messages.removeLast()
+                    }
                 }
             }
         )
@@ -835,6 +854,7 @@ struct ChatView: View {
     ) {
         let maxToolCallDepth = 10 // Prevent infinite loops
         let mcpManager = MCPServerManager.shared
+        let toolsWrapper = UncheckedSendable(tools)
 
         // Cache the conversation index to avoid repeated lookups in onChunk
         let conversationIndex = conversationManager.conversations.firstIndex(where: {
@@ -848,310 +868,283 @@ struct ChatView: View {
             tools: tools,
             conversationId: conversation.id,
             onChunk: { chunk in
-                // Batch chunks for better performance during streaming
-                pendingChunks.append(chunk)
+                Task { @MainActor in
+                    // Batch chunks for better performance during streaming
+                    pendingChunks.append(chunk)
 
-                // Cancel existing batch task and create new one
-                batchUpdateTask?.cancel()
-                batchUpdateTask = Task { @MainActor in
-                    // Wait for batch window (50ms for smoother updates)
-                    try? await Task.sleep(for: .milliseconds(50))
-                    guard !Task.isCancelled else { return }
+                    // Cancel existing batch task and create new one
+                    batchUpdateTask?.cancel()
+                    batchUpdateTask = Task { @MainActor in
+                        // Wait for batch window (50ms for smoother updates)
+                        try? await Task.sleep(for: .milliseconds(50))
+                        guard !Task.isCancelled else { return }
 
-                    // Process all pending chunks at once
-                    let chunksToProcess = pendingChunks
-                    pendingChunks.removeAll()
+                        // Process all pending chunks at once
+                        let chunksToProcess = pendingChunks
+                        pendingChunks.removeAll()
 
-                    guard !chunksToProcess.isEmpty else { return }
+                        guard !chunksToProcess.isEmpty else { return }
 
-                    let combinedChunk = chunksToProcess.joined()
+                        let combinedChunk = chunksToProcess.joined()
 
-                    // Always update the conversation data, but only update UI state if we're viewing this conversation
-                    guard let index = getConversationIndex() else {
-                        logChat(
-                            "⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk",
-                            level: .info
-                        )
-                        return
-                    }
+                        // Always update the conversation data, but only update UI state if we're viewing this conversation
+                        guard let index = getConversationIndex() else {
+                            logChat(
+                                "⚠️ Conversation \(conversation.id) no longer exists, ignoring chunk",
+                                level: .info
+                            )
+                            return
+                        }
 
-                    // Update the message content regardless of which conversation is active
-                    var lastMessage = conversationManager.conversations[index].messages.last
-                    if lastMessage?.role == .assistant {
-                        lastMessage?.content += combinedChunk
-                        conversationManager.conversations[index].messages[
-                            conversationManager.conversations[index].messages.count - 1
-                        ] = lastMessage!
-                    }
+                        // Update the message content regardless of which conversation is active
+                        var lastMessage = conversationManager.conversations[index].messages.last
+                        if lastMessage?.role == .assistant {
+                            lastMessage?.content += combinedChunk
+                            conversationManager.conversations[index].messages[
+                                conversationManager.conversations[index].messages.count - 1
+                            ] = lastMessage!
+                        }
 
-                    // Only update UI state if we're currently viewing this conversation
-                    if index == conversationIndex {
-                        // Clear tool execution indicator when we start receiving actual content
-                        if currentToolName != nil {
-                            currentToolName = nil
+                        // Only update UI state if we're currently viewing this conversation
+                        if index == conversationIndex {
+                            // Clear tool execution indicator when we start receiving actual content
+                            if currentToolName != nil {
+                                currentToolName = nil
+                            }
                         }
                     }
                 }
             },
             onComplete: {
-                // Flush any pending chunks immediately
-                batchUpdateTask?.cancel()
-                if !pendingChunks.isEmpty {
-                    let remainingChunks = pendingChunks.joined()
+                Task { @MainActor in
+                    // Flush any pending chunks immediately
+                    batchUpdateTask?.cancel()
+                    if !pendingChunks.isEmpty {
+                        let remainingChunks = pendingChunks.joined()
+                        pendingChunks.removeAll()
+
+                        if let index = conversationManager.conversations.firstIndex(where: {
+                            $0.id == conversation.id
+                        }),
+                            var lastMessage = conversationManager.conversations[index].messages.last,
+                            lastMessage.role == .assistant
+                        {
+                            lastMessage.content += remainingChunks
+                            conversationManager.conversations[index].messages[
+                                conversationManager.conversations[index].messages.count - 1
+                            ] = lastMessage
+                        }
+                    }
+
+                    // Always save conversations
+                    if let index = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversation.id
+                    }) {
+                        conversationManager.save(conversationManager.conversations[index])
+                    }
+
+                    // Only update UI state if we're viewing this conversation
+                    guard
+                        let currentIndex = conversationManager.conversations.firstIndex(where: {
+                            $0.id == conversation.id
+                        }),
+                        currentIndex == conversationIndex
+                    else {
+                        logChat(
+                            "✅ onComplete for conversation \(conversation.id) (background)",
+                            level: .info
+                        )
+                        return
+                    }
+
+                    // Only clear state if no tool call is pending
+                    // If currentToolName is set, a tool call was requested and will execute
+                    // The tool execution will manage the state from there
+                    if currentToolName == nil {
+                        logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
+                        isGenerating = false
+                    } else {
+                        logChat(
+                            "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))",
+                            level: .info,
+                            metadata: ["toolName": currentToolName ?? "unknown"]
+                        )
+                    }
+                }
+            },
+            onError: { error in
+                Task { @MainActor in
+                    // Clean up batching
+                    batchUpdateTask?.cancel()
                     pendingChunks.removeAll()
 
+                    // Always remove the empty assistant message
+                    if let index = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversation.id
+                    }) {
+                        conversationManager.conversations[index].messages.removeLast()
+                    }
+
+                    // Only update UI state if we're viewing this conversation
+                    guard
+                        let currentIndex = conversationManager.conversations.firstIndex(where: {
+                            $0.id == conversation.id
+                        }),
+                        currentIndex == conversationIndex
+                    else {
+                        logChat(
+                            "❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)",
+                            level: .error,
+                            metadata: ["error": error.localizedDescription]
+                        )
+                        return
+                    }
+
+                    isGenerating = false
+                    currentToolName = nil
+                    toolCallDepth = 0
+                    errorMessage = error.localizedDescription
+                }
+            },
+            onToolCallRequested: { toolCallId, toolName, arguments in
+                let argumentsWrapper = UncheckedSendable(arguments)
+                Task { @MainActor in
+                    let arguments = argumentsWrapper.value
+                    // Validate conversation still exists
+                    guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
+                        logChat(
+                            "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
+                            level: .default
+                        )
+                        return
+                    }
+
+                    // Tool call was requested by the LLM
+                    logChat(
+                        "🔧 Tool call requested: \(toolName) for conversation \(conversation.id)",
+                        level: .info,
+                        metadata: ["toolName": toolName]
+                    )
+
+                    // Only update UI state if we're currently viewing this conversation
+                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversation.id
+                    }),
+                        currentIndex == conversationIndex
+                    {
+                        currentToolName = toolName
+                    }
+
+                    // Check depth limit
+                    guard toolCallDepth < maxToolCallDepth else {
+                        logChat("⚠️ Max tool call depth reached, stopping", level: .error)
+                        isGenerating = false
+                        currentToolName = nil
+                        return
+                    }
+
+                    toolCallDepth += 1
+
+                    // Store the tool call in the last assistant message
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }),
                         var lastMessage = conversationManager.conversations[index].messages.last,
                         lastMessage.role == .assistant
                     {
-                        lastMessage.content += remainingChunks
+                        // Convert arguments to AnyCodable
+                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                            result[pair.key] = AnyCodable(pair.value)
+                        }
+
+                        let toolCall = MCPToolCall(
+                            id: toolCallId,
+                            toolName: toolName,
+                            arguments: anyCodableArgs
+                        )
+                        lastMessage.toolCalls = [toolCall]
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
-                    }
-        }
-
-        // Always save conversations
-        if let index = conversationManager.conversations.firstIndex(where: {
-          $0.id == conversation.id
-        }) {
-          conversationManager.save(conversationManager.conversations[index])
-                }
-
-                // Only update UI state if we're viewing this conversation
-                guard
-                    let currentIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversation.id
-                    }),
-                    currentIndex == conversationIndex
-                else {
-                    logChat(
-                        "✅ onComplete for conversation \(conversation.id) (background)",
-                        level: .info
-                    )
-                    return
-                }
-
-                // Only clear state if no tool call is pending
-                // If currentToolName is set, a tool call was requested and will execute
-                // The tool execution will manage the state from there
-                if currentToolName == nil {
-                    logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
-                    isGenerating = false
-                } else {
-                    logChat(
-                        "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))",
-                        level: .info,
-                        metadata: ["toolName": currentToolName ?? "unknown"]
-                    )
-                }
-            },
-            onError: { error in
-                // Clean up batching
-                batchUpdateTask?.cancel()
-                pendingChunks.removeAll()
-
-                // Always remove the empty assistant message
-                if let index = conversationManager.conversations.firstIndex(where: {
-                    $0.id == conversation.id
-                }) {
-                    conversationManager.conversations[index].messages.removeLast()
-                }
-
-                // Only update UI state if we're viewing this conversation
-                guard
-                    let currentIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversation.id
-                    }),
-                    currentIndex == conversationIndex
-                else {
-                    logChat(
-                        "❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)",
-                        level: .error,
-                        metadata: ["error": error.localizedDescription]
-                    )
-                    return
-                }
-
-                isGenerating = false
-                currentToolName = nil
-                toolCallDepth = 0
-                errorMessage = error.localizedDescription
-            },
-            onToolCallRequested: { toolCallId, toolName, arguments in
-                // Validate conversation still exists
-                guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
-                    logChat(
-                        "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
-                        level: .default
-                    )
-                    return
-                }
-
-                // Tool call was requested by the LLM
-                logChat(
-                    "🔧 Tool call requested: \(toolName) for conversation \(conversation.id)",
-                    level: .info,
-                    metadata: ["toolName": toolName]
-                )
-
-                // Only update UI state if we're currently viewing this conversation
-                if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                    $0.id == conversation.id
-                }),
-                    currentIndex == conversationIndex
-                {
-                    currentToolName = toolName
-                }
-
-                // Check depth limit
-                guard toolCallDepth < maxToolCallDepth else {
-                    logChat("⚠️ Max tool call depth reached, stopping", level: .error)
-                    isGenerating = false
-                    currentToolName = nil
-                    return
-                }
-
-                toolCallDepth += 1
-
-                // Store the tool call in the last assistant message
-                if let index = conversationManager.conversations.firstIndex(where: {
-                    $0.id == conversation.id
-                }),
-                    var lastMessage = conversationManager.conversations[index].messages.last,
-                    lastMessage.role == .assistant
-                {
-                    // Convert arguments to AnyCodable
-                    let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                        result[pair.key] = AnyCodable(pair.value)
+                        conversationManager.save(conversationManager.conversations[index])
                     }
 
-                    let toolCall = MCPToolCall(
-                        id: toolCallId,
-                        toolName: toolName,
-                        arguments: anyCodableArgs
-                    )
-                    lastMessage.toolCalls = [toolCall]
-                    conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1
-          ] = lastMessage
-          conversationManager.save(conversationManager.conversations[index])
-                }
-
-                // Execute the tool asynchronously
-                Task {
-                    do {
-                        logChat(
-                            "⚙️ Executing tool: \(toolName)",
-                            level: .info,
-                            metadata: ["toolName": toolName]
-                        )
-                        let result = try await mcpManager.executeTool(name: toolName, arguments: arguments)
-                        logChat(
-                            "✅ Tool result received (\(result.count) chars)",
-                            level: .info,
-                            metadata: ["resultLength": "\(result.count)"]
-                        )
-
-                        // Create a tool message with the result
-                        await MainActor.run {
-                            let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                                result[pair.key] = AnyCodable(pair.value)
-                            }
-
-                            var toolMessage = Message(
-                                role: .tool,
-                                content: result
-                            )
-                            toolMessage.toolCalls = [
-                                MCPToolCall(
-                                    id: toolCallId,
-                                    toolName: toolName,
-                                    arguments: anyCodableArgs,
-                                    result: result
-                                )
-                            ]
-                            conversationManager.addMessage(to: conversation, message: toolMessage)
-
-                            // Get updated conversation with tool result
-                            guard
-                                let updatedConv = conversationManager.conversations.first(where: {
-                                    $0.id == conversation.id
-                                })
-                            else {
-                                // Only update UI if viewing this conversation
-                                if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                                    $0.id == conversation.id
-                                }),
-                                    currentIndex == conversationIndex
-                                {
-                                    isGenerating = false
-                                    currentToolName = nil
-                                }
-                                return
-                            }
-
-                            // Add new empty assistant message for LLM response
-                            let newAssistantMessage = Message(role: .assistant, content: "", model: model)
-                            conversationManager.addMessage(to: conversation, message: newAssistantMessage)
-
-                            logChat("🔄 Sending follow-up request with tool results...", level: .info)
-
-                            // Only update UI state if viewing this conversation
-                            if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                                $0.id == conversation.id
-                            }),
-                                currentIndex == conversationIndex
-                            {
-                                currentToolName = "Analyzing \(toolName) results"
-                            }
-
-                            // Automatically continue the conversation with tool results
-                            sendMessageWithToolSupport(
-                                messages: updatedConv.messages,
-                                model: model,
-                                temperature: temperature,
-                                tools: tools,
-                                isInitialRequest: false
-                            )
-                        }
-                    } catch {
-                        await MainActor.run {
+                    // Execute the tool asynchronously
+                    Task {
+                        do {
                             logChat(
-                                "❌ Tool execution error: \(error.localizedDescription)",
+                                "⚙️ Executing tool: \(toolName)",
+                                level: .info,
+                                metadata: ["toolName": toolName]
+                            )
+                            let result = try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+                            logChat(
+                                "✅ Tool result received (\(result.count) chars)",
+                                level: .info,
+                                metadata: ["resultLength": "\(result.count)"]
+                            )
+
+                            // Create a tool message with the result
+                            await MainActor.run {
+                                let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
+                                    result[pair.key] = AnyCodable(pair.value)
+                                }
+
+                                var toolMessage = Message(
+                                    role: .tool,
+                                    content: result
+                                )
+                                toolMessage.toolCalls = [
+                                    MCPToolCall(
+                                        id: toolCallId,
+                                        toolName: toolName,
+                                        arguments: anyCodableArgs,
+                                        result: result
+                                    )
+                                ]
+                                conversationManager.addMessage(to: conversation, message: toolMessage)
+
+                                // Get updated conversation with tool result
+                                guard
+                                    let updatedConv = conversationManager.conversations.first(where: {
+                                        $0.id == conversation.id
+                                    })
+                                else {
+                                    // Only update UI if viewing this conversation
+                                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
+                                        $0.id == conversation.id
+                                    }),
+                                        currentIndex == conversationIndex
+                                    {
+                                        isGenerating = false
+                                        currentToolName = nil
+                                    }
+                                    return
+                                }
+
+                                // Continue conversation with tool result
+                                // Recursive call to handle tool output
+                                sendMessageWithToolSupport(
+                                    messages: updatedConv.messages,
+                                    model: model,
+                                    temperature: temperature,
+                                    tools: toolsWrapper.value,
+                                    isInitialRequest: false
+                                )
+                            }
+                        } catch {
+                            logChat(
+                                "❌ Tool execution failed: \(error.localizedDescription)",
                                 level: .error,
                                 metadata: ["error": error.localizedDescription]
                             )
-
-                            // Only update UI state if viewing this conversation
-                            if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                                $0.id == conversation.id
-                            }),
-                                currentIndex == conversationIndex
-                            {
+                            await MainActor.run {
                                 isGenerating = false
                                 currentToolName = nil
                                 errorMessage = "Tool execution failed: \(error.localizedDescription)"
                             }
                         }
                     }
-                }
-            },
-            onReasoning: { reasoning in
-                // Append reasoning content to the last assistant message
-                if let index = conversationManager.conversations.firstIndex(where: {
-                    $0.id == conversation.id
-                }),
-                    var lastMessage = conversationManager.conversations[index].messages.last,
-                    lastMessage.role == .assistant
-                {
-                    let currentReasoning = lastMessage.reasoning ?? ""
-                    lastMessage.reasoning = currentReasoning + reasoning
-                    conversationManager.conversations[index].messages[
-                        conversationManager.conversations[index].messages.count - 1
-                    ] = lastMessage
                 }
             }
         )

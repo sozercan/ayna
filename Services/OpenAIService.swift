@@ -451,8 +451,8 @@ class OpenAIService: ObservableObject {
     func generateImage(
         prompt: String,
         model: String? = nil,
-        onComplete: @escaping (Data) -> Void,
-        onError: @escaping (Error) -> Void,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
         attempt: Int = 0
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -511,8 +511,6 @@ class OpenAIService: ObservableObject {
                     "prompt": prompt,
                     "size": imageSize,
                     "quality": imageQuality,
-                    "output_format": outputFormat,
-                    "output_compression": outputCompression,
                     "n": 1
                 ]
             } else {
@@ -598,14 +596,33 @@ class OpenAIService: ObservableObject {
                         return
                     }
 
-                    // Parse successful response: { "data": [{ "b64_json": "..." }] }
+                    // Parse successful response: { "data": [{ "b64_json": "..." }] } or { "data": [{ "url": "..." }] }
                     if let dataArray = json["data"] as? [[String: Any]],
-                       let firstItem = dataArray.first,
-                       let b64String = firstItem["b64_json"] as? String,
-                       let imageData = Data(base64Encoded: b64String)
-                    {
-                        DispatchQueue.main.async {
-                            onComplete(imageData)
+                       let firstItem = dataArray.first {
+                        if let b64String = firstItem["b64_json"] as? String,
+                           let imageData = Data(base64Encoded: b64String) {
+                            DispatchQueue.main.async {
+                                onComplete(imageData)
+                            }
+                        } else if let urlString = firstItem["url"] as? String,
+                                  let url = URL(string: urlString) {
+                            // Download image from URL if b64_json is missing
+                            Task {
+                                do {
+                                    let (data, _) = try await URLSession.shared.data(from: url)
+                                    await MainActor.run {
+                                        onComplete(data)
+                                    }
+                                } catch {
+                                    await MainActor.run {
+                                        onError(error)
+                                    }
+                                }
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                onError(OpenAIError.invalidResponse)
+                            }
                         }
                     } else {
                         DispatchQueue.main.async {
@@ -730,12 +747,12 @@ class OpenAIService: ObservableObject {
         stream: Bool = true,
         tools: [[String: Any]]? = nil,
         conversationId: UUID? = nil,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
-        onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: ((String) -> Void)? = nil
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
+        onReasoning: (@Sendable (String) -> Void)? = nil
     ) {
         if UITestEnvironment.isEnabled {
             simulateUITestResponse(

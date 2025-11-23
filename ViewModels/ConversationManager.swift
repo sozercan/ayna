@@ -246,42 +246,50 @@ class ConversationManager: ObservableObject {
 
         let titleMessage = Message(role: .user, content: titlePrompt)
 
-        var generatedTitle = ""
+        // Use a class to allow mutation in @Sendable closure
+        class TitleAccumulator: @unchecked Sendable {
+            var title = ""
+        }
+        let accumulator = TitleAccumulator()
 
         OpenAIService.shared.sendMessage(
             messages: [titleMessage],
             model: conversation.model,
             stream: false,
             onChunk: { chunk in
-                generatedTitle += chunk
+                accumulator.title += chunk
             },
             onComplete: { [weak self] in
-                // Use the AI-generated title, trimmed and cleaned
-                let cleanTitle = generatedTitle
-                    .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                    .replacingOccurrences(of: "\"", with: "")
-                    .replacingOccurrences(of: "\n", with: " ")
+                Task { @MainActor in
+                    // Use the AI-generated title, trimmed and cleaned
+                    let cleanTitle = accumulator.title
+                        .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                        .replacingOccurrences(of: "\"", with: "")
+                        .replacingOccurrences(of: "\n", with: " ")
 
-                if !cleanTitle.isEmpty {
-                    self?.renameConversation(conversation, newTitle: cleanTitle)
-                } else {
-                    // Fallback to simple title if empty
+                    if !cleanTitle.isEmpty {
+                        self?.renameConversation(conversation, newTitle: cleanTitle)
+                    } else {
+                        // Fallback to simple title if empty
+                        let fallbackTitle = String(content.prefix(50))
+                        self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+                    }
+                }
+            },
+            onError: { [weak self] error in
+                Task { @MainActor in
+                    // Fallback to simple title if AI fails
+                    self?.logManager(
+                        "⚠️ Failed to generate AI title",
+                        level: .error,
+                        metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString]
+                    )
                     let fallbackTitle = String(content.prefix(50))
                     self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
                 }
             },
-            onError: { [weak self] error in
-                // Fallback to simple title if AI fails
-                self?.logManager(
-                    "⚠️ Failed to generate AI title",
-                    level: .error,
-                    metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString]
-                )
-                let fallbackTitle = String(content.prefix(50))
-                self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
-      },
-      onReasoning: nil
-    )
+            onReasoning: nil
+        )
   }
 
   // MARK: - Search and Filter

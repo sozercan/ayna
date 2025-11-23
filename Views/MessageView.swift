@@ -927,49 +927,46 @@ struct ContentBlock: Identifiable {
 
 // Loading animation for image generation
 struct ImageGeneratingView: View {
-    @State private var isAnimating = false
-    @State private var dotCount = 0
-
-    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    @State private var phase: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Animated sparkles icon
-            ZStack {
-                ForEach(0 ..< 3) { index in
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.blue.opacity(0.6))
-                        .scaleEffect(isAnimating ? 1.2 : 0.8)
-                        .opacity(isAnimating ? 0.3 : 1.0)
-                        .rotationEffect(.degrees(Double(index) * 120))
-                        .animation(
-                            Animation.easeInOut(duration: 1.5)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(index) * 0.2),
-                            value: isAnimating
-                        )
+        ZStack {
+            // Background
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.secondary.opacity(0.08))
+                .strokeBorder(Color.secondary.opacity(0.1), lineWidth: 1)
+
+            VStack(spacing: 16) {
+                // Animated Icon
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.1))
+                        .frame(width: 64, height: 64)
+                        .scaleEffect(1 + sin(phase) * 0.1)
+                    
+                    if #available(macOS 15.0, *) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 30))
+                            .foregroundStyle(Color.accentColor)
+                            .symbolEffect(.bounce, options: .repeating)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 30))
+                            .foregroundStyle(Color.accentColor)
+                            .symbolEffect(.variableColor)
+                    }
                 }
 
-                Image(systemName: "photo")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.blue)
+                Text("Dreaming up your image...")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            .frame(width: 60, height: 60)
-
-            // Animated text
-            Text("Generating image" + String(repeating: ".", count: dotCount))
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .onReceive(timer) { _ in
-                    dotCount = (dotCount + 1) % 4
-                }
         }
-        .frame(width: 512, height: 200)
-        .background(Color.secondary.opacity(0.05))
-        .cornerRadius(12)
+        .frame(width: 320, height: 320)
         .onAppear {
-            isAnimating = true
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                phase = .pi * 2
+            }
         }
     }
 }
