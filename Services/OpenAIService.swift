@@ -863,10 +863,15 @@ class OpenAIService: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: finalBody)
 
         if stream {
-            streamResponse(
-                request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onToolCallRequested: onToolCallRequested, onReasoning: onReasoning
+            let callbacks = StreamCallbacks(
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onToolCall: onToolCall,
+                onToolCallRequested: onToolCallRequested,
+                onReasoning: onReasoning
             )
+            streamResponse(request: request, callbacks: callbacks)
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
@@ -1133,10 +1138,21 @@ class OpenAIService: ObservableObject {
 
     // MARK: - Helper Methods for streamResponse
 
+    private struct StreamCallbacks {
+        let onChunk: @Sendable (String) -> Void
+        let onComplete: @Sendable () -> Void
+        let onError: @Sendable (Error) -> Void
+        let onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?
+        let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
+        let onReasoning: (@Sendable (String) -> Void)?
+    }
+
     private struct StreamLineResult {
         let shouldComplete: Bool
         let toolCallBuffer: [String: Any]
         let toolCallId: String
+        let content: String?
+        let reasoning: String?
     }
 
     private func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
@@ -1245,13 +1261,14 @@ class OpenAIService: ObservableObject {
         _ line: String,
         toolCallBuffer: [String: Any],
         toolCallId: String,
-        onChunk: @escaping (String) -> Void,
-        onReasoning: ((String) -> Void)?,
         onToolCall: ((String, String, [String: Any]) async -> String)?,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)?
+        onToolCallRequested: ((String, String, [String: Any]) -> Void)?,
+        onReasoning _: ((String) -> Void)? = nil
     ) async -> StreamLineResult {
         var updatedToolCallBuffer = toolCallBuffer
         var updatedToolCallId = toolCallId
+        var extractedContent: String?
+        var extractedReasoning: String?
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedLine.hasPrefix("data: ") {
@@ -1261,7 +1278,9 @@ class OpenAIService: ObservableObject {
                 return StreamLineResult(
                     shouldComplete: true,
                     toolCallBuffer: updatedToolCallBuffer,
-                    toolCallId: updatedToolCallId
+                    toolCallId: updatedToolCallId,
+                    content: nil,
+                    reasoning: nil
                 ) // Signal completion
             }
 
@@ -1280,9 +1299,7 @@ class OpenAIService: ObservableObject {
                     )
 
                     if !textSegments.isEmpty {
-                        await MainActor.run {
-                            textSegments.forEach { onChunk($0) }
-                        }
+                        extractedContent = textSegments.joined()
                     }
                 }
 
@@ -1292,10 +1309,8 @@ class OpenAIService: ObservableObject {
                         ?? delta["reasoning"] as? String
                         ?? delta["thought"] as? String
 
-                if let reasoning = reasoningContent, let onReasoning {
-                    await MainActor.run {
-                        onReasoning(reasoning)
-                    }
+                if let reasoning = reasoningContent {
+                    extractedReasoning = reasoning
                 }
 
                 // Handle tool calls
@@ -1335,9 +1350,8 @@ class OpenAIService: ObservableObject {
                     // Legacy support: still execute inline if old callback provided
                     else if let onToolCall {
                         let result = await onToolCall(currentToolCallId, toolName, arguments)
-                        await MainActor.run {
-                            onChunk("\n\n[Tool: \(toolName)]\n\(result)\n")
-                        }
+                        let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
+                        extractedContent = (extractedContent ?? "") + toolOutput
                     }
 
                     // Clear buffer for next tool call
@@ -1349,18 +1363,15 @@ class OpenAIService: ObservableObject {
         return StreamLineResult(
             shouldComplete: false,
             toolCallBuffer: updatedToolCallBuffer,
-            toolCallId: updatedToolCallId
-        ) // Continue processing
+            toolCallId: updatedToolCallId,
+            content: extractedContent,
+            reasoning: extractedReasoning
+        )
     }
 
     private func streamResponse(
         request: URLRequest,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
-        onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: ((String) -> Void)? = nil,
+        callbacks: StreamCallbacks,
         attempt: Int = 0
     ) {
         let task = Task {
@@ -1383,6 +1394,11 @@ class OpenAIService: ObservableObject {
                 var buffer = Data()
                 var toolCallBuffer: [String: Any] = [:]
                 var toolCallId = ""
+
+                // Batching buffers
+                var contentBuffer = ""
+                var reasoningBuffer = ""
+                var lastUpdateTime = Date()
 
                 for try await byte in bytes {
                     hasReceivedData = true
@@ -1408,78 +1424,116 @@ class OpenAIService: ObservableObject {
                                 line,
                                 toolCallBuffer: toolCallBuffer,
                                 toolCallId: toolCallId,
-                                onChunk: onChunk,
-                                onReasoning: onReasoning,
-                                onToolCall: onToolCall,
-                                onToolCallRequested: onToolCallRequested
+                                onToolCall: callbacks.onToolCall,
+                                onToolCallRequested: callbacks.onToolCallRequested
                             )
                             toolCallBuffer = result.toolCallBuffer
                             toolCallId = result.toolCallId
 
+                            if let content = result.content {
+                                contentBuffer += content
+                            }
+                            if let reasoning = result.reasoning {
+                                reasoningBuffer += reasoning
+                            }
+
                             if result.shouldComplete {
+                                // Flush remaining buffers
                                 await MainActor.run {
+                                    if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
+                                    if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
                                     self.currentStreamTask = nil
-                                    onComplete()
+                                    callbacks.onComplete()
                                 }
                                 return
+                            }
+
+                            // Check if we should dispatch batch
+                            if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+                                let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
+                                if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
+                                    let contentToSend = contentBuffer
+                                    let reasoningToSend = reasoningBuffer
+                                    await MainActor.run {
+                                        if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
+                                        if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                                    }
+                                    contentBuffer = ""
+                                    reasoningBuffer = ""
+                                    lastUpdateTime = Date()
+                                }
                             }
                         }
                         buffer.removeAll()
                     }
                 }
 
+                // Flush any remaining content
                 await MainActor.run {
+                    if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
+                    if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
                     self.currentStreamTask = nil
-                    onComplete()
+                    callbacks.onComplete()
                 }
             } catch {
-                if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
-                    DiagnosticsLogger.log(
-                        .openAIService,
-                        level: .info,
-                        message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
-                        metadata: ["error": error.localizedDescription]
-                    )
-                    await delay(for: attempt)
-                    await MainActor.run {
-                        streamResponse(
-                            request: request,
-                            onChunk: onChunk,
-                            onComplete: onComplete,
-                            onError: onError,
-                            onToolCall: onToolCall,
-                            onToolCallRequested: onToolCallRequested,
-                            onReasoning: onReasoning,
-                            attempt: attempt + 1
-                        )
-                    }
-                } else {
-                    await MainActor.run {
-                        self.currentStreamTask = nil
-                        // Check if it's a timeout error and provide a better message
-                        if let urlError = error as? URLError, urlError.code == .timedOut {
-                            onError(
-                                OpenAIError.apiError(
-                                    "Request timed out. The model may be slow or overloaded. Please try again."))
-                        } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                            onError(
-                                OpenAIError.apiError(
-                                    "Network connection was lost. The server may have rejected the request."))
-                        } else if (error as? CancellationError) != nil {
-                            // Task was cancelled, don't report as error
-                            DiagnosticsLogger.log(
-                                .openAIService,
-                                level: .info,
-                                message: "Stream task cancelled via CancellationError"
-                            )
-                        } else {
-                            onError(error)
-                        }
-                    }
-                }
+                await handleStreamError(
+                    error: error,
+                    attempt: attempt,
+                    hasReceivedData: hasReceivedData,
+                    request: request,
+                    callbacks: callbacks
+                )
             }
         }
         currentStreamTask = task
+    }
+
+    private func handleStreamError(
+        error: Error,
+        attempt: Int,
+        hasReceivedData: Bool,
+        request: URLRequest,
+        callbacks: StreamCallbacks
+    ) async {
+        if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .info,
+                message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
+                metadata: ["error": error.localizedDescription]
+            )
+            await delay(for: attempt)
+            await MainActor.run {
+                streamResponse(
+                    request: request,
+                    callbacks: callbacks,
+                    attempt: attempt + 1
+                )
+            }
+        } else {
+            await MainActor.run {
+                self.currentStreamTask = nil
+                // Check if it's a timeout error and provide a better message
+                if let urlError = error as? URLError, urlError.code == .timedOut {
+                    callbacks.onError(
+                        OpenAIError.apiError(
+                            "Request timed out. The model may be slow or overloaded. Please try again."))
+                } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
+                    callbacks.onError(
+                        OpenAIError.apiError(
+                            "Network connection was lost. The server may have rejected the request."))
+                } else if (error as? CancellationError) != nil {
+                    // Task was cancelled, don't report as error
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "Stream task cancelled via CancellationError"
+                    )
+                } else {
+                    callbacks.onError(error)
+                }
+            }
+        }
     }
 
     private func nonStreamResponse(

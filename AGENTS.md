@@ -52,6 +52,7 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 - Fix every reported warning; only add `// swiftlint:disable` annotations when there is a documented reason in-code.
 - Do **not** raise lint thresholds or comment out rules to “get green.” If a rule is noisy, discuss with the user before changing `.swiftlint.yml`.
 - When editing large files (e.g., `Views/SettingsView.swift`), keep existing scoped disables intact and avoid introducing new violations elsewhere.
+- **Proactively design for linting compliance**: avoid long functions (> 40 lines) and excessive parameters (> 5). Refactor early using helper methods or parameter structs rather than waiting for the linter to fail.
 
 ### Git Usage
 - Never run `git push`; leave publishing commits and branches to the user.

@@ -1,6 +1,6 @@
 import Foundation
 
-struct ConversationTimelineSection: Identifiable {
+struct ConversationTimelineSection: Identifiable, Equatable {
     let title: String
     var conversations: [Conversation]
 

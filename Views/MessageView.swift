@@ -24,6 +24,8 @@ struct MessageView: View {
     @State private var cachedReasoningBlocks: [ContentBlock] = []
     @State private var lastContentHash: Int = 0
     @State private var lastReasoningHash: Int = 0
+    @State private var parseTask: Task<Void, Never>?
+    @State private var reasoningParseTask: Task<Void, Never>?
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -474,10 +476,19 @@ struct MessageView: View {
     }
 
     private func updateCachedBlocks() {
-        let newHash = message.content.hashValue
+        let content = message.content
+        let newHash = content.hashValue
         if newHash != lastContentHash {
-            cachedContentBlocks = MarkdownRenderer.parse(message.content)
             lastContentHash = newHash
+            parseTask?.cancel()
+            parseTask = Task.detached(priority: .userInitiated) {
+                let blocks = MarkdownRenderer.parse(content)
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        cachedContentBlocks = blocks
+                    }
+                }
+            }
         }
     }
 
@@ -485,8 +496,16 @@ struct MessageView: View {
         if let reasoning = message.reasoning {
             let newHash = reasoning.hashValue
             if newHash != lastReasoningHash {
-                cachedReasoningBlocks = MarkdownRenderer.parse(reasoning)
                 lastReasoningHash = newHash
+                reasoningParseTask?.cancel()
+                reasoningParseTask = Task.detached(priority: .userInitiated) {
+                    let blocks = MarkdownRenderer.parse(reasoning)
+                    if !Task.isCancelled {
+                        await MainActor.run {
+                            cachedReasoningBlocks = blocks
+                        }
+                    }
+                }
             }
         }
     }
