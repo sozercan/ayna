@@ -9,6 +9,7 @@
 import Combine
 import OSLog
 import SwiftUI
+import CoreSpotlight
 
 /// A wrapper to make non-Sendable types Sendable by unchecked conformance.
 /// Use this only when you are sure the value is thread-safe or accessed safely.
@@ -24,16 +25,15 @@ extension Notification.Name {
 }
 
 struct ContentView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
-    @State private var selectedConversationId: UUID?
+  @EnvironmentObject var conversationManager: ConversationManager
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selectedConversationId: $selectedConversationId)
+      SidebarView(selectedConversationId: $conversationManager.selectedConversationId)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {
             Group {
-                if let conversationId = selectedConversationId,
+        if let conversationId = conversationManager.selectedConversationId,
                    let conversation = conversationManager.conversations.first(where: {
                        $0.id == conversationId
                    })
@@ -42,14 +42,14 @@ struct ContentView: View {
                         .id(conversationId)
                 } else {
                     NewChatView(
-                        selectedConversationId: $selectedConversationId
+            selectedConversationId: $conversationManager.selectedConversationId
                     )
                 }
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button(action: {
-                        selectedConversationId = nil
+            conversationManager.selectedConversationId = nil
                         NotificationCenter.default.post(name: .newConversationRequested, object: nil)
                     }) {
                         Image(systemName: "square.and.pencil")
@@ -62,8 +62,21 @@ struct ContentView: View {
             transaction.disablesAnimations = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
-            selectedConversationId = nil
-        }
+      conversationManager.selectedConversationId = nil
+    }
+    .onContinueUserActivity(CSSearchableItemActionType) { userActivity in
+      if let idString = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+        let uuid = UUID(uuidString: idString)
+      {
+        DiagnosticsLogger.log(
+          .app,
+          level: .info,
+          message: "🔍 Opening conversation from Spotlight",
+          metadata: ["conversationId": idString]
+        )
+        conversationManager.selectedConversationId = uuid
+      }
+    }
     }
 }
 
