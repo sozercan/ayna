@@ -73,18 +73,22 @@ final class AynaSmokeUITests: AynaUITestCase {
         let msg = "Conversation to delete"
         composeInitialMessageAndSend(msg)
 
-        // Wait for sidebar to update
+        // Wait for sidebar to update and ensure the row is hittable
         let sidebarList = app.outlines[TestIdentifiers.Sidebar.conversationList]
         let title = sidebarList.staticTexts[msg]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
 
-        // Trigger context menu via coordinate tap to reduce hit-point errors
+        // Select the row first so the context menu is scoped correctly
+        let rowHittablePredicate = NSPredicate(format: "isHittable == true")
+        let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
+        XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
+        title.click()
         let titleCoordinate = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         titleCoordinate.rightClick()
 
         // Context menu label may include counts ("Delete" vs "Delete 2 Conversations")
         let deleteMenuItems = app.menuItems.matching(
-            NSPredicate(format: "label BEGINSWITH[c] %@", "Delete")
+            NSPredicate(format: "label BEGINSWITH[c] %@ OR identifier == %@", "Delete", "trash")
         )
         let deleteButton = deleteMenuItems.firstMatch
         if !deleteButton.waitForExistence(timeout: 5) {
