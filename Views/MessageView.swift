@@ -25,6 +25,32 @@ struct MessageView: View {
     @State private var lastContentHash: Int = 0
     @State private var lastReasoningHash: Int = 0
 
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private let userBubbleGradient = LinearGradient(
+        colors: [
+            Color(red: 0.09, green: 0.45, blue: 1.0),
+            Color(red: 0.01, green: 0.35, blue: 0.95)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    private let recipientBubbleGradient = LinearGradient(
+        colors: [
+            Color(red: 0.35, green: 0.36, blue: 0.38),
+            Color(red: 0.23, green: 0.24, blue: 0.26)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    private let toolBubbleColor = Color.orange
+
     private var primaryToolCall: MCPToolCall? {
         message.toolCalls?.first
     }
@@ -50,23 +76,6 @@ struct MessageView: View {
         }
 
         return jsonString
-    }
-
-    private struct AvatarAppearance {
-        let background: Color
-        let icon: String
-        let iconColor: Color
-    }
-
-    private func avatarAppearance(for role: Message.Role) -> AvatarAppearance {
-        switch role {
-        case .assistant:
-            AvatarAppearance(background: Color.green.opacity(0.15), icon: "sparkles", iconColor: .green)
-        case .tool:
-            AvatarAppearance(background: Color.orange.opacity(0.15), icon: "wrench.and.screwdriver", iconColor: .orange)
-        default:
-            AvatarAppearance(background: Color.blue.opacity(0.15), icon: "person.fill", iconColor: .blue)
-        }
     }
 
     @MainActor private struct ToolCallResultCard: View {
@@ -156,203 +165,229 @@ struct MessageView: View {
                 }
             }
             .padding(14)
-            .background(Color.orange.opacity(0.08))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-            )
         }
     }
 
     @MainActor var body: some View {
-        let isAssistant = message.role == .assistant
-        let isToolMessage = message.role == .tool
-        let avatar = avatarAppearance(for: message.role)
-        let avatarFontSize: CGFloat = switch message.role {
-        case .assistant, .tool:
-            13
-        default:
-            14
+        messageContent
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: accessibilityText))
+            .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
+            .onHover { hovering in
+                isHovered = hovering
+            }
+            .onAppear {
+                updateCachedBlocks()
+                updateCachedReasoningBlocks()
+            }
+            .onChange(of: message.content) { _, _ in
+                updateCachedBlocks()
+            }
+            .onChange(of: message.reasoning) { _, _ in
+                updateCachedReasoningBlocks()
+            }
+    }
+
+    private var accessibilityText: String {
+        if message.role == .tool {
+            let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = trimmed.isEmpty ? "Tool returned no visible text." : trimmed
+            return "Tool \(toolDisplayName) result. \(summary)"
         }
 
-        let accessibilityText: String = {
-            if isToolMessage {
-                let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                let summary = trimmed.isEmpty ? "Tool returned no visible text." : trimmed
-                return "Tool \(toolDisplayName) result. \(summary)"
+        if message.content.isEmpty {
+            return message.role == .assistant ? "Assistant response" : "User message"
+        }
+
+        return message.content
+    }
+
+    @MainActor @ViewBuilder
+    private var messageContent: some View {
+        if message.role == .tool {
+            toolMessageView
+        } else {
+            bubbleMessageView
+        }
+    }
+
+    @MainActor
+    private var bubbleMessageView: some View {
+        let isCurrentUser = message.role == .user
+        let alignment: HorizontalAlignment = isCurrentUser ? .trailing : .leading
+
+        return VStack(alignment: alignment, spacing: 6) {
+            if message.role == .assistant, let modelName {
+                Text(modelName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
-            if message.content.isEmpty {
-                return isAssistant ? "Assistant response" : "User message"
+
+            HStack(alignment: .bottom, spacing: 8) {
+                if isCurrentUser {
+                    Spacer(minLength: 60)
+                }
+
+                bubbleContainer(isCurrentUser: isCurrentUser)
+
+                if !isCurrentUser {
+                    Spacer(minLength: 60)
+                }
             }
-            return message.content
-        }()
 
-        return HStack(alignment: .top, spacing: 0) {
-            HStack(alignment: .top, spacing: 16) {
-                // Avatar
-                Circle()
-                    .fill(avatar.background)
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Image(systemName: avatar.icon)
-                            .font(.system(size: avatarFontSize, weight: .medium))
-                            .foregroundStyle(avatar.iconColor)
-                    )
+            Text(timestampText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(isCurrentUser ? .trailing : .leading, 6)
+        }
+    }
 
-                // Content with markdown support
-                VStack(alignment: .leading, spacing: 8) {
-                    // Show model name for assistant messages
-                    if isAssistant, let model = modelName {
-                        Text(model)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, 4)
-                    } else if isToolMessage {
-                        Text(toolDisplayName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, 4)
-                    }
+    @MainActor
+    private func bubbleContainer(isCurrentUser: Bool) -> some View {
+        let bubbleStyle = isCurrentUser ? userBubbleGradient : recipientBubbleGradient
 
-                    if isToolMessage {
-                        ToolCallResultCard(
-                            toolName: toolDisplayName,
-                            arguments: formattedToolArguments,
-                            contentBlocks: cachedContentBlocks,
-                            fallbackText: message.content
-                        )
-                    } else {
-                        // Show attached images for user messages
-                        if let attachments = message.attachments, !attachments.isEmpty {
-                            ForEach(attachments.indices, id: \.self) { index in
-                                let attachment = attachments[index]
-                                if attachment.mimeType.starts(with: "image/"),
-                                   let nsImage = NSImage(data: attachment.data)
-                                {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Image(nsImage: nsImage)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fit)
-                                            .frame(maxWidth: 400)
-                                            .cornerRadius(8)
-                                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                                            .contextMenu {
-                                                Button("Save Image...") {
-                                                    saveImage(nsImage)
-                                                }
-                                                Button("Copy Image") {
-                                                    copyImage(nsImage)
-                                                }
-                                            }
-                                        Text(attachment.fileName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
+        return ZStack(alignment: isCurrentUser ? .topLeading : .topTrailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                bubbleContent
+            }
+            .frame(maxWidth: 480, alignment: .leading)
+            .foregroundColor(.white)
+            .padding(.leading, isCurrentUser ? 18 : 24)
+            .padding(.trailing, isCurrentUser ? 24 : 18)
+            .padding(.vertical, 12)
+            .background(
+                MessageBubbleShape(isFromCurrentUser: isCurrentUser)
+                    .fill(bubbleStyle)
+            )
+            .overlay(
+                MessageBubbleShape(isFromCurrentUser: isCurrentUser)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
+
+            actionControls(for: message.role)
+                .offset(y: -26)
+        }
+        .animation(.easeInOut(duration: 0.2), value: isHovered)
+    }
+
+    @MainActor @ViewBuilder
+    private var bubbleContent: some View {
+        // Attachments
+        if let attachments = message.attachments, !attachments.isEmpty {
+            ForEach(attachments.indices, id: \.self) { index in
+                let attachment = attachments[index]
+                if attachment.mimeType.starts(with: "image/"),
+                   let nsImage = NSImage(data: attachment.data)
+                {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: 360)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            .contextMenu {
+                                Button("Save Image...") {
+                                    saveImage(nsImage)
+                                }
+                                Button("Copy Image") {
+                                    copyImage(nsImage)
                                 }
                             }
-                        }
-
-                        // Show generated image if present
-                        if message.mediaType == .image {
-                            if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: 512)
-                                    .cornerRadius(12)
-                                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                                    .contextMenu {
-                                        Button("Save Image...") {
-                                            saveImage(nsImage)
-                                        }
-                                        Button("Copy Image") {
-                                            copyImage(nsImage)
-                                        }
-                                    }
-                            } else {
-                                // Show loading animation while generating
-                                ImageGeneratingView()
-                            }
-                        }
-
-                        // Show typing indicator for empty assistant messages
-                        if isAssistant, message.content.isEmpty, message.mediaType != .image {
-                            TypingIndicatorView()
-                        }
-
-                        // Show reasoning toggle if reasoning exists
-                        if let reasoning = message.reasoning, !reasoning.isEmpty {
-                            Button(action: {
-                                withAnimation {
-                                    showReasoning.toggle()
-                                }
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 11, weight: .medium))
-                                    Text("Thinking")
-                                        .font(.system(size: 13, weight: .medium))
-                                    Spacer()
-                                    Text("\(reasoning.count) chars")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .foregroundStyle(.blue)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 10)
-                                .background(Color.blue.opacity(0.08))
-                                .cornerRadius(6)
-                            }
-                            .buttonStyle(.plain)
-
-                            if showReasoning {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    ForEach(cachedReasoningBlocks, id: \.id) { block in
-                                        block.view
-                                    }
-                                }
-                                .padding(12)
-                                .background(Color.secondary.opacity(0.05))
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                                )
-                            }
-                        }
-
-                        ForEach(cachedContentBlocks, id: \.id) { block in
-                            block.view
-                        }
+                        Text(attachment.fileName)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text(verbatim: accessibilityText))
-                .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
             }
+        }
 
-            Spacer()
+        // Generated images
+        if message.mediaType == .image {
+            if let imageData = message.imageData, let nsImage = NSImage(data: imageData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 420)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+                    .contextMenu {
+                        Button("Save Image...") {
+                            saveImage(nsImage)
+                        }
+                        Button("Copy Image") {
+                            copyImage(nsImage)
+                        }
+                    }
+            } else {
+                ImageGeneratingView()
+            }
+        }
 
-            // Action buttons
-            HStack(spacing: 8) {
-                // Copy button
+        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
+            TypingIndicatorView()
+        }
+
+        if let reasoning = message.reasoning, !reasoning.isEmpty {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showReasoning.toggle()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Thinking")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Text("\(reasoning.count) chars")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(Color.white.opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if showReasoning {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(cachedReasoningBlocks, id: \.id) { block in
+                        block.view
+                    }
+                }
+                .padding(14)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+
+        ForEach(cachedContentBlocks, id: \.id) { block in
+            block.view
+        }
+    }
+
+    @MainActor @ViewBuilder
+    private func actionControls(for role: Message.Role) -> some View {
+        if isHovered {
+            HStack(spacing: 6) {
                 Button(action: {
                     copyToClipboard(message.content)
                 }) {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
                         .padding(6)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.action.copy")
 
-                // Menu button for assistant messages
-                if message.role == .assistant {
+                if role == .assistant {
                     Menu {
                         Section {
                             Text("Used \(modelName ?? message.model ?? "Unknown Model")")
@@ -374,7 +409,6 @@ struct MessageView: View {
                                 }) {
                                     HStack {
                                         Text(model)
-                                        // Check if this model was used for this message
                                         if model == modelName || model == message.model {
                                             Image(systemName: "checkmark")
                                         }
@@ -386,36 +420,72 @@ struct MessageView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .medium))
                             .padding(6)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
                 }
             }
-            .opacity(isHovered ? 1 : 0)
-            .frame(width: message.role == .assistant ? 72 : 32)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
+            .transition(.opacity.combined(with: .scale))
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(isHovered ? Color.primary.opacity(0.03) : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovered = hovering
+    }
+
+    @MainActor
+    private var toolMessageView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(toolDisplayName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .bottom) {
+                ZStack(alignment: .topTrailing) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ToolCallResultCard(
+                            toolName: toolDisplayName,
+                            arguments: formattedToolArguments,
+                            contentBlocks: cachedContentBlocks,
+                            fallbackText: message.content
+                        )
+                    }
+                    .frame(maxWidth: 480, alignment: .leading)
+                    .foregroundColor(.white)
+                    .padding(.leading, 24)
+                    .padding(.trailing, 18)
+                    .padding(.vertical, 12)
+                    .background(
+                        MessageBubbleShape(isFromCurrentUser: false)
+                            .fill(toolBubbleColor)
+                    )
+                    .overlay(
+                        MessageBubbleShape(isFromCurrentUser: false)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+                    .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 0, y: 4)
+                    .environment(\.colorScheme, .dark)
+
+                    actionControls(for: message.role)
+                        .offset(y: -26)
+                }
+
+                Spacer(minLength: 40)
+            }
+
+            Text(timestampText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 6)
         }
-        .onAppear {
-            updateCachedBlocks()
-        }
-        .onChange(of: message.content) { _, _ in
-            updateCachedBlocks()
-        }
-        .onChange(of: message.reasoning) { _, _ in
-            updateCachedReasoningBlocks()
-        }
+    }
+
+    private var timestampText: String {
+        Self.timestampFormatter.string(from: message.timestamp)
     }
 
     private func updateCachedBlocks() {
@@ -461,6 +531,122 @@ struct MessageView: View {
     private func copyImage(_ image: NSImage) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
+    }
+}
+
+private struct MessageBubbleShape: Shape {
+    var isFromCurrentUser: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let path = Path { path in
+            let tailWidth: CGFloat = 6
+            let radius: CGFloat = 18
+
+            if isFromCurrentUser {
+                // Right bubble
+                let bodyMaxX = rect.maxX - tailWidth
+
+                // Start top-left
+                path.move(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+
+                // Top-left corner
+                path.addArc(center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 180),
+                            endAngle: Angle(degrees: 270),
+                            clockwise: false)
+
+                // Top edge
+                path.addLine(to: CGPoint(x: bodyMaxX - radius, y: rect.minY))
+
+                // Top-right corner
+                path.addArc(center: CGPoint(x: bodyMaxX - radius, y: rect.minY + radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 270),
+                            endAngle: Angle(degrees: 0),
+                            clockwise: false)
+
+                // Right edge
+                path.addLine(to: CGPoint(x: bodyMaxX, y: rect.maxY - radius))
+
+                // Tail (Bottom-Right)
+                // Curve out to tip
+                path.addCurve(to: CGPoint(x: rect.maxX, y: rect.maxY),
+                              control1: CGPoint(x: bodyMaxX, y: rect.maxY),
+                              control2: CGPoint(x: rect.maxX, y: rect.maxY))
+
+                // Curve back to bottom
+                path.addCurve(to: CGPoint(x: bodyMaxX - 4, y: rect.maxY),
+                              control1: CGPoint(x: rect.maxX - 2, y: rect.maxY),
+                              control2: CGPoint(x: bodyMaxX + 2, y: rect.maxY))
+
+                // Bottom edge
+                path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+
+                // Bottom-left corner
+                path.addArc(center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 90),
+                            endAngle: Angle(degrees: 180),
+                            clockwise: false)
+
+                path.closeSubpath()
+
+            } else {
+                // Left bubble
+                let bodyMinX = rect.minX + tailWidth
+
+                // Start top-left (after tail)
+                path.move(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
+
+                // Top-left corner
+                path.addArc(center: CGPoint(x: bodyMinX + radius, y: rect.minY + radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 180),
+                            endAngle: Angle(degrees: 270),
+                            clockwise: false)
+
+                // Top edge
+                path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+
+                // Top-right corner
+                path.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 270),
+                            endAngle: Angle(degrees: 0),
+                            clockwise: false)
+
+                // Right edge
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+
+                // Bottom-right corner
+                path.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
+                            radius: radius,
+                            startAngle: Angle(degrees: 0),
+                            endAngle: Angle(degrees: 90),
+                            clockwise: false)
+
+                // Bottom edge
+                path.addLine(to: CGPoint(x: bodyMinX + 4, y: rect.maxY))
+
+                // Tail (Bottom-Left)
+                // Curve out to tip
+                path.addCurve(to: CGPoint(x: rect.minX, y: rect.maxY),
+                              control1: CGPoint(x: bodyMinX - 2, y: rect.maxY),
+                              control2: CGPoint(x: rect.minX + 2, y: rect.maxY))
+
+                // Curve back to side
+                path.addCurve(to: CGPoint(x: bodyMinX, y: rect.maxY - radius),
+                              control1: CGPoint(x: rect.minX, y: rect.maxY),
+                              control2: CGPoint(x: bodyMinX, y: rect.maxY))
+
+                // Left edge
+                path.addLine(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
+
+                path.closeSubpath()
+            }
+        }
+        return path
     }
 }
 

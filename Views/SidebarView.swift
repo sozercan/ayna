@@ -124,15 +124,7 @@ struct SidebarView: View {
                 }
                 .onDeleteCommand(perform: handleDeleteCommand)
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button(action: startNewConversation) {
-                    Image(systemName: "square.and.pencil")
-                }
-                .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
-            }
-        }
+    }
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()

@@ -15,7 +15,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' build
 
 ### Requirements
 - macOS 14.0+ (Sonoma)
-- Xcode 15.0+
+- Xcode 16.0+
 - Swift 6.2.1
 
 ### Testing
