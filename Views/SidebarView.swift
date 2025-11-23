@@ -84,7 +84,7 @@ struct SidebarView: View {
                                             Button(
                                                 role: .destructive,
                                                 action: {
-                                                    deleteSelectedConversations()
+                                                    deleteConversations(with: selectedConversations)
                                                 }
                                             ) {
                                                 Label(
@@ -96,10 +96,7 @@ struct SidebarView: View {
                                             Button(
                                                 role: .destructive,
                                                 action: {
-                                                    conversationManager.deleteConversation(conversation)
-                                                    if selectedConversationId == conversation.id {
-                                                        selectedConversationId = nil
-                                                    }
+                                                    deleteConversation(with: conversation.id)
                                                 }
                                             ) {
                                                 Label("Delete", systemImage: "trash")
@@ -125,6 +122,7 @@ struct SidebarView: View {
                         selectedConversationId = firstId
                     }
                 }
+                .onDeleteCommand(perform: handleDeleteCommand)
             }
         }
         .toolbar {
@@ -147,18 +145,35 @@ struct SidebarView: View {
         NotificationCenter.default.post(name: .newConversationRequested, object: nil)
     }
 
-    private func deleteSelectedConversations() {
-        for conversationId in selectedConversations {
-            if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                conversationManager.deleteConversation(conversation)
+    private func deleteConversations(with ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+
+        for conversationId in ids {
+            guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                continue
             }
+            conversationManager.deleteConversation(conversation)
         }
 
-        // Clear selection
-        if selectedConversations.contains(selectedConversationId ?? UUID()) {
-            selectedConversationId = nil
+        if let selectedConversationId, ids.contains(selectedConversationId) {
+            self.selectedConversationId = nil
         }
-        selectedConversations.removeAll()
+        selectedConversations.subtract(ids)
+    }
+
+    private func handleDeleteCommand() {
+        if !selectedConversations.isEmpty {
+            deleteConversations(with: selectedConversations)
+            return
+        }
+
+        if let selectedConversationId {
+            deleteConversation(with: selectedConversationId)
+        }
+    }
+
+    private func deleteConversation(with id: UUID) {
+        deleteConversations(with: Set([id]))
     }
 }
 

@@ -78,28 +78,12 @@ final class AynaSmokeUITests: AynaUITestCase {
         let title = sidebarList.staticTexts[msg]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
 
-        // Select the row first so the context menu is scoped correctly
+        // Select the row and issue the Delete key command (List now handles onDeleteCommand)
         let rowHittablePredicate = NSPredicate(format: "isHittable == true")
         let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
         XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
         title.click()
-        let titleCoordinate = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        titleCoordinate.rightClick()
-
-        // Context menu label may include counts ("Delete" vs "Delete 2 Conversations")
-        let deleteMenuItems = app.menuItems.matching(
-            NSPredicate(format: "label BEGINSWITH[c] %@ OR identifier == %@", "Delete", "trash")
-        )
-        let deleteButton = deleteMenuItems.firstMatch
-        if !deleteButton.waitForExistence(timeout: 5) {
-            // Retry once in case the first right-click didn't register on CI
-            titleCoordinate.rightClick()
-        }
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
-        deleteButton.click()
-
-        // Wait for menu to close
-        XCTAssertTrue(deleteButton.waitForNonExistence(timeout: 2))
+        app.typeKey(.delete, modifierFlags: [])
 
         // Confirm deletion in alert if present (not present in this app flow, it just deletes)
 
