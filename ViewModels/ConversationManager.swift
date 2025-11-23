@@ -333,57 +333,49 @@ class ConversationManager: ObservableObject {
     }
 
     private func indexConversation(_ conversation: Conversation) {
-        let item = ConversationManager.createSearchableItem(for: conversation)
+        Task.detached(priority: .utility) {
+            let item = ConversationManager.createSearchableItem(for: conversation)
 
-        CSSearchableIndex.default().indexSearchableItems([item]) { error in
-            if let error {
-                Task { @MainActor in
-                    self.logManager(
-                        "❌ Spotlight indexing error",
-                        level: .error,
-                        metadata: ["error": error.localizedDescription]
-                    )
-                }
+            do {
+                try await CSSearchableIndex.default().indexSearchableItems([item])
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Spotlight indexing error",
+                    metadata: ["error": error.localizedDescription]
+                )
             }
         }
     }
 
     private func indexAllConversations() {
         let conversationsToIndex = conversations
-        // Clear existing index first to ensure clean state
-        CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
-            "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
-        ]) { [weak self] error in
-            if let error {
-                Task { @MainActor in
-                    self?.logManager(
-                        "⚠️ Spotlight cleanup error",
-                        level: .error,
-                        metadata: ["error": error.localizedDescription]
-                    )
-                }
-            }
 
-            // Proceed with indexing
-            let items = conversationsToIndex.map { ConversationManager.createSearchableItem(for: $0) }
-            CSSearchableIndex.default().indexSearchableItems(items) { error in
-                if let error {
-                    Task { @MainActor in
-                        self?.logManager(
-                            "❌ Spotlight batch indexing error",
-                            level: .error,
-                            metadata: ["error": error.localizedDescription]
-                        )
-                    }
-                } else {
-                    Task { @MainActor in
-                        self?.logManager(
-                            "✅ Spotlight batch indexing complete",
-                            level: .info,
-                            metadata: ["count": "\(items.count)"]
-                        )
-                    }
-                }
+        Task.detached(priority: .utility) {
+            do {
+                // Clear existing index first to ensure clean state
+                try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
+                    "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
+                ])
+
+                // Proceed with indexing
+                let items = conversationsToIndex.map { ConversationManager.createSearchableItem(for: $0) }
+                try await CSSearchableIndex.default().indexSearchableItems(items)
+
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .info,
+                    message: "✅ Spotlight batch indexing complete",
+                    metadata: ["count": "\(items.count)"]
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Spotlight batch indexing error",
+                    metadata: ["error": error.localizedDescription]
+                )
             }
         }
     }

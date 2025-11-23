@@ -9,7 +9,7 @@ import Foundation
 import os.log
 import Security
 
-protocol KeychainStoring {
+protocol KeychainStoring: Sendable {
     func setString(_ value: String, for key: String) throws
     func string(for key: String) throws -> String?
     func setData(_ data: Data, for key: String) throws
@@ -31,7 +31,7 @@ enum KeychainStorageError: LocalizedError {
     }
 }
 
-final class KeychainStorage {
+final class KeychainStorage: Sendable {
     static let shared = KeychainStorage()
 
     private let serviceIdentifier = "com.sertacozercan.ayna"

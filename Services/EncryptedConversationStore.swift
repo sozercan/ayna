@@ -95,23 +95,32 @@ final class EncryptedConversationStore {
             let fileURLs = try FileManager.default.contentsOfDirectory(
                 at: directoryURL, includingPropertiesForKeys: nil
             )
-            var conversations: [Conversation] = []
 
-            for url in fileURLs where url.pathExtension == "enc" {
-                do {
-                    let conversation = try Self.load(
-                        from: url, keyIdentifier: keyIdentifier, keychain: keychain
-                    )
-                    conversations.append(conversation)
-                } catch {
-                    DiagnosticsLogger.log(
-                        .encryptedStore, level: .error, message: "Failed to load conversation",
-                        metadata: ["file": url.lastPathComponent, "error": error.localizedDescription]
-                    )
+            return await withTaskGroup(of: Conversation?.self) { group in
+                for url in fileURLs where url.pathExtension == "enc" {
+                    group.addTask {
+                        do {
+                            return try Self.load(
+                                from: url, keyIdentifier: keyIdentifier, keychain: keychain
+                            )
+                        } catch {
+                            DiagnosticsLogger.log(
+                                .encryptedStore, level: .error, message: "Failed to load conversation",
+                                metadata: ["file": url.lastPathComponent, "error": error.localizedDescription]
+                            )
+                            return nil
+                        }
+                    }
                 }
-            }
 
-            return conversations
+                var conversations: [Conversation] = []
+                for await conversation in group {
+                    if let conversation {
+                        conversations.append(conversation)
+                    }
+                }
+                return conversations
+            }
         }.value
     }
 

@@ -3,10 +3,13 @@ import Foundation
 import Security
 import XCTest
 
-final class InMemoryKeychainStorage: KeychainStoring {
+final class InMemoryKeychainStorage: KeychainStoring, @unchecked Sendable {
     private var storage: [String: Data] = [:]
+    private let lock = NSLock()
 
     func setString(_ value: String, for key: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = value.data(using: .utf8) else {
             throw KeychainStorageError.unexpectedStatus(errSecParam)
         }
@@ -14,19 +17,27 @@ final class InMemoryKeychainStorage: KeychainStoring {
     }
 
     func string(for key: String) throws -> String? {
+        lock.lock()
+        defer { lock.unlock() }
         guard let data = storage[key] else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     func setData(_ data: Data, for key: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
         storage[key] = data
     }
 
     func data(for key: String) throws -> Data? {
-        storage[key]
+        lock.lock()
+        defer { lock.unlock() }
+        return storage[key]
     }
 
     func removeValue(for key: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
         storage[key] = nil
     }
 }
