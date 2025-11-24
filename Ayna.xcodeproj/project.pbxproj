@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -81,6 +81,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C8C534E02ED41F89003D2BAC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C8FBD3B72ED2F42A00E39928;
+			remoteInfo = "Ayna-iOS";
+		};
 		C8F1C0032ED5B4F500B5BC45 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 11000001 /* Project object */;
@@ -151,13 +158,25 @@
 		C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarView.swift; sourceTree = "<group>"; };
 		C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
 		C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
+		C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9A100013090F5E900ABCD01 /* aynaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSTests"; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		05000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8C534D92ED41F89003D2BAC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -208,6 +227,7 @@
 				C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */,
 				C9A100013090F5E900ABCD01 /* aynaUITests.xctest */,
 				C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */,
+				C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -345,6 +365,7 @@
 			children = (
 				C81393D62ED3DEB800F5E7F9 /* aynaTests */,
 				C81393D92ED3DEB800F5E7F9 /* aynaUITests */,
+				C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -405,6 +426,29 @@
 			productName = Ayna;
 			productReference = 03000001 /* Ayna.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C8C534DB2ED41F89003D2BAC /* Ayna-iOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C8C534E42ED41F89003D2BAC /* Build configuration list for PBXNativeTarget "Ayna-iOSTests" */;
+			buildPhases = (
+				C8C534D82ED41F89003D2BAC /* Sources */,
+				C8C534D92ED41F89003D2BAC /* Frameworks */,
+				C8C534DA2ED41F89003D2BAC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C8C534E12ED41F89003D2BAC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */,
+			);
+			name = "Ayna-iOSTests";
+			packageProductDependencies = (
+			);
+			productName = "Ayna-iOSTests";
+			productReference = C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		C8F1C0012ED5B4F500B5BC45 /* aynaTests */ = {
 			isa = PBXNativeTarget;
@@ -472,6 +516,10 @@
 					07000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					C8C534DB2ED41F89003D2BAC = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = C8FBD3B72ED2F42A00E39928;
+					};
 					C8F1C0012ED5B4F500B5BC45 = {
 						CreatedOnToolsVersion = 15.0;
 						TestTargetID = 07000001;
@@ -503,6 +551,7 @@
 				07000001 /* Ayna */,
 				C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */,
 				C8F1C0012ED5B4F500B5BC45 /* aynaTests */,
+				C8C534DB2ED41F89003D2BAC /* Ayna-iOSTests */,
 				C9A1C1013090F5E900ABCD01 /* aynaUITests */,
 			);
 		};
@@ -515,6 +564,13 @@
 			files = (
 				C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
 				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8C534DA2ED41F89003D2BAC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -567,6 +623,13 @@
 				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
 				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
 				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8C534D82ED41F89003D2BAC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -628,6 +691,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		C8C534E12ED41F89003D2BAC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */;
+			targetProxy = C8C534E02ED41F89003D2BAC /* PBXContainerItemProxy */;
+		};
 		C8F1C0022ED5B4F500B5BC45 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 07000001 /* Ayna */;
@@ -837,6 +905,53 @@
 			};
 			name = Release;
 		};
+		C8C534E22ED41F89003D2BAC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna-iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna-iOS";
+			};
+			name = Debug;
+		};
+		C8C534E32ED41F89003D2BAC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna-iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna-iOS";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		C8F1D0012ED5B4F500B5BC45 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1021,6 +1136,15 @@
 			buildConfigurations = (
 				13000001 /* Debug */,
 				13000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C8C534E42ED41F89003D2BAC /* Build configuration list for PBXNativeTarget "Ayna-iOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C8C534E22ED41F89003D2BAC /* Debug */,
+				C8C534E32ED41F89003D2BAC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
