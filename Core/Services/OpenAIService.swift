@@ -29,6 +29,14 @@ enum APIEndpointType: String, CaseIterable, Codable {
     var displayName: String { rawValue }
 }
 
+private struct StreamLineResult {
+    let shouldComplete: Bool
+    let toolCallBuffer: [String: Any]
+    let toolCallId: String
+    let content: String?
+    let reasoning: String?
+}
+
 @MainActor
 class OpenAIService: ObservableObject {
     static let shared = OpenAIService()
@@ -50,9 +58,9 @@ class OpenAIService: ObservableObject {
             AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
             // Sync with AIKitService if this is an AIKit model
             if modelProviders[selectedModel] == .aikit {
-        #if os(macOS)
-                AIKitService.shared.selectModelByName(selectedModel)
-        #endif
+                #if os(macOS)
+                    AIKitService.shared.selectModelByName(selectedModel)
+                #endif
             }
         }
     }
@@ -76,9 +84,9 @@ class OpenAIService: ObservableObject {
     @Published var customModels: [String] {
         didSet {
             AppPreferences.storage.set(customModels, forKey: "customModels")
-      // iCloud sync disabled for free developer account
-      // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
-      // NSUbiquitousKeyValueStore.default.synchronize()
+            // iCloud sync disabled for free developer account
+            // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
+            // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -86,9 +94,9 @@ class OpenAIService: ObservableObject {
         didSet {
             let encodedDict = modelProviders.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
-      // iCloud sync disabled for free developer account
-      // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
-      // NSUbiquitousKeyValueStore.default.synchronize()
+            // iCloud sync disabled for free developer account
+            // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
+            // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -96,18 +104,18 @@ class OpenAIService: ObservableObject {
         didSet {
             let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
-      // iCloud sync disabled for free developer account
-      // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
-      // NSUbiquitousKeyValueStore.default.synchronize()
+            // iCloud sync disabled for free developer account
+            // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
+            // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
     @Published var modelEndpoints: [String: String] {
         didSet {
             AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
-      // iCloud sync disabled for free developer account
-      // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
-      // NSUbiquitousKeyValueStore.default.synchronize()
+            // iCloud sync disabled for free developer account
+            // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
+            // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -231,8 +239,8 @@ class OpenAIService: ObservableObject {
             AppPreferences.storage.integer(forKey: "outputCompression") == 0
                 ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
 
-    // iCloud sync disabled for free developer account
-    // setupiCloudSync()
+        // iCloud sync disabled for free developer account
+        // setupiCloudSync()
     }
 
     private func saveAPIKey() {
@@ -775,18 +783,18 @@ class OpenAIService: ObservableObject {
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil
-  ) {
-    #if !os(iOS)
-        if UITestEnvironment.isEnabled {
-            simulateUITestResponse(
-                messages: messages,
-                stream: stream,
-                onChunk: onChunk,
-                onComplete: onComplete
-            )
-            return
-      }
-    #endif
+    ) {
+        #if !os(iOS)
+            if UITestEnvironment.isEnabled {
+                simulateUITestResponse(
+                    messages: messages,
+                    stream: stream,
+                    onChunk: onChunk,
+                    onComplete: onComplete
+                )
+                return
+            }
+        #endif
 
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -799,7 +807,7 @@ class OpenAIService: ObservableObject {
 
         // Handle Apple Intelligence separately
         if effectiveProvider == .appleIntelligence {
-      if #available(macOS 26.0, iOS 26.0, *) {
+            if #available(macOS 26.0, iOS 26.0, *) {
                 handleAppleIntelligenceRequest(
                     messages: messages,
                     temperature: temperature,
@@ -810,7 +818,7 @@ class OpenAIService: ObservableObject {
                     onError: onError
                 )
             } else {
-        onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
+                onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
             }
             return
         }
@@ -1168,15 +1176,7 @@ class OpenAIService: ObservableObject {
         let onReasoning: (@Sendable (String) -> Void)?
     }
 
-    private struct StreamLineResult {
-        let shouldComplete: Bool
-        let toolCallBuffer: [String: Any]
-        let toolCallId: String
-        let content: String?
-        let reasoning: String?
-    }
-
-    private func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
+    private nonisolated func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
         if statusCode == 400 {
             if requestURL?.absoluteString.lowercased().contains("openai.azure.com") == true {
                 return "HTTP \(statusCode) - Invalid Azure deployment or API version (\(azureAPIVersion))."
@@ -1187,7 +1187,7 @@ class OpenAIService: ObservableObject {
         return "HTTP \(statusCode)"
     }
 
-    private func extractTextSegments(
+    private nonisolated func extractTextSegments(
         from contentField: Any,
         source: String,
         metadata: [String: String] = [:]
@@ -1197,22 +1197,28 @@ class OpenAIService: ObservableObject {
         }
 
         if let contentArray = contentField as? [[String: Any]] {
-            DiagnosticsLogger.log(
-                .openAIService,
-                level: .debug,
-                message: "🧩 Received structured content array",
-                metadata: mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"])
-            )
+            let meta = mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"])
+            Task { @MainActor in
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "🧩 Received structured content array",
+                    metadata: meta
+                )
+            }
 
             var segments: [String] = []
             for (index, part) in contentArray.enumerated() {
                 guard let type = part["type"] as? String else {
-                    DiagnosticsLogger.log(
-                        .openAIService,
-                        level: .debug,
-                        message: "⚠️ Structured content part missing type",
-                        metadata: mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"])
-                    )
+                    let meta = mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"])
+                    Task { @MainActor in
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .debug,
+                            message: "⚠️ Structured content part missing type",
+                            metadata: meta
+                        )
+                    }
                     continue
                 }
 
@@ -1230,19 +1236,22 @@ class OpenAIService: ObservableObject {
                     continue
                 }
 
-                DiagnosticsLogger.log(
-                    .openAIService,
-                    level: .debug,
-                    message: "⚠️ Structured content part missing text",
-                    metadata: mergedMetadata(
-                        metadata,
-                        additions: [
-                            "source": source,
-                            "type": type,
-                            "index": "\(index)"
-                        ]
-                    )
+                let meta = mergedMetadata(
+                    metadata,
+                    additions: [
+                        "source": source,
+                        "type": type,
+                        "index": "\(index)"
+                    ]
                 )
+                Task { @MainActor in
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .debug,
+                        message: "⚠️ Structured content part missing text",
+                        metadata: meta
+                    )
+                }
             }
 
             return segments
@@ -1253,21 +1262,24 @@ class OpenAIService: ObservableObject {
         }
 
         if !(contentField is NSNull) {
-            DiagnosticsLogger.log(
-                .openAIService,
-                level: .debug,
-                message: "⚠️ Unsupported content payload",
-                metadata: mergedMetadata(
-                    metadata,
-                    additions: ["source": source, "payloadType": "\(type(of: contentField))"]
-                )
+            let meta = mergedMetadata(
+                metadata,
+                additions: ["source": source, "payloadType": "\(type(of: contentField))"]
             )
+            Task { @MainActor in
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "⚠️ Unsupported content payload",
+                    metadata: meta
+                )
+            }
         }
 
         return []
     }
 
-    private func mergedMetadata(
+    private nonisolated func mergedMetadata(
         _ metadata: [String: String],
         additions: [String: String]
     ) -> [String: String] {
@@ -1278,13 +1290,13 @@ class OpenAIService: ObservableObject {
         return combined
     }
 
-    private func processStreamLine(
+    private nonisolated func processStreamLine(
         _ line: String,
         toolCallBuffer: [String: Any],
-    toolCallId: String,
-    onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
-    onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
-    onReasoning _: (@Sendable (String) -> Void)? = nil
+        toolCallId: String,
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+        onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
         var updatedToolCallBuffer = toolCallBuffer
         var updatedToolCallId = toolCallId
@@ -1395,10 +1407,12 @@ class OpenAIService: ObservableObject {
         callbacks: StreamCallbacks,
         attempt: Int = 0
     ) {
-        let task = Task {
+        let session = urlSession
+        let task = Task.detached { [weak self] in
+            guard let self else { return }
             var hasReceivedData = false
             do {
-                let (bytes, response) = try await urlSession.bytes(for: request)
+                let (bytes, response) = try await session.bytes(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw OpenAIError.invalidResponse
@@ -1413,7 +1427,7 @@ class OpenAIService: ObservableObject {
                 }
 
                 var buffer = Data()
-                var toolCallBuffer: [String: Any] = [:]
+                var currentToolCallBuffer: [String: Any] = [:]
                 var toolCallId = ""
 
                 // Batching buffers
@@ -1425,12 +1439,12 @@ class OpenAIService: ObservableObject {
                     hasReceivedData = true
                     // Check if task was cancelled
                     if Task.isCancelled {
-                        DiagnosticsLogger.log(
-                            .openAIService,
-                            level: .info,
-                            message: "Stream task cancelled; stopping iteration"
-                        )
                         await MainActor.run {
+                            DiagnosticsLogger.log(
+                                .openAIService,
+                                level: .info,
+                                message: "Stream task cancelled; stopping iteration"
+                            )
                             self.currentStreamTask = nil
                         }
                         return
@@ -1443,12 +1457,12 @@ class OpenAIService: ObservableObject {
                         if let line = String(data: buffer, encoding: .utf8) {
                             let result = await processStreamLine(
                                 line,
-                                toolCallBuffer: toolCallBuffer,
+                                toolCallBuffer: currentToolCallBuffer,
                                 toolCallId: toolCallId,
                                 onToolCall: callbacks.onToolCall,
                                 onToolCallRequested: callbacks.onToolCallRequested
                             )
-                            toolCallBuffer = result.toolCallBuffer
+                            currentToolCallBuffer = result.toolCallBuffer
                             toolCallId = result.toolCallId
 
                             if let content = result.content {
@@ -1460,9 +1474,11 @@ class OpenAIService: ObservableObject {
 
                             if result.shouldComplete {
                                 // Flush remaining buffers
+                                let contentToSend = contentBuffer
+                                let reasoningToSend = reasoningBuffer
                                 await MainActor.run {
-                                    if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
-                                    if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
+                                    if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
+                                    if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
                                     self.currentStreamTask = nil
                                     callbacks.onComplete()
                                 }
@@ -1490,9 +1506,11 @@ class OpenAIService: ObservableObject {
                 }
 
                 // Flush any remaining content
+                let contentToSend = contentBuffer
+                let reasoningToSend = reasoningBuffer
                 await MainActor.run {
-                    if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
-                    if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
+                    if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
+                    if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
                     self.currentStreamTask = nil
                     callbacks.onComplete()
                 }
@@ -1558,12 +1576,12 @@ class OpenAIService: ObservableObject {
     }
 
     private func nonStreamResponse(
-    request: URLRequest,
-    onChunk: @escaping @Sendable (String) -> Void,
-    onComplete: @escaping @Sendable () -> Void,
-    onError: @escaping @Sendable (Error) -> Void,
-    onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
-    onReasoning: (@Sendable (String) -> Void)? = nil,
+        request: URLRequest,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
+        onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
@@ -1894,49 +1912,50 @@ extension OpenAIService {
            !isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
         {
             issues.append("Add an API key for \(activeProvider.displayName)")
-    }
-    return issues
-  }
-
-  var usableModels: [String] {
-    customModels.filter { model in
-      #if os(iOS)
-        if modelProviders[model] == .aikit {
-          return false
         }
-      #endif
-      return true
+        return issues
     }
-  }
 
-  private func setupiCloudSync() {
-    NotificationCenter.default.addObserver(
-      self, selector: #selector(ubiquitousKeyValueStoreDidChange),
-      name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-      object: NSUbiquitousKeyValueStore.default)
-    NSUbiquitousKeyValueStore.default.synchronize()
-  }
-
-  @objc private func ubiquitousKeyValueStoreDidChange(notification: NSNotification) {
-    let store = NSUbiquitousKeyValueStore.default
-
-    DispatchQueue.main.async {
-      if let models = store.array(forKey: "customModels") as? [String] {
-        self.customModels = models
-      }
-
-      if let providers = store.dictionary(forKey: "modelProviders") as? [String: String] {
-        self.modelProviders = providers.compactMapValues { AIProvider(rawValue: $0) }
-      }
-
-      if let endpointTypes = store.dictionary(forKey: "modelEndpointTypes") as? [String: String] {
-        self.modelEndpointTypes = endpointTypes.compactMapValues {
-          APIEndpointType(rawValue: $0)
+    var usableModels: [String] {
+        customModels.filter { model in
+            #if os(iOS)
+                if modelProviders[model] == .aikit {
+                    return false
+                }
+            #endif
+            return true
         }
-      }
+    }
 
-      if let endpoints = store.dictionary(forKey: "modelEndpoints") as? [String: String] {
-        self.modelEndpoints = endpoints
+    private func setupiCloudSync() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(ubiquitousKeyValueStoreDidChange),
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: NSUbiquitousKeyValueStore.default
+        )
+        NSUbiquitousKeyValueStore.default.synchronize()
+    }
+
+    @objc private func ubiquitousKeyValueStoreDidChange(notification _: NSNotification) {
+        let store = NSUbiquitousKeyValueStore.default
+
+        DispatchQueue.main.async {
+            if let models = store.array(forKey: "customModels") as? [String] {
+                self.customModels = models
+            }
+
+            if let providers = store.dictionary(forKey: "modelProviders") as? [String: String] {
+                self.modelProviders = providers.compactMapValues { AIProvider(rawValue: $0) }
+            }
+
+            if let endpointTypes = store.dictionary(forKey: "modelEndpointTypes") as? [String: String] {
+                self.modelEndpointTypes = endpointTypes.compactMapValues {
+                    APIEndpointType(rawValue: $0)
+                }
+            }
+
+            if let endpoints = store.dictionary(forKey: "modelEndpoints") as? [String: String] {
+                self.modelEndpoints = endpoints
             }
         }
     }

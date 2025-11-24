@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class MCPServerManagerTests: XCTestCase {
-    nonisolated(unsafe) private var suiteName: String = ""
+    private nonisolated(unsafe) var suiteName: String = ""
 
     override func setUp() {
         super.setUp()
@@ -146,16 +146,16 @@ final class MCPServerManagerTests: XCTestCase {
 
         await fulfillment(of: [restartExpectation], timeout: 1.0)
 
-    // Wait for connection to complete since factory is called before connection finishes
-    let timeout = Date().addingTimeInterval(2.0)
-    while Date() < timeout {
-      if manager.getServerStatus(updatedConfig.name)?.state == .connected {
-        break
-      }
-      try? await Task.sleep(nanoseconds: 100_000_000)
-    }
+        // Wait for connection to complete since factory is called before connection finishes
+        let timeout = Date().addingTimeInterval(2.0)
+        while Date() < timeout {
+            if manager.getServerStatus(updatedConfig.name)?.state == .connected {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
 
-    XCTAssertEqual(initialService.disconnectCallCount, 1)
+        XCTAssertEqual(initialService.disconnectCallCount, 1)
         XCTAssertEqual(restartedService.connectCallCount, 1)
         XCTAssertEqual(manager.getServerStatus(updatedConfig.name)?.state, .connected)
     }

@@ -16,7 +16,8 @@ struct IOSContentView: View {
             IOSSidebarView()
         } detail: {
             if let selectedId = conversationManager.selectedConversationId,
-               selectedId != ConversationManager.newConversationId {
+               selectedId != ConversationManager.newConversationId
+            {
                 IOSChatView(conversationId: selectedId)
             } else {
                 IOSNewChatView()
@@ -83,7 +84,7 @@ struct IOSNewChatView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                Button(action: { }) {
+                Button(action: {}) {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.gray)
@@ -95,12 +96,12 @@ struct IOSNewChatView: View {
 
                 HStack(alignment: .bottom) {
                     TextField("iMessage", text: $messageText, axis: .vertical)
-                        .lineLimit(1...5)
+                        .lineLimit(1 ... 5)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
 
-                    if messageText.isEmpty && !isGenerating {
-                        Button(action: { }) {
+                    if messageText.isEmpty, !isGenerating {
+                        Button(action: {}) {
                             Image(systemName: "mic.fill")
                                 .foregroundStyle(.gray)
                         }
@@ -207,7 +208,7 @@ struct IOSNewChatView: View {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // We need to get the updated conversation from manager to pass to service
-        guard let updatedConversation = self.currentConversation else { return }
+        guard let updatedConversation = currentConversation else { return }
 
         // Messages to send (exclude the empty assistant message we just added)
         let messagesToSend = Array(updatedConversation.messages.dropLast())
@@ -220,8 +221,8 @@ struct IOSNewChatView: View {
                 Task { @MainActor in
                     // Update the message in the conversation manager
                     if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id }) {
-
+                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
+                    {
                         var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
                         updatedMessage.content += chunk
                         conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
@@ -231,7 +232,7 @@ struct IOSNewChatView: View {
             onComplete: {
                 Task { @MainActor in
                     isGenerating = false
-                    if let updatedConv = self.currentConversation {
+                    if let updatedConv = currentConversation {
                         conversationManager.save(updatedConv)
                         // Switch to the main chat view
                         conversationManager.selectedConversationId = updatedConv.id
@@ -243,7 +244,7 @@ struct IOSNewChatView: View {
                     isGenerating = false
                     errorMessage = error.localizedDescription
                     // Even on error, we might want to switch if the conversation was created
-                    if let updatedConv = self.currentConversation {
+                    if let updatedConv = currentConversation {
                         conversationManager.selectedConversationId = updatedConv.id
                     }
                 }

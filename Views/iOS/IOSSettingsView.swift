@@ -20,6 +20,7 @@ struct IOSSettingsView: View {
         NavigationStack {
             Form {
                 // MARK: - General
+
                 Section("General") {
                     Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
 
@@ -33,6 +34,7 @@ struct IOSSettingsView: View {
                 }
 
                 // MARK: - Models
+
                 Section("Models") {
                     ForEach(openAIService.customModels, id: \.self) { model in
                         NavigationLink {
@@ -175,7 +177,7 @@ struct IOSModelEditView: View {
     @State private var endpointType: APIEndpointType = .chatCompletions
 
     init(modelName: String, isNew: Bool) {
-        self._modelName = State(initialValue: modelName)
+        _modelName = State(initialValue: modelName)
         self.isNew = isNew
     }
 

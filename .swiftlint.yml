@@ -10,16 +10,10 @@ excluded:
 
 # Paths to include in linting (optional, defaults to all Swift files)
 included:
-  - Models
-  - Services
-  - ViewModels
+  - App
+  - Core
   - Views
-  - Utilities
-  - Diagnostics
-  - aynaTests
-  - aynaUITests
-  - aynaApp.swift
-  - ContentView.swift
+  - Tests
 
 # Disable some rules that may be too strict
 disabled_rules:

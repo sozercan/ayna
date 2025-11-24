@@ -6,13 +6,15 @@
 //
 
 #if os(macOS)
-import AppKit
-typealias PlatformFont = NSFont
-typealias PlatformColor = NSColor
+    import AppKit
+
+    typealias PlatformFont = NSFont
+    typealias PlatformColor = NSColor
 #elseif os(iOS)
-import UIKit
-typealias PlatformFont = UIFont
-typealias PlatformColor = UIColor
+    import UIKit
+
+    typealias PlatformFont = UIFont
+    typealias PlatformColor = UIColor
 #endif
 import Foundation
 import PDFKit
@@ -77,9 +79,9 @@ enum ConversationExporter {
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: titleFont]
         let secondaryColor: PlatformColor = {
             #if os(macOS)
-            return PlatformColor.secondaryLabelColor
+                return PlatformColor.secondaryLabelColor
             #else
-            return PlatformColor.secondaryLabel
+                return PlatformColor.secondaryLabel
             #endif
         }()
 

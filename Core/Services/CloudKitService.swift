@@ -75,10 +75,14 @@ final class CloudKitService: ObservableObject, Sendable {
         log("Deleted conversation from CloudKit", metadata: ["id": conversationId.uuidString])
     }
 
-    func fetchChanges(since token: CKServerChangeToken?) async throws -> (
-        changed: [CKRecord], deleted: [CKRecord.ID], newToken: CKServerChangeToken?
-    ) {
-        return try await withCheckedThrowingContinuation { continuation in
+    struct CloudKitChanges {
+        let changed: [CKRecord]
+        let deleted: [CKRecord.ID]
+        let newToken: CKServerChangeToken?
+    }
+
+    func fetchChanges(since token: CKServerChangeToken?) async throws -> CloudKitChanges {
+        try await withCheckedThrowingContinuation { continuation in
             var changedRecords: [CKRecord] = []
             var deletedRecordIDs: [CKRecord.ID] = []
             var newToken: CKServerChangeToken? = token
@@ -87,16 +91,18 @@ final class CloudKitService: ObservableObject, Sendable {
             config.previousServerChangeToken = token
 
             let operation = CKFetchRecordZoneChangesOperation(
-                recordZoneIDs: [zoneId], configurationsByRecordZoneID: [zoneId: config])
+                recordZoneIDs: [zoneId], configurationsByRecordZoneID: [zoneId: config]
+            )
 
             operation.recordWasChangedBlock = { recordID, result in
                 switch result {
-                case .success(let record):
+                case let .success(record):
                     changedRecords.append(record)
-                case .failure(let error):
+                case let .failure(error):
                     DiagnosticsLogger.log(
                         .cloudKit, level: .error, message: "Error fetching record",
-                        metadata: ["id": recordID.recordName, "error": error.localizedDescription])
+                        metadata: ["id": recordID.recordName, "error": error.localizedDescription]
+                    )
                 }
             }
 
@@ -106,7 +112,7 @@ final class CloudKitService: ObservableObject, Sendable {
 
             operation.recordZoneFetchResultBlock = { _, result in
                 switch result {
-                case .success(let (token, _, _)):
+                case let .success((token, _, _)):
                     newToken = token
                 case .failure:
                     break
@@ -116,8 +122,8 @@ final class CloudKitService: ObservableObject, Sendable {
             operation.fetchRecordZoneChangesResultBlock = { result in
                 switch result {
                 case .success:
-                    continuation.resume(returning: (changedRecords, deletedRecordIDs, newToken))
-                case .failure(let error):
+                    continuation.resume(returning: CloudKitChanges(changed: changedRecords, deleted: deletedRecordIDs, newToken: newToken))
+                case let .failure(error):
                     continuation.resume(throwing: error)
                 }
             }

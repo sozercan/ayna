@@ -5,9 +5,9 @@
 //  Created on 11/3/25.
 //
 
+import Combine
 import Foundation
 import os
-import Combine
 
 /// Manages multiple MCP server connections and tool discovery
 @MainActor

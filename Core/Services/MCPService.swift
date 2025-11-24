@@ -5,8 +5,8 @@
 //  Created on 11/3/25.
 //
 
-import Foundation
 import Combine
+import Foundation
 import os
 
 #if compiler(>=6.0)
@@ -227,7 +227,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
         stopHealthCheckTimer()
 
-        if let process = process, process.isRunning {
+        if let process, process.isRunning {
             process.terminate()
         }
 

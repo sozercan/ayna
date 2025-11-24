@@ -1,5 +1,5 @@
 //
-//  MessageView.swift
+//  MacMessageView.swift
 //  ayna
 //
 //  Created on 11/2/25.
@@ -390,7 +390,7 @@ struct MacMessageView: View {
                         }
 
                         Menu {
-              ForEach(openAIService.usableModels, id: \.self) { model in
+                            ForEach(openAIService.usableModels, id: \.self) { model in
                                 Button(action: {
                                     onSwitchModel?(model)
                                 }) {

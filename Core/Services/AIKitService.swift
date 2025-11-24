@@ -5,9 +5,9 @@
 //  Created on 11/6/25.
 //
 
+import Combine
 import Foundation
 import os.log
-import Combine
 
 // AIKit Model Definition
 struct AIKitModel: Identifiable, Codable {

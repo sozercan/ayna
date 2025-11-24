@@ -95,12 +95,12 @@ struct IOSChatView: View {
 
                     HStack(alignment: .bottom) {
                         TextField("iMessage", text: $messageText, axis: .vertical)
-                            .lineLimit(1...5)
+                            .lineLimit(1 ... 5)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
 
-                        if messageText.isEmpty && !isGenerating {
-                            Button(action: { }) {
+                        if messageText.isEmpty, !isGenerating {
+                            Button(action: {}) {
                                 Image(systemName: "mic.fill")
                                     .foregroundStyle(.gray)
                             }
@@ -133,12 +133,12 @@ struct IOSChatView: View {
             allowsMultipleSelection: true
         ) { result in
             switch result {
-            case .success(let urls):
+            case let .success(urls):
                 for url in urls {
                     guard url.startAccessingSecurityScopedResource() else { continue }
                     attachedFiles.append(url)
                 }
-            case .failure(let error):
+            case let .failure(error):
                 errorMessage = error.localizedDescription
             }
         }
@@ -150,7 +150,7 @@ struct IOSChatView: View {
                             .font(.headline)
 
                         Menu {
-              ForEach(openAIService.usableModels, id: \.self) { model in
+                            ForEach(openAIService.usableModels, id: \.self) { model in
                                 Button {
                                     conversationManager.updateModel(for: conversation, model: model)
                                 } label: {
@@ -260,8 +260,8 @@ struct IOSChatView: View {
                 onComplete: { data in
                     Task { @MainActor in
                         if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                           let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id }) {
-
+                           let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
+                        {
                             var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
                             updatedMessage.mediaType = .image
                             updatedMessage.imageData = data
@@ -293,8 +293,8 @@ struct IOSChatView: View {
                 Task { @MainActor in
                     // Update the message in the conversation manager
                     if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id }) {
-
+                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
+                    {
                         var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
                         updatedMessage.content += chunk
                         conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage

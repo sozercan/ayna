@@ -16,7 +16,7 @@ struct AynaIOSApp: App {
         // Configure attachment loader if AttachmentStorage is available
         // Note: Ensure Services/AttachmentStorage.swift is added to the iOS target
         #if canImport(Foundation)
-        // Message.attachmentLoader = { path in AttachmentStorage.shared.load(path: path) }
+            // Message.attachmentLoader = { path in AttachmentStorage.shared.load(path: path) }
         #endif
     }
 

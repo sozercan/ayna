@@ -38,11 +38,11 @@ struct Message: Identifiable, Codable, Equatable {
         var localPath: String? // Path relative to AttachmentStorage
 
         // Helper to get data regardless of storage method
-    @MainActor
+        @MainActor
         var content: Data? {
             if let data { return data }
             if let path = localPath {
-        return Message.attachmentLoader?(path)
+                return Message.attachmentLoader?(path)
             }
             return nil
         }
@@ -84,15 +84,15 @@ struct Message: Identifiable, Codable, Equatable {
     }
 
     // Helper to get image data regardless of storage method
-  @MainActor
+    @MainActor
     var effectiveImageData: Data? {
         if let data = imageData { return data }
         if let path = imagePath {
-      return Message.attachmentLoader?(path)
+            return Message.attachmentLoader?(path)
         }
         return nil
     }
 
-  // Static loader to decouple from AttachmentStorage
-  @MainActor static var attachmentLoader: ((String) -> Data?)?
+    // Static loader to decouple from AttachmentStorage
+    @MainActor static var attachmentLoader: ((String) -> Data?)?
 }

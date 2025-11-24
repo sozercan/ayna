@@ -5,8 +5,8 @@
 //  Created on 11/6/25.
 //
 
-import Foundation
 import Combine
+import Foundation
 import os.log
 
 enum AppleIntelligenceError: LocalizedError {

@@ -5,9 +5,9 @@
 //  Created on 11/2/25.
 //
 
+import CloudKit
 import Combine
 import CoreSpotlight
-import CloudKit
 import Foundation
 import OSLog
 import SwiftUI
@@ -18,9 +18,9 @@ final class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationId: UUID?
 
-  static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+    static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
-  private let store: EncryptedConversationStore
+    private let store: EncryptedConversationStore
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
     var loadingTask: Task<Void, Never>?
     private var isLoaded = false
@@ -42,8 +42,8 @@ final class ConversationManager: ObservableObject {
         self.saveDebounceDuration = saveDebounceDuration
         loadingTask = Task {
             await loadConversations()
-      // iCloud sync disabled for free developer account
-      // await syncWithCloud()
+            // iCloud sync disabled for free developer account
+            // await syncWithCloud()
         }
     }
 
@@ -62,16 +62,16 @@ final class ConversationManager: ObservableObject {
             do {
                 try await store.save(conversation)
 
-        // Sync to CloudKit
-        // iCloud sync disabled for free developer account
-        /*
-        let fileURL = store.fileURL(for: conversation.id)
-        Task.detached {
-            try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
-        }
-        */
+                // Sync to CloudKit
+                // iCloud sync disabled for free developer account
+                /*
+                 let fileURL = store.fileURL(for: conversation.id)
+                 Task.detached {
+                     try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
+                 }
+                 */
 
-        saveTasks.removeValue(forKey: conversation.id)
+                saveTasks.removeValue(forKey: conversation.id)
                 indexConversation(conversation)
             } catch {
                 logManager(
@@ -95,14 +95,14 @@ final class ConversationManager: ObservableObject {
             do {
                 try await store.save(conversation)
 
-        // Sync to CloudKit
-        // iCloud sync disabled for free developer account
-        /*
-        let fileURL = store.fileURL(for: conversation.id)
-        Task.detached {
-            try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
-        }
-        */
+                // Sync to CloudKit
+                // iCloud sync disabled for free developer account
+                /*
+                 let fileURL = store.fileURL(for: conversation.id)
+                 Task.detached {
+                     try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
+                 }
+                 */
 
                 indexConversation(conversation)
             } catch {
@@ -113,31 +113,31 @@ final class ConversationManager: ObservableObject {
                 )
             }
         }
-  }
-
-  func delete(_ conversationId: UUID) {
-    Task {
-      do {
-        try await store.delete(conversationId)
-        // iCloud sync disabled for free developer account
-        /*
-        Task.detached {
-            try? await CloudKitService.shared.delete(conversationId: conversationId)
-        }
-        */
-        await loadConversations()
-        if selectedConversationId == conversationId {
-          selectedConversationId = nil
-        }
-      } catch {
-        logManager(
-          "❌ Failed to delete conversation",
-          level: .error,
-          metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
-        )
-      }
     }
-  }
+
+    func delete(_ conversationId: UUID) {
+        Task {
+            do {
+                try await store.delete(conversationId)
+                // iCloud sync disabled for free developer account
+                /*
+                 Task.detached {
+                     try? await CloudKitService.shared.delete(conversationId: conversationId)
+                 }
+                 */
+                await loadConversations()
+                if selectedConversationId == conversationId {
+                    selectedConversationId = nil
+                }
+            } catch {
+                logManager(
+                    "❌ Failed to delete conversation",
+                    level: .error,
+                    metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
+                )
+            }
+        }
+    }
 
     private func loadConversations() async {
         do {
@@ -218,12 +218,12 @@ final class ConversationManager: ObservableObject {
         saveTasks.removeValue(forKey: conversation.id)
         Task {
             try? await store.delete(conversation.id)
-      // iCloud sync disabled for free developer account
-      /*
-      Task.detached {
-          try? await CloudKitService.shared.delete(conversationId: conversation.id)
-      }
-      */
+            // iCloud sync disabled for free developer account
+            /*
+             Task.detached {
+                 try? await CloudKitService.shared.delete(conversationId: conversation.id)
+             }
+             */
             deindexConversation(id: conversation.id)
         }
     }
@@ -497,65 +497,66 @@ final class ConversationManager: ObservableObject {
             conversation.title.localizedCaseInsensitiveContains(query) ||
                 conversation.messages.contains { message in
                     message.content.localizedCaseInsensitiveContains(query)
-        }
-    }
-  }
-
-  private func syncWithCloud() async {
-    // iCloud sync disabled for free developer account
-    /*
-    guard let tokenData = AppPreferences.storage.data(forKey: "cloudKitChangeToken"),
-          let token = try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: tokenData) else {
-        // Initial sync
-        await performCloudFetch(since: nil)
-        return
-    }
-    await performCloudFetch(since: token)
-    */
-  }
-
-  private func performCloudFetch(since token: CKServerChangeToken?) async {
-    // iCloud sync disabled for free developer account
-    /*
-    do {
-        let (changed, deleted, newToken) = try await CloudKitService.shared.fetchChanges(since: token)
-    
-        // Apply deletions
-        for recordID in deleted {
-            if let uuid = UUID(uuidString: recordID.recordName) {
-                try? await store.delete(uuid)
-                // Also remove from memory
-                if let index = conversations.firstIndex(where: { $0.id == uuid }) {
-                    conversations.remove(at: index)
                 }
-            }
         }
-    
-        // Apply changes
-        for record in changed {
-            if let asset = record["encryptedData"] as? CKAsset, let fileURL = asset.fileURL {
-                // Copy file to store
-                if let uuid = UUID(uuidString: record.recordID.recordName) {
-                    let destURL = store.fileURL(for: uuid)
-                    try? FileManager.default.removeItem(at: destURL)
-                    try? FileManager.default.copyItem(at: fileURL, to: destURL)
-                }
-            }
-        }
-    
-        // Save new token
-        if let newToken = newToken {
-            let data = try NSKeyedArchiver.archivedData(withRootObject: newToken, requiringSecureCoding: true)
-            AppPreferences.storage.set(data, forKey: "cloudKitChangeToken")
-        }
-    
-        // Reload conversations to reflect changes
-        await loadConversations()
-    
-    } catch {
-        logManager("Cloud sync failed", level: .error, metadata: ["error": error.localizedDescription])
     }
-    */
+
+    private func syncWithCloud() async {
+        // iCloud sync disabled for free developer account
+        /*
+         guard let tokenData = AppPreferences.storage.data(forKey: "cloudKitChangeToken"),
+               let token = try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: tokenData) else {
+             // Initial sync
+             await performCloudFetch(since: nil)
+             return
+         }
+         await performCloudFetch(since: token)
+         */
+    }
+
+    private func performCloudFetch(since _: CKServerChangeToken?) async {
+        // iCloud sync disabled for free developer account
+        /*
+         do {
+             let changes = try await CloudKitService.shared.fetchChanges(since: token)
+             let (changed, deleted, newToken) = (changes.changed, changes.deleted, changes.newToken)
+
+             // Apply deletions
+             for recordID in deleted {
+                 if let uuid = UUID(uuidString: recordID.recordName) {
+                     try? await store.delete(uuid)
+                     // Also remove from memory
+                     if let index = conversations.firstIndex(where: { $0.id == uuid }) {
+                         conversations.remove(at: index)
+                     }
+                 }
+             }
+
+             // Apply changes
+             for record in changed {
+                 if let asset = record["encryptedData"] as? CKAsset, let fileURL = asset.fileURL {
+                     // Copy file to store
+                     if let uuid = UUID(uuidString: record.recordID.recordName) {
+                         let destURL = store.fileURL(for: uuid)
+                         try? FileManager.default.removeItem(at: destURL)
+                         try? FileManager.default.copyItem(at: fileURL, to: destURL)
+                     }
+                 }
+             }
+
+             // Save new token
+             if let newToken = newToken {
+                 let data = try NSKeyedArchiver.archivedData(withRootObject: newToken, requiringSecureCoding: true)
+                 AppPreferences.storage.set(data, forKey: "cloudKitChangeToken")
+             }
+
+             // Reload conversations to reflect changes
+             await loadConversations()
+
+         } catch {
+             logManager("Cloud sync failed", level: .error, metadata: ["error": error.localizedDescription])
+         }
+         */
     }
 }
 

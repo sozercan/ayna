@@ -1,5 +1,5 @@
 //
-//  SidebarView.swift
+//  MacSidebarView.swift
 //  ayna
 //
 //  Created on 11/2/25.
