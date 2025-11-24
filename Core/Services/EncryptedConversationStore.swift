@@ -214,6 +214,10 @@ final class EncryptedConversationStore: Sendable {
         let fileURL = directory.appendingPathComponent("\(conversation.id.uuidString).enc")
         try combined.write(to: fileURL, options: .atomic)
     }
+
+  func fileURL(for conversationId: UUID) -> URL {
+    directoryURL.appendingPathComponent("\(conversationId.uuidString).enc")
+  }
 }
 
 

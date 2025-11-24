@@ -103,7 +103,7 @@ struct IOSChatView: View {
                             .font(.headline)
 
                         Menu {
-                            ForEach(openAIService.customModels, id: \.self) { model in
+              ForEach(openAIService.usableModels, id: \.self) { model in
                                 Button {
                                     conversationManager.updateModel(for: conversation, model: model)
                                 } label: {

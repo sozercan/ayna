@@ -124,7 +124,7 @@ struct MacNewChatView: View {
     }
 
     private var needsModelSetup: Bool {
-        openAIService.customModels.isEmpty
+    openAIService.usableModels.isEmpty
             || openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -311,14 +311,15 @@ struct MacNewChatView: View {
                             }
 
                             // Model selector
-                            Menu {
-                                if openAIService.customModels.isEmpty {
+              Menu {
+                if openAIService.usableModels.isEmpty {
                                     SettingsLink {
                                         Label("Add Model in Settings", systemImage: "slider.horizontal.3")
                                     }
                                     .routeSettings(to: .models)
                                 } else {
-                                    ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) { _, model in
+                  ForEach(Array(openAIService.usableModels.enumerated()), id: \.offset) {
+                    _, model in
                                         Button(action: {
                                             selectedModel = model
                                             openAIService.selectedModel = model

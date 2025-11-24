@@ -124,7 +124,7 @@ struct MacChatView: View {
     private var composerModelLabel: String {
         let displayName = normalizedSelectedModel
         if displayName.isEmpty {
-            return openAIService.customModels.isEmpty ? "Add Model" : "Select Model"
+      return openAIService.usableModels.isEmpty ? "Add Model" : "Select Model"
         }
         return displayName
     }
@@ -331,14 +331,14 @@ struct MacChatView: View {
                         }
 
                         // Model selector (seamlessly integrated)
-                        Menu {
-                            if openAIService.customModels.isEmpty {
+            Menu {
+              if openAIService.usableModels.isEmpty {
                                 SettingsLink {
                                     Label("Add Model in Settings", systemImage: "slider.horizontal.3")
                                 }
                                 .routeSettings(to: .models)
                             } else {
-                                ForEach(Array(openAIService.customModels.enumerated()), id: \.offset) { _, model in
+                ForEach(Array(openAIService.usableModels.enumerated()), id: \.offset) { _, model in
                                     Button(action: {
                                         selectedModel = model
                                         conversationManager.updateModel(for: conversation, model: model)

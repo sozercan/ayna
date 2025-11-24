@@ -172,6 +172,22 @@ When the first user message is sent and title is still "New Conversation":
 - Appends "..." if content is longer
 - Updates conversation title automatically
 
+### iCloud Sync & Platform Specifics
+**Sync Status**:
+- Full implementation for syncing conversations (via CloudKit) and settings (via `NSUbiquitousKeyValueStore`) exists in the codebase.
+- **Currently Disabled**: Sync logic is commented out in `ConversationManager.swift`, `OpenAIService.swift`, and `KeychainStorage.swift` to support building with a free Apple Developer account (which lacks iCloud capabilities).
+- **To Enable**:
+  1. Uncomment `syncWithCloud()` and `performCloudFetch()` in `ConversationManager.swift`.
+  2. Uncomment `NSUbiquitousKeyValueStore` observers in `OpenAIService.swift`.
+  3. Uncomment `kSecAttrSynchronizable` in `KeychainStorage.swift`.
+  4. Add "iCloud" capability (CloudKit + Key-value storage) in Xcode.
+
+**Platform-Specific Model Filtering**:
+- `OpenAIService.usableModels` filters available models based on the OS.
+- **iOS**: Automatically hides `AIKit` models since local container execution is not supported.
+- **macOS**: Shows all models including `AIKit`.
+- UI components (`MacChatView`, `IOSChatView`, Settings) bind to `usableModels` instead of raw `customModels`.
+
 ### Simplified Interface
 The interface has been streamlined to focus on core chat functionality:
 - Clean input area with dynamic text editor that auto-expands
@@ -302,7 +318,7 @@ do {
 ### Planned Features (Roadmap)
 The README outlines features ready for implementation due to extensible architecture:
 - Voice input (add AVFoundation speech recognition)
-- iCloud sync (models already `Codable`, switch from `UserDefaults` to CloudKit)
+- iCloud sync (Implemented but disabled for free developer accounts; see "iCloud Sync & Platform Specifics" above)
 
 ### Known Limitations
 - No token usage tracking or cost calculation

@@ -390,7 +390,7 @@ struct MacMessageView: View {
                         }
 
                         Menu {
-                            ForEach(openAIService.customModels, id: \.self) { model in
+              ForEach(openAIService.usableModels, id: \.self) { model in
                                 Button(action: {
                                     onSwitchModel?(model)
                                 }) {

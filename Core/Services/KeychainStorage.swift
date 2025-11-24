@@ -64,7 +64,7 @@ final class KeychainStorage: Sendable {
 
         if status == errSecItemNotFound {
             query[kSecValueData as String] = data
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+      query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let addStatus = SecItemAdd(query as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
                 log(
@@ -126,6 +126,8 @@ final class KeychainStorage: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key
+        // iCloud sync disabled for free developer account
+        // kSecAttrSynchronizable as String: kCFBooleanTrue!
         ]
     }
 }

@@ -76,6 +76,9 @@ class OpenAIService: ObservableObject {
     @Published var customModels: [String] {
         didSet {
             AppPreferences.storage.set(customModels, forKey: "customModels")
+      // iCloud sync disabled for free developer account
+      // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
+      // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -83,6 +86,9 @@ class OpenAIService: ObservableObject {
         didSet {
             let encodedDict = modelProviders.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
+      // iCloud sync disabled for free developer account
+      // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
+      // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -90,12 +96,18 @@ class OpenAIService: ObservableObject {
         didSet {
             let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
+      // iCloud sync disabled for free developer account
+      // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
+      // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
     @Published var modelEndpoints: [String: String] {
         didSet {
             AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
+      // iCloud sync disabled for free developer account
+      // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
+      // NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
 
@@ -218,6 +230,9 @@ class OpenAIService: ObservableObject {
         outputCompression =
             AppPreferences.storage.integer(forKey: "outputCompression") == 0
                 ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
+
+    // iCloud sync disabled for free developer account
+    // setupiCloudSync()
     }
 
     private func saveAPIKey() {
@@ -1879,8 +1894,51 @@ extension OpenAIService {
            !isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
         {
             issues.append("Add an API key for \(activeProvider.displayName)")
+    }
+    return issues
+  }
+
+  var usableModels: [String] {
+    customModels.filter { model in
+      #if os(iOS)
+        if modelProviders[model] == .aikit {
+          return false
         }
-        return issues
+      #endif
+      return true
+    }
+  }
+
+  private func setupiCloudSync() {
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(ubiquitousKeyValueStoreDidChange),
+      name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+      object: NSUbiquitousKeyValueStore.default)
+    NSUbiquitousKeyValueStore.default.synchronize()
+  }
+
+  @objc private func ubiquitousKeyValueStoreDidChange(notification: NSNotification) {
+    let store = NSUbiquitousKeyValueStore.default
+
+    DispatchQueue.main.async {
+      if let models = store.array(forKey: "customModels") as? [String] {
+        self.customModels = models
+      }
+
+      if let providers = store.dictionary(forKey: "modelProviders") as? [String: String] {
+        self.modelProviders = providers.compactMapValues { AIProvider(rawValue: $0) }
+      }
+
+      if let endpointTypes = store.dictionary(forKey: "modelEndpointTypes") as? [String: String] {
+        self.modelEndpointTypes = endpointTypes.compactMapValues {
+          APIEndpointType(rawValue: $0)
+        }
+      }
+
+      if let endpoints = store.dictionary(forKey: "modelEndpoints") as? [String: String] {
+        self.modelEndpoints = endpoints
+            }
+        }
     }
 }
 
