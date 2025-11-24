@@ -159,7 +159,6 @@ struct MacMessageView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 6)
             .contentShape(Rectangle())
-            .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
             .onHover { hovering in
                 isHovered = hovering
             }
@@ -255,6 +254,7 @@ struct MacMessageView: View {
             .tint(.white)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: accessibilityText))
+            .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
 
             actionControls(for: message.role)
                 .offset(y: -26)
@@ -456,6 +456,7 @@ struct MacMessageView: View {
                     )
                     .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 0, y: 4)
                     .environment(\.colorScheme, .dark)
+                    .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
 
                     actionControls(for: message.role)
                         .offset(y: -26)

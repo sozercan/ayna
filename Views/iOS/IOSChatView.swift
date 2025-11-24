@@ -219,7 +219,7 @@ struct IOSChatView: View {
         guard !text.isEmpty || !attachedFiles.isEmpty else { return }
 
         var userMessage = Message(role: .user, content: text)
-        
+
         if !attachedFiles.isEmpty {
             var attachments: [Message.FileAttachment] = []
             for url in attachedFiles {
@@ -261,7 +261,7 @@ struct IOSChatView: View {
                     Task { @MainActor in
                         if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
                            let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id }) {
-                            
+
                             var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
                             updatedMessage.mediaType = .image
                             updatedMessage.imageData = data

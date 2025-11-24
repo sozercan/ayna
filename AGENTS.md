@@ -43,6 +43,10 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
   ```
+- **Recommended for debugging**: Run a specific UI test case to save time:
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests/AynaSmokeUITests/testName
+  ```
 - Run the entire suite:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
@@ -50,6 +54,33 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 - Tests live under `Tests/aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `Tests/aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
+
+### UI Testing Strategy
+The project uses a robust UI testing strategy to ensure stability without external dependencies:
+
+1.  **Environment Isolation**:
+    -   Tests launch with `app.launchArguments = ["--ui-testing"]` and `app.launchEnvironment["AYNA_UI_TESTING"] = "1"`.
+    -   `aynaApp.swift` detects this flag and injects:
+        -   `InMemoryKeychainStorage`: Prevents polluting the system Keychain.
+        -   `MockURLProtocol`: Intercepts network requests to return deterministic JSON responses (e.g., mock chat completions).
+        -   Temporary storage paths: Ensures tests don't touch real user conversations.
+
+2.  **Accessibility Identifiers**:
+    -   **Mandatory**: Every interactive element (buttons, text fields, list rows) must have a unique `.accessibilityIdentifier`.
+    -   **Naming Convention**: Use dot notation (e.g., `sidebar.newConversationButton`, `chat.composer.textEditor`, `message.action.copy`).
+    -   **Dynamic Elements**: For lists, append IDs (e.g., `sidebar.conversationRow.{UUID}`).
+
+3.  **Handling Hover States (macOS)**:
+    -   Elements that appear only on hover (like the "Copy" button on messages) require specific handling:
+        -   The container view must have an identifier (e.g., `chat.message.{UUID}`).
+        -   The test must explicitly `.hover()` over the container before asserting existence of the child button.
+        -   **Implementation Note**: Ensure `.onHover` modifiers are placed correctly in the SwiftUI view hierarchy so the state change triggers a redraw that reveals the child element to the accessibility system.
+
+4.  **Asynchronous Assertions**:
+    -   Never use `sleep()`. Use `XCTAssertTrue(element.waitForExistence(timeout: 5))` to handle animations and state transitions gracefully.
+
+5.  **Debugging**:
+    -   If a test fails to find an element, print `app.debugDescription` to the console to view the current accessibility hierarchy. This reveals exactly what XCTest "sees" (or doesn't see).
 
 ### Build & Test Expectations
 - Unless your change is strictly documentation (e.g., Markdown copy edits with zero code or config impact), run `xcodebuild -scheme Ayna -destination 'platform=macOS' build`.
