@@ -18,8 +18,33 @@ struct IOSMessageView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                if let attachments = message.attachments, !attachments.isEmpty {
+                    ForEach(attachments, id: \.fileName) { attachment in
+                        HStack {
+                            Image(systemName: "doc.fill")
+                                .foregroundStyle(.secondary)
+                            Text(attachment.fileName)
+                                .font(.caption)
+                                .lineLimit(1)
+                        }
+                        .padding(6)
+                        .background(Color.black.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                }
+
+                if message.mediaType == .image, let imageData = message.imageData, let uiImage = UIImage(data: imageData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 280)
+                        .cornerRadius(12)
+                }
+
                 if contentBlocks.isEmpty {
-                    Text(message.content)
+                    if !message.content.isEmpty {
+                        Text(message.content)
+                    }
                 } else {
                     ForEach(contentBlocks) { block in
                         IOSContentBlockView(block: block)
