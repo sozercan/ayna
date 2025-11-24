@@ -107,6 +107,15 @@ final class MCPServerManagerTests: XCTestCase {
         primaryService.simulateUnexpectedTermination(error: "boom")
 
         await fulfillment(of: [reconnectExpectation], timeout: 1.0)
+
+        // Wait for state to update to connected since onConnect fires before state update
+        for _ in 0..<10 {
+            if manager.getServerStatus(config.name)?.state == .connected {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        }
+
         XCTAssertTrue(manager.isServerConnected(config.name))
         XCTAssertEqual(reconnectService.connectCallCount, 1)
         XCTAssertEqual(manager.getServerStatus(config.name)?.state, .connected)

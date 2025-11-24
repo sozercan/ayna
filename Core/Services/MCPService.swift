@@ -233,9 +233,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
         cleanupProcessResources()
 
-        Task { @MainActor in
-            isConnected = false
-            isDisconnectingManually = false
+        Task { @MainActor [weak self] in
+            self?.isConnected = false
+            self?.isDisconnectingManually = false
         }
     }
 
