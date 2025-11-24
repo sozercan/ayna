@@ -5,7 +5,15 @@
 //  Created on 11/18/25.
 //
 
+#if os(macOS)
 import AppKit
+typealias PlatformFont = NSFont
+typealias PlatformColor = NSColor
+#elseif os(iOS)
+import UIKit
+typealias PlatformFont = UIFont
+typealias PlatformColor = UIColor
+#endif
 import Foundation
 import PDFKit
 import SwiftUI
@@ -61,20 +69,28 @@ enum ConversationExporter {
         let contentHeight = pageHeight - (margin * 2)
 
         // Text attributes
-        let titleFont = NSFont.boldSystemFont(ofSize: 24)
-        let headerFont = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let roleFont = NSFont.boldSystemFont(ofSize: 14)
-        let bodyFont = NSFont.systemFont(ofSize: 12)
+        let titleFont = PlatformFont.boldSystemFont(ofSize: 24)
+        let headerFont = PlatformFont.systemFont(ofSize: 12, weight: .medium)
+        let roleFont = PlatformFont.boldSystemFont(ofSize: 14)
+        let bodyFont = PlatformFont.systemFont(ofSize: 12)
 
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: titleFont]
+        let secondaryColor: PlatformColor = {
+            #if os(macOS)
+            return PlatformColor.secondaryLabelColor
+            #else
+            return PlatformColor.secondaryLabel
+            #endif
+        }()
+
         let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: headerFont, .foregroundColor: NSColor.secondaryLabelColor
+            .font: headerFont, .foregroundColor: secondaryColor
         ]
         let userRoleAttributes: [NSAttributedString.Key: Any] = [
-            .font: roleFont, .foregroundColor: NSColor.systemBlue
+            .font: roleFont, .foregroundColor: PlatformColor.systemBlue
         ]
         let assistantRoleAttributes: [NSAttributedString.Key: Any] = [
-            .font: roleFont, .foregroundColor: NSColor.systemGreen
+            .font: roleFont, .foregroundColor: PlatformColor.systemGreen
         ]
         let bodyAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
 

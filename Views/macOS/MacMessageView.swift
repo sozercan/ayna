@@ -8,7 +8,7 @@
 import SwiftUI
 
 @MainActor
-struct MessageView: View {
+struct MacMessageView: View {
     let message: Message
     var modelName: String?
     var onRetry: (() -> Void)?
@@ -159,8 +159,6 @@ struct MessageView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 6)
             .contentShape(Rectangle())
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(verbatim: accessibilityText))
             .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
             .onHover { hovering in
                 isHovered = hovering
@@ -255,6 +253,8 @@ struct MessageView: View {
             .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
             .environment(\.colorScheme, .dark)
             .tint(.white)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: accessibilityText))
 
             actionControls(for: message.role)
                 .offset(y: -26)
@@ -362,7 +362,7 @@ struct MessageView: View {
 
     @MainActor @ViewBuilder
     private func actionControls(for role: Message.Role) -> some View {
-        if isHovered {
+        if isHovered || UITestEnvironment.isEnabled {
             HStack(spacing: 6) {
                 Button(action: {
                     copyToClipboard(message.content)
@@ -900,12 +900,12 @@ extension ContentBlock {
 
 #Preview {
     VStack(spacing: 16) {
-        MessageView(message: Message(
+        MacMessageView(message: Message(
             role: .user,
             content: "What is SwiftUI?"
         ))
 
-        MessageView(message: Message(
+        MacMessageView(message: Message(
             role: .assistant,
             content: """
             SwiftUI is Apple's modern framework for building user interfaces across all Apple platforms. Here are some key features:

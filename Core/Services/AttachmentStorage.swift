@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 /// Manages storage of message attachments (images, files) on disk
 /// to reduce the size of the encrypted conversation store.

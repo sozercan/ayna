@@ -23,7 +23,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
 // the larger body here until the view hierarchy is modularized.
 
 // swiftlint:disable:next type_body_length
-struct ChatView: View {
+struct MacChatView: View {
     let conversation: Conversation
 
     init(conversation: Conversation) {
@@ -152,7 +152,7 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(visibleMessages) { message in
-                                MessageView(
+                                MacMessageView(
                                     message: message,
                                     modelName: message.model,
                                     onRetry: message.role == .assistant
@@ -1332,7 +1332,7 @@ struct ChatView: View {
 }
 
 #Preview {
-    ChatView(conversation: Conversation())
+    MacChatView(conversation: Conversation())
         .environmentObject(ConversationManager())
         .frame(width: 800, height: 600)
 }

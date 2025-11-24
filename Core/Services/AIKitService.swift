@@ -7,6 +7,7 @@
 
 import Foundation
 import os.log
+import Combine
 
 // AIKit Model Definition
 struct AIKitModel: Identifiable, Codable {

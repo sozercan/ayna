@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Handles deterministic configuration when the app is launched from UI tests.
 enum UITestEnvironment {
@@ -10,7 +11,6 @@ enum UITestEnvironment {
 
     static var isEnabled: Bool {
         let processInfo = ProcessInfo.processInfo
-        if processInfo.environment[xctestConfigurationKey] != nil { return true }
         if processInfo.environment[flag] == "1" { return true }
         if processInfo.arguments.contains(launchArgument) { return true }
         if processInfo.arguments.contains(userDefaultsArgument) { return true }

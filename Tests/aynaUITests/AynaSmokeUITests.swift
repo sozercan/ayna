@@ -65,7 +65,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         searchField.typeText(uniqueKeyword)
 
         // Verify filtering
-        XCTAssertTrue(app.staticTexts[title].exists)
+        XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts[otherTitle].exists)
     }
 

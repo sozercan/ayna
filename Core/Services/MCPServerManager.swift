@@ -6,6 +6,8 @@
 //
 
 import Foundation
+import os
+import Combine
 
 /// Manages multiple MCP server connections and tool discovery
 @MainActor

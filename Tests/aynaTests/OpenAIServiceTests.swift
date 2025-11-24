@@ -1,6 +1,7 @@
 @testable import Ayna
 import XCTest
 
+@MainActor
 final class OpenAIServiceTests: XCTestCase {
     private var defaults: UserDefaults!
 
@@ -32,7 +33,10 @@ final class OpenAIServiceTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config)
-        return OpenAIService(urlSession: session)
+        let service = OpenAIService(urlSession: session)
+        service.customModels = ["gpt-4o"]
+        service.selectedModel = "gpt-4o"
+        return service
     }
 
     func testSendMessageWithoutAPIKeyThrowsError() {
@@ -84,7 +88,7 @@ final class OpenAIServiceTests: XCTestCase {
             return (response, body)
         }
 
-        var receivedChunk = ""
+        let receivedChunk = ResultHolder()
 
         service.sendMessage(
             messages: [Message(role: .user, content: "Hi")],
@@ -94,7 +98,7 @@ final class OpenAIServiceTests: XCTestCase {
             tools: nil,
             conversationId: nil,
             onChunk: { chunk in
-                receivedChunk = chunk
+                receivedChunk.value = chunk
             },
             onComplete: {
                 completionExpectation.fulfill()
@@ -116,8 +120,27 @@ final class OpenAIServiceTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-unit-test")
 
+        var bodyData = request.httpBody
+        if bodyData == nil, let stream = request.httpBodyStream {
+            stream.open()
+            var data = Data()
+            let bufferSize = 1024
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: bufferSize)
+                if read > 0 {
+                    data.append(buffer, count: read)
+                } else {
+                    break
+                }
+            }
+            stream.close()
+            bodyData = data
+        }
+
         guard
-            let body = request.httpBody,
+            let body = bodyData,
             let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else {
             return XCTFail("Failed to decode request body")
@@ -134,7 +157,7 @@ final class OpenAIServiceTests: XCTestCase {
         }
 
         XCTAssertEqual(content, "Hi")
-        XCTAssertEqual(receivedChunk, "Hello")
+        XCTAssertEqual(receivedChunk.value, "Hello")
     }
 
     func testSendMessageParsesStructuredContentResponse() {
@@ -153,7 +176,7 @@ final class OpenAIServiceTests: XCTestCase {
             return (response, body)
         }
 
-        var receivedChunk = ""
+        let receivedChunk = ResultHolder()
 
         service.sendMessage(
             messages: [Message(role: .user, content: "Hello")],
@@ -163,10 +186,10 @@ final class OpenAIServiceTests: XCTestCase {
             tools: nil,
             conversationId: nil,
             onChunk: { chunk in
-                receivedChunk += chunk
+                receivedChunk.value += chunk
             },
             onComplete: {
-                XCTAssertEqual(receivedChunk, "Structured hello")
+                XCTAssertEqual(receivedChunk.value, "Structured hello")
                 completionExpectation.fulfill()
             },
             onError: { error in
@@ -182,8 +205,8 @@ final class OpenAIServiceTests: XCTestCase {
 }
 
 private final class MockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-    static var lastRequest: URLRequest?
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var lastRequest: URLRequest?
 
     static func reset() {
         requestHandler = nil
@@ -216,4 +239,8 @@ private final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+class ResultHolder: @unchecked Sendable {
+    var value = ""
 }

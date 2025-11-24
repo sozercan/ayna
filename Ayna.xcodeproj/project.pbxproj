@@ -7,66 +7,77 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		01000001 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000001 /* aynaApp.swift */; };
-		01000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000002 /* ContentView.swift */; };
-		01000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000003 /* Assets.xcassets */; };
-		01000004 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000004 /* Conversation.swift */; };
-		01000005 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000005 /* Message.swift */; };
-		01000006 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* OpenAIService.swift */; };
-		01000007 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000007 /* ChatView.swift */; };
-		01000008 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000008 /* SidebarView.swift */; };
-		01000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000009 /* SettingsView.swift */; };
-		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
-		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
-		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
-		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
-		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
-		C88651C12ED3D341002EDCB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000003 /* Assets.xcassets */; };
-		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
-		C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */; };
-		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
-		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
-		C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
-		C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
-		C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */; };
-		C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */; };
-		C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */; };
-		C8FBD3D02ED2F48B00E39928 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */; };
-		C8FBD3D12ED2F48B00E39928 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */; };
-		C8FBD3D22ED2F48B00E39928 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */; };
-		C8FBD3D32ED2F48B00E39928 /* IOSChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */; };
-		C8FBD3D42ED2F48B00E39928 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */; };
-		C8FBD3D52ED2F48B00E39928 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */; };
-		C8FBD3D62ED2F4F300E39928 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
-		C8FBD3D72ED2F4F300E39928 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000005 /* Message.swift */; };
-		C8FBD3D82ED2F4F300E39928 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000004 /* Conversation.swift */; };
-		C8FBD3D92ED2F51800E39928 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
-		C8FBD3DA2ED2F51800E39928 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* OpenAIService.swift */; };
-		C8FBD3DB2ED2F51800E39928 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
-		C8FBD3DC2ED2F51800E39928 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
-		C8FBD3DD2ED2F52A00E39928 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
-		C8FBD3DE2ED2F54800E39928 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
-		C8FBD3DF2ED2F54800E39928 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
-		C8FBD3E02ED2F54E00E39928 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
-		C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
-		C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */; };
-		C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
-		C9A1A0013090F5E900ABCD01 /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */; };
-		C9A1A0023090F5E900ABCD01 /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */; };
-		C9A210013091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
-		C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */; };
-		C9A210033091061300ABCD01 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200033091061300ABCD01 /* UITestEnvironment.swift */; };
-		C9A210043091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
-		C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */; };
-		C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */; };
-		C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
-		C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */; };
-		C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */; };
-		C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500022F40000000ABCD01 /* MCPServerStatus.swift */; };
-		C9D500042F40000000ABCD01 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */; };
-		C9E0F0023095000000ABCD01 /* MCPProcessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */; };
-		C9F0A00230A2C00100ABCD01 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */; };
-		FE409209D46D4D488EB95981 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */; };
+		C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */; };
+		C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
+		C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C81393A62ED3DE9900F5E7F9 /* Info.plist */; };
+		C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */; };
+		C81393AF2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
+		C81393DB2ED3DEB800F5E7F9 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B42ED3DEB800F5E7F9 /* Conversation.swift */; };
+		C81393DC2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */; };
+		C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */; };
+		C81393DE2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */; };
+		C81393E02ED3DEB800F5E7F9 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B62ED3DEB800F5E7F9 /* Message.swift */; };
+		C81393E22ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */; };
+		C81393E32ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */; };
+		C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */; };
+		C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
+		C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
+		C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
+		C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
+		C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
+		C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */; };
+		C81393F12ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */; };
+		C81393F22ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */; };
+		C81393F52ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */; };
+		C81393F72ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */; };
+		C81393FC2ED3DEB800F5E7F9 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B42ED3DEB800F5E7F9 /* Conversation.swift */; };
+		C81393FD2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */; };
+		C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */; };
+		C81393FF2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */; };
+		C81394012ED3DEB800F5E7F9 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B62ED3DEB800F5E7F9 /* Message.swift */; };
+		C81394032ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */; };
+		C81394042ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */; };
+		C81394052ED3DEB800F5E7F9 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */; };
+		C81394062ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */; };
+		C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
+		C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
+		C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
+		C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */; };
+		C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */; };
+		C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
+		C813940E2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
+		C813940F2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */; };
+		C81394112ED3DEB800F5E7F9 /* MCPProcessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C72ED3DEB800F5E7F9 /* MCPProcessTracker.swift */; };
+		C81394122ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */; };
+		C81394132ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */; };
+		C81394142ED3DEB800F5E7F9 /* MCPServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */; };
+		C81394162ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */; };
+		C81394182ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */; };
+		C813942E2ED3DEC900F5E7F9 /* MacSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */; };
+		C81394302ED3DEC900F5E7F9 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394262ED3DEC900F5E7F9 /* MacContentView.swift */; };
+		C81394312ED3DEC900F5E7F9 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */; };
+		C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394252ED3DEC900F5E7F9 /* MacChatView.swift */; };
+		C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */; };
+		C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */; };
+		C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */; };
+		C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */; };
+		C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */; };
+		C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */; };
+		C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */; };
+		C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */; };
+		C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */; };
+		C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */; };
+		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
+		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
+		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
+		C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */; };
+		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
+		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
+		C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */; };
+		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
+		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,58 +98,62 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		02000001 /* aynaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aynaApp.swift; sourceTree = "<group>"; };
-		02000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		02000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		02000004 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
-		02000005 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
-		02000006 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
-		02000007 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		02000008 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
-		02000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		02000010 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
-		02000012 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
-		02000013 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
-		6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
-		C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
-		C8831AFA2EBDCA9800C5703C /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
-		C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
-		C8E86EFD2EB9281300D601B5 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
-		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
-		C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
-		C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
-		C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
+		C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
+		C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
+		C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aynaApp.swift; sourceTree = "<group>"; };
+		C81393A62ED3DE9900F5E7F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
+		C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentBlock.swift; sourceTree = "<group>"; };
+		C81393B42ED3DEB800F5E7F9 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
+		C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
+		C81393B62ED3DEB800F5E7F9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
+		C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
+		C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
+		C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
+		C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
+		C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
+		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
+		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
+		C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
+		C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
+		C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
+		C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
+		C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
+		C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
+		C81393C72ED3DEB800F5E7F9 /* MCPProcessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPProcessTracker.swift; sourceTree = "<group>"; };
+		C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
+		C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestIdentifiers.swift; sourceTree = "<group>"; };
+		C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
+		C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
+		C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
+		C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
+		C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
+		C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
+		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
+		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
+		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
+		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
+		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
+		C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
+		C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
+		C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
+		C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
+		C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
+		C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
+		C81394252ED3DEC900F5E7F9 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
+		C81394262ED3DEC900F5E7F9 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
+		C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMessageView.swift; sourceTree = "<group>"; };
+		C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
+		C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarView.swift; sourceTree = "<group>"; };
+		C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
+		C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
-		C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
-		C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
-		C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
-		C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
-		C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
-		C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
-		C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
-		C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
-		C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
-		C90000032F01A00100ABCDE0 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		C9A100013090F5E900ABCD01 /* aynaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
-		C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
-		C9A200013091061300ABCD01 /* TestIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestIdentifiers.swift; sourceTree = "<group>"; };
-		C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
-		C9A200033091061300ABCD01 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
-		C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
-		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
-		C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
-		C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
-		C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
-		C9D500022F40000000ABCD01 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
-		C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
-		C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPProcessTracker.swift; sourceTree = "<group>"; };
-		C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -176,20 +191,13 @@
 		06000001 = {
 			isa = PBXGroup;
 			children = (
-				C8FBD3CF2ED2F48B00E39928 /* iOS */,
-				04000001 /* ayna.entitlements */,
-				02000001 /* aynaApp.swift */,
-				02000002 /* ContentView.swift */,
 				06000004 /* Views */,
-				06000005 /* Models */,
-				06000006 /* Services */,
-				06000008 /* Utilities */,
-				C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */,
-				06000007 /* ViewModels */,
-				02000003 /* Assets.xcassets */,
-				C8F1F0012ED5B4F500B5BC45 /* aynaTests */,
-				C9A100023090F5E900ABCD01 /* aynaUITests */,
 				06000003 /* Products */,
+				C81393A82ED3DE9900F5E7F9 /* App */,
+				C81393CE2ED3DEB800F5E7F9 /* Core */,
+				C81393DA2ED3DEB800F5E7F9 /* Tests */,
+				C813942D2ED3DEC900F5E7F9 /* Views */,
+				C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -207,108 +215,175 @@
 		06000004 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */,
-				C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */,
-				02000007 /* ChatView.swift */,
-				02000008 /* SidebarView.swift */,
-				02000009 /* SettingsView.swift */,
-				02000012 /* MessageView.swift */,
-				6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */,
-				C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
-		06000005 /* Models */ = {
+		C81393A22ED3DE9900F5E7F9 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
-				C8E86F002EB928F200D601B5 /* MCPModels.swift */,
-				02000004 /* Conversation.swift */,
-				02000005 /* Message.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		06000006 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */,
-				C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */,
-				C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */,
-				C8831AFA2EBDCA9800C5703C /* AIKitService.swift */,
-				02000013 /* AppleIntelligenceService.swift */,
-				C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */,
-				C9D500022F40000000ABCD01 /* MCPServerStatus.swift */,
-				C8E86EFD2EB9281300D601B5 /* MCPService.swift */,
-				02000006 /* OpenAIService.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		06000007 /* ViewModels */ = {
-			isa = PBXGroup;
-			children = (
-				02000010 /* ConversationManager.swift */,
-			);
-			path = ViewModels;
-			sourceTree = "<group>";
-		};
-		06000008 /* Utilities */ = {
-			isa = PBXGroup;
-			children = (
-				C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */,
-				C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */,
-				C90000032F01A00100ABCDE0 /* AppPreferences.swift */,
-				C9A200013091061300ABCD01 /* TestIdentifiers.swift */,
-				C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */,
-				C9A200033091061300ABCD01 /* UITestEnvironment.swift */,
-				C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */,
-				C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */,
-				C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */,
-			);
-			path = Utilities;
-			sourceTree = "<group>";
-		};
-		C8F1F0012ED5B4F500B5BC45 /* aynaTests */ = {
-			isa = PBXGroup;
-			children = (
-				C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */,
-				C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */,
-				C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */,
-				C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */,
-				C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */,
-			);
-			path = aynaTests;
-			sourceTree = "<group>";
-		};
-		C8FBD3CF2ED2F48B00E39928 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */,
-				C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */,
-				C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */,
-				C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */,
-				C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */,
-				C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */,
+				C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
 		};
-		C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */ = {
+		C81393A72ED3DE9900F5E7F9 /* macOS */ = {
 			isa = PBXGroup;
 			children = (
-				C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */,
+				C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */,
+				C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */,
+				C81393A62ED3DE9900F5E7F9 /* Info.plist */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
+		C81393A82ED3DE9900F5E7F9 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				C81393A22ED3DE9900F5E7F9 /* iOS */,
+				C81393A72ED3DE9900F5E7F9 /* macOS */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C81393B22ED3DEB800F5E7F9 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */,
 			);
 			path = Diagnostics;
 			sourceTree = "<group>";
 		};
-		C9A100023090F5E900ABCD01 /* aynaUITests */ = {
+		C81393B72ED3DEB800F5E7F9 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */,
-				C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */,
+				C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */,
+				C81393B42ED3DEB800F5E7F9 /* Conversation.swift */,
+				C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */,
+				C81393B62ED3DEB800F5E7F9 /* Message.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C81393C12ED3DEB800F5E7F9 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */,
+				C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */,
+				C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */,
+				C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */,
+				C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */,
+				C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */,
+				C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */,
+				C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */,
+				C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		C81393CB2ED3DEB800F5E7F9 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */,
+				C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */,
+				C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */,
+				C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */,
+				C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */,
+				C81393C72ED3DEB800F5E7F9 /* MCPProcessTracker.swift */,
+				C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */,
+				C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */,
+				C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		C81393CD2ED3DEB800F5E7F9 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		C81393CE2ED3DEB800F5E7F9 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				C81393B22ED3DEB800F5E7F9 /* Diagnostics */,
+				C81393B72ED3DEB800F5E7F9 /* Models */,
+				C81393C12ED3DEB800F5E7F9 /* Services */,
+				C81393CB2ED3DEB800F5E7F9 /* Utilities */,
+				C81393CD2ED3DEB800F5E7F9 /* ViewModels */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		C81393D62ED3DEB800F5E7F9 /* aynaTests */ = {
+			isa = PBXGroup;
+			children = (
+				C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */,
+				C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */,
+				C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */,
+				C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */,
+				C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */,
+				C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */,
+				C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */,
+			);
+			path = aynaTests;
+			sourceTree = "<group>";
+		};
+		C81393D92ED3DEB800F5E7F9 /* aynaUITests */ = {
+			isa = PBXGroup;
+			children = (
+				C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */,
+				C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */,
 			);
 			path = aynaUITests;
+			sourceTree = "<group>";
+		};
+		C81393DA2ED3DEB800F5E7F9 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C81393D62ED3DEB800F5E7F9 /* aynaTests */,
+				C81393D92ED3DEB800F5E7F9 /* aynaUITests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		C81394222ED3DEC900F5E7F9 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */,
+				C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */,
+				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
+				C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */,
+				C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		C813942C2ED3DEC900F5E7F9 /* macOS */ = {
+			isa = PBXGroup;
+			children = (
+				C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */,
+				C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */,
+				C81394252ED3DEC900F5E7F9 /* MacChatView.swift */,
+				C81394262ED3DEC900F5E7F9 /* MacContentView.swift */,
+				C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */,
+				C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */,
+				C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */,
+				C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */,
+				C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
+		C813942D2ED3DEC900F5E7F9 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				C81394222ED3DEC900F5E7F9 /* iOS */,
+				C813942C2ED3DEC900F5E7F9 /* macOS */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -438,7 +513,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				01000003 /* Assets.xcassets in Resources */,
+				C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
+				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -446,7 +522,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C88651C12ED3D341002EDCB7 /* Assets.xcassets in Resources */,
+				C81393AF2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -457,39 +533,40 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C9E0F0023095000000ABCD01 /* MCPProcessTracker.swift in Sources */,
-				C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */,
-				C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */,
-				C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */,
-				C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */,
-				C9A210013091061300ABCD01 /* TestIdentifiers.swift in Sources */,
-				C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */,
-				C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */,
-				C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */,
-				C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */,
-				C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */,
-				01000001 /* aynaApp.swift in Sources */,
-				01000002 /* ContentView.swift in Sources */,
-				01000004 /* Conversation.swift in Sources */,
-				01000005 /* Message.swift in Sources */,
-				C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */,
-				01000006 /* OpenAIService.swift in Sources */,
-				C9A210033091061300ABCD01 /* UITestEnvironment.swift in Sources */,
-				01000013 /* AppleIntelligenceService.swift in Sources */,
-				FE409209D46D4D488EB95981 /* DynamicTextEditor.swift in Sources */,
-				01000007 /* ChatView.swift in Sources */,
-				C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */,
-				01000008 /* SidebarView.swift in Sources */,
-				01000009 /* SettingsView.swift in Sources */,
-				01000010 /* ConversationManager.swift in Sources */,
-				01000012 /* MessageView.swift in Sources */,
-				C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */,
-				C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */,
-				C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */,
-				C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */,
-				C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */,
-				C9D500042F40000000ABCD01 /* MCPToolSummaryView.swift in Sources */,
-				C9F0A00230A2C00100ABCD01 /* AttachmentStorage.swift in Sources */,
+				C81393FC2ED3DEB800F5E7F9 /* Conversation.swift in Sources */,
+				C81393FD2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */,
+				C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
+				C81393FF2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
+				C81394012ED3DEB800F5E7F9 /* Message.swift in Sources */,
+				C81394032ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
+				C81394042ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
+				C81394052ED3DEB800F5E7F9 /* MCPService.swift in Sources */,
+				C81394062ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
+				C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
+				C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
+				C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
+				C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */,
+				C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */,
+				C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
+				C813940E2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,
+				C813940F2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,
+				C81394112ED3DEB800F5E7F9 /* MCPProcessTracker.swift in Sources */,
+				C81394122ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */,
+				C81394132ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */,
+				C81394142ED3DEB800F5E7F9 /* MCPServerStatus.swift in Sources */,
+				C81394162ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */,
+				C81394182ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */,
+				C813942E2ED3DEC900F5E7F9 /* MacSidebarView.swift in Sources */,
+				C81394302ED3DEC900F5E7F9 /* MacContentView.swift in Sources */,
+				C81394312ED3DEC900F5E7F9 /* MCPToolSummaryView.swift in Sources */,
+				C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */,
+				C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */,
+				C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */,
+				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
+				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
+				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
+				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -497,11 +574,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */,
-				C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */,
-				C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */,
-				C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */,
-				C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */,
+				C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */,
+				C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */,
+				C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */,
+				C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */,
+				C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */,
+				C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */,
+				C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -509,23 +588,31 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C8FBD3D92ED2F51800E39928 /* AppleIntelligenceService.swift in Sources */,
-				C8FBD3DA2ED2F51800E39928 /* OpenAIService.swift in Sources */,
-				C8FBD3DB2ED2F51800E39928 /* KeychainStorage.swift in Sources */,
-				C8FBD3DC2ED2F51800E39928 /* EncryptedConversationStore.swift in Sources */,
-				C8FBD3D02ED2F48B00E39928 /* IOSMessageView.swift in Sources */,
-				C8FBD3D12ED2F48B00E39928 /* IOSContentView.swift in Sources */,
-				C8FBD3DE2ED2F54800E39928 /* MarkdownRenderer.swift in Sources */,
-				C8FBD3DF2ED2F54800E39928 /* AppPreferences.swift in Sources */,
-				C8FBD3D22ED2F48B00E39928 /* AynaIOSApp.swift in Sources */,
-				C8FBD3D32ED2F48B00E39928 /* IOSChatView.swift in Sources */,
-				C8FBD3E02ED2F54E00E39928 /* DiagnosticsLogger.swift in Sources */,
-				C8FBD3D62ED2F4F300E39928 /* MCPModels.swift in Sources */,
-				C8FBD3DD2ED2F52A00E39928 /* ConversationManager.swift in Sources */,
-				C8FBD3D72ED2F4F300E39928 /* Message.swift in Sources */,
-				C8FBD3D82ED2F4F300E39928 /* Conversation.swift in Sources */,
-				C8FBD3D42ED2F48B00E39928 /* IOSSidebarView.swift in Sources */,
-				C8FBD3D52ED2F48B00E39928 /* IOSSettingsView.swift in Sources */,
+				C81393DB2ED3DEB800F5E7F9 /* Conversation.swift in Sources */,
+				C81393DC2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */,
+				C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
+				C81393DE2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
+				C81393E02ED3DEB800F5E7F9 /* Message.swift in Sources */,
+				C81393E22ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
+				C81393E32ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
+				C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
+				C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
+				C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
+				C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
+				C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
+				C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,
+				C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,
+				C81393F12ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */,
+				C81393F22ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */,
+				C81393F52ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */,
+				C81393F72ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */,
+				C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */,
+				C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */,
+				C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */,
+				C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */,
+				C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */,
+				C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -533,9 +620,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C9A210043091061300ABCD01 /* TestIdentifiers.swift in Sources */,
-				C9A1A0013090F5E900ABCD01 /* AynaUITestCase.swift in Sources */,
-				C9A1A0023090F5E900ABCD01 /* AynaSmokeUITests.swift in Sources */,
+				C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */,
+				C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -683,7 +769,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
-				CODE_SIGN_ENTITLEMENTS = ayna.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/macOS/ayna.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -720,7 +806,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
-				CODE_SIGN_ENTITLEMENTS = ayna.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/macOS/ayna.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -754,7 +840,6 @@
 		C8F1D0012ED5B4F500B5BC45 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -779,7 +864,6 @@
 		C8F1D0022ED5B4F500B5BC45 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -879,7 +963,6 @@
 		C9A1D1013090F5E900ABCD01 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
@@ -902,7 +985,6 @@
 		C9A1D1023090F5E900ABCD01 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;

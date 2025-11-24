@@ -8,7 +8,7 @@
 import Combine
 import SwiftUI
 
-struct SidebarView: View {
+struct MacSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
@@ -239,7 +239,7 @@ struct ConversationRow: View {
 }
 
 #Preview {
-    SidebarView(selectedConversationId: .constant(nil))
+    MacSidebarView(selectedConversationId: .constant(nil))
         .environmentObject(ConversationManager())
         .frame(width: 300, height: 600)
 }

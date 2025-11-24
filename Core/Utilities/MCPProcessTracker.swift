@@ -7,6 +7,7 @@
 
 import Darwin
 import Foundation
+import os
 
 /// Tracks spawned MCP server subprocesses so we can clean them up after crashes or force quits.
 final class MCPProcessTracker: @unchecked Sendable {

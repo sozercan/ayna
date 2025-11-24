@@ -1,9 +1,9 @@
-@testable import ayna
+@testable import Ayna
 import XCTest
 
 @MainActor
 final class MCPServerManagerTests: XCTestCase {
-    private var suiteName: String = ""
+    nonisolated(unsafe) private var suiteName: String = ""
 
     override func setUp() {
         super.setUp()
@@ -205,6 +205,7 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
         ""
     }
 
+    @MainActor
     func simulateUnexpectedTermination(error: String? = nil) {
         delegate?.mcpService(self, didTerminateWithError: error)
     }

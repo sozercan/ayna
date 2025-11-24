@@ -56,24 +56,36 @@ struct aynaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MacContentView()
                 .environmentObject(conversationManager)
-                .frame(minWidth: 900, minHeight: 600)
-                .background(WindowAppearanceConfigurator())
+                .onAppear {
+                    // If running UI tests, ensure window is ready
+                    if UITestEnvironment.isEnabled {
+                        Task { @MainActor in
+                            if let window = NSApplication.shared.windows.first {
+                                window.makeKeyAndOrderFront(nil)
+                            }
+                        }
+                    }
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
+            SidebarCommands()
             CommandGroup(replacing: .newItem) {
                 Button("New Conversation") {
-                    NotificationCenter.default.post(name: .newConversationRequested, object: nil)
+                    NotificationCenter.default.post(
+                        name: .newConversationRequested,
+                        object: nil
+                    )
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
 
         Settings {
-            SettingsView()
+            MacSettingsView()
                 .environmentObject(conversationManager)
         }
     }
@@ -106,7 +118,7 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
             defer: false
         )
         fallbackWindow.contentView = NSHostingView(
-            rootView: ContentView()
+            rootView: MacContentView()
                 .environmentObject(manager)
                 .frame(minWidth: 900, minHeight: 600)
         )

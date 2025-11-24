@@ -6,6 +6,8 @@
 //
 
 import Foundation
+import Combine
+import os
 
 #if compiler(>=6.0)
     #warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
@@ -35,12 +37,13 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private var standardInput: Pipe?
     private var standardOutput: Pipe?
     private var standardError: Pipe?
+
     private var healthCheckTimer: DispatchSourceTimer?
     private var isDisconnectingManually = false
 
     private var requestId = 0
     private var pendingRequests: [Int: CheckedContinuation<MCPResponse, Error>] = [:]
-    private let requestQueue = DispatchQueue(label: "com.ayna.mcp.requests")
+    // requestQueue removed to use MainActor for thread safety
 
     let serverConfig: MCPServerConfig
     @Published var isConnected = false
@@ -193,6 +196,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         do {
             try process.run()
             MCPProcessTracker.shared.register(serverName: serverName, pid: process.processIdentifier)
+
+            // Initialize the MCP session
+            try await initialize()
         } catch {
             disconnect()
             let errorMsg = "Failed to start process: \(error.localizedDescription)"
@@ -207,61 +213,27 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             throw MCPServiceError.initializationFailed(errorMsg)
         }
 
-        // Wait a bit for the process to start
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-        // Initialize the connection with timeout
-        // If the process has already exited, initialization will fail with a timeout
-        do {
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .info,
-                message: "Initializing MCP server",
-                metadata: ["server": serverName]
-            )
-            try await withTimeout(seconds: 5) { [weak self] in
-                guard let self else {
-                    throw MCPServiceError.notConnected
-                }
-                try await initialize()
-            }
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .info,
-                message: "MCP server initialized",
-                metadata: ["server": serverName]
-            )
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                isConnected = true
-                startHealthCheckTimer()
-            }
-        } catch {
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .error,
-                message: "MCP initialization failed",
-                metadata: ["server": serverName, "error": error.localizedDescription]
-            )
-            disconnect()
-            Task { @MainActor [weak self] in
-                self?.lastError = "Initialization failed: \(error.localizedDescription)"
-            }
-            throw error
+        Task { @MainActor in
+            self.isConnected = true
+            self.lastError = nil
         }
+
+        startHealthCheckTimer()
     }
 
     func disconnect() {
+        guard !isDisconnectingManually else { return }
         isDisconnectingManually = true
-        stopHealthCheckTimer()
-        MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
-        cleanupProcessResources()
-        process?.terminationHandler = nil
-        process?.terminate()
-        process = nil
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
+        stopHealthCheckTimer()
+
+        if let process = process, process.isRunning {
+            process.terminate()
+        }
+
+        cleanupProcessResources()
+
+        Task { @MainActor in
             isConnected = false
             isDisconnectingManually = false
         }
@@ -374,41 +346,38 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     // MARK: - Low-level JSON-RPC
 
+    @MainActor
     private func sendRequest(method: String, params: [String: AnyCodable]?) async throws -> MCPResponse {
-        try await withCheckedThrowingContinuation { continuation in
-            requestQueue.async { [weak self] in
-                guard let self else {
+        requestId += 1
+        let id = requestId
+
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingRequests[id] = continuation
+
+            let request = MCPRequest(id: id, method: method, params: params)
+
+            do {
+                let data = try JSONEncoder().encode(request)
+                guard var jsonString = String(data: data, encoding: .utf8) else {
+                    pendingRequests.removeValue(forKey: id)
+                    continuation.resume(throwing: MCPServiceError.encodingFailed)
+                    return
+                }
+
+                jsonString += "\n"
+
+                guard let inputHandle = standardInput?.fileHandleForWriting else {
+                    pendingRequests.removeValue(forKey: id)
                     continuation.resume(throwing: MCPServiceError.notConnected)
                     return
                 }
 
-                requestId += 1
-                let id = requestId
-
-                pendingRequests[id] = continuation
-
-                let request = MCPRequest(id: id, method: method, params: params)
-
-                do {
-                    let data = try JSONEncoder().encode(request)
-                    guard var jsonString = String(data: data, encoding: .utf8) else {
-                        continuation.resume(throwing: MCPServiceError.encodingFailed)
-                        return
-                    }
-
-                    jsonString += "\n"
-
-                    guard let inputHandle = standardInput?.fileHandleForWriting else {
-                        continuation.resume(throwing: MCPServiceError.notConnected)
-                        return
-                    }
-
-                    if let data = jsonString.data(using: .utf8) {
-                        inputHandle.write(data)
-                    }
-                } catch {
-                    continuation.resume(throwing: error)
+                if let data = jsonString.data(using: .utf8) {
+                    inputHandle.write(data)
                 }
+            } catch {
+                pendingRequests.removeValue(forKey: id)
+                continuation.resume(throwing: error)
             }
         }
     }
@@ -483,7 +452,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             let response = try decoder.decode(MCPResponse.self, from: data)
 
             if let id = response.id {
-                requestQueue.async {
+                Task { @MainActor in
                     if let continuation = self.pendingRequests.removeValue(forKey: id) {
                         continuation.resume(returning: response)
                     } else {

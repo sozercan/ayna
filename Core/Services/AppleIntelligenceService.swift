@@ -146,50 +146,86 @@ enum AppleIntelligenceError: LocalizedError {
 
             log("Starting Apple Intelligence stream", metadata: ["conversationId": conversationId])
 
-            // Get or create session
-            let session = getSession(
-                conversationId: conversationId,
-                systemInstructions: systemInstructions
-            )
+            let maxRetries = 2
 
-            // Create generation options
-            let options = GenerationOptions(temperature: temperature)
-
-            do {
-                // Stream the response
-                let stream = session.streamResponse(to: prompt, options: options)
-
-                var previousContent = ""
-                for try await snapshot in stream {
-                    await MainActor.run {
-                        // snapshot.content contains the full response so far, not just the delta
-                        // Calculate the new text by comparing with previous content
-                        let currentContent = snapshot.content
-                        if currentContent.hasPrefix(previousContent) {
-                            let delta = String(currentContent.dropFirst(previousContent.count))
-                            if !delta.isEmpty {
-                                onChunk(delta)
-                            }
-                        } else {
-                            // If content doesn't have expected prefix, send full content
-                            onChunk(currentContent)
-                        }
-                        previousContent = currentContent
-                    }
-                }
-
-                await MainActor.run {
-                    onComplete()
-                }
-                log("Completed Apple Intelligence stream", metadata: ["conversationId": conversationId])
-            } catch {
-                log(
-                    "Apple Intelligence stream failed",
-                    level: .error,
-                    metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+            for attempt in 1 ... maxRetries {
+                // Get or create session
+                let session = getSession(
+                    conversationId: conversationId,
+                    systemInstructions: systemInstructions
                 )
-                await MainActor.run {
-                    onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
+
+                // Create generation options
+                let options = GenerationOptions(temperature: temperature)
+
+                do {
+                    // Stream the response
+                    let stream = session.streamResponse(to: prompt, options: options)
+
+                    var previousContent = ""
+                    var hasReceivedContent = false
+
+                    for try await snapshot in stream {
+                        await MainActor.run {
+                            // snapshot.content contains the full response so far, not just the delta
+                            // Calculate the new text by comparing with previous content
+                            let currentContent = snapshot.content
+                            if currentContent.hasPrefix(previousContent) {
+                                let delta = String(currentContent.dropFirst(previousContent.count))
+                                if !delta.isEmpty {
+                                    onChunk(delta)
+                                    hasReceivedContent = true
+                                }
+                            } else {
+                                // If content doesn't have expected prefix, send full content
+                                onChunk(currentContent)
+                                hasReceivedContent = true
+                            }
+                            previousContent = currentContent
+                        }
+                    }
+
+                    if hasReceivedContent {
+                        await MainActor.run {
+                            onComplete()
+                        }
+                        log("Completed Apple Intelligence stream", metadata: ["conversationId": conversationId])
+                        return
+                    } else {
+                        if attempt < maxRetries {
+                            log(
+                                "Apple Intelligence stream returned no content, retrying...",
+                                level: .default,
+                                metadata: ["conversationId": conversationId, "attempt": "\(attempt)"]
+                            )
+                            clearSession(conversationId: conversationId)
+                            try? await Task.sleep(for: .milliseconds(500))
+                            continue
+                        } else {
+                            await MainActor.run {
+                                onComplete()
+                            }
+                            log("Completed Apple Intelligence stream (empty)", metadata: ["conversationId": conversationId])
+                            return
+                        }
+                    }
+                } catch {
+                    log(
+                        "Apple Intelligence stream failed",
+                        level: .error,
+                        metadata: ["conversationId": conversationId, "error": error.localizedDescription, "attempt": "\(attempt)"]
+                    )
+
+                    if attempt < maxRetries {
+                        clearSession(conversationId: conversationId)
+                        try? await Task.sleep(for: .milliseconds(500))
+                        continue
+                    }
+
+                    await MainActor.run {
+                        onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
+                    }
+                    return
                 }
             }
         }

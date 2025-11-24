@@ -47,7 +47,7 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
-- Tests live under `aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
+- Tests live under `Tests/aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `Tests/aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
 
@@ -74,44 +74,27 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 ## Architecture
 
 ### Core Structure
-The codebase follows clean SwiftUI architecture with clear separation:
+The codebase follows a "Symmetric Roots" architecture to support both macOS and iOS with maximum code sharing:
 
 ```
-Models → ViewModels → Views → Services
+App/ (Entry points) → Core/ (Logic) → Views/ (UI)
 ```
 
-**Models** (`Models/Conversation.swift`, `Models/Message.swift`)
-- Pure data structures conforming to `Codable` for persistence
-- All models use `UUID` for identification
-- - `Conversation` contains array of `Message` objects and metadata (title, timestamps, model settings)
+**App** (`App/macOS/`, `App/iOS/`)
+- Platform-specific entry points (`aynaApp.swift`, `AynaIOSApp.swift`)
+- Platform-specific configuration (`Info.plist`, `Entitlements`)
+- Assets (`Assets.xcassets`)
 
-**ViewModels** (`ViewModels/ConversationManager.swift`)
-- `ConversationManager`: Single source of truth for all conversation state
-- - Manages CRUD operations, search, and persistence
-- Uses `@Published` properties for reactive UI updates
-- Automatically generates conversation titles from first user message
-- Persists to `UserDefaults` using JSON encoding
+**Core** (`Core/Models`, `Core/ViewModels`, `Core/Services`, `Core/Utilities`)
+- Shared business logic, data models, and services
+- **Models**: `Conversation`, `Message` (Codable, UUID-based)
+- **ViewModels**: `ConversationManager` (State source of truth)
+- **Services**: `OpenAIService`, `MCPServerManager` (API & Tooling)
+- **Utilities**: Helpers for markdown, keychain, etc.
 
-**Views**
-- **Shared/macOS**: `ContentView.swift`, `Views/SidebarView.swift`, `Views/ChatView.swift`, `Views/MessageView.swift`, `Views/SettingsView.swift`
-- **iOS**: `iOS/IOSSidebarView.swift`, `iOS/IOSSettingsView.swift`, `iOS/IOSChatView.swift` (and other `iOS/` prefixed views)
-- `ContentView`: Root view with `NavigationSplitView` (sidebar + detail)
-- `SidebarView` / `IOSSidebarView`: Conversation list with search and context menu actions
-- `ChatView`: Clean chat interface with message history, dynamic text editor, and send button
-- `MessageView`: Individual message bubble with avatar, copy/like actions
-- `SettingsView` / `IOSSettingsView`: App configuration and settings
-
-**Services** (`Services/OpenAIService.swift`, `Services/MCPServerManager.swift`, `Services/MCPService.swift`)
-- `OpenAIService.shared`: Singleton managing API communication with OpenAI-compatible endpoints
-- Auto-detects Azure resources (any endpoint containing `openai.azure.com`) and applies Azure-specific URLs/auth. Also supports AIKit via OpenAI-compatible local endpoints.
-- Tool calling support via `onToolCallRequested` callback
-- `MCPServerManager.shared`: Manages MCP server connections, tool discovery, and execution with performance optimizations
-- `MCPService`: Individual MCP server communication via stdio
-- API keys are retrieved via `KeychainStorage` (global and per-model) and never written to UserDefaults
-
-**Utilities & Diagnostics** (`Utilities/`, `Diagnostics/`)
-- `Utilities`: Helper classes for preferences, markdown rendering, and keychain storage
-- `Diagnostics`: Centralized logging via `DiagnosticsLogger`
+**Views** (`Views/macOS`, `Views/iOS`)
+- **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`
+- **iOS**: `IOSContentView`, `IOSSidebarView`, `IOSChatView`, `IOSSettingsView`, `IOSMessageView`
 
 ### State Management Pattern
 - `@StateObject` in App entry point for `ConversationManager`
@@ -202,13 +185,13 @@ The interface has been streamlined to focus on core chat functionality:
 3. Ensure the endpoint and authentication align with the provider (Azure deployments should use the deployment name as the model name plus `https://<resource>.openai.azure.com` as the endpoint)
 
 ### Modifying UI Layout
-- Window size constraints set in `aynaApp.swift`: `.frame(minWidth: 900, minHeight: 600)`
+- Window size constraints set in `App/macOS/aynaApp.swift`: `.frame(minWidth: 900, minHeight: 600)`
 - Sidebar minimum width: 260px (set in `NavigationSplitView`)
 - Use native SwiftUI controls for consistency
 - App uses `.windowStyle(.hiddenTitleBar)` and `.windowToolbarStyle(.unified)` for modern macOS appearance
 
 ### Adding Settings
-`Views/SettingsView.swift` uses `TabView` with 4 tabs. To add new setting:
+`Views/macOS/MacSettingsView.swift` uses `TabView` with 4 tabs. To add new setting:
 1. Add `@Published` property to appropriate manager (`OpenAIService` or `ConversationManager`)
 2. Save to `UserDefaults` in property `didSet`
 3. Add UI control in relevant settings tab
@@ -328,8 +311,9 @@ The README outlines features ready for implementation due to extensible architec
 ## Project Files Reference
 
 ### Configuration Files
-- `ayna.xcodeproj/project.pbxproj` - Xcode project settings
-- `ayna.entitlements` - App capabilities and sandboxing
+- `Ayna.xcodeproj/project.pbxproj` - Xcode project settings
+- `App/macOS/ayna.entitlements` - App capabilities and sandboxing
+- `App/macOS/Info.plist` - App configuration
 
 ### Documentation
 - `README.md` - Comprehensive feature list and setup guide
@@ -337,7 +321,7 @@ The README outlines features ready for implementation due to extensible architec
 - `LICENSE` - MIT License
 
 ### Assets
-- `Assets.xcassets/` - App icon and color assets (using SF Symbols for icons)
+- `App/macOS/Assets.xcassets/` - App icon and color assets (using SF Symbols for icons)
 
 ## Additional Notes
 

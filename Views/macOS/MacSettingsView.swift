@@ -10,7 +10,7 @@ import SwiftUI
 // swiftlint:disable:next superfluous_disable_command
 // swiftlint:disable file_length type_body_length
 
-struct SettingsView: View {
+struct MacSettingsView: View {
     @ObservedObject private var openAIService = OpenAIService.shared
     @ObservedObject private var settingsRouter = SettingsRouter.shared
     @State private var showAPIKeyInfo = false
@@ -1168,7 +1168,7 @@ struct AIKitConfigurationView: View {
 }
 
 #Preview {
-    SettingsView()
+    MacSettingsView()
 }
 
 // swiftlint:enable file_length type_body_length

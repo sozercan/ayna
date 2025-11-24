@@ -24,12 +24,12 @@ extension Notification.Name {
     static let newConversationRequested = Notification.Name("newConversationRequested")
 }
 
-struct ContentView: View {
+struct MacContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selectedConversationId: $conversationManager.selectedConversationId)
+            MacSidebarView(selectedConversationId: $conversationManager.selectedConversationId)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {
             Group {
@@ -38,10 +38,10 @@ struct ContentView: View {
                        $0.id == conversationId
                    })
                 {
-                    ChatView(conversation: conversation)
+                    MacChatView(conversation: conversation)
                         .id(conversationId)
                 } else {
-                    NewChatView(
+                    MacNewChatView(
                         selectedConversationId: $conversationManager.selectedConversationId
                     )
                 }
@@ -81,7 +81,7 @@ struct ContentView: View {
 }
 
 // View for creating a new conversation - only creates on first message
-struct NewChatView: View {
+struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
@@ -185,7 +185,7 @@ struct NewChatView: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 ForEach(visibleMessages) { message in
-                                    MessageView(
+                                    MacMessageView(
                                         message: message,
                                         modelName: message.model,
                                         onRetry: nil,
@@ -891,6 +891,6 @@ private struct ModelSetupPromptView: View {
 }
 
 #Preview {
-    ContentView()
+    MacContentView()
         .environmentObject(ConversationManager())
 }
