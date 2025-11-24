@@ -86,7 +86,8 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Try context menu first as it is most direct
         title.rightClick()
         
-        let deleteMenuItem = app.menuItems["Delete"]
+        // Use the identifier to specifically target the context menu's Delete item (not the Edit menu's Delete)
+        let deleteMenuItem = app.menuItems["trash"]
         if deleteMenuItem.waitForExistence(timeout: 3) {
             deleteMenuItem.click()
         } else {
