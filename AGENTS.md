@@ -74,7 +74,7 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 ## Architecture
 
 ### Core Structure
-The codebase follows a "Symmetric Roots" architecture to support both macOS and iOS with maximum code sharing:
+The codebase follows a "Symmetric Roots" architecture to support both macOS and iOS with maximum code sharing while maintaining native platform idioms:
 
 ```
 App/ (Entry points) → Core/ (Logic) → Views/ (UI)
@@ -85,15 +85,16 @@ App/ (Entry points) → Core/ (Logic) → Views/ (UI)
 - Platform-specific configuration (`Info.plist`, `Entitlements`)
 - Assets (`Assets.xcassets`)
 
-**Core** (`Core/Models`, `Core/ViewModels`, `Core/Services`, `Core/Utilities`)
+**Core** (`Core/Models`, `Core/ViewModels`, `Core/Services`, `Core/Utilities`, `Core/Diagnostics`)
 - Shared business logic, data models, and services
 - **Models**: `Conversation`, `Message` (Codable, UUID-based)
 - **ViewModels**: `ConversationManager` (State source of truth)
 - **Services**: `OpenAIService`, `MCPServerManager` (API & Tooling)
 - **Utilities**: Helpers for markdown, keychain, etc.
+- **Diagnostics**: Unified logging system (`DiagnosticsLogger`)
 
 **Views** (`Views/macOS`, `Views/iOS`)
-- **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`
+- **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`, `AIKitSettingsView`, `MCPSettingsView`, `MCPToolSummaryView`
 - **iOS**: `IOSContentView`, `IOSSidebarView`, `IOSChatView`, `IOSSettingsView`, `IOSMessageView`
 
 ### State Management Pattern

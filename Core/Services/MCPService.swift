@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import os
 
-#if compiler(>=6.0)
+p#if compiler(>=6.0)
     #warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
 #endif
 
