@@ -82,8 +82,12 @@ final class AynaSmokeUITests: AynaUITestCase {
         let rowHittablePredicate = NSPredicate(format: "isHittable == true")
         let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
         XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
-        title.click()
-        app.typeKey(.delete, modifierFlags: [])
+        
+        // Use context menu for deletion as it's more reliable than keyboard focus
+        title.rightClick()
+        let deleteButton = app.menuItems["Delete"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 2))
+        deleteButton.click()
 
         // Confirm deletion in alert if present (not present in this app flow, it just deletes)
 
