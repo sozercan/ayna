@@ -19,37 +19,72 @@
 		01000010 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
 		01000012 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000012 /* MessageView.swift */; };
 		01000013 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
-		FE409209D46D4D488EB95981 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */; };
-		C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
-		C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
-		C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */; };
 		C8831AF92EBDCA8A00C5703C /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */; };
 		C8831AFB2EBDCA9800C5703C /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8831AFA2EBDCA9800C5703C /* AIKitService.swift */; };
+		C88651C12ED3D341002EDCB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000003 /* Assets.xcassets */; };
 		C8E86EFE2EB9281300D601B5 /* MCPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFD2EB9281300D601B5 /* MCPService.swift */; };
 		C8E86EFF2EB9281300D601B5 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */; };
-		C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500022F40000000ABCD01 /* MCPServerStatus.swift */; };
 		C8E86F012EB928F200D601B5 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
 		C8E86F032EB9298B00D601B5 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */; };
 		C8F0A0022ED4B7C700B5BC45 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
 		C8F0A0042ED4BF9E00B5BC45 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
-		C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */; };
-		C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */; };
 		C8F1A0012ED5B4F500B5BC45 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */; };
 		C8F1A0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */; };
 		C8F1A0032ED5B4F500B5BC45 /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */; };
-		C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */; };
+		C8FBD3D02ED2F48B00E39928 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */; };
+		C8FBD3D12ED2F48B00E39928 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */; };
+		C8FBD3D22ED2F48B00E39928 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */; };
+		C8FBD3D32ED2F48B00E39928 /* IOSChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */; };
+		C8FBD3D42ED2F48B00E39928 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */; };
+		C8FBD3D52ED2F48B00E39928 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */; };
+		C8FBD3D62ED2F4F300E39928 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E86F002EB928F200D601B5 /* MCPModels.swift */; };
+		C8FBD3D72ED2F4F300E39928 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000005 /* Message.swift */; };
+		C8FBD3D82ED2F4F300E39928 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000004 /* Conversation.swift */; };
+		C8FBD3D92ED2F51800E39928 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000013 /* AppleIntelligenceService.swift */; };
+		C8FBD3DA2ED2F51800E39928 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* OpenAIService.swift */; };
+		C8FBD3DB2ED2F51800E39928 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */; };
+		C8FBD3DC2ED2F51800E39928 /* EncryptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */; };
+		C8FBD3DD2ED2F52A00E39928 /* ConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000010 /* ConversationManager.swift */; };
+		C8FBD3DE2ED2F54800E39928 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
+		C8FBD3DF2ED2F54800E39928 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
+		C8FBD3E02ED2F54E00E39928 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
 		C8FFF0102EE0A2E500B5BC45 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */; };
+		C90000022F01A00100ABCDE0 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */; };
+		C90000042F01A00100ABCDE0 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000032F01A00100ABCDE0 /* AppPreferences.swift */; };
 		C9A1A0013090F5E900ABCD01 /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */; };
 		C9A1A0023090F5E900ABCD01 /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */; };
-		C9A210043091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
 		C9A210013091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
 		C9A210023091061300ABCD01 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */; };
 		C9A210033091061300ABCD01 /* UITestEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200033091061300ABCD01 /* UITestEnvironment.swift */; };
+		C9A210043091061300ABCD01 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A200013091061300ABCD01 /* TestIdentifiers.swift */; };
+		C9B200022F2A000100ABCD01 /* ConversationTimelineGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */; };
+		C9B200042F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */; };
+		C9C0D00230A1B00100ABCD01 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */; };
+		C9C0D00430A1B00100ABCD01 /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */; };
 		C9C0D00530A1B00100ABCD01 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */; };
+		C9D500012F40000000ABCD01 /* MCPServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500022F40000000ABCD01 /* MCPServerStatus.swift */; };
 		C9D500042F40000000ABCD01 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */; };
 		C9E0F0023095000000ABCD01 /* MCPProcessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */; };
 		C9F0A00230A2C00100ABCD01 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */; };
+		FE409209D46D4D488EB95981 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C8F1C0032ED5B4F500B5BC45 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 07000001;
+			remoteInfo = Ayna;
+		};
+		C9A1C2023090F5E900ABCD01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 07000001;
+			remoteInfo = Ayna;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		02000001 /* aynaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aynaApp.swift; sourceTree = "<group>"; };
@@ -64,25 +99,31 @@
 		02000010 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
 		02000012 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
 		02000013 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
-		6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
-		C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
-		C90000032F01A00100ABCDE0 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		04000001 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
+		6326D2FEC2FF48AAB271A9F0 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		C8831AF82EBDCA8A00C5703C /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C8831AFA2EBDCA9800C5703C /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
 		C8E86EFC2EB9281300D601B5 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C8E86EFD2EB9281300D601B5 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C8E86F002EB928F200D601B5 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C8E86F022EB9298B00D601B5 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
-		C9D500022F40000000ABCD01 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C8F0A0012ED4B7C700B5BC45 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
 		C8F0A0032ED4BF9E00B5BC45 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
+		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0012ED5B4F500B5BC45 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
 		C8F1E0022ED5B4F500B5BC45 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
 		C8F1E0032ED5B4F500B5BC45 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
+		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
+		C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
+		C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
+		C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
+		C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
+		C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
 		C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
+		C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
+		C90000032F01A00100ABCDE0 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		C9A100013090F5E900ABCD01 /* aynaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
@@ -90,10 +131,11 @@
 		C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
 		C9A200033091061300ABCD01 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
 		C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
-		C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		C9B200032F2A000100ABCD01 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
+		C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		C9C0D00330A1B00100ABCD01 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
 		C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
+		C9D500022F40000000ABCD01 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C9D500032F40000000ABCD01 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
 		C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPProcessTracker.swift; sourceTree = "<group>"; };
 		C9F0A00130A2C00100ABCD01 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
@@ -107,12 +149,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C8F1B0022ED5B4F500B5BC45 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8FBD3B52ED2F42A00E39928 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C9A1B1023090F5E900ABCD01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		06000001 = {
 			isa = PBXGroup;
 			children = (
+				C8FBD3CF2ED2F48B00E39928 /* iOS */,
 				04000001 /* ayna.entitlements */,
 				02000001 /* aynaApp.swift */,
 				02000002 /* ContentView.swift */,
@@ -129,28 +193,13 @@
 			);
 			sourceTree = "<group>";
 		};
-		06000008 /* Utilities */ = {
-			isa = PBXGroup;
-			children = (
-				C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */,
-				C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */,
-				C90000032F01A00100ABCDE0 /* AppPreferences.swift */,
-				C9A200013091061300ABCD01 /* TestIdentifiers.swift */,
-				C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */,
-				C9A200033091061300ABCD01 /* UITestEnvironment.swift */,
-				C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */,
-				C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */,
-				C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */,
-			);
-			path = Utilities;
-			sourceTree = "<group>";
-		};
 		06000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				03000001 /* Ayna.app */,
 				C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */,
 				C9A100013090F5E900ABCD01 /* aynaUITests.xctest */,
+				C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -204,6 +253,22 @@
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
+		06000008 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				C9B200012F2A000100ABCD01 /* ConversationTimelineGrouper.swift */,
+				C90000012F01A00100ABCDE0 /* SettingsNavigator.swift */,
+				C90000032F01A00100ABCDE0 /* AppPreferences.swift */,
+				C9A200013091061300ABCD01 /* TestIdentifiers.swift */,
+				C9A200023091061300ABCD01 /* EphemeralKeychainStorage.swift */,
+				C9A200033091061300ABCD01 /* UITestEnvironment.swift */,
+				C9C0D00130A1B00100ABCD01 /* MarkdownRenderer.swift */,
+				C9C0D00630A1B00100ABCD01 /* ConversationExporter.swift */,
+				C9E0F0013095000000ABCD01 /* MCPProcessTracker.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
 		C8F1F0012ED5B4F500B5BC45 /* aynaTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -216,41 +281,37 @@
 			path = aynaTests;
 			sourceTree = "<group>";
 		};
-	C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */ = {
-		isa = PBXGroup;
-		children = (
-			C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */,
-		);
-		path = Diagnostics;
-		sourceTree = "<group>";
-	};
-	C9A100023090F5E900ABCD01 /* aynaUITests */ = {
-		isa = PBXGroup;
-		children = (
-			C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */,
-			C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */,
-		);
-		path = aynaUITests;
-		sourceTree = "<group>";
-	};
+		C8FBD3CF2ED2F48B00E39928 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				C8FBD3C92ED2F48B00E39928 /* AynaIOSApp.swift */,
+				C8FBD3CA2ED2F48B00E39928 /* IOSChatView.swift */,
+				C8FBD3CB2ED2F48B00E39928 /* IOSContentView.swift */,
+				C8FBD3CC2ED2F48B00E39928 /* IOSMessageView.swift */,
+				C8FBD3CD2ED2F48B00E39928 /* IOSSettingsView.swift */,
+				C8FBD3CE2ED2F48B00E39928 /* IOSSidebarView.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		C8FFF00E2EE0A2E500B5BC45 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				C8FFF00F2EE0A2E500B5BC45 /* DiagnosticsLogger.swift */,
+			);
+			path = Diagnostics;
+			sourceTree = "<group>";
+		};
+		C9A100023090F5E900ABCD01 /* aynaUITests */ = {
+			isa = PBXGroup;
+			children = (
+				C9A100033090F5E900ABCD01 /* AynaUITestCase.swift */,
+				C9A100043090F5E900ABCD01 /* AynaSmokeUITests.swift */,
+			);
+			path = aynaUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		C8F1C0032ED5B4F500B5BC45 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 11000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 07000001;
-			remoteInfo = Ayna;
-		};
-		C9A1C2023090F5E900ABCD01 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 11000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 07000001;
-			remoteInfo = Ayna;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		07000001 /* Ayna */ = {
@@ -287,6 +348,25 @@
 			productReference = C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C8FBD3C22ED2F42C00E39928 /* Build configuration list for PBXNativeTarget "Ayna-iOS" */;
+			buildPhases = (
+				C8FBD3B42ED2F42A00E39928 /* Sources */,
+				C8FBD3B52ED2F42A00E39928 /* Frameworks */,
+				C8FBD3B62ED2F42A00E39928 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Ayna-iOS";
+			packageProductDependencies = (
+			);
+			productName = "ayna-ios";
+			productReference = C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 		C9A1C1013090F5E900ABCD01 /* aynaUITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C9A1D0033090F5E900ABCD01 /* Build configuration list for PBXNativeTarget "aynaUITests" */;
@@ -311,7 +391,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
+				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					07000001 = {
@@ -320,6 +400,9 @@
 					C8F1C0012ED5B4F500B5BC45 = {
 						CreatedOnToolsVersion = 15.0;
 						TestTargetID = 07000001;
+					};
+					C8FBD3B72ED2F42A00E39928 = {
+						CreatedOnToolsVersion = 26.1.1;
 					};
 					C9A1C1013090F5E900ABCD01 = {
 						CreatedOnToolsVersion = 15.0;
@@ -343,6 +426,7 @@
 			projectRoot = "";
 			targets = (
 				07000001 /* Ayna */,
+				C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */,
 				C8F1C0012ED5B4F500B5BC45 /* aynaTests */,
 				C9A1C1013090F5E900ABCD01 /* aynaUITests */,
 			);
@@ -355,6 +439,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				01000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8FBD3B62ED2F42A00E39928 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C88651C12ED3D341002EDCB7 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -413,6 +505,30 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C8FBD3B42ED2F42A00E39928 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C8FBD3D92ED2F51800E39928 /* AppleIntelligenceService.swift in Sources */,
+				C8FBD3DA2ED2F51800E39928 /* OpenAIService.swift in Sources */,
+				C8FBD3DB2ED2F51800E39928 /* KeychainStorage.swift in Sources */,
+				C8FBD3DC2ED2F51800E39928 /* EncryptedConversationStore.swift in Sources */,
+				C8FBD3D02ED2F48B00E39928 /* IOSMessageView.swift in Sources */,
+				C8FBD3D12ED2F48B00E39928 /* IOSContentView.swift in Sources */,
+				C8FBD3DE2ED2F54800E39928 /* MarkdownRenderer.swift in Sources */,
+				C8FBD3DF2ED2F54800E39928 /* AppPreferences.swift in Sources */,
+				C8FBD3D22ED2F48B00E39928 /* AynaIOSApp.swift in Sources */,
+				C8FBD3D32ED2F48B00E39928 /* IOSChatView.swift in Sources */,
+				C8FBD3E02ED2F54E00E39928 /* DiagnosticsLogger.swift in Sources */,
+				C8FBD3D62ED2F4F300E39928 /* MCPModels.swift in Sources */,
+				C8FBD3DD2ED2F52A00E39928 /* ConversationManager.swift in Sources */,
+				C8FBD3D72ED2F4F300E39928 /* Message.swift in Sources */,
+				C8FBD3D82ED2F4F300E39928 /* Conversation.swift in Sources */,
+				C8FBD3D42ED2F48B00E39928 /* IOSSidebarView.swift in Sources */,
+				C8FBD3D52ED2F48B00E39928 /* IOSSettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C9A1B1013090F5E900ABCD01 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -425,28 +541,18 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		C8F1B0022ED5B4F500B5BC45 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C9A1B1023090F5E900ABCD01 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXTargetDependency section */
-		C8F1C0022ED5B4F500B5BC45 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 07000001 /* Ayna */; targetProxy = C8F1C0032ED5B4F500B5BC45 /* PBXContainerItemProxy */; };
-		C9A1C3013090F5E900ABCD01 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 07000001 /* Ayna */; targetProxy = C9A1C2023090F5E900ABCD01 /* PBXContainerItemProxy */; };
+		C8F1C0022ED5B4F500B5BC45 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 07000001 /* Ayna */;
+			targetProxy = C8F1C0032ED5B4F500B5BC45 /* PBXContainerItemProxy */;
+		};
+		C9A1C3013090F5E900ABCD01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 07000001 /* Ayna */;
+			targetProxy = C9A1C2023090F5E900ABCD01 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
-/* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		13000001 /* Debug */ = {
@@ -650,6 +756,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
@@ -666,7 +773,6 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna.app/Contents/MacOS/Ayna";
-				BUNDLE_LOADER = "$(TEST_HOST)";
 			};
 			name = Debug;
 		};
@@ -675,6 +781,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
@@ -691,7 +798,81 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna.app/Contents/MacOS/Ayna";
-				BUNDLE_LOADER = "$(TEST_HOST)";
+			};
+			name = Release;
+		};
+		C8FBD3C02ED2F42C00E39928 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C8FBD3C12ED2F42C00E39928 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -741,24 +922,6 @@
 			};
 			name = Release;
 		};
-		C8F1D0032ED5B4F500B5BC45 /* Build configuration list for PBXNativeTarget "aynaTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C8F1D0012ED5B4F500B5BC45 /* Debug */,
-				C8F1D0022ED5B4F500B5BC45 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		C9A1D0033090F5E900ABCD01 /* Build configuration list for PBXNativeTarget "aynaUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C9A1D1013090F5E900ABCD01 /* Debug */,
-				C9A1D1023090F5E900ABCD01 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -779,6 +942,33 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		C8F1D0032ED5B4F500B5BC45 /* Build configuration list for PBXNativeTarget "aynaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C8F1D0012ED5B4F500B5BC45 /* Debug */,
+				C8F1D0022ED5B4F500B5BC45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C8FBD3C22ED2F42C00E39928 /* Build configuration list for PBXNativeTarget "Ayna-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C8FBD3C02ED2F42C00E39928 /* Debug */,
+				C8FBD3C12ED2F42C00E39928 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C9A1D0033090F5E900ABCD01 /* Build configuration list for PBXNativeTarget "aynaUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C9A1D1013090F5E900ABCD01 /* Debug */,
+				C9A1D1023090F5E900ABCD01 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};

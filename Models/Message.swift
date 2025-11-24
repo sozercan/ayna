@@ -41,9 +41,7 @@ struct Message: Identifiable, Codable, Equatable {
         var content: Data? {
             if let data { return data }
             if let path = localPath {
-                // This is a side effect in a property access, but necessary for transparent access
-                // In a real app, we might want async loading, but for now this bridges the gap
-                return AttachmentStorage.shared.load(path: path)
+        return Message.attachmentLoader?(path)
             }
             return nil
         }
@@ -88,8 +86,11 @@ struct Message: Identifiable, Codable, Equatable {
     var effectiveImageData: Data? {
         if let data = imageData { return data }
         if let path = imagePath {
-            return AttachmentStorage.shared.load(path: path)
+      return Message.attachmentLoader?(path)
         }
         return nil
     }
+
+  // Static loader to decouple from AttachmentStorage
+  static var attachmentLoader: ((String) -> Data?)?
 }

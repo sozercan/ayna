@@ -5,7 +5,9 @@
 //  Created on 11/2/25.
 //
 
+import Combine
 import Foundation
+import os
 
 // swiftlint:disable file_length
 // swiftlint:disable type_body_length
@@ -48,7 +50,9 @@ class OpenAIService: ObservableObject {
             AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
             // Sync with AIKitService if this is an AIKit model
             if modelProviders[selectedModel] == .aikit {
+        #if os(macOS)
                 AIKitService.shared.selectModelByName(selectedModel)
+        #endif
             }
         }
     }
@@ -756,7 +760,8 @@ class OpenAIService: ObservableObject {
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil
-    ) {
+  ) {
+    #if !os(iOS)
         if UITestEnvironment.isEnabled {
             simulateUITestResponse(
                 messages: messages,
@@ -765,7 +770,8 @@ class OpenAIService: ObservableObject {
                 onComplete: onComplete
             )
             return
-        }
+      }
+    #endif
 
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
@@ -778,7 +784,7 @@ class OpenAIService: ObservableObject {
 
         // Handle Apple Intelligence separately
         if effectiveProvider == .appleIntelligence {
-            if #available(macOS 26.0, *) {
+      if #available(macOS 26.0, iOS 26.0, *) {
                 handleAppleIntelligenceRequest(
                     messages: messages,
                     temperature: temperature,
@@ -789,7 +795,7 @@ class OpenAIService: ObservableObject {
                     onError: onError
                 )
             } else {
-                onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or later"))
+        onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
             }
             return
         }
@@ -1260,10 +1266,10 @@ class OpenAIService: ObservableObject {
     private func processStreamLine(
         _ line: String,
         toolCallBuffer: [String: Any],
-        toolCallId: String,
-        onToolCall: ((String, String, [String: Any]) async -> String)?,
-        onToolCallRequested: ((String, String, [String: Any]) -> Void)?,
-        onReasoning _: ((String) -> Void)? = nil
+    toolCallId: String,
+    onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+    onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+    onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
         var updatedToolCallBuffer = toolCallBuffer
         var updatedToolCallId = toolCallId
@@ -1537,12 +1543,12 @@ class OpenAIService: ObservableObject {
     }
 
     private func nonStreamResponse(
-        request: URLRequest,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
-        onToolCall: ((String, String, [String: Any]) async -> String)? = nil,
-        onReasoning: ((String) -> Void)? = nil,
+    request: URLRequest,
+    onChunk: @escaping @Sendable (String) -> Void,
+    onComplete: @escaping @Sendable () -> Void,
+    onError: @escaping @Sendable (Error) -> Void,
+    onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
+    onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in

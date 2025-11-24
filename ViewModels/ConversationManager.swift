@@ -5,6 +5,7 @@
 //  Created on 11/2/25.
 //
 
+import Combine
 import CoreSpotlight
 import Foundation
 import OSLog
@@ -12,11 +13,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
-class ConversationManager: ObservableObject {
+final class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationId: UUID?
 
-    private let store: EncryptedConversationStore
+  static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+  private let store: EncryptedConversationStore
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
     var loadingTask: Task<Void, Never>?
     private var isLoaded = false
@@ -255,10 +258,6 @@ class ConversationManager: ObservableObject {
 
         let titleMessage = Message(role: .user, content: titlePrompt)
 
-        // Use a class to allow mutation in @Sendable closure
-        class TitleAccumulator: @unchecked Sendable {
-            var title = ""
-        }
         let accumulator = TitleAccumulator()
 
         OpenAIService.shared.sendMessage(
@@ -445,7 +444,12 @@ class ConversationManager: ObservableObject {
             conversation.title.localizedCaseInsensitiveContains(query) ||
                 conversation.messages.contains { message in
                     message.content.localizedCaseInsensitiveContains(query)
-                }
         }
     }
+  }
+}
+
+// Helper class for title generation
+private class TitleAccumulator: @unchecked Sendable {
+    var title = ""
 }

@@ -24,7 +24,12 @@ struct aynaApp: App {
         AppPreferences.registerDefaults()
         UITestEnvironment.configureIfNeeded()
 
-        let manager: ConversationManager = if UITestEnvironment.isEnabled {
+    // Configure attachment loader
+    Message.attachmentLoader = { path in
+      AttachmentStorage.shared.load(path: path)
+    }
+
+    let manager: ConversationManager = if UITestEnvironment.isEnabled {
             UITestEnvironment.makeConversationManager()
         } else {
             ConversationManager()

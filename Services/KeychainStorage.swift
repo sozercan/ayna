@@ -132,4 +132,3 @@ final class KeychainStorage: Sendable {
 
 extension KeychainStorage: KeychainStoring {}
 
-extension KeychainStorage: @unchecked Sendable {}

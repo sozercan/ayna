@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 import os.log
 
 enum AppleIntelligenceError: LocalizedError {

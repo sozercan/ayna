@@ -9,7 +9,7 @@ import CryptoKit
 import Foundation
 import os.log
 
-final class EncryptedConversationStore {
+final class EncryptedConversationStore: Sendable {
     static let shared = EncryptedConversationStore()
 
     private let directoryURL: URL
@@ -216,4 +216,4 @@ final class EncryptedConversationStore {
     }
 }
 
-extension EncryptedConversationStore: @unchecked Sendable {}
+
