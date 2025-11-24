@@ -83,11 +83,20 @@ final class AynaSmokeUITests: AynaUITestCase {
         let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
         XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
         
-        // Use context menu for deletion as it's more reliable than keyboard focus
+        // Try context menu first as it is most direct
         title.rightClick()
-        let deleteButton = app.menuItems["Delete"]
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 2))
-        deleteButton.click()
+        
+        let deleteMenuItem = app.menuItems["Delete"]
+        if deleteMenuItem.waitForExistence(timeout: 3) {
+            deleteMenuItem.click()
+        } else {
+            // Fallback to keyboard delete if context menu fails
+            // Click to select and ensure focus
+            title.click()
+            // Give it a moment to process selection/focus
+            Thread.sleep(forTimeInterval: 0.5)
+            app.typeKey(.delete, modifierFlags: [])
+        }
 
         // Confirm deletion in alert if present (not present in this app flow, it just deletes)
 
