@@ -4,13 +4,27 @@ This file provides guidance to AI coding assistants (Claude, GitHub Copilot, etc
 
 ## Project Overview
 
-ayna is a native macOS ChatGPT client built with SwiftUI for macOS 14+. It supports OpenAI-compatible endpoints, Apple Intelligence, and AIKit with a conversation management system and streaming responses in a clean interface.
+ayna is a native macOS and iOS ChatGPT client built with SwiftUI. It supports OpenAI-compatible endpoints, Apple Intelligence, and AIKit with a conversation management system and streaming responses in a clean interface.
 
 ## Build and Development
 
+### Cross-Platform Compatibility
+**CRITICAL**: This project targets both macOS and iOS.
+- Shared code (Models, ViewModels, Services, Utilities) must compile for **both** platforms.
+- Avoid platform-specific imports (e.g., `AppKit`, `UIKit`) in shared files unless wrapped in `#if os(macOS)` or `#if os(iOS)`.
+- When modifying shared logic, **always** verify the build for both platforms to ensure no regressions.
+- Use `xcodebuild` to verify both targets before finishing a task.
+
 ### Building the App
+
+**macOS**:
 ```bash
 xcodebuild -scheme Ayna -destination 'platform=macOS' build
+```
+
+**iOS**:
+```bash
+xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 ### Requirements
@@ -78,12 +92,14 @@ Models → ViewModels → Views → Services
 - Automatically generates conversation titles from first user message
 - Persists to `UserDefaults` using JSON encoding
 
-**Views** (`ContentView.swift`, `Views/SidebarView.swift`, `Views/ChatView.swift`, `Views/MessageView.swift`, `Views/SettingsView.swift`)
+**Views**
+- **Shared/macOS**: `ContentView.swift`, `Views/SidebarView.swift`, `Views/ChatView.swift`, `Views/MessageView.swift`, `Views/SettingsView.swift`
+- **iOS**: `iOS/IOSSidebarView.swift`, `iOS/IOSSettingsView.swift`, `iOS/IOSChatView.swift` (and other `iOS/` prefixed views)
 - `ContentView`: Root view with `NavigationSplitView` (sidebar + detail)
-- `SidebarView`: Conversation list with search and context menu actions
+- `SidebarView` / `IOSSidebarView`: Conversation list with search and context menu actions
 - `ChatView`: Clean chat interface with message history, dynamic text editor, and send button
 - `MessageView`: Individual message bubble with avatar, copy/like actions
-- `SettingsView`: 4-tab settings (General, Model, API, About)
+- `SettingsView` / `IOSSettingsView`: App configuration and settings
 
 **Services** (`Services/OpenAIService.swift`, `Services/MCPServerManager.swift`, `Services/MCPService.swift`)
 - `OpenAIService.shared`: Singleton managing API communication with OpenAI-compatible endpoints

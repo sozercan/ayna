@@ -76,7 +76,7 @@ struct IOSSettingsView: View {
                             } label: {
                                 Label("Set as Default", systemImage: "checkmark")
                             }
-                            
+
                             Button(role: .destructive) {
                                 removeModel(model)
                             } label: {

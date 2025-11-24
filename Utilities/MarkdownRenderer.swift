@@ -384,8 +384,7 @@ struct MarkdownTable {
     let alignments: [ColumnAlignment]
 }
 
-#if os(iOS)
-  struct ContentBlock: Identifiable {
+struct ContentBlock: Identifiable {
     let id = UUID()
     let type: BlockType
 
@@ -400,5 +399,4 @@ struct MarkdownTable {
       case code(String, String)
       case tool(String, String)
     }
-  }
-#endif
+}

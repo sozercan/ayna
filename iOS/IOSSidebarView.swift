@@ -97,7 +97,7 @@ struct IOSSidebarView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(.black.opacity(0.3))
                     }
-                    
+
                     Button(action: {
                         conversationManager.selectedConversationId = ConversationManager.newConversationId
                     }) {

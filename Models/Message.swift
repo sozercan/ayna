@@ -38,6 +38,7 @@ struct Message: Identifiable, Codable, Equatable {
         var localPath: String? // Path relative to AttachmentStorage
 
         // Helper to get data regardless of storage method
+    @MainActor
         var content: Data? {
             if let data { return data }
             if let path = localPath {
@@ -83,6 +84,7 @@ struct Message: Identifiable, Codable, Equatable {
     }
 
     // Helper to get image data regardless of storage method
+  @MainActor
     var effectiveImageData: Data? {
         if let data = imageData { return data }
         if let path = imagePath {
@@ -92,5 +94,5 @@ struct Message: Identifiable, Codable, Equatable {
     }
 
   // Static loader to decouple from AttachmentStorage
-  static var attachmentLoader: ((String) -> Data?)?
+  @MainActor static var attachmentLoader: ((String) -> Data?)?
 }
