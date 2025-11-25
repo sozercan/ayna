@@ -83,23 +83,15 @@ final class AynaSmokeUITests: AynaUITestCase {
         let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
         XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
         
-        // Try context menu first as it is most direct
+        // Use context menu to delete - this tests the actual UI interaction users would use
         title.rightClick()
         
         // Use explicit identifier for the context menu's Delete item
         let deleteMenuItem = app.menuItems["contextMenu.delete"]
-        if deleteMenuItem.waitForExistence(timeout: 3) {
-            deleteMenuItem.click()
-        } else {
-            // Dismiss any open menu first by pressing Escape
-            app.typeKey(.escape, modifierFlags: [])
-            Thread.sleep(forTimeInterval: 0.3)
-            
-            // Fallback to keyboard delete - select row first
-            title.click()
-            Thread.sleep(forTimeInterval: 0.5)
-            app.typeKey(.delete, modifierFlags: [])
-        }
+        XCTAssertTrue(deleteMenuItem.waitForExistence(timeout: 3), "Delete menu item should appear in context menu")
+        
+        // Use coordinate-based tap for more reliable menu item clicking
+        deleteMenuItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
         // Confirm deletion in alert if present (not present in this app flow, it just deletes)
 
