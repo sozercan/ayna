@@ -286,6 +286,28 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    func updateSystemPromptMode(for conversation: Conversation, mode: SystemPromptMode) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].systemPromptMode = mode
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+        }
+    }
+
+    /// Resolves the effective system prompt for a conversation based on its mode.
+    /// - Returns: The system prompt string, or nil if no prompt should be used.
+    func effectiveSystemPrompt(for conversation: Conversation) -> String? {
+        switch conversation.systemPromptMode {
+        case .inheritGlobal:
+            let global = AppPreferences.globalSystemPrompt
+            return global.isEmpty ? nil : global
+        case let .custom(prompt):
+            return prompt.isEmpty ? nil : prompt
+        case .disabled:
+            return nil
+        }
+    }
+
     private func generateTitle(for conversation: Conversation) {
         guard let firstMessage = conversation.messages.first(where: { $0.role == .user }) else {
             return

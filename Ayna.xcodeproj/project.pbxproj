@@ -71,6 +71,7 @@
 		C81394302ED3DEC900F5E7F9 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394262ED3DEC900F5E7F9 /* MacContentView.swift */; };
 		C81394312ED3DEC900F5E7F9 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */; };
 		C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394252ED3DEC900F5E7F9 /* MacChatView.swift */; };
+		C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */; };
 		C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */; };
 		C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */; };
 		C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */; };
@@ -173,6 +174,7 @@
 		C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		C81394252ED3DEC900F5E7F9 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
+		C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSystemPromptSheet.swift; sourceTree = "<group>"; };
 		C81394262ED3DEC900F5E7F9 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMessageView.swift; sourceTree = "<group>"; };
 		C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
@@ -418,6 +420,7 @@
 				C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */,
 				C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */,
 				C81394252ED3DEC900F5E7F9 /* MacChatView.swift */,
+				C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */,
 				C81394262ED3DEC900F5E7F9 /* MacContentView.swift */,
 				C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */,
 				C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */,
@@ -653,6 +656,7 @@
 				C81394302ED3DEC900F5E7F9 /* MacContentView.swift in Sources */,
 				C81394312ED3DEC900F5E7F9 /* MCPToolSummaryView.swift in Sources */,
 				C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */,
+				C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */,
 				C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */,
 				C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */,
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,

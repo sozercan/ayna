@@ -26,6 +26,11 @@ struct IOSSettingsView: View {
                     Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                         .accessibilityIdentifier(TestIdentifiers.Settings.autoGenerateTitleToggle)
 
+                    NavigationLink("System Prompt") {
+                        IOSSystemPromptSettingsView()
+                    }
+                    .accessibilityIdentifier("settings.systemPrompt.link")
+
                     NavigationLink("Image Generation Settings") {
                         IOSImageGenerationSettingsView()
                     }
@@ -198,6 +203,28 @@ struct IOSImageGenerationSettingsView: View {
             }
         }
         .navigationTitle("Image Generation")
+    }
+}
+
+struct IOSSystemPromptSettingsView: View {
+    @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
+
+    var body: some View {
+        Form {
+            Section {
+                TextEditor(text: $globalSystemPrompt)
+                    .frame(minHeight: 150)
+                    .accessibilityIdentifier("settings.globalSystemPrompt.editor")
+                    .onChange(of: globalSystemPrompt) { _, newValue in
+                        AppPreferences.globalSystemPrompt = newValue
+                    }
+            } header: {
+                Text("Default System Prompt")
+            } footer: {
+                Text("This prompt is sent at the start of every conversation unless overridden per-conversation. Leave empty for no default prompt.")
+            }
+        }
+        .navigationTitle("System Prompt")
     }
 }
 

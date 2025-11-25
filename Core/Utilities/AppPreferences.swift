@@ -22,14 +22,24 @@ private final class DefaultsState: @unchecked Sendable {
 
 enum AppPreferences {
     private static let state = DefaultsState()
+    private static let globalSystemPromptKey = "globalSystemPrompt"
+
     private static var defaultValues: [String: Any] {
         [
-            "autoGenerateTitle": true
+            "autoGenerateTitle": true,
+            globalSystemPromptKey: ""
         ]
     }
 
     static var storage: UserDefaults {
         state.storage()
+    }
+
+    /// The global system prompt used by conversations with `.inheritGlobal` mode.
+    /// Returns an empty string by default (no system prompt).
+    static var globalSystemPrompt: String {
+        get { storage.string(forKey: globalSystemPromptKey) ?? "" }
+        set { storage.set(newValue, forKey: globalSystemPromptKey) }
     }
 
     static func registerDefaults() {

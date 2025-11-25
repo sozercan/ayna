@@ -5,6 +5,8 @@
 //  Created on 11/2/25.
 //
 
+// swiftlint:disable file_length
+
 import AppKit
 import OSLog
 import SwiftUI
@@ -44,6 +46,7 @@ struct MacChatView: View {
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
     @State private var toolChainTimeoutTask: Task<Void, Never>?
+    @State private var showingSystemPromptSheet = false
 
     // Performance optimizations
     @State private var scrollDebounceTask: Task<Void, Never>?
@@ -432,6 +435,15 @@ struct MacChatView: View {
                 Spacer()
             }
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingSystemPromptSheet = true
+                } label: {
+                    Image(systemName: "text.bubble")
+                }
+                .accessibilityIdentifier("chat.systemPrompt.button")
+                .help("Conversation System Prompt")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button(action: { exportConversation(format: .markdown) }) {
                         Label("Export as Markdown", systemImage: "doc.text")
@@ -445,6 +457,10 @@ struct MacChatView: View {
                 .menuIndicator(.visible)
                 .accessibilityLabel("Export conversation")
             }
+        }
+        .sheet(isPresented: $showingSystemPromptSheet) {
+            ConversationSystemPromptSheet(conversation: currentConversation)
+                .environmentObject(conversationManager)
         }
         .onAppear {
             isComposerFocused = true
@@ -743,6 +759,13 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.messages
 
+        // Prepend system prompt if configured
+        var messagesToSend = currentMessages
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
@@ -819,7 +842,7 @@ struct MacChatView: View {
         }
 
         sendMessageWithToolSupport(
-            messages: currentMessages,
+            messages: messagesToSend,
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
@@ -1174,8 +1197,14 @@ struct MacChatView: View {
 
                                 // Continue conversation with tool result
                                 // Recursive call to handle tool output
+                                // Prepend system prompt for continued conversation
+                                var continuationMessages = updatedConv.messages
+                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: updatedConv) {
+                                    let sysMessage = Message(role: .system, content: sysPrompt)
+                                    continuationMessages.insert(sysMessage, at: 0)
+                                }
                                 sendMessageWithToolSupport(
-                                    messages: updatedConv.messages,
+                                    messages: continuationMessages,
                                     model: model,
                                     temperature: temperature,
                                     tools: toolsWrapper.value,
@@ -1311,6 +1340,13 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.messages
 
+        // Prepend system prompt if configured
+        var messagesToSend = currentMessages
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
@@ -1324,7 +1360,7 @@ struct MacChatView: View {
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
-            messages: currentMessages,
+            messages: messagesToSend,
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
@@ -1357,6 +1393,13 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.messages
 
+        // Prepend system prompt if configured
+        var messagesToSend = currentMessages
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
         // Add empty assistant message with the specified model
         let assistantMessage = Message(role: .assistant, content: "", model: model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
@@ -1370,7 +1413,7 @@ struct MacChatView: View {
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
-            messages: currentMessages,
+            messages: messagesToSend,
             model: model,
             temperature: updatedConversation.temperature,
             tools: tools,

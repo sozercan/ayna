@@ -274,7 +274,13 @@ final class IOSChatViewModel: ObservableObject {
         }
 
         // Messages to send (exclude the empty assistant message we just added)
-        let messagesToSend = Array(updatedConversation.messages.dropLast())
+        var messagesToSend = Array(updatedConversation.messages.dropLast())
+
+        // Prepend system prompt if configured
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
 
         openAIService.sendMessage(
             messages: messagesToSend,
@@ -362,7 +368,13 @@ final class IOSChatViewModel: ObservableObject {
 
         // Re-fetch conversation with updated messages
         guard let updatedConversation = self.conversation else { return }
-        let messagesToSend = Array(updatedConversation.messages.dropLast())
+        var messagesToSend = Array(updatedConversation.messages.dropLast())
+
+        // Prepend system prompt if configured
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
 
         openAIService.sendMessage(
             messages: messagesToSend,

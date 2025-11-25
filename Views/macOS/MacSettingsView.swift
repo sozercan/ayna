@@ -47,6 +47,7 @@ struct MacSettingsView: View {
 
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
+    @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @ObservedObject private var openAIService = OpenAIService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
@@ -57,6 +58,35 @@ struct GeneralSettingsView: View {
                     .help("Automatically generate conversation titles from first message")
             } header: {
                 Text("Behavior")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Default System Prompt")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    TextEditor(text: $globalSystemPrompt)
+                        .font(.body)
+                        .frame(minHeight: 80, maxHeight: 120)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        )
+                        .accessibilityIdentifier("settings.globalSystemPrompt.editor")
+                        .onChange(of: globalSystemPrompt) { _, newValue in
+                            AppPreferences.globalSystemPrompt = newValue
+                        }
+                }
+            } header: {
+                Text("System Prompt")
+            } footer: {
+                Text("This prompt is sent at the start of every conversation unless overridden per-conversation. Leave empty for no default prompt.")
+                    .font(.caption)
             }
 
             Section {
