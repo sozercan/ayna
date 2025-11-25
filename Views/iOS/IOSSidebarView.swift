@@ -93,24 +93,18 @@ struct IOSSidebarView: View {
                     .background {
                         RoundedRectangle(cornerRadius: 12)
                             .fill(.ultraThinMaterial)
-                            .environment(\.colorScheme, .dark)
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.black.opacity(0.3))
                     }
 
                     Button(action: {
                         conversationManager.selectedConversationId = ConversationManager.newConversationId
                     }) {
                         Image(systemName: "square.and.pencil")
-                            .font(.system(size: 20))
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background {
                                 Circle()
                                     .fill(.ultraThinMaterial)
-                                    .environment(\.colorScheme, .dark)
-                                Circle()
-                                    .fill(.black.opacity(0.3))
                             }
                     }
                 }
@@ -131,16 +125,7 @@ struct IOSSidebarView: View {
                         }
                     }
                 }
-                .font(.system(size: 16, weight: .medium))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background {
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                    Capsule()
-                        .fill(.black.opacity(0.3))
-                }
+                .font(.system(size: 17))
                 .foregroundStyle(.white)
             }
 
@@ -149,17 +134,10 @@ struct IOSSidebarView: View {
                     Button(action: {
                         showSettings = true
                     }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 20, weight: .medium))
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background {
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                    .environment(\.colorScheme, .dark)
-                                Circle()
-                                    .fill(.black.opacity(0.3))
-                            }
+                            .frame(width: 36, height: 36)
                     }
                 }
             }

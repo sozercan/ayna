@@ -63,10 +63,10 @@ struct IOSMessageView: View {
                     }
                 }
 
-        // Show typing indicator for empty assistant messages (waiting for response)
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
-          IOSTypingIndicatorView()
-        } else if contentBlocks.isEmpty {
+                // Show typing indicator for empty assistant messages (waiting for response)
+                if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
+                    IOSTypingIndicatorView()
+                } else if contentBlocks.isEmpty {
                     if !message.content.isEmpty {
                         // Show raw text while parsing or if parsing fails/returns empty
                         Text(message.content)
@@ -324,23 +324,23 @@ struct IOSContentBlockView: View {
 
 // Typing indicator for text responses (iOS version)
 struct IOSTypingIndicatorView: View {
-  @State private var animatingDot = 0
+    @State private var animatingDot = 0
 
-  let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
 
-  var body: some View {
-    HStack(spacing: 6) {
-      ForEach(0..<3, id: \.self) { index in
-        Circle()
-          .fill(Color.secondary.opacity(0.5))
-          .frame(width: 8, height: 8)
-          .scaleEffect(animatingDot == index ? 1.2 : 0.8)
-          .animation(.easeInOut(duration: 0.4), value: animatingDot)
-      }
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0 ..< 3, id: \.self) { index in
+                Circle()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
+                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+            }
+        }
+        .padding(.vertical, 4)
+        .onReceive(timer) { _ in
+            animatingDot = (animatingDot + 1) % 3
+        }
     }
-    .padding(.vertical, 4)
-    .onReceive(timer) { _ in
-      animatingDot = (animatingDot + 1) % 3
-    }
-  }
 }

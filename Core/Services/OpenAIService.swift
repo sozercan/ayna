@@ -72,10 +72,10 @@ class OpenAIService: ObservableObject {
     // Custom URLSession with longer timeout for slow models
     private let urlSession: URLSession
 
-  // Image generation service
-  private let imageService: OpenAIImageService
+    // Image generation service
+    private let imageService: OpenAIImageService
 
-  @Published var customModels: [String] {
+    @Published var customModels: [String] {
         didSet {
             AppPreferences.storage.set(customModels, forKey: "customModels")
             // iCloud sync disabled for free developer account
@@ -152,13 +152,13 @@ class OpenAIService: ObservableObject {
     init(urlSession: URLSession? = nil) {
         if let session = urlSession {
             self.urlSession = session
-      imageService = OpenAIImageService(urlSession: session)
+            imageService = OpenAIImageService(urlSession: session)
         } else {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = 120 // 2 minutes
             config.timeoutIntervalForResource = 300 // 5 minutes
             self.urlSession = URLSession(configuration: config)
-      imageService = OpenAIImageService(urlSession: self.urlSession)
+            imageService = OpenAIImageService(urlSession: self.urlSession)
         }
         // Load custom models first
         let loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
@@ -341,7 +341,7 @@ class OpenAIService: ObservableObject {
     }
 
     private func isAzureEndpoint(_ endpoint: String?) -> Bool {
-    OpenAIEndpointResolver.isAzureEndpoint(endpoint)
+        OpenAIEndpointResolver.isAzureEndpoint(endpoint)
     }
 
     // Get API key for a specific model, falling back to global key if not set
@@ -351,33 +351,33 @@ class OpenAIService: ObservableObject {
     }
 
     private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
-    let effectiveProvider = provider ?? self.provider
-    let modelName = deploymentName ?? selectedModel
-    let endpointInfo = customEndpoint(for: modelName)
+        let effectiveProvider = provider ?? self.provider
+        let modelName = deploymentName ?? selectedModel
+        let endpointInfo = customEndpoint(for: modelName)
 
-    let config = OpenAIEndpointResolver.EndpointConfig(
-      modelName: modelName,
-      provider: effectiveProvider,
-      customEndpoint: endpointInfo?.endpoint,
-      azureAPIVersion: azureAPIVersion
-    )
+        let config = OpenAIEndpointResolver.EndpointConfig(
+            modelName: modelName,
+            provider: effectiveProvider,
+            customEndpoint: endpointInfo?.endpoint,
+            azureAPIVersion: azureAPIVersion
+        )
 
-    return OpenAIEndpointResolver.chatCompletionsURL(for: config)
+        return OpenAIEndpointResolver.chatCompletionsURL(for: config)
     }
 
     private func getResponsesAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
-    let effectiveProvider = provider ?? self.provider
-    let modelName = deploymentName ?? selectedModel
-    let endpointInfo = customEndpoint(for: modelName)
+        let effectiveProvider = provider ?? self.provider
+        let modelName = deploymentName ?? selectedModel
+        let endpointInfo = customEndpoint(for: modelName)
 
-    let config = OpenAIEndpointResolver.EndpointConfig(
-      modelName: modelName,
-      provider: effectiveProvider,
-      customEndpoint: endpointInfo?.endpoint,
-      azureAPIVersion: azureAPIVersion
-    )
+        let config = OpenAIEndpointResolver.EndpointConfig(
+            modelName: modelName,
+            provider: effectiveProvider,
+            customEndpoint: endpointInfo?.endpoint,
+            azureAPIVersion: azureAPIVersion
+        )
 
-    return OpenAIEndpointResolver.responsesURL(for: config)
+        return OpenAIEndpointResolver.responsesURL(for: config)
     }
 
     func getModelCapability(_ model: String) -> ModelCapability {
@@ -411,8 +411,8 @@ class OpenAIService: ObservableObject {
         )
     }
 
-  /// Generates an image from a text prompt.
-  /// Delegates to OpenAIImageService for the actual network request.
+    /// Generates an image from a text prompt.
+    /// Delegates to OpenAIImageService for the actual network request.
     func generateImage(
         prompt: String,
         model: String? = nil,
@@ -424,35 +424,35 @@ class OpenAIService: ObservableObject {
         guard !requestModel.isEmpty else {
             onError(OpenAIError.missingModel)
             return
+        }
+
+        let effectiveProvider = modelProviders[requestModel] ?? provider
+        let endpointInfo = customEndpoint(for: requestModel)
+
+        let requestConfig = OpenAIImageService.RequestConfig(
+            model: requestModel,
+            apiKey: getAPIKey(for: requestModel),
+            provider: effectiveProvider,
+            customEndpoint: endpointInfo?.endpoint,
+            azureAPIVersion: azureAPIVersion
+        )
+
+        let imageConfig = OpenAIImageService.ImageConfig(
+            size: imageSize,
+            quality: imageQuality,
+            outputFormat: outputFormat,
+            outputCompression: outputCompression
+        )
+
+        imageService.generateImage(
+            prompt: prompt,
+            requestConfig: requestConfig,
+            imageConfig: imageConfig,
+            onComplete: onComplete,
+            onError: onError,
+            attempt: attempt
+        )
     }
-
-    let effectiveProvider = modelProviders[requestModel] ?? provider
-    let endpointInfo = customEndpoint(for: requestModel)
-
-    let requestConfig = OpenAIImageService.RequestConfig(
-      model: requestModel,
-      apiKey: getAPIKey(for: requestModel),
-      provider: effectiveProvider,
-      customEndpoint: endpointInfo?.endpoint,
-      azureAPIVersion: azureAPIVersion
-    )
-
-    let imageConfig = OpenAIImageService.ImageConfig(
-      size: imageSize,
-      quality: imageQuality,
-      outputFormat: outputFormat,
-      outputCompression: outputCompression
-    )
-
-    imageService.generateImage(
-      prompt: prompt,
-      requestConfig: requestConfig,
-      imageConfig: imageConfig,
-      onComplete: onComplete,
-      onError: onError,
-      attempt: attempt
-    )
-  }
 
     // MARK: - Helper Methods for sendMessage
 
@@ -548,21 +548,21 @@ class OpenAIService: ObservableObject {
         }
 
         let modelAPIKey = getAPIKey(for: requestModel)
-    let needsAuth = effectiveProvider == .openai
+        let needsAuth = effectiveProvider == .openai
 
-    guard
-      let request = OpenAIRequestBuilder.createChatCompletionsRequest(
-        url: url,
-        messages: messages,
-        model: requestModel,
-        stream: stream,
-        tools: tools,
-        apiKey: needsAuth ? modelAPIKey : "",
-        isAzure: usesAzureEndpoint
-      )
-    else {
-      onError(OpenAIError.invalidRequest)
-      return
+        guard
+            let request = OpenAIRequestBuilder.createChatCompletionsRequest(
+                url: url,
+                messages: messages,
+                model: requestModel,
+                stream: stream,
+                tools: tools,
+                apiKey: needsAuth ? modelAPIKey : "",
+                isAzure: usesAzureEndpoint
+            )
+        else {
+            onError(OpenAIError.invalidRequest)
+            return
         }
 
         if stream {
@@ -654,16 +654,16 @@ class OpenAIService: ObservableObject {
             return
         }
 
-    guard
-      let request = OpenAIRequestBuilder.createResponsesRequest(
-        url: url,
-        messages: messages,
-        model: model,
-        apiKey: modelAPIKey,
-        isAzure: usesAzureEndpoint
-      )
-    else {
-      onError(OpenAIError.invalidRequest)
+        guard
+            let request = OpenAIRequestBuilder.createResponsesRequest(
+                url: url,
+                messages: messages,
+                model: model,
+                apiKey: modelAPIKey,
+                isAzure: usesAzureEndpoint
+            )
+        else {
+            onError(OpenAIError.invalidRequest)
             return
         }
 
@@ -722,11 +722,11 @@ class OpenAIService: ObservableObject {
                     }
 
                     if let outputArray = json?["output"] as? [[String: Any]] {
-            OpenAIRequestBuilder.deliverResponsesOutput(
-              outputArray,
-              onChunk: onChunk,
-              onReasoning: onReasoning
-            )
+                        OpenAIRequestBuilder.deliverResponsesOutput(
+                            outputArray,
+                            onChunk: onChunk,
+                            onReasoning: onReasoning
+                        )
                     }
 
                     onComplete()
@@ -743,7 +743,7 @@ class OpenAIService: ObservableObject {
 
     // swiftlint:enable superfluous_disable_command
 
-  // MARK: - Helper Methods for streamResponse
+    // MARK: - Helper Methods for streamResponse
 
     private nonisolated func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
         if statusCode == 400 {
@@ -809,7 +809,7 @@ class OpenAIService: ObservableObject {
                     // Check if we have a newline (UTF-8: 0x0A)
                     if byte == 0x0A {
                         if let line = String(data: buffer, encoding: .utf8) {
-              let result = await OpenAIStreamParser.processStreamLine(
+                            let result = await OpenAIStreamParser.processStreamLine(
                                 line,
                                 toolCallBuffer: currentToolCallBuffer,
                                 toolCallId: toolCallId,
@@ -1008,11 +1008,11 @@ class OpenAIService: ObservableObject {
 
                         // Handle regular content
                         if let contentField = message["content"], !(contentField is NSNull) {
-              let textSegments = OpenAIStreamParser.extractTextSegments(
+                            let textSegments = OpenAIStreamParser.extractTextSegments(
                                 from: contentField,
                                 source: "nonstream.chat",
                                 metadata: ["phase": "final"]
-              )
+                            )
 
                             for segment in textSegments where !segment.isEmpty {
                                 onChunk(segment)
@@ -1125,27 +1125,27 @@ class OpenAIService: ObservableObject {
                     }
                 )
             }
+        }
     }
-  }
 
-  // Retry logic delegated to OpenAIRetryPolicy
+    // Retry logic delegated to OpenAIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
-    OpenAIRetryPolicy.shouldRetry(
-      error: error,
-      attempt: attempt,
-      hasReceivedData: hasReceivedData
+        OpenAIRetryPolicy.shouldRetry(
+            error: error,
+            attempt: attempt,
+            hasReceivedData: hasReceivedData
         )
     }
 
     private func delay(for attempt: Int) async {
-    await OpenAIRetryPolicy.wait(for: attempt)
+        await OpenAIRetryPolicy.wait(for: attempt)
     }
 
     enum OpenAIError: LocalizedError {
         case missingAPIKey
         case missingModel
         case invalidResponse
-    case invalidRequest
+        case invalidRequest
         case apiError(String)
         case invalidURL
         case unsupportedProvider
@@ -1160,8 +1160,8 @@ class OpenAIService: ObservableObject {
                 "Please add or select a model in Settings"
             case .invalidResponse:
                 "Invalid response from API"
-      case .invalidRequest:
-        "Failed to build API request"
+            case .invalidRequest:
+                "Failed to build API request"
             case let .apiError(message):
                 message
             case .invalidURL:
