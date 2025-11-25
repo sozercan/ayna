@@ -9,8 +9,16 @@ import SwiftUI
 
 struct IOSMessageView: View {
     let message: Message
-    @State private var contentBlocks: [ContentBlock] = []
+    @State private var contentBlocks: [ContentBlock]
+    @State private var lastContentHash: Int
     @State private var decodedImage: UIImage?
+
+    init(message: Message) {
+        self.message = message
+        // Parse content synchronously on init to avoid flash of empty/raw text bubbles
+        _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+        _lastContentHash = State(initialValue: message.content.hashValue)
+    }
 
     var body: some View {
         HStack(alignment: .top) {
@@ -77,13 +85,17 @@ struct IOSMessageView: View {
                 Spacer()
             }
         }
-        .task(id: message.content) {
-            // Offload markdown parsing to background thread to prevent scrolling hitches
-            let blocks = await Task.detached(priority: .userInitiated) {
-                MarkdownRenderer.parse(message.content)
-            }.value
-            await MainActor.run {
-                contentBlocks = blocks
+        .onChange(of: message.content) { _, newContent in
+            // Only re-parse if content actually changed
+            let newHash = newContent.hashValue
+            if newHash != lastContentHash {
+                lastContentHash = newHash
+                Task.detached(priority: .userInitiated) {
+                    let blocks = MarkdownRenderer.parse(newContent)
+                    await MainActor.run {
+                        contentBlocks = blocks
+                    }
+                }
             }
         }
     }

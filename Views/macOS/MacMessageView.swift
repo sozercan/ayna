@@ -20,12 +20,35 @@ struct MacMessageView: View {
     @ObservedObject private var openAIService = OpenAIService.shared
 
     // Performance: Cache parsed content blocks to avoid re-parsing on every render
-    @State private var cachedContentBlocks: [ContentBlock] = []
-    @State private var cachedReasoningBlocks: [ContentBlock] = []
-    @State private var lastContentHash: Int = 0
-    @State private var lastReasoningHash: Int = 0
+    // Initialize synchronously to avoid flash of empty bubbles on first render
+    @State private var cachedContentBlocks: [ContentBlock]
+    @State private var cachedReasoningBlocks: [ContentBlock]
+    @State private var lastContentHash: Int
+    @State private var lastReasoningHash: Int
     @State private var parseTask: Task<Void, Never>?
     @State private var reasoningParseTask: Task<Void, Never>?
+
+    init(
+        message: Message,
+        modelName: String? = nil,
+        onRetry: (() -> Void)? = nil,
+        onSwitchModel: ((String) -> Void)? = nil
+    ) {
+        self.message = message
+        self.modelName = modelName
+        self.onRetry = onRetry
+        self.onSwitchModel = onSwitchModel
+        // Parse content synchronously on init to avoid flash of empty bubbles
+        _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+        _lastContentHash = State(initialValue: message.content.hashValue)
+        if let reasoning = message.reasoning {
+            _cachedReasoningBlocks = State(initialValue: MarkdownRenderer.parse(reasoning))
+            _lastReasoningHash = State(initialValue: reasoning.hashValue)
+        } else {
+            _cachedReasoningBlocks = State(initialValue: [])
+            _lastReasoningHash = State(initialValue: 0)
+        }
+    }
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
