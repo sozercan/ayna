@@ -6,18 +6,26 @@
 //
 
 import Combine
+import os.log
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct IOSMessageView: View {
     let message: Message
+    var onRetry: (() -> Void)?
+
     @State private var contentBlocks: [ContentBlock]
     @State private var lastContentHash: Int
     @State private var decodedImage: UIImage?
     @State private var parseDebounceTask: Task<Void, Never>?
     @State private var lastParseTime: Date = .distantPast
 
-    init(message: Message) {
+    init(
+        message: Message,
+        onRetry: (() -> Void)? = nil
+    ) {
         self.message = message
+        self.onRetry = onRetry
         // Parse content synchronously on init to avoid flash of empty/raw text bubbles
         _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
         _lastContentHash = State(initialValue: message.content.hashValue)
@@ -86,6 +94,46 @@ struct IOSMessageView: View {
             )
             .foregroundStyle(message.role == .user ? .white : .primary)
             .frame(maxWidth: 300, alignment: message.role == .user ? .trailing : .leading)
+            .contextMenu {
+                // Copy button - available for all messages with content
+                if !message.content.isEmpty {
+                    Button {
+                        UIPasteboard.general.string = message.content
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "📋 Message copied to clipboard"
+                        )
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                }
+
+                // Retry button - only for assistant messages
+                if message.role == .assistant, let onRetry {
+                    Button {
+                        onRetry()
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }
+                }
+
+                // Copy image if present
+                if message.mediaType == .image, let imageData = message.imageData,
+                   let image = UIImage(data: imageData)
+                {
+                    Button {
+                        UIPasteboard.general.image = image
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "🖼️ Image copied to clipboard"
+                        )
+                    } label: {
+                        Label("Copy Image", systemImage: "photo.on.rectangle")
+                    }
+                }
+            }
 
             if message.role != .user {
                 Spacer()

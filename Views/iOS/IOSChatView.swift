@@ -31,9 +31,14 @@ struct IOSChatView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 12) {
                             ForEach(conversation.messages) { message in
-                                IOSMessageView(message: message)
-                                    .id(message.id)
-                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                                IOSMessageView(
+                                    message: message,
+                                    onRetry: message.role == .assistant ? {
+                                        retryMessage(beforeMessage: message)
+                                    } : nil
+                                )
+                                .id(message.id)
+                                .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
                             }
                         }
                         .padding()
@@ -126,6 +131,83 @@ struct IOSChatView: View {
     }
 
     // MARK: - Private Methods
+
+    private func retryMessage(beforeMessage: Message) {
+        guard let conversation else { return }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔄 Retrying message",
+            metadata: ["conversationId": conversationId.uuidString]
+        )
+
+        // Find the index of the message to retry
+        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessage.id }) else {
+            return
+        }
+
+        // Remove the assistant message and any subsequent messages
+        var updatedMessages = Array(conversation.messages.prefix(messageIndex))
+
+        // Update the conversation
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversationManager.conversations[convIndex].messages = updatedMessages
+        }
+
+        // Get the last user message to resend
+        guard let lastUserMessage = updatedMessages.last(where: { $0.role == .user }) else {
+            return
+        }
+
+        // Create a new assistant message placeholder
+        let assistantMessage = Message(role: .assistant, content: "")
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        isGenerating = true
+        errorMessage = nil
+
+        // Re-fetch conversation with updated messages
+        guard let updatedConversation = self.conversation else { return }
+        let messagesToSend = Array(updatedConversation.messages.dropLast())
+
+        openAIService.sendMessage(
+            messages: messagesToSend,
+            model: updatedConversation.model,
+            stream: true,
+            onChunk: { chunk in
+                Task { @MainActor in
+                    updateAssistantMessage(assistantMessage.id, appendingChunk: chunk)
+                }
+            },
+            onComplete: {
+                Task { @MainActor in
+                    isGenerating = false
+                    if let updatedConv = self.conversation {
+                        conversationManager.save(updatedConv)
+                    }
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "✅ Retry completed",
+                        metadata: ["conversationId": conversationId.uuidString]
+                    )
+                }
+            },
+            onError: { error in
+                Task { @MainActor in
+                    isGenerating = false
+                    errorMessage = error.localizedDescription
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Retry failed: \(error.localizedDescription)",
+                        metadata: ["conversationId": conversationId.uuidString]
+                    )
+                }
+            }
+        )
+    }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {

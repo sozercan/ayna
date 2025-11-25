@@ -59,9 +59,14 @@ struct IOSNewChatView: View {
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 12) {
                             ForEach(conversation.messages) { message in
-                                IOSMessageView(message: message)
-                                    .id(message.id)
-                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                                IOSMessageView(
+                                    message: message,
+                                    onRetry: message.role == .assistant ? {
+                                        retryMessage(beforeMessage: message, in: conversation)
+                                    } : nil
+                                )
+                                .id(message.id)
+                                .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
                             }
                         }
                         .padding()
@@ -182,6 +187,80 @@ struct IOSNewChatView: View {
     }
 
     // MARK: - Private Methods
+
+    private func retryMessage(beforeMessage: Message, in conversation: Conversation) {
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔄 Retrying message in new chat",
+            metadata: ["conversationId": conversation.id.uuidString]
+        )
+
+        // Find the index of the message to retry
+        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessage.id }) else {
+            return
+        }
+
+        // Remove the assistant message and any subsequent messages
+        let updatedMessages = Array(conversation.messages.prefix(messageIndex))
+
+        // Update the conversation
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversationManager.conversations[convIndex].messages = updatedMessages
+        }
+
+        // Create a new assistant message placeholder
+        let assistantMessage = Message(role: .assistant, content: "")
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        isGenerating = true
+        errorMessage = nil
+
+        // Re-fetch conversation with updated messages
+        guard let updatedConversation = pendingConversation else { return }
+        let messagesToSend = Array(updatedConversation.messages.dropLast())
+
+        openAIService.sendMessage(
+            messages: messagesToSend,
+            model: updatedConversation.model,
+            stream: true,
+            onChunk: { chunk in
+                Task { @MainActor in
+                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
+                    {
+                        var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
+                        updatedMessage.content += chunk
+                        conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
+                    }
+                }
+            },
+            onComplete: {
+                Task { @MainActor in
+                    isGenerating = false
+                    if let finalConversation = conversationManager.conversations.first(where: { $0.id == conversation.id }) {
+                        conversationManager.save(finalConversation)
+                    }
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "✅ Retry completed in new chat"
+                    )
+                }
+            },
+            onError: { error in
+                Task { @MainActor in
+                    isGenerating = false
+                    errorMessage = error.localizedDescription
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Retry failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+        )
+    }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
