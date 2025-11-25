@@ -140,6 +140,9 @@ struct IOSSidebarView: View {
                             .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
                             .swipeActions {
                                 Button(role: .destructive) {
+                                    // Warning haptic for delete
+                                    let generator = UINotificationFeedbackGenerator()
+                                    generator.notificationOccurred(.warning)
                                     conversationManager.deleteConversation(conversation)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -227,6 +230,10 @@ struct IOSSidebarView: View {
                 }
 
                 Button(action: {
+                    // Light haptic for new conversation
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+
                     conversationManager.selectedConversationId = ConversationManager.newConversationId
                     DiagnosticsLogger.log(
                         .contentView,

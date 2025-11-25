@@ -99,6 +99,9 @@ struct IOSMessageView: View {
                 if !message.content.isEmpty {
                     Button {
                         UIPasteboard.general.string = message.content
+                        // Success haptic for copy
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
@@ -112,6 +115,9 @@ struct IOSMessageView: View {
                 // Retry button - only for assistant messages
                 if message.role == .assistant, let onRetry {
                     Button {
+                        // Medium haptic for retry
+                        let generator = UIImpactFeedbackGenerator(style: .medium)
+                        generator.impactOccurred()
                         onRetry()
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
@@ -124,6 +130,9 @@ struct IOSMessageView: View {
                 {
                     Button {
                         UIPasteboard.general.image = image
+                        // Success haptic for copy image
+                        let generator = UINotificationFeedbackGenerator()
+                        generator.notificationOccurred(.success)
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,

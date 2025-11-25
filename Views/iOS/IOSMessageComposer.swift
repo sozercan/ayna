@@ -89,7 +89,7 @@ struct IOSMessageComposer: View {
 
                 // Text field container
                 HStack(alignment: .bottom) {
-                    TextField("Message", text: $messageText, axis: .vertical)
+                    TextField("Ask anything", text: $messageText, axis: .vertical)
                         .lineLimit(1 ... 5)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -158,6 +158,10 @@ struct IOSMessageComposer: View {
 
     private func handleSendOrCancel() {
         if isGenerating {
+            // Light haptic for cancel
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
@@ -165,6 +169,10 @@ struct IOSMessageComposer: View {
             )
             onCancel()
         } else {
+            // Medium haptic for send
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
