@@ -16,6 +16,11 @@ struct Message: Identifiable, Codable, Equatable {
     var toolCalls: [MCPToolCall]?
     var model: String? // Track which model generated this message
 
+    // Multi-model response support
+    var responseGroupId: UUID? // Groups parallel responses together
+    var isSelectedResponse: Bool? // Is this the chosen response in its group?
+    var pendingToolCalls: [MCPToolCall]? // Tool calls deferred until response selection
+
     // Image generation support
     var mediaType: MediaType?
     var imageData: Data?
@@ -63,6 +68,9 @@ struct Message: Identifiable, Codable, Equatable {
         isLiked: Bool = false,
         toolCalls: [MCPToolCall]? = nil,
         model: String? = nil,
+        responseGroupId: UUID? = nil,
+        isSelectedResponse: Bool? = nil,
+        pendingToolCalls: [MCPToolCall]? = nil,
         mediaType: MediaType? = nil,
         imageData: Data? = nil,
         imagePath: String? = nil,
@@ -76,11 +84,43 @@ struct Message: Identifiable, Codable, Equatable {
         self.isLiked = isLiked
         self.toolCalls = toolCalls
         self.model = model
+        self.responseGroupId = responseGroupId
+        self.isSelectedResponse = isSelectedResponse
+        self.pendingToolCalls = pendingToolCalls
         self.mediaType = mediaType
         self.imageData = imageData
         self.imagePath = imagePath
         self.attachments = attachments
         self.reasoning = reasoning
+    }
+
+    // MARK: - Codable (backward compatibility)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, role, content, timestamp, isLiked, toolCalls, model
+        case responseGroupId, isSelectedResponse, pendingToolCalls
+        case mediaType, imageData, imagePath, attachments, reasoning
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        role = try container.decode(Role.self, forKey: .role)
+        content = try container.decode(String.self, forKey: .content)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        isLiked = try container.decode(Bool.self, forKey: .isLiked)
+        toolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .toolCalls)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        // Multi-model fields (backward compatibility)
+        responseGroupId = try container.decodeIfPresent(UUID.self, forKey: .responseGroupId)
+        isSelectedResponse = try container.decodeIfPresent(Bool.self, forKey: .isSelectedResponse)
+        pendingToolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .pendingToolCalls)
+        // Media fields
+        mediaType = try container.decodeIfPresent(MediaType.self, forKey: .mediaType)
+        imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
+        imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
+        attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
+        reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
     }
 
     // Helper to get image data regardless of storage method

@@ -93,6 +93,10 @@
 		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
 		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
 		A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */; };
+A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
+A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
+A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */; };
+A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -131,6 +135,7 @@
 		C81393B42ED3DEB800F5E7F9 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C81393B62ED3DEB800F5E7F9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
+		A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseGroup.swift; sourceTree = "<group>"; };
 		C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
 		C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
@@ -168,6 +173,7 @@
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
 		C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
 		C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
+		A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMultiModelResponseView.swift; sourceTree = "<group>"; };
 		C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
 		C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
 		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
@@ -177,6 +183,7 @@
 		C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSystemPromptSheet.swift; sourceTree = "<group>"; };
 		C81394262ED3DEC900F5E7F9 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMessageView.swift; sourceTree = "<group>"; };
+		A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiModelResponseView.swift; sourceTree = "<group>"; };
 		C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarView.swift; sourceTree = "<group>"; };
 		C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
@@ -305,6 +312,7 @@
 				C81393B42ED3DEB800F5E7F9 /* Conversation.swift */,
 				C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */,
 				C81393B62ED3DEB800F5E7F9 /* Message.swift */,
+							A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -407,6 +415,7 @@
 				C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */,
 				C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */,
 				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
+							A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */,
 				C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */,
 				C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */,
 								2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */,
@@ -423,6 +432,7 @@
 				C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */,
 				C81394262ED3DEC900F5E7F9 /* MacContentView.swift */,
 				C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */,
+							A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */,
 				C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */,
 				C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */,
 				C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */,
@@ -627,6 +637,7 @@
 				C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393FF2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
 				C81394012ED3DEB800F5E7F9 /* Message.swift in Sources */,
+						A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81394032ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81394042ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
 				C81394052ED3DEB800F5E7F9 /* MCPService.swift in Sources */,
@@ -662,6 +673,7 @@
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
 				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
 				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
+						A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,
 				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -696,6 +708,7 @@
 				C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393DE2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
 				C81393E02ED3DEB800F5E7F9 /* Message.swift in Sources */,
+						A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81393E22ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81393E32ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
 				C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
@@ -719,6 +732,7 @@
 				C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */,
 				C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */,
 				C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */,
+						A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */,
 				C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */,
 				C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */,
 								BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */,

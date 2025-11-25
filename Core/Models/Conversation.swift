@@ -74,6 +74,11 @@ struct Conversation: Identifiable, Codable, Equatable {
     var systemPromptMode: SystemPromptMode
     var temperature: Double
 
+    // Multi-model support
+    var multiModelEnabled: Bool
+    var activeModels: [String] // Models selected for parallel queries
+    var responseGroups: [ResponseGroup] // Track all response groups
+
     init(
         id: UUID = UUID(),
         title: String = "New Conversation",
@@ -82,7 +87,10 @@ struct Conversation: Identifiable, Codable, Equatable {
         updatedAt: Date = Date(),
         model: String = "gpt-4o",
         systemPromptMode: SystemPromptMode = .inheritGlobal,
-        temperature: Double = 0.7
+        temperature: Double = 0.7,
+        multiModelEnabled: Bool = false,
+        activeModels: [String] = [],
+        responseGroups: [ResponseGroup] = []
     ) {
         self.id = id
         self.title = title
@@ -92,6 +100,33 @@ struct Conversation: Identifiable, Codable, Equatable {
         self.model = model
         self.systemPromptMode = systemPromptMode
         self.temperature = temperature
+        self.multiModelEnabled = multiModelEnabled
+        self.activeModels = activeModels
+        self.responseGroups = responseGroups
+    }
+
+    // MARK: - Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, messages, createdAt, updatedAt, model
+        case systemPromptMode, temperature
+        case multiModelEnabled, activeModels, responseGroups
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        messages = try container.decode([Message].self, forKey: .messages)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        model = try container.decode(String.self, forKey: .model)
+        systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
+        temperature = try container.decode(Double.self, forKey: .temperature)
+        // Provide defaults for new multi-model fields (backward compatibility)
+        multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
+        activeModels = try container.decodeIfPresent([String].self, forKey: .activeModels) ?? []
+        responseGroups = try container.decodeIfPresent([ResponseGroup].self, forKey: .responseGroups) ?? []
     }
 
     mutating func addMessage(_ message: Message) {
@@ -103,6 +138,75 @@ struct Conversation: Identifiable, Codable, Equatable {
         if var lastMessage = messages.last {
             lastMessage.content = content
             messages[messages.count - 1] = lastMessage
+            updatedAt = Date()
+        }
+    }
+
+    // MARK: - Multi-Model Support
+
+    /// Get the effective message history for API requests.
+    /// This filters out unselected responses from response groups to maintain linear context.
+    func getEffectiveHistory() -> [Message] {
+        var effectiveMessages: [Message] = []
+
+        for message in messages {
+            // If message is part of a response group
+            if let groupId = message.responseGroupId {
+                // Find the corresponding response group
+                if let group = responseGroups.first(where: { $0.id == groupId }) {
+                    // Only include if this is the selected response, or if no selection made yet
+                    if group.selectedResponseId == message.id || group.selectedResponseId == nil {
+                        effectiveMessages.append(message)
+                    }
+                    // Skip unselected responses
+                } else {
+                    // No group found, include the message anyway
+                    effectiveMessages.append(message)
+                }
+            } else {
+                // Regular message (not part of a response group)
+                effectiveMessages.append(message)
+            }
+        }
+
+        return effectiveMessages
+    }
+
+    /// Add a response group for multi-model responses
+    mutating func addResponseGroup(_ group: ResponseGroup) {
+        responseGroups.append(group)
+        updatedAt = Date()
+    }
+
+    /// Select a response from a response group
+    mutating func selectResponse(in groupId: UUID, messageId: UUID) {
+        if let index = responseGroups.firstIndex(where: { $0.id == groupId }) {
+            responseGroups[index].selectResponse(messageId)
+
+            // Mark messages accordingly
+            for msgIndex in messages.indices where messages[msgIndex].responseGroupId == groupId {
+                messages[msgIndex].isSelectedResponse = (messages[msgIndex].id == messageId)
+
+                // If this is the selected message and it has pending tool calls, activate them
+                if messages[msgIndex].id == messageId, let pendingCalls = messages[msgIndex].pendingToolCalls {
+                    messages[msgIndex].toolCalls = pendingCalls
+                    messages[msgIndex].pendingToolCalls = nil
+                }
+            }
+
+            updatedAt = Date()
+        }
+    }
+
+    /// Get a response group by ID
+    func getResponseGroup(_ groupId: UUID) -> ResponseGroup? {
+        responseGroups.first { $0.id == groupId }
+    }
+
+    /// Update a response group
+    mutating func updateResponseGroup(_ group: ResponseGroup) {
+        if let index = responseGroups.firstIndex(where: { $0.id == group.id }) {
+            responseGroups[index] = group
             updatedAt = Date()
         }
     }
