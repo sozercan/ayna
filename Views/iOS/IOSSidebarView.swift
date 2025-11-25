@@ -219,8 +219,14 @@ struct IOSSidebarView: View {
                         .foregroundStyle(.gray)
                     TextField("Search", text: $searchText)
                         .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-                    Image(systemName: "mic.fill")
-                        .foregroundStyle(.gray)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.gray)
+                        }
+                    }
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 12)

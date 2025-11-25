@@ -94,24 +94,6 @@ struct IOSMessageComposer: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .accessibilityIdentifier("\(identifierPrefix).textEditor")
-
-                    // Mic button (placeholder for future voice input)
-                    if messageText.isEmpty, !isGenerating {
-                        Button(action: {
-                            // Voice input not yet implemented
-                            DiagnosticsLogger.log(
-                                .chatView,
-                                level: .info,
-                                message: "🎤 Voice input requested but not yet implemented"
-                            )
-                        }) {
-                            Image(systemName: "mic.fill")
-                                .foregroundStyle(.gray)
-                        }
-                        .padding(.trailing, 8)
-                        .padding(.bottom, 8)
-                        .accessibilityIdentifier("\(identifierPrefix).micButton")
-                    }
                 }
                 .background(Color(uiColor: .systemGray6))
                 .clipShape(RoundedRectangle(cornerRadius: 20))
