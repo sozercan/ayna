@@ -81,6 +81,7 @@
 		C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */; };
 		C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */; };
 		C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */; };
+		BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
@@ -167,6 +168,7 @@
 		C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
 		C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
 		C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
+		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
 		C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		C81394252ED3DEC900F5E7F9 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
@@ -402,6 +404,7 @@
 				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
 				C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */,
 				C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */,
+								2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -711,6 +714,7 @@
 				C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */,
 				C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */,
 				C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */,
+								BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */,
 				C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

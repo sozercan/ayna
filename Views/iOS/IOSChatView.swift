@@ -5,6 +5,7 @@
 //  Created on 11/22/25.
 //
 
+import os.log
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,10 +33,12 @@ struct IOSChatView: View {
                             ForEach(conversation.messages) { message in
                                 IOSMessageView(message: message)
                                     .id(message.id)
+                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
                             }
                         }
                         .padding()
                     }
+                    .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
                     .onChange(of: conversation.messages.count) { _ in
                         scrollToBottom(proxy: proxy, conversation: conversation)
@@ -46,6 +49,12 @@ struct IOSChatView: View {
                         }
                     }
                     .onAppear {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "📱 IOSChatView appeared",
+                            metadata: ["conversationId": conversationId.uuidString]
+                        )
                         // Scroll to bottom after a short delay to ensure content is laid out
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(100))
@@ -57,85 +66,20 @@ struct IOSChatView: View {
                 }
             } else {
                 ContentUnavailableView("Conversation not found", systemImage: "exclamationmark.triangle")
+                    .accessibilityIdentifier(TestIdentifiers.ChatView.emptyState)
             }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.caption)
-                    .padding(.horizontal)
-            }
-
-            VStack(spacing: 8) {
-                if !attachedFiles.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(attachedFiles, id: \.self) { url in
-                                HStack(spacing: 4) {
-                                    Image(systemName: "doc.fill")
-                                        .font(.caption)
-                                    Text(url.lastPathComponent)
-                                        .font(.caption)
-                                        .lineLimit(1)
-                                    Button {
-                                        attachedFiles.removeAll { $0 == url }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.caption)
-                                            .foregroundStyle(.gray)
-                                    }
-                                }
-                                .padding(6)
-                                .background(Color(uiColor: .systemGray6))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                }
-
-                HStack(alignment: .bottom, spacing: 12) {
-                    Button(action: { isFileImporterPresented = true }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(.gray)
-                            .padding(8)
-                            .background(Color(uiColor: .systemGray5))
-                            .clipShape(Circle())
-                    }
-                    .padding(.bottom, 5)
-
-                    HStack(alignment: .bottom) {
-                        TextField("iMessage", text: $messageText, axis: .vertical)
-                            .lineLimit(1 ... 5)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-
-                        if messageText.isEmpty, !isGenerating {
-                            Button(action: {}) {
-                                Image(systemName: "mic.fill")
-                                    .foregroundStyle(.gray)
-                            }
-                            .padding(.trailing, 8)
-                            .padding(.bottom, 8)
-                        }
-                    }
-                    .background(Color(uiColor: .systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-
-                    if !messageText.isEmpty || isGenerating {
-                        Button(action: sendMessage) {
-                            Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                                .font(.system(size: 30))
-                                .foregroundStyle(isGenerating ? .red : .blue)
-                        }
-                        .padding(.bottom, 2)
-                    }
-                }
-                .padding(.horizontal)
-            }
-            .padding(.vertical, 8)
-            .background(.bar)
+            IOSMessageComposer(
+                messageText: $messageText,
+                isGenerating: $isGenerating,
+                errorMessage: $errorMessage,
+                attachedFiles: $attachedFiles,
+                showAttachmentButton: true,
+                identifierPrefix: "chat.composer",
+                onSend: sendMessage,
+                onCancel: cancelGeneration,
+                onAttachmentRequested: { isFileImporterPresented = true }
+            )
         }
         .navigationTitle(conversation?.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
@@ -144,15 +88,7 @@ struct IOSChatView: View {
             allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
-            switch result {
-            case let .success(urls):
-                for url in urls {
-                    guard url.startAccessingSecurityScopedResource() else { continue }
-                    attachedFiles.append(url)
-                }
-            case let .failure(error):
-                errorMessage = error.localizedDescription
-            }
+            handleFileImport(result)
         }
         .toolbar {
             if let conversation {
@@ -182,31 +118,41 @@ struct IOSChatView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier(TestIdentifiers.ChatView.modelSelector)
                     }
                 }
             }
         }
     }
 
-    private func getMimeType(for url: URL) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        switch pathExtension {
-        case "jpg", "jpeg":
-            return "image/jpeg"
-        case "png":
-            return "image/png"
-        case "gif":
-            return "image/gif"
-        case "webp":
-            return "image/webp"
-        case "pdf":
-            return "application/pdf"
-        case "txt", "md":
-            return "text/plain"
-        case "json":
-            return "application/json"
-        default:
-            return "application/octet-stream"
+    // MARK: - Private Methods
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case let .success(urls):
+            for url in urls {
+                guard url.startAccessingSecurityScopedResource() else {
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Failed to access security-scoped resource: \(url.lastPathComponent)"
+                    )
+                    continue
+                }
+                attachedFiles.append(url)
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .info,
+                    message: "📎 File attached: \(url.lastPathComponent)"
+                )
+            }
+        case let .failure(error):
+            errorMessage = error.localizedDescription
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ File import failed: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -218,36 +164,43 @@ struct IOSChatView: View {
         }
     }
 
+    private func cancelGeneration() {
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🛑 Cancelling generation",
+            metadata: ["conversationId": conversationId.uuidString]
+        )
+        openAIService.cancelCurrentRequest()
+        isGenerating = false
+    }
+
     private func sendMessage() {
         guard let conversation else { return }
-
-        if isGenerating {
-            openAIService.cancelCurrentRequest()
-            isGenerating = false
-            return
-        }
 
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachedFiles.isEmpty else { return }
 
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "📤 Sending message",
+            metadata: [
+                "conversationId": conversationId.uuidString,
+                "textLength": "\(text.count)",
+                "attachmentCount": "\(attachedFiles.count)",
+            ]
+        )
+
         var userMessage = Message(role: .user, content: text)
 
+        // Process attachments with proper resource cleanup
         if !attachedFiles.isEmpty {
-            var attachments: [Message.FileAttachment] = []
-            for url in attachedFiles {
-                do {
-                    let data = try Data(contentsOf: url)
-                    attachments.append(Message.FileAttachment(
-                        fileName: url.lastPathComponent,
-                        mimeType: getMimeType(for: url),
-                        data: data
-                    ))
-                    url.stopAccessingSecurityScopedResource()
-                } catch {
-                    print("Error reading file: \(error)")
-                }
+            let result = IOSFileAttachmentUtils.processAttachments(from: attachedFiles)
+            userMessage.attachments = result.attachments
+            if !result.errors.isEmpty {
+                errorMessage = result.errors.joined(separator: "\n")
             }
-            userMessage.attachments = attachments
             attachedFiles.removeAll()
         }
 
@@ -266,31 +219,7 @@ struct IOSChatView: View {
         let capability = openAIService.getModelCapability(updatedConversation.model)
 
         if capability == .imageGeneration {
-            openAIService.generateImage(
-                prompt: text,
-                model: updatedConversation.model,
-                onComplete: { data in
-                    Task { @MainActor in
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                           let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
-                        {
-                            var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
-                            updatedMessage.mediaType = .image
-                            updatedMessage.imageData = data
-                            updatedMessage.content = "Generated image for: \(text)"
-                            conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
-                            conversationManager.save(conversationManager.conversations[convIndex])
-                        }
-                        isGenerating = false
-                    }
-                },
-                onError: { error in
-                    Task { @MainActor in
-                        isGenerating = false
-                        errorMessage = error.localizedDescription
-                    }
-                }
-            )
+            handleImageGeneration(text: text, assistantMessage: assistantMessage)
             return
         }
 
@@ -303,14 +232,7 @@ struct IOSChatView: View {
             stream: true,
             onChunk: { chunk in
                 Task { @MainActor in
-                    // Update the message in the conversation manager
-                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
-                    {
-                        var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
-                        updatedMessage.content += chunk
-                        conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
-                    }
+                    updateAssistantMessage(assistantMessage.id, appendingChunk: chunk)
                 }
             },
             onComplete: {
@@ -319,14 +241,83 @@ struct IOSChatView: View {
                     if let updatedConv = self.conversation {
                         conversationManager.save(updatedConv)
                     }
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "✅ Message generation completed",
+                        metadata: ["conversationId": conversationId.uuidString]
+                    )
                 }
             },
             onError: { error in
                 Task { @MainActor in
                     isGenerating = false
                     errorMessage = error.localizedDescription
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Message generation failed: \(error.localizedDescription)",
+                        metadata: ["conversationId": conversationId.uuidString]
+                    )
                 }
             }
         )
+    }
+
+    private func handleImageGeneration(text: String, assistantMessage: Message) {
+        guard let conversation else { return }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🎨 Starting image generation",
+            metadata: ["prompt": text]
+        )
+
+        openAIService.generateImage(
+            prompt: text,
+            model: conversation.model,
+            onComplete: { data in
+                Task { @MainActor in
+                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                       let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
+                    {
+                        var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
+                        updatedMessage.mediaType = .image
+                        updatedMessage.imageData = data
+                        updatedMessage.content = "Generated image for: \(text)"
+                        conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
+                        conversationManager.save(conversationManager.conversations[convIndex])
+                    }
+                    isGenerating = false
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "✅ Image generation completed"
+                    )
+                }
+            },
+            onError: { error in
+                Task { @MainActor in
+                    isGenerating = false
+                    errorMessage = error.localizedDescription
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Image generation failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+        )
+    }
+
+    private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String) {
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
+        {
+            var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
+            updatedMessage.content += chunk
+            conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
+        }
     }
 }

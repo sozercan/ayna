@@ -164,6 +164,13 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    /// Public method to reload conversations from storage.
+    /// Used for pull-to-refresh on iOS.
+    func reloadConversations() async {
+        logManager("🔄 Reloading conversations from storage", level: .info)
+        await loadConversations()
+    }
+
     func clearAllConversations() {
         conversations.removeAll()
         saveTasks.values.forEach { $0.cancel() }

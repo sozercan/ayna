@@ -144,7 +144,7 @@ The `OpenAIService` has been decomposed into single-responsibility components fo
 
 **Views** (`Views/macOS`, `Views/iOS`)
 - **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`, `AIKitSettingsView`, `MCPSettingsView`, `MCPToolSummaryView`
-- **iOS**: `IOSContentView`, `IOSSidebarView`, `IOSChatView`, `IOSSettingsView`, `IOSMessageView`
+- **iOS**: `IOSContentView`, `IOSSidebarView`, `IOSChatView`, `IOSSettingsView`, `IOSMessageView`, `IOSMessageComposer`
 
 ### State Management Pattern
 - `@StateObject` in App entry point for `ConversationManager`
@@ -257,6 +257,20 @@ When the first user message is sent and title is still "New Conversation":
 - **iOS**: Automatically hides `AIKit` models since local container execution is not supported.
 - **macOS**: Shows all models including `AIKit`.
 - UI components (`MacChatView`, `IOSChatView`, Settings) bind to `usableModels` instead of raw `customModels`.
+
+### Platform Feature Differences
+
+| Feature | macOS | iOS |
+|---------|-------|-----|
+| MCP Tool Calling | ✅ Full support (MCPSettingsView, MCPToolSummaryView) | ❌ Not supported (requires local process execution) |
+| AIKit (local models) | ✅ Full support (AIKitSettingsView, Podman) | ❌ Not supported (requires container runtime) |
+| Keyboard shortcuts | ✅ Cmd+N for new conversation | ⚠️ Limited (standard iOS shortcuts only) |
+| Swipe actions | N/A | ✅ Swipe-to-delete conversations, swipe actions on model rows |
+| Conversation grouping | ✅ Timeline sections | ✅ Timeline sections |
+
+**Why MCP is macOS-only**: MCP servers run as local child processes via stdio communication. iOS sandboxing prevents spawning arbitrary executables, making MCP integration infeasible on mobile.
+
+**Why AIKit is macOS-only**: AIKit requires Podman to run containerized LLM models locally. Container runtimes are not available on iOS.
 
 ### Simplified Interface
 The interface has been streamlined to focus on core chat functionality:

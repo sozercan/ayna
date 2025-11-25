@@ -5,6 +5,7 @@
 //  Created on 11/22/25.
 //
 
+import os.log
 import SwiftUI
 
 struct IOSSettingsView: View {
@@ -23,6 +24,7 @@ struct IOSSettingsView: View {
 
                 Section("General") {
                     Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
+                        .accessibilityIdentifier(TestIdentifiers.Settings.autoGenerateTitleToggle)
 
                     NavigationLink("Image Generation Settings") {
                         IOSImageGenerationSettingsView()
@@ -30,7 +32,13 @@ struct IOSSettingsView: View {
 
                     Button("Clear All Conversations", role: .destructive) {
                         conversationManager.clearAllConversations()
+                        DiagnosticsLogger.log(
+                            .conversationManager,
+                            level: .info,
+                            message: "🗑️ Cleared all conversations"
+                        )
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Settings.clearConversationsButton)
                 }
 
                 // MARK: - Models
@@ -85,6 +93,7 @@ struct IOSSettingsView: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                        .accessibilityIdentifier(TestIdentifiers.Settings.modelRow(for: model))
                     }
 
                     Button {
@@ -92,6 +101,7 @@ struct IOSSettingsView: View {
                     } label: {
                         Label("Add Model", systemImage: "plus")
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Settings.addModelButton)
                 }
             }
             .navigationTitle("Settings")
@@ -100,6 +110,7 @@ struct IOSSettingsView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Settings.doneButton)
                 }
             }
             .sheet(isPresented: $showingAddSheet) {
