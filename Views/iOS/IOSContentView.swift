@@ -15,7 +15,7 @@ struct IOSContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            IOSSidebarView()
+            IOSSidebarView(columnVisibility: $columnVisibility)
         } detail: {
             if let selectedId = conversationManager.selectedConversationId,
                selectedId != ConversationManager.newConversationId
@@ -36,6 +36,7 @@ struct IOSNewChatView: View {
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
+    @State private var showSettings = false
 
     /// Get the pending conversation from the environment's conversation manager
     private var pendingConversation: Conversation? {
@@ -44,6 +45,15 @@ struct IOSNewChatView: View {
     }
 
     var body: some View {
+        if openAIService.usableModels.isEmpty {
+            onboardingView
+        } else {
+            chatInterface
+        }
+    }
+
+    @ViewBuilder
+    private var chatInterface: some View {
         VStack(spacing: 0) {
             if let conversation = pendingConversation {
                 // Show messages while generating (before navigating away)
@@ -148,6 +158,49 @@ struct IOSNewChatView: View {
                 level: .info,
                 message: "📱 IOSNewChatView appeared"
             )
+        }
+    }
+
+    // MARK: - Onboarding View
+
+    @ViewBuilder
+    private var onboardingView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: "sparkles")
+                .font(.system(size: 60))
+                .foregroundStyle(.blue.gradient)
+
+            VStack(spacing: 8) {
+                Text("No Models Available")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Please add a model in Settings to start chatting.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button {
+                showSettings = true
+            } label: {
+                Text("Add Model")
+                    .font(.headline)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                IOSSettingsView()
+            }
         }
     }
 

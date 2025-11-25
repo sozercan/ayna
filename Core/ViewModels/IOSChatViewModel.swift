@@ -495,12 +495,10 @@ private extension IOSChatViewModel {
 
     /// Cleans up temporary attached files.
     func cleanupAttachedFiles() {
-        for url in attachedFiles {
+        for url in attachedFiles where FileManager.default.fileExists(atPath: url.path) {
             // Only delete if it's in the temp directory to be safe
             // Note: temporaryDirectory path might be symlinked, so we just check if it exists and is a file
-            if FileManager.default.fileExists(atPath: url.path) {
-                try? FileManager.default.removeItem(at: url)
-            }
+            try? FileManager.default.removeItem(at: url)
         }
         attachedFiles.removeAll()
     }

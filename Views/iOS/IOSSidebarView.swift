@@ -10,6 +10,8 @@ import SwiftUI
 
 struct IOSSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject var openAIService = OpenAIService.shared
+    @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var searchText = ""
     @State private var showSettings = false
     @State private var isEditing = false
@@ -31,12 +33,7 @@ struct IOSSidebarView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if conversationManager.conversations.isEmpty {
-                // Empty state when no conversations exist
-                emptyStateView
-            } else {
-                conversationListView
-            }
+            conversationListView
 
             // Bottom Bar
             bottomBar
@@ -95,28 +92,37 @@ struct IOSSidebarView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 70))
-                .foregroundStyle(.secondary)
+            if openAIService.usableModels.isEmpty {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 70))
+                    .foregroundStyle(.blue.gradient)
+            } else {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 70))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(spacing: 8) {
-                Text("No Conversations Yet")
+                Text(openAIService.usableModels.isEmpty ? "Welcome to Ayna" : "No Conversations Yet")
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("Start a new conversation to get started")
+                Text(openAIService.usableModels.isEmpty ? "Please add an AI model to get started" : "Start a new conversation to get started")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
 
             Button {
-                conversationManager.selectedConversationId = ConversationManager.newConversationId
+                startNewConversation()
             } label: {
-                Label("New Conversation", systemImage: "plus.circle.fill")
-                    .font(.headline)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                Label(
+                    openAIService.usableModels.isEmpty ? "Add Model" : "New Conversation",
+                    systemImage: openAIService.usableModels.isEmpty ? "gearshape.fill" : "plus.circle.fill"
+                )
+                .font(.headline)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("sidebar.emptyState.newConversationButton")
@@ -166,9 +172,25 @@ struct IOSSidebarView: View {
                         .textCase(nil)
                 }
             }
+
+            // Hidden row for new conversation navigation
+            // This ensures NavigationSplitView can navigate to the new chat view
+            // even when it's not in the list of conversations
+            // Moved to bottom to prevent gap at top of list
+            Color.clear
+                .frame(height: 0)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .tag(ConversationManager.newConversationId)
+                .accessibilityHidden(true)
         }
         .listStyle(.plain)
         .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
+        .overlay {
+            if conversationManager.conversations.isEmpty {
+                emptyStateView
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 80)
         }
@@ -245,16 +267,7 @@ struct IOSSidebarView: View {
                 }
 
                 Button(action: {
-                    // Light haptic for new conversation
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-
-                    conversationManager.selectedConversationId = ConversationManager.newConversationId
-                    DiagnosticsLogger.log(
-                        .contentView,
-                        level: .info,
-                        message: "🆕 New conversation button tapped"
-                    )
+                    startNewConversation()
                 }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 18, weight: .medium))
@@ -312,6 +325,33 @@ struct IOSSidebarView: View {
             selectedConversations.removeAll()
         }
     }
+
+    /// Start a new conversation and navigate to it
+    private func startNewConversation() {
+        // If no models are available, direct user to settings
+        if openAIService.usableModels.isEmpty {
+            showSettings = true
+            return
+        }
+
+        // Light haptic for new conversation
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        // Set selection to new conversation ID
+        conversationManager.selectedConversationId = ConversationManager.newConversationId
+
+        // On iPhone, collapse sidebar to show detail view
+        withAnimation {
+            columnVisibility = .detailOnly
+        }
+
+        DiagnosticsLogger.log(
+            .contentView,
+            level: .info,
+            message: "🆕 New conversation button tapped"
+        )
+    }
 }
 
 struct ConversationRow: View {
@@ -333,30 +373,30 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-    HStack(spacing: 12) {
-      // Avatar - iMessage style gray gradient
-      Circle()
-        .fill(
-          LinearGradient(
-            colors: [
-              Color(uiColor: UIColor.systemGray),
-              Color(uiColor: UIColor.systemGray2),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-          )
-        )
-        .frame(width: 48, height: 48)
-        .overlay {
-          if let firstChar = conversation.title.first {
-            Text(String(firstChar).uppercased())
-              .font(.system(size: 20, weight: .medium))
-              .foregroundStyle(.white)
-          } else {
-            Image(systemName: "bubble.left.fill")
-              .foregroundStyle(.white)
-          }
-        }
+        HStack(spacing: 12) {
+            // Avatar - iMessage style gray gradient
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(uiColor: UIColor.systemGray),
+                            Color(uiColor: UIColor.systemGray2),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 48, height: 48)
+                .overlay {
+                    if let firstChar = conversation.title.first {
+                        Text(String(firstChar).uppercased())
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.white)
+                    } else {
+                        Image(systemName: "bubble.left.fill")
+                            .foregroundStyle(.white)
+                    }
+                }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
