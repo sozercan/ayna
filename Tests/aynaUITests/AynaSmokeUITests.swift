@@ -86,15 +86,17 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Try context menu first as it is most direct
         title.rightClick()
         
-        // Use the identifier to specifically target the context menu's Delete item (not the Edit menu's Delete)
-        let deleteMenuItem = app.menuItems["trash"]
+        // Use explicit identifier for the context menu's Delete item
+        let deleteMenuItem = app.menuItems["contextMenu.delete"]
         if deleteMenuItem.waitForExistence(timeout: 3) {
             deleteMenuItem.click()
         } else {
-            // Fallback to keyboard delete if context menu fails
-            // Click to select and ensure focus
+            // Dismiss any open menu first by pressing Escape
+            app.typeKey(.escape, modifierFlags: [])
+            Thread.sleep(forTimeInterval: 0.3)
+            
+            // Fallback to keyboard delete - select row first
             title.click()
-            // Give it a moment to process selection/focus
             Thread.sleep(forTimeInterval: 0.5)
             app.typeKey(.delete, modifierFlags: [])
         }

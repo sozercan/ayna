@@ -127,6 +127,7 @@ struct MacSidebarView: View {
                                                     systemImage: "trash"
                                                 )
                                             }
+                                            .accessibilityIdentifier("contextMenu.delete")
                                         } else {
                                             Button(
                                                 role: .destructive,
@@ -136,6 +137,7 @@ struct MacSidebarView: View {
                                             ) {
                                                 Label("Delete", systemImage: "trash")
                                             }
+                                            .accessibilityIdentifier("contextMenu.delete")
                                         }
                                     }
                             }
