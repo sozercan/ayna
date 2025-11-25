@@ -118,6 +118,12 @@ struct IOSMessageView: View {
                         // Medium haptic for retry
                         let generator = UIImpactFeedbackGenerator(style: .medium)
                         generator.impactOccurred()
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "🔄 Retry requested via context menu",
+                            metadata: ["messageId": message.id.uuidString]
+                        )
                         onRetry()
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")

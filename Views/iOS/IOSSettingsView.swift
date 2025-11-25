@@ -74,6 +74,12 @@ struct IOSSettingsView: View {
                         }
                         .swipeActions(edge: .leading) {
                             Button {
+                                DiagnosticsLogger.log(
+                                    .openAIService,
+                                    level: .info,
+                                    message: "✅ Model selected as default",
+                                    metadata: ["model": model]
+                                )
                                 openAIService.selectedModel = model
                             } label: {
                                 Label("Select", systemImage: "checkmark")
@@ -82,6 +88,12 @@ struct IOSSettingsView: View {
                         }
                         .contextMenu {
                             Button {
+                                DiagnosticsLogger.log(
+                                    .openAIService,
+                                    level: .info,
+                                    message: "✅ Model set as default via context menu",
+                                    metadata: ["model": model]
+                                )
                                 openAIService.selectedModel = model
                             } label: {
                                 Label("Set as Default", systemImage: "checkmark")
@@ -118,10 +130,24 @@ struct IOSSettingsView: View {
                     IOSModelEditView(modelName: "", isNew: true)
                 }
             }
+            .onAppear {
+                DiagnosticsLogger.log(
+                    .app,
+                    level: .info,
+                    message: "⚙️ IOSSettingsView appeared",
+                    metadata: ["modelCount": "\(openAIService.customModels.count)"]
+                )
+            }
         }
     }
 
     private func removeModel(_ model: String) {
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "🗑️ Removing model",
+            metadata: ["model": model]
+        )
         if let index = openAIService.customModels.firstIndex(of: model) {
             openAIService.customModels.remove(at: index)
             openAIService.modelProviders.removeValue(forKey: model)
@@ -251,6 +277,12 @@ struct IOSModelEditView: View {
     }
 
     private func loadModelData() {
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📂 Loading model data",
+            metadata: ["model": modelName]
+        )
         if let savedProvider = openAIService.modelProviders[modelName] {
             provider = savedProvider
         }
@@ -266,8 +298,24 @@ struct IOSModelEditView: View {
     }
 
     private func saveModel() {
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: isNew ? "➕ Adding new model" : "💾 Saving model changes",
+            metadata: [
+                "model": modelName,
+                "provider": provider.displayName,
+                "hasEndpoint": "\(!endpoint.isEmpty)",
+            ]
+        )
         if isNew {
             if openAIService.customModels.contains(modelName) {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .default,
+                    message: "⚠️ Duplicate model name, skipping",
+                    metadata: ["model": modelName]
+                )
                 // Handle duplicate name if needed, for now just return or overwrite
                 return
             }

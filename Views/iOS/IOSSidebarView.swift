@@ -143,6 +143,15 @@ struct IOSSidebarView: View {
                                     // Warning haptic for delete
                                     let generator = UINotificationFeedbackGenerator()
                                     generator.notificationOccurred(.warning)
+                                    DiagnosticsLogger.log(
+                                        .conversationManager,
+                                        level: .info,
+                                        message: "🗑️ Deleting conversation via swipe",
+                                        metadata: [
+                                            "conversationId": conversation.id.uuidString,
+                                            "title": conversation.title,
+                                        ]
+                                    )
                                     conversationManager.deleteConversation(conversation)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -269,12 +278,30 @@ struct IOSSidebarView: View {
     private func toggleSelection(for conversation: Conversation) {
         if selectedConversations.contains(conversation.id) {
             selectedConversations.remove(conversation.id)
+            DiagnosticsLogger.log(
+                .contentView,
+                level: .debug,
+                message: "⬜ Deselected conversation",
+                metadata: ["conversationId": conversation.id.uuidString]
+            )
         } else {
             selectedConversations.insert(conversation.id)
+            DiagnosticsLogger.log(
+                .contentView,
+                level: .debug,
+                message: "✅ Selected conversation",
+                metadata: ["conversationId": conversation.id.uuidString]
+            )
         }
     }
 
     private func deleteSelected() {
+        DiagnosticsLogger.log(
+            .conversationManager,
+            level: .info,
+            message: "🗑️ Bulk deleting conversations",
+            metadata: ["count": "\(selectedConversations.count)"]
+        )
         for id in selectedConversations {
             if let conversation = conversationManager.conversations.first(where: { $0.id == id }) {
                 conversationManager.deleteConversation(conversation)
