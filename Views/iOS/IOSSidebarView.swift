@@ -333,29 +333,30 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Avatar
-            if let image = UIImage(named: "AppIcon") {
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: 48, height: 48)
-                    .clipShape(Circle())
-            } else {
-                Circle()
-                    .fill(Color.gray.gradient)
-                    .frame(width: 48, height: 48)
-                    .overlay {
-                        if let firstChar = conversation.title.first {
-                            Text(String(firstChar))
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.white)
-                        } else {
-                            Image(systemName: "person.fill")
-                                .foregroundStyle(.white)
-                        }
-                    }
-            }
+    HStack(spacing: 12) {
+      // Avatar - iMessage style gray gradient
+      Circle()
+        .fill(
+          LinearGradient(
+            colors: [
+              Color(uiColor: UIColor.systemGray),
+              Color(uiColor: UIColor.systemGray2),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+          )
+        )
+        .frame(width: 48, height: 48)
+        .overlay {
+          if let firstChar = conversation.title.first {
+            Text(String(firstChar).uppercased())
+              .font(.system(size: 20, weight: .medium))
+              .foregroundStyle(.white)
+          } else {
+            Image(systemName: "bubble.left.fill")
+              .foregroundStyle(.white)
+          }
+        }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
