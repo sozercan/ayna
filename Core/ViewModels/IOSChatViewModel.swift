@@ -116,7 +116,7 @@ final class IOSChatViewModel: ObservableObject {
         messageText = ""
         isGenerating = false
         errorMessage = nil
-        attachedFiles.removeAll()
+        cleanupAttachedFiles()
         selectedModel = openAIService.selectedModel
 
         DiagnosticsLogger.log(
@@ -131,7 +131,15 @@ final class IOSChatViewModel: ObservableObject {
         switch result {
         case let .success(urls):
             for url in urls {
-                guard url.startAccessingSecurityScopedResource() else {
+                // Start accessing the security-scoped resource
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if accessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                guard accessing else {
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
@@ -139,12 +147,24 @@ final class IOSChatViewModel: ObservableObject {
                     )
                     continue
                 }
-                attachedFiles.append(url)
-                DiagnosticsLogger.log(
-                    .chatView,
-                    level: .info,
-                    message: "📎 File attached: \(url.lastPathComponent)"
-                )
+
+                // Copy to temporary location immediately
+                do {
+                    let tempURL = try copyToTemporaryDirectory(url: url)
+                    attachedFiles.append(tempURL)
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "📎 File attached (copied to temp): \(url.lastPathComponent)"
+                    )
+                } catch {
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Failed to copy attachment: \(error.localizedDescription)"
+                    )
+                    errorMessage = "Failed to attach file: \(error.localizedDescription)"
+                }
             }
         case let .failure(error):
             errorMessage = error.localizedDescription
@@ -227,7 +247,7 @@ final class IOSChatViewModel: ObservableObject {
             if !result.errors.isEmpty {
                 errorMessage = result.errors.joined(separator: "\n")
             }
-            attachedFiles.removeAll()
+            cleanupAttachedFiles()
         }
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
@@ -455,5 +475,33 @@ final class IOSChatViewModel: ObservableObject {
             updatedMessage.content += chunk
             conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
         }
+    }
+}
+
+// MARK: - File Handling Helpers
+
+private extension IOSChatViewModel {
+    /// Copies a security-scoped file to a temporary location.
+    func copyToTemporaryDirectory(url: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = url.lastPathComponent
+        // Use UUID to avoid collisions
+        let uniqueTempDir = tempDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: uniqueTempDir, withIntermediateDirectories: true, attributes: nil)
+        let destinationURL = uniqueTempDir.appendingPathComponent(fileName)
+        try FileManager.default.copyItem(at: url, to: destinationURL)
+        return destinationURL
+    }
+
+    /// Cleans up temporary attached files.
+    func cleanupAttachedFiles() {
+        for url in attachedFiles {
+            // Only delete if it's in the temp directory to be safe
+            // Note: temporaryDirectory path might be symlinked, so we just check if it exists and is a file
+            if FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        attachedFiles.removeAll()
     }
 }
