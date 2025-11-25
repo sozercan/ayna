@@ -45,6 +45,15 @@ struct IOSChatView: View {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
+                    .onAppear {
+                        // Scroll to bottom after a short delay to ensure content is laid out
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if let lastId = conversation.messages.last?.id {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
             } else {
                 ContentUnavailableView("Conversation not found", systemImage: "exclamationmark.triangle")

@@ -191,10 +191,24 @@ struct MacChatView: View {
                     .onAppear {
                         updateVisibleMessages()
                         syncSelectedModelWithConversation()
+                        // Scroll to bottom after a short delay to ensure content is laid out
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if let lastMessage = currentConversation.messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
                     }
                     .onChange(of: conversation.id) { _, _ in
                         updateVisibleMessages()
                         syncSelectedModelWithConversation()
+                        // Scroll to bottom when switching conversations
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if let lastMessage = currentConversation.messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
                     }
                     .onChange(of: currentConversation.messages) { _, _ in
                         updateVisibleMessages()
