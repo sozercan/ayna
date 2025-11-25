@@ -4,13 +4,27 @@ This file provides guidance to AI coding assistants (Claude, GitHub Copilot, etc
 
 ## Project Overview
 
-ayna is a native macOS ChatGPT client built with SwiftUI for macOS 14+. It supports OpenAI-compatible endpoints, Apple Intelligence, and AIKit with a conversation management system and streaming responses in a clean interface.
+ayna is a native macOS and iOS ChatGPT client built with SwiftUI. It supports OpenAI-compatible endpoints, Apple Intelligence, and AIKit with a conversation management system and streaming responses in a clean interface.
 
 ## Build and Development
 
+### Cross-Platform Compatibility
+**CRITICAL**: This project targets both macOS and iOS.
+- Shared code (Models, ViewModels, Services, Utilities) must compile for **both** platforms.
+- Avoid platform-specific imports (e.g., `AppKit`, `UIKit`) in shared files unless wrapped in `#if os(macOS)` or `#if os(iOS)`.
+- When modifying shared logic, **always** verify the build for both platforms to ensure no regressions.
+- Use `xcodebuild` to verify both targets before finishing a task.
+
 ### Building the App
+
+**macOS**:
 ```bash
 xcodebuild -scheme Ayna -destination 'platform=macOS' build
+```
+
+**iOS**:
+```bash
+xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 ### Requirements
@@ -29,13 +43,44 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
   ```
+- **Recommended for debugging**: Run a specific UI test case to save time:
+  ```bash
+  xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests/AynaSmokeUITests/testName
+  ```
 - Run the entire suite:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
-- Tests live under `aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
+- Tests live under `Tests/aynaTests/` and rely on `InMemoryKeychainStorage` plus `MockURLProtocol` to avoid hitting the real Keychain or network. UI smoke tests live under `Tests/aynaUITests/` and launch the app with `--ui-testing` + `AYNA_UI_TESTING=1`, which swaps an in-memory Keychain, temporary store, and mocked OpenAI responses.
 - `OpenAIService` now accepts injected `URLSession` and `KeychainStoring` implementations—use those seams when writing additional tests.
 - CI enforces the same command via `.github/workflows/tests.yml`; keep the suite deterministic and free of external side effects.
+
+### UI Testing Strategy
+The project uses a robust UI testing strategy to ensure stability without external dependencies:
+
+1.  **Environment Isolation**:
+    -   Tests launch with `app.launchArguments = ["--ui-testing"]` and `app.launchEnvironment["AYNA_UI_TESTING"] = "1"`.
+    -   `aynaApp.swift` detects this flag and injects:
+        -   `InMemoryKeychainStorage`: Prevents polluting the system Keychain.
+        -   `MockURLProtocol`: Intercepts network requests to return deterministic JSON responses (e.g., mock chat completions).
+        -   Temporary storage paths: Ensures tests don't touch real user conversations.
+
+2.  **Accessibility Identifiers**:
+    -   **Mandatory**: Every interactive element (buttons, text fields, list rows) must have a unique `.accessibilityIdentifier`.
+    -   **Naming Convention**: Use dot notation (e.g., `sidebar.newConversationButton`, `chat.composer.textEditor`, `message.action.copy`).
+    -   **Dynamic Elements**: For lists, append IDs (e.g., `sidebar.conversationRow.{UUID}`).
+
+3.  **Handling Hover States (macOS)**:
+    -   Elements that appear only on hover (like the "Copy" button on messages) require specific handling:
+        -   The container view must have an identifier (e.g., `chat.message.{UUID}`).
+        -   The test must explicitly `.hover()` over the container before asserting existence of the child button.
+        -   **Implementation Note**: Ensure `.onHover` modifiers are placed correctly in the SwiftUI view hierarchy so the state change triggers a redraw that reveals the child element to the accessibility system.
+
+4.  **Asynchronous Assertions**:
+    -   Never use `sleep()`. Use `XCTAssertTrue(element.waitForExistence(timeout: 5))` to handle animations and state transitions gracefully.
+
+5.  **Debugging**:
+    -   If a test fails to find an element, print `app.debugDescription` to the console to view the current accessibility hierarchy. This reveals exactly what XCTest "sees" (or doesn't see).
 
 ### Build & Test Expectations
 - Unless your change is strictly documentation (e.g., Markdown copy edits with zero code or config impact), run `xcodebuild -scheme Ayna -destination 'platform=macOS' build`.
@@ -60,42 +105,28 @@ The repository ships with the `aynaTests` unit bundle plus a deterministic `ayna
 ## Architecture
 
 ### Core Structure
-The codebase follows clean SwiftUI architecture with clear separation:
+The codebase follows a "Symmetric Roots" architecture to support both macOS and iOS with maximum code sharing while maintaining native platform idioms:
 
 ```
-Models → ViewModels → Views → Services
+App/ (Entry points) → Core/ (Logic) → Views/ (UI)
 ```
 
-**Models** (`Models/Conversation.swift`, `Models/Message.swift`)
-- Pure data structures conforming to `Codable` for persistence
-- All models use `UUID` for identification
-- - `Conversation` contains array of `Message` objects and metadata (title, timestamps, model settings)
+**App** (`App/macOS/`, `App/iOS/`)
+- Platform-specific entry points (`aynaApp.swift`, `AynaIOSApp.swift`)
+- Platform-specific configuration (`Info.plist`, `Entitlements`)
+- Assets (`Assets.xcassets`)
 
-**ViewModels** (`ViewModels/ConversationManager.swift`)
-- `ConversationManager`: Single source of truth for all conversation state
-- - Manages CRUD operations, search, and persistence
-- Uses `@Published` properties for reactive UI updates
-- Automatically generates conversation titles from first user message
-- Persists to `UserDefaults` using JSON encoding
+**Core** (`Core/Models`, `Core/ViewModels`, `Core/Services`, `Core/Utilities`, `Core/Diagnostics`)
+- Shared business logic, data models, and services
+- **Models**: `Conversation`, `Message` (Codable, UUID-based)
+- **ViewModels**: `ConversationManager` (State source of truth)
+- **Services**: `OpenAIService`, `MCPServerManager` (API & Tooling)
+- **Utilities**: Helpers for markdown, keychain, etc.
+- **Diagnostics**: Unified logging system (`DiagnosticsLogger`)
 
-**Views** (`ContentView.swift`, `Views/SidebarView.swift`, `Views/ChatView.swift`, `Views/MessageView.swift`, `Views/SettingsView.swift`)
-- `ContentView`: Root view with `NavigationSplitView` (sidebar + detail)
-- `SidebarView`: Conversation list with search and context menu actions
-- `ChatView`: Clean chat interface with message history, dynamic text editor, and send button
-- `MessageView`: Individual message bubble with avatar, copy/like actions
-- `SettingsView`: 4-tab settings (General, Model, API, About)
-
-**Services** (`Services/OpenAIService.swift`, `Services/MCPServerManager.swift`, `Services/MCPService.swift`)
-- `OpenAIService.shared`: Singleton managing API communication with OpenAI-compatible endpoints
-- Auto-detects Azure resources (any endpoint containing `openai.azure.com`) and applies Azure-specific URLs/auth. Also supports AIKit via OpenAI-compatible local endpoints.
-- Tool calling support via `onToolCallRequested` callback
-- `MCPServerManager.shared`: Manages MCP server connections, tool discovery, and execution with performance optimizations
-- `MCPService`: Individual MCP server communication via stdio
-- API keys are retrieved via `KeychainStorage` (global and per-model) and never written to UserDefaults
-
-**Utilities & Diagnostics** (`Utilities/`, `Diagnostics/`)
-- `Utilities`: Helper classes for preferences, markdown rendering, and keychain storage
-- `Diagnostics`: Centralized logging via `DiagnosticsLogger`
+**Views** (`Views/macOS`, `Views/iOS`)
+- **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`, `AIKitSettingsView`, `MCPSettingsView`, `MCPToolSummaryView`
+- **iOS**: `IOSContentView`, `IOSSidebarView`, `IOSChatView`, `IOSSettingsView`, `IOSMessageView`
 
 ### State Management Pattern
 - `@StateObject` in App entry point for `ConversationManager`
@@ -172,6 +203,22 @@ When the first user message is sent and title is still "New Conversation":
 - Appends "..." if content is longer
 - Updates conversation title automatically
 
+### iCloud Sync & Platform Specifics
+**Sync Status**:
+- Full implementation for syncing conversations (via CloudKit) and settings (via `NSUbiquitousKeyValueStore`) exists in the codebase.
+- **Currently Disabled**: Sync logic is commented out in `ConversationManager.swift`, `OpenAIService.swift`, and `KeychainStorage.swift` to support building with a free Apple Developer account (which lacks iCloud capabilities).
+- **To Enable**:
+  1. Uncomment `syncWithCloud()` and `performCloudFetch()` in `ConversationManager.swift`.
+  2. Uncomment `NSUbiquitousKeyValueStore` observers in `OpenAIService.swift`.
+  3. Uncomment `kSecAttrSynchronizable` in `KeychainStorage.swift`.
+  4. Add "iCloud" capability (CloudKit + Key-value storage) in Xcode.
+
+**Platform-Specific Model Filtering**:
+- `OpenAIService.usableModels` filters available models based on the OS.
+- **iOS**: Automatically hides `AIKit` models since local container execution is not supported.
+- **macOS**: Shows all models including `AIKit`.
+- UI components (`MacChatView`, `IOSChatView`, Settings) bind to `usableModels` instead of raw `customModels`.
+
 ### Simplified Interface
 The interface has been streamlined to focus on core chat functionality:
 - Clean input area with dynamic text editor that auto-expands
@@ -186,13 +233,13 @@ The interface has been streamlined to focus on core chat functionality:
 3. Ensure the endpoint and authentication align with the provider (Azure deployments should use the deployment name as the model name plus `https://<resource>.openai.azure.com` as the endpoint)
 
 ### Modifying UI Layout
-- Window size constraints set in `aynaApp.swift`: `.frame(minWidth: 900, minHeight: 600)`
+- Window size constraints set in `App/macOS/aynaApp.swift`: `.frame(minWidth: 900, minHeight: 600)`
 - Sidebar minimum width: 260px (set in `NavigationSplitView`)
 - Use native SwiftUI controls for consistency
 - App uses `.windowStyle(.hiddenTitleBar)` and `.windowToolbarStyle(.unified)` for modern macOS appearance
 
 ### Adding Settings
-`Views/SettingsView.swift` uses `TabView` with 4 tabs. To add new setting:
+`Views/macOS/MacSettingsView.swift` uses `TabView` with 4 tabs. To add new setting:
 1. Add `@Published` property to appropriate manager (`OpenAIService` or `ConversationManager`)
 2. Save to `UserDefaults` in property `didSet`
 3. Add UI control in relevant settings tab
@@ -302,7 +349,7 @@ do {
 ### Planned Features (Roadmap)
 The README outlines features ready for implementation due to extensible architecture:
 - Voice input (add AVFoundation speech recognition)
-- iCloud sync (models already `Codable`, switch from `UserDefaults` to CloudKit)
+- iCloud sync (Implemented but disabled for free developer accounts; see "iCloud Sync & Platform Specifics" above)
 
 ### Known Limitations
 - No token usage tracking or cost calculation
@@ -312,8 +359,9 @@ The README outlines features ready for implementation due to extensible architec
 ## Project Files Reference
 
 ### Configuration Files
-- `ayna.xcodeproj/project.pbxproj` - Xcode project settings
-- `ayna.entitlements` - App capabilities and sandboxing
+- `Ayna.xcodeproj/project.pbxproj` - Xcode project settings
+- `App/macOS/ayna.entitlements` - App capabilities and sandboxing
+- `App/macOS/Info.plist` - App configuration
 
 ### Documentation
 - `README.md` - Comprehensive feature list and setup guide
@@ -321,7 +369,7 @@ The README outlines features ready for implementation due to extensible architec
 - `LICENSE` - MIT License
 
 ### Assets
-- `Assets.xcassets/` - App icon and color assets (using SF Symbols for icons)
+- `App/macOS/Assets.xcassets/` - App icon and color assets (using SF Symbols for icons)
 
 ## Additional Notes
 

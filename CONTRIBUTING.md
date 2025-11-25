@@ -44,11 +44,11 @@ open ayna.xcodeproj
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' test
   ```
-- UI tests live under `aynaUITests/`. They launch the app with `--ui-testing` plus `AYNA_UI_TESTING=1`, which swaps in-memory storage, deterministic models, and mocked OpenAI responses. You can run only the UI bundle with:
+- UI tests live under `Tests/aynaUITests/`. They launch the app with `--ui-testing` plus `AYNA_UI_TESTING=1`, which swaps in-memory storage, deterministic models, and mocked OpenAI responses. You can run only the UI bundle with:
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
   ```
-- Unit tests remain in `aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
+- Unit tests remain in `Tests/aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
   - `InMemoryKeychainStorage` keeps credentials in-memory during tests.
   - `MockURLProtocol` intercepts `URLSession` traffic for `OpenAIService`.
   - `EncryptedConversationStore` and `ConversationManager` accept dependency-injected stores/file URLs for isolation.
@@ -74,10 +74,10 @@ Models → ViewModels → Views → Services
 - Uses `@Published` properties for reactive UI updates
 
 **Views**
-- `ContentView`: Root view with `NavigationSplitView`
-- `SidebarView`: Conversation list
-- `ChatView`: Main chat interface
-- `SettingsView`: Configuration tabs
+- `MacContentView` / `IOSContentView`: Root view with `NavigationSplitView`
+- `MacSidebarView` / `IOSSidebarView`: Conversation list
+- `MacChatView` / `IOSChatView`: Main chat interface
+- `MacSettingsView` / `IOSSettingsView`: Configuration tabs
 
 **Services**
 - `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection, Apple Intelligence, and AIKit via local OpenAI-compatible endpoint)
