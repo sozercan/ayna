@@ -27,6 +27,8 @@ struct MacMessageView: View {
     @State private var lastReasoningHash: Int
     @State private var parseTask: Task<Void, Never>?
     @State private var reasoningParseTask: Task<Void, Never>?
+    @State private var parseDebounceTask: Task<Void, Never>?
+    @State private var lastParseTime: Date = .distantPast
 
     init(
         message: Message,
@@ -502,15 +504,39 @@ struct MacMessageView: View {
     private func updateCachedBlocks() {
         let content = message.content
         let newHash = content.hashValue
-        if newHash != lastContentHash {
-            lastContentHash = newHash
-            parseTask?.cancel()
-            parseTask = Task.detached(priority: .userInitiated) {
-                let blocks = MarkdownRenderer.parse(content)
-                if !Task.isCancelled {
-                    await MainActor.run {
-                        cachedContentBlocks = blocks
-                    }
+        guard newHash != lastContentHash else { return }
+        lastContentHash = newHash
+
+        // Cancel any pending debounce task
+        parseDebounceTask?.cancel()
+
+        // Check if enough time has passed since last parse (200ms minimum during streaming)
+        let now = Date()
+        let timeSinceLastParse = now.timeIntervalSince(lastParseTime)
+        let minInterval: TimeInterval = 0.2 // 200ms minimum between parses
+
+        if timeSinceLastParse >= minInterval {
+            // Enough time has passed, parse immediately
+            performParse(content: content)
+        } else {
+            // Debounce: wait for remaining time before parsing
+            let waitTime = minInterval - timeSinceLastParse
+            parseDebounceTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(Int(waitTime * 1000)))
+                guard !Task.isCancelled else { return }
+                performParse(content: content)
+            }
+        }
+    }
+
+    private func performParse(content: String) {
+        lastParseTime = Date()
+        parseTask?.cancel()
+        parseTask = Task.detached(priority: .userInitiated) {
+            let blocks = MarkdownRenderer.parse(content)
+            if !Task.isCancelled {
+                await MainActor.run {
+                    cachedContentBlocks = blocks
                 }
             }
         }

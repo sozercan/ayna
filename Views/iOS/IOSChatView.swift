@@ -27,7 +27,7 @@ struct IOSChatView: View {
         VStack(spacing: 0) {
             if let conversation {
                 ScrollViewReader { proxy in
-                    ScrollView {
+                    ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 12) {
                             ForEach(conversation.messages) { message in
                                 IOSMessageView(message: message)
@@ -36,11 +36,14 @@ struct IOSChatView: View {
                         }
                         .padding()
                     }
+                    .defaultScrollAnchor(.bottom)
                     .onChange(of: conversation.messages.count) { _ in
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
-                    .onAppear {
-                        scrollToBottom(proxy: proxy, conversation: conversation)
+                    .onChange(of: conversation.messages.last?.content) { _ in
+                        if isGenerating, let lastId = conversation.messages.last?.id {
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
                     }
                 }
             } else {

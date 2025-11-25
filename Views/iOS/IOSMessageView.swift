@@ -12,6 +12,8 @@ struct IOSMessageView: View {
     @State private var contentBlocks: [ContentBlock]
     @State private var lastContentHash: Int
     @State private var decodedImage: UIImage?
+    @State private var parseDebounceTask: Task<Void, Never>?
+    @State private var lastParseTime: Date = .distantPast
 
     init(message: Message) {
         self.message = message
@@ -88,14 +90,38 @@ struct IOSMessageView: View {
         .onChange(of: message.content) { _, newContent in
             // Only re-parse if content actually changed
             let newHash = newContent.hashValue
-            if newHash != lastContentHash {
-                lastContentHash = newHash
-                Task.detached(priority: .userInitiated) {
-                    let blocks = MarkdownRenderer.parse(newContent)
-                    await MainActor.run {
-                        contentBlocks = blocks
-                    }
+            guard newHash != lastContentHash else { return }
+            lastContentHash = newHash
+
+            // Cancel any pending debounce task
+            parseDebounceTask?.cancel()
+
+            // Check if enough time has passed since last parse (200ms minimum during streaming)
+            let now = Date()
+            let timeSinceLastParse = now.timeIntervalSince(lastParseTime)
+            let minInterval: TimeInterval = 0.2 // 200ms minimum between parses
+
+            if timeSinceLastParse >= minInterval {
+                // Enough time has passed, parse immediately
+                performParse(content: newContent)
+            } else {
+                // Debounce: wait for remaining time before parsing
+                let waitTime = minInterval - timeSinceLastParse
+                parseDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(Int(waitTime * 1000)))
+                    guard !Task.isCancelled else { return }
+                    performParse(content: newContent)
                 }
+            }
+        }
+    }
+
+    private func performParse(content: String) {
+        lastParseTime = Date()
+        Task.detached(priority: .userInitiated) {
+            let blocks = MarkdownRenderer.parse(content)
+            await MainActor.run {
+                contentBlocks = blocks
             }
         }
     }

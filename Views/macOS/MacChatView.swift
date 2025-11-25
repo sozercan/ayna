@@ -150,7 +150,7 @@ struct MacChatView: View {
             VStack(spacing: 0) {
                 // Messages
                 ScrollViewReader { proxy in
-                    ScrollView {
+                    ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 0) {
                             ForEach(visibleMessages) { message in
                                 MacMessageView(
@@ -171,6 +171,7 @@ struct MacChatView: View {
                         .padding(.horizontal, 24)
                         .padding(.vertical, 24)
                     }
+                    .defaultScrollAnchor(.bottom)
                     .onChange(of: currentConversation.messages.count) { _, _ in
                         scrollDebounceTask?.cancel()
                         scrollDebounceTask = Task { @MainActor in
@@ -189,20 +190,24 @@ struct MacChatView: View {
                     }
                     .onAppear {
                         updateVisibleMessages()
-                        if let lastMessage = currentConversation.messages.last {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                        }
                         syncSelectedModelWithConversation()
                     }
                     .onChange(of: conversation.id) { _, _ in
                         updateVisibleMessages()
-                        if let lastMessage = currentConversation.messages.last {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                        }
                         syncSelectedModelWithConversation()
                     }
                     .onChange(of: currentConversation.messages) { _, _ in
                         updateVisibleMessages()
+                    }
+                    .onChange(of: currentConversation.messages.last?.content) { _, _ in
+                        if isGenerating {
+                            Task { @MainActor in
+                                guard isNearBottom else { return }
+                                if let lastMessage = currentConversation.messages.last {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
+                            }
+                        }
                     }
                     .onChange(of: currentConversation.model) { _, _ in
                         syncSelectedModelWithConversation()
@@ -899,8 +904,8 @@ struct MacChatView: View {
                     // Cancel existing batch task and create new one
                     batchUpdateTask?.cancel()
                     batchUpdateTask = Task { @MainActor in
-                        // Wait for batch window (50ms for smoother updates)
-                        try? await Task.sleep(for: .milliseconds(50))
+                        // Wait for batch window (100ms for smoother updates with large text)
+                        try? await Task.sleep(for: .milliseconds(100))
                         guard !Task.isCancelled else { return }
 
                         // Process all pending chunks at once
