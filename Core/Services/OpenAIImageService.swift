@@ -1,0 +1,309 @@
+//
+//  OpenAIImageService.swift
+//  ayna
+//
+//  Created on 11/24/25.
+//
+
+import Foundation
+import os
+
+/// Service responsible for image generation via OpenAI-compatible APIs.
+/// Handles both standard OpenAI and Azure OpenAI image endpoints.
+final class OpenAIImageService: @unchecked Sendable {
+    // MARK: - Configuration
+
+    struct ImageConfig {
+        let size: String
+        let quality: String
+        let outputFormat: String
+        let outputCompression: Int
+
+        static let `default` = ImageConfig(
+            size: "1024x1024",
+            quality: "medium",
+            outputFormat: "png",
+            outputCompression: 100
+        )
+    }
+
+    struct RequestConfig {
+        let model: String
+        let apiKey: String
+        let provider: AIProvider
+        let customEndpoint: String?
+        let azureAPIVersion: String
+    }
+
+    // MARK: - Properties
+
+    private let urlSession: URLSession
+
+    // MARK: - Initialization
+
+    init(urlSession: URLSession? = nil) {
+        if let session = urlSession {
+            self.urlSession = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 120
+            config.timeoutIntervalForResource = 300
+            self.urlSession = URLSession(configuration: config)
+        }
+    }
+
+    // MARK: - Public API
+
+    /// Generates an image from a text prompt.
+    /// - Parameters:
+    ///   - prompt: The text description of the image to generate
+    ///   - requestConfig: Configuration for the API request (model, key, endpoint)
+    ///   - imageConfig: Image generation settings (size, quality)
+    ///   - onComplete: Callback with the generated image data
+    ///   - onError: Callback with any error that occurred
+    ///   - attempt: Current retry attempt (internal use)
+    func generateImage(
+        prompt: String,
+        requestConfig: RequestConfig,
+        imageConfig: ImageConfig = .default,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        attempt: Int = 0
+    ) {
+        // Validate provider
+        guard requestConfig.provider == .openai else {
+            onError(OpenAIService.OpenAIError.unsupportedProvider)
+            return
+        }
+
+        // Validate API key
+        guard !requestConfig.apiKey.isEmpty else {
+            onError(OpenAIService.OpenAIError.missingAPIKey)
+            return
+        }
+
+        // Resolve endpoint URL
+        let endpointConfig = OpenAIEndpointResolver.EndpointConfig(
+            modelName: requestConfig.model,
+            provider: requestConfig.provider,
+            customEndpoint: requestConfig.customEndpoint,
+            azureAPIVersion: requestConfig.azureAPIVersion
+        )
+        let imageURL = OpenAIEndpointResolver.imageGenerationURL(for: endpointConfig)
+
+        guard let url = URL(string: imageURL) else {
+            onError(OpenAIService.OpenAIError.invalidURL)
+            return
+        }
+
+        // Build request
+        let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(requestConfig.customEndpoint)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Set authentication header
+        if usesAzureEndpoint {
+            request.setValue(requestConfig.apiKey, forHTTPHeaderField: "api-key")
+        } else {
+            request.setValue("Bearer \(requestConfig.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        // Build request body
+        let body: [String: Any] = if usesAzureEndpoint {
+            [
+                "prompt": prompt,
+                "size": imageConfig.size,
+                "quality": imageConfig.quality,
+                "n": 1
+            ]
+        } else {
+            [
+                "prompt": prompt,
+                "model": requestConfig.model,
+                "size": imageConfig.size,
+                "quality": imageConfig.quality,
+                "n": 1,
+                "response_format": "b64_json"
+            ]
+        }
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            onError(error)
+            return
+        }
+
+        // Execute request
+        executeRequest(
+            request,
+            prompt: prompt,
+            requestConfig: requestConfig,
+            imageConfig: imageConfig,
+            onComplete: onComplete,
+            onError: onError,
+            attempt: attempt
+        )
+    }
+
+    // MARK: - Private Methods
+
+    private func executeRequest(
+        _ request: URLRequest,
+        prompt: String,
+        requestConfig: RequestConfig,
+        imageConfig: ImageConfig,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        attempt: Int
+    ) {
+        urlSession.dataTask(with: request) { [weak self] data, _, error in
+            if let error {
+                self?.handleError(
+                    error,
+                    prompt: prompt,
+                    requestConfig: requestConfig,
+                    imageConfig: imageConfig,
+                    onComplete: onComplete,
+                    onError: onError,
+                    attempt: attempt
+                )
+                return
+            }
+
+            guard let data else {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "No data received from image generation"
+                )
+                DispatchQueue.main.async {
+                    onError(OpenAIService.OpenAIError.noData)
+                }
+                return
+            }
+
+            self?.parseResponse(data, onComplete: onComplete, onError: onError)
+        }.resume()
+    }
+
+    private func handleError(
+        _ error: Error,
+        prompt: String,
+        requestConfig: RequestConfig,
+        imageConfig: ImageConfig,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        attempt: Int
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            if OpenAIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
+                    metadata: ["error": error.localizedDescription]
+                )
+                Task {
+                    await OpenAIRetryPolicy.wait(for: attempt)
+                    await MainActor.run {
+                        self?.generateImage(
+                            prompt: prompt,
+                            requestConfig: requestConfig,
+                            imageConfig: imageConfig,
+                            onComplete: onComplete,
+                            onError: onError,
+                            attempt: attempt + 1
+                        )
+                    }
+                }
+                return
+            }
+            onError(error)
+        }
+    }
+
+    private func parseResponse(
+        _ data: Data,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void
+    ) {
+        do {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                DispatchQueue.main.async {
+                    onError(OpenAIService.OpenAIError.invalidResponse)
+                }
+                return
+            }
+
+            // Check for error response
+            if let errorDict = json["error"] as? [String: Any],
+               let code = errorDict["code"] as? String,
+               let message = errorDict["message"] as? String
+            {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "API error in image generation",
+                    metadata: ["code": code, "message": message]
+                )
+                DispatchQueue.main.async {
+                    if code == "contentFilter" {
+                        onError(OpenAIService.OpenAIError.contentFiltered(message))
+                    } else {
+                        onError(OpenAIService.OpenAIError.apiError(message))
+                    }
+                }
+                return
+            }
+
+            // Parse successful response
+            guard let dataArray = json["data"] as? [[String: Any]],
+                  let firstItem = dataArray.first
+            else {
+                DispatchQueue.main.async {
+                    onError(OpenAIService.OpenAIError.invalidResponse)
+                }
+                return
+            }
+
+            // Try b64_json first (preferred)
+            if let b64String = firstItem["b64_json"] as? String,
+               let imageData = Data(base64Encoded: b64String)
+            {
+                DispatchQueue.main.async {
+                    onComplete(imageData)
+                }
+                return
+            }
+
+            // Fall back to URL download
+            if let urlString = firstItem["url"] as? String,
+               let url = URL(string: urlString)
+            {
+                Task {
+                    do {
+                        let (imageData, _) = try await URLSession.shared.data(from: url)
+                        await MainActor.run {
+                            onComplete(imageData)
+                        }
+                    } catch {
+                        await MainActor.run {
+                            onError(error)
+                        }
+                    }
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                onError(OpenAIService.OpenAIError.invalidResponse)
+            }
+        } catch {
+            DispatchQueue.main.async {
+                onError(error)
+            }
+        }
+    }
+}

@@ -1,0 +1,364 @@
+import Foundation
+import os
+
+/// Builder for constructing OpenAI API requests.
+///
+/// Handles:
+/// - Chat Completions API message payloads
+/// - Responses API input/output formats
+/// - Request header configuration
+/// - Authentication (Bearer token, Azure api-key)
+@MainActor
+enum OpenAIRequestBuilder {
+    // MARK: - Chat Completions API
+
+    /// Build a message payload for the Chat Completions API.
+    ///
+    /// Handles:
+    /// - Tool role messages (tool results)
+    /// - Assistant messages with tool calls
+    /// - Multimodal content (text + images)
+    /// - Simple text content
+    ///
+    /// - Parameter message: The message to convert
+    /// - Returns: Dictionary suitable for JSON serialization
+    static func buildMessagePayload(from message: Message) -> [String: Any] {
+        var payload: [String: Any] = ["role": message.role.rawValue]
+
+        // Handle tool role messages (tool results)
+        if message.role == .tool {
+            payload["content"] = message.content
+            // Tool messages need tool_call_id from the assistant's tool call
+            if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+                payload["tool_call_id"] = firstToolCall.id
+            }
+            return payload
+        }
+
+        // Handle assistant messages with tool calls
+        if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+            // Assistant message that made tool calls
+            if !message.content.isEmpty {
+                payload["content"] = message.content
+            } else {
+                payload["content"] = "" // Empty content when only tool calls
+            }
+
+            // Add tool_calls array
+            let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+                // Convert AnyCodable arguments to JSON string safely
+                var argumentsDict: [String: Any] = [:]
+                for (key, anyCodable) in toolCall.arguments {
+                    argumentsDict[key] = anyCodable.value
+                }
+
+                guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+                      let argumentsString = String(data: argumentsJSON, encoding: .utf8)
+                else {
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .error,
+                        message: "Failed to encode arguments for tool call",
+                        metadata: ["tool": toolCall.toolName]
+                    )
+                    return nil
+                }
+
+                return [
+                    "id": toolCall.id,
+                    "type": "function",
+                    "function": [
+                        "name": toolCall.toolName,
+                        "arguments": argumentsString
+                    ]
+                ]
+            }
+
+            if !toolCallsArray.isEmpty {
+                payload["tool_calls"] = toolCallsArray
+            }
+            return payload
+        }
+
+        // Check if message has attachments (multimodal content)
+        if let attachments = message.attachments, !attachments.isEmpty {
+            var contentArray: [[String: Any]] = []
+
+            // Add text content if present
+            if !message.content.isEmpty {
+                contentArray.append([
+                    "type": "text",
+                    "text": message.content
+                ])
+            }
+
+            // Add image attachments
+            for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+                if let data = attachment.content {
+                    let base64Image = data.base64EncodedString()
+                    contentArray.append([
+                        "type": "image_url",
+                        "image_url": [
+                            "url": "data:\(attachment.mimeType);base64,\(base64Image)"
+                        ],
+                    ])
+                }
+            }
+
+            payload["content"] = contentArray
+        } else {
+            // Simple text content
+            payload["content"] = message.content
+        }
+
+        return payload
+    }
+
+    /// Build a chat completions request body.
+    ///
+    /// - Parameters:
+    ///   - messages: Messages to include
+    ///   - model: Model identifier
+    ///   - stream: Whether to stream the response
+    ///   - tools: Optional tool definitions
+    /// - Returns: Dictionary suitable for JSON serialization
+    static func buildChatCompletionsBody(
+        messages: [Message],
+        model: String,
+        stream: Bool,
+        tools: [[String: Any]]? = nil
+    ) -> [String: Any] {
+        let messagePayloads: [[String: Any]] = messages.map { buildMessagePayload(from: $0) }
+
+        var body: [String: Any] = [
+            "messages": messagePayloads,
+            "model": model,
+            "stream": stream
+        ]
+
+        // Add tools if provided
+        if let tools, !tools.isEmpty {
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+        }
+
+        return body
+    }
+
+    // MARK: - Responses API
+
+    /// Build input array for the Responses API.
+    ///
+    /// The Responses API uses a different format than Chat Completions:
+    /// - Messages are wrapped in `type: "message"` objects
+    /// - Content types are `input_text`/`output_text` instead of just `text`
+    /// - Images use `input_image` type
+    /// - System messages are skipped
+    ///
+    /// - Parameter messages: Messages to convert
+    /// - Returns: Array of input items for the Responses API
+    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
+        var inputArray: [[String: Any]] = []
+
+        for message in messages {
+            // Skip system messages - Responses API handles them differently
+            if message.role == .system {
+                continue
+            }
+
+            var messageItem: [String: Any] = [
+                "type": "message",
+                "role": message.role.rawValue
+            ]
+
+            var contentArray: [[String: Any]] = []
+
+            if !message.content.isEmpty {
+                let contentType = message.role == .user ? "input_text" : "output_text"
+                contentArray.append([
+                    "type": contentType,
+                    "text": message.content
+                ])
+            }
+
+            // Add image attachments for user messages
+            if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
+                for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+                    if let data = attachment.content {
+                        let base64Data = data.base64EncodedString()
+                        contentArray.append([
+                            "type": "input_image",
+                            "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+                        ])
+                    }
+                }
+            }
+
+            messageItem["content"] = contentArray
+            inputArray.append(messageItem)
+        }
+
+        return inputArray
+    }
+
+    /// Build the Responses API request body.
+    ///
+    /// - Parameters:
+    ///   - model: Model identifier
+    ///   - messages: Messages to include
+    /// - Returns: Dictionary suitable for JSON serialization
+    static func buildResponsesBody(model: String, messages: [Message]) -> [String: Any] {
+        let inputArray = buildResponsesInput(from: messages)
+
+        return [
+            "model": model,
+            "input": inputArray,
+            "reasoning": ["summary": "auto"],
+            "text": ["verbosity": "medium"]
+        ]
+    }
+
+    /// Deliver output from the Responses API to callbacks.
+    ///
+    /// Parses the output array and calls appropriate callbacks for:
+    /// - Reasoning summaries (delivered to `onReasoning`)
+    /// - Message content (delivered to `onChunk`)
+    ///
+    /// - Parameters:
+    ///   - outputArray: The output array from the API response
+    ///   - onChunk: Callback for content chunks
+    ///   - onReasoning: Optional callback for reasoning summaries
+    static func deliverResponsesOutput(
+        _ outputArray: [[String: Any]],
+        onChunk: @escaping (String) -> Void,
+        onReasoning: ((String) -> Void)?
+    ) {
+        for outputItem in outputArray {
+            let itemType = outputItem["type"] as? String
+
+            if itemType == "reasoning" {
+                if let summaryArray = outputItem["summary"] as? [[String: Any]],
+                   let onReasoning
+                {
+                    for summaryPart in summaryArray {
+                        if let type = summaryPart["type"] as? String,
+                           type == "summary_text",
+                           let text = summaryPart["text"] as? String
+                        {
+                            onReasoning(text)
+                        }
+                    }
+                }
+            } else if itemType == "message",
+                      let content = outputItem["content"] as? [[String: Any]]
+            {
+                for contentPart in content {
+                    if let type = contentPart["type"] as? String,
+                       type == "output_text",
+                       let text = contentPart["text"] as? String
+                    {
+                        onChunk(text)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Request Configuration
+
+    /// Configure a URLRequest with standard headers and authentication.
+    ///
+    /// - Parameters:
+    ///   - request: The request to configure (inout)
+    ///   - apiKey: API key for authentication
+    ///   - isAzure: Whether this is an Azure endpoint
+    static func configureRequest(
+        _ request: inout URLRequest,
+        apiKey: String,
+        isAzure: Bool
+    ) {
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        guard !apiKey.isEmpty else { return }
+
+        if isAzure {
+            request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        } else {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+    }
+
+    /// Create a configured URLRequest for the Chat Completions API.
+    ///
+    /// - Parameters:
+    ///   - url: The API endpoint URL
+    ///   - messages: Messages to include
+    ///   - model: Model identifier
+    ///   - stream: Whether to stream the response
+    ///   - tools: Optional tool definitions
+    ///   - apiKey: API key for authentication
+    ///   - isAzure: Whether this is an Azure endpoint
+    /// - Returns: Configured URLRequest, or nil if body encoding fails
+    static func createChatCompletionsRequest(
+        url: URL,
+        messages: [Message],
+        model: String,
+        stream: Bool,
+        tools: [[String: Any]]? = nil,
+        apiKey: String,
+        isAzure: Bool
+    ) -> URLRequest? {
+        var request = URLRequest(url: url)
+        configureRequest(&request, apiKey: apiKey, isAzure: isAzure)
+
+        let body = buildChatCompletionsBody(
+            messages: messages,
+            model: model,
+            stream: stream,
+            tools: tools
+        )
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            return nil
+        }
+
+        request.httpBody = bodyData
+        return request
+    }
+
+    /// Create a configured URLRequest for the Responses API.
+    ///
+    /// - Parameters:
+    ///   - url: The API endpoint URL
+    ///   - messages: Messages to include
+    ///   - model: Model identifier
+    ///   - apiKey: API key for authentication
+    ///   - isAzure: Whether this is an Azure endpoint
+    /// - Returns: Configured URLRequest, or nil if body encoding fails
+    static func createResponsesRequest(
+        url: URL,
+        messages: [Message],
+        model: String,
+        apiKey: String,
+        isAzure: Bool
+    ) -> URLRequest? {
+        var request = URLRequest(url: url)
+        configureRequest(&request, apiKey: apiKey, isAzure: isAzure)
+
+        let body = buildResponsesBody(model: model, messages: messages)
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "❌ Failed to encode Responses API body",
+                metadata: ["model": model]
+            )
+            return nil
+        }
+
+        request.httpBody = bodyData
+        return request
+    }
+}

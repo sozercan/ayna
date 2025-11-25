@@ -120,9 +120,27 @@ App/ (Entry points) → Core/ (Logic) → Views/ (UI)
 - Shared business logic, data models, and services
 - **Models**: `Conversation`, `Message` (Codable, UUID-based)
 - **ViewModels**: `ConversationManager` (State source of truth)
-- **Services**: `OpenAIService`, `MCPServerManager` (API & Tooling)
+- **Services**: OpenAI family (see below), `MCPServerManager` (Tooling)
 - **Utilities**: Helpers for markdown, keychain, etc.
 - **Diagnostics**: Unified logging system (`DiagnosticsLogger`)
+
+### OpenAI Service Architecture
+The `OpenAIService` has been decomposed into single-responsibility components for maintainability and testability:
+
+| File | Responsibility |
+|------|----------------|
+| `OpenAIService.swift` | **Coordinator/Facade** – manages state (`@Published` properties), persistence, and orchestrates the other components |
+| `OpenAIEndpointResolver.swift` | **URL Construction** – resolves API endpoints for OpenAI, Azure, and AIKit providers |
+| `OpenAIRequestBuilder.swift` | **Request Factory** – builds `URLRequest` objects, headers, authentication, and JSON payloads |
+| `OpenAIStreamParser.swift` | **SSE Parsing** – parses Server-Sent Events, handles tool calls, and reasoning tokens |
+| `OpenAIRetryPolicy.swift` | **Retry Logic** – exponential backoff with jitter for transient failures |
+| `OpenAIImageService.swift` | **Image Generation** – dedicated service for DALL-E / image endpoints |
+
+**Design Principles**:
+- **Stateless helpers** (`enum` with static methods) for pure logic components (`EndpointResolver`, `StreamParser`, `RetryPolicy`, `RequestBuilder`)
+- **Dependency injection** via `init` parameters for testability (`URLSession`, `KeychainStoring`)
+- **`@MainActor`** on `RequestBuilder` because it accesses `Message.content` (UI/Storage bound)
+- **Separation of concerns** keeps each file under ~400 lines and focused on one task
 
 **Views** (`Views/macOS`, `Views/iOS`)
 - **macOS**: `MacContentView`, `MacSidebarView`, `MacChatView`, `MacSettingsView`, `MacMessageView`, `DynamicTextEditor`, `AIKitSettingsView`, `MCPSettingsView`, `MCPToolSummaryView`
@@ -153,7 +171,10 @@ The app supports multiple AI providers via the `AIProvider` enum:
 - 11 models available: Llama, Mixtral, Phi, Gemma, QwQ, Codestral, GPT-OSS
 - Settings UI in `AIKitSettingsView` for pulling/running/stopping containers
 
-When adding new providers, extend `AIProvider` enum and update `OpenAIService.getAPIURL()` and authentication logic.
+When adding new providers:
+1. Extend `AIProvider` enum in `OpenAIService.swift`
+2. Add URL resolution logic in `OpenAIEndpointResolver.swift`
+3. Add authentication header logic in `OpenAIRequestBuilder.swift`
 
 ### MCP (Model Context Protocol) Integration
 The app supports tool calling via MCP servers for extended functionality:
@@ -184,12 +205,30 @@ Users can add any other MCP server via Settings.
 ## Key Implementation Details
 
 ### Streaming Responses
-The `OpenAIService.streamResponse()` method:
-1. Makes URLSession request expecting Server-Sent Events (SSE)
-2. Parses `data: ` prefixed lines
-3. Extracts content from `delta.content` in JSON chunks
-4. Calls `onChunk()` callback for each piece
-5. Completes when receiving `[DONE]` marker
+Streaming is handled by `OpenAIService.streamResponse()` orchestrating several components:
+
+1. **Request Building** (`OpenAIRequestBuilder`):
+   - Constructs the `URLRequest` with proper headers and authentication
+   - Builds message payloads (multimodal content, tool calls)
+
+2. **Endpoint Resolution** (`OpenAIEndpointResolver`):
+   - Resolves the correct URL for the provider (OpenAI, Azure, AIKit)
+   - Handles Azure deployment URL construction
+
+3. **Stream Parsing** (`OpenAIStreamParser.processStreamLine()`):
+   - Parses `data: ` prefixed SSE lines
+   - Extracts content from `delta.content` in JSON chunks
+   - Accumulates partial tool call arguments
+   - Handles reasoning tokens (o1/o3 models)
+
+4. **Retry Logic** (`OpenAIRetryPolicy`):
+   - Determines if failed requests should be retried
+   - Calculates exponential backoff with jitter
+
+5. **Completion**:
+   - Calls `onChunk()` callback for each content piece
+   - Completes when receiving `[DONE]` marker
+   - Processes tool calls if requested by the model
 
 ### Conversation Persistence
 - Conversations are JSON-encoded via `Codable` and written to individual encrypted files (`{UUID}.enc`) in `Application Support/Ayna/Conversations`.
@@ -353,8 +392,7 @@ The README outlines features ready for implementation due to extensible architec
 
 ### Known Limitations
 - No token usage tracking or cost calculation
-- Streaming response parsing is simplistic (may fail on complex SSE formats)
-- Azure OpenAI API version hardcoded to `2025-04-01-preview` (update the constant in `OpenAIService` when Azure ships a newer requirement)
+- Azure OpenAI API version hardcoded to `2025-04-01-preview` (update the constant in `OpenAIEndpointResolver` when Azure ships a newer requirement)
 
 ## Project Files Reference
 
