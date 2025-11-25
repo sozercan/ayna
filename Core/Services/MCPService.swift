@@ -227,11 +227,23 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
         stopHealthCheckTimer()
 
-        if let process, process.isRunning {
-            process.terminate()
-        }
-
+        // Clean up handlers BEFORE terminating to stop processing
         cleanupProcessResources()
+
+        // Capture process reference before clearing
+        let processToTerminate = process
+        process = nil
+
+        // Unregister from process tracker
+        MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
+
+        // Terminate and wait for exit in background to avoid zombie processes
+        if let processToTerminate, processToTerminate.isRunning {
+            processToTerminate.terminate()
+            Task.detached {
+                processToTerminate.waitUntilExit()
+            }
+        }
 
         Task { @MainActor [weak self] in
             self?.isConnected = false

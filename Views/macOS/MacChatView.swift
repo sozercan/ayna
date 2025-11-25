@@ -43,6 +43,7 @@ struct MacChatView: View {
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
+    @State private var toolChainTimeoutTask: Task<Void, Never>?
 
     // Performance optimizations
     @State private var scrollDebounceTask: Task<Void, Never>?
@@ -623,6 +624,8 @@ struct MacChatView: View {
             isGenerating = false
             currentToolName = nil
             toolCallDepth = 0
+            toolChainTimeoutTask?.cancel()
+            toolChainTimeoutTask = nil
             logChat("✅ isGenerating set to FALSE after stop", level: .info)
             isComposerFocused = true
             return
@@ -779,6 +782,22 @@ struct MacChatView: View {
 
         // Reset tool call depth for new user messages
         toolCallDepth = 0
+
+        // Start timeout watchdog for tool chain (60 seconds max)
+        toolChainTimeoutTask?.cancel()
+        toolChainTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled else { return }
+            if toolCallDepth > 0 {
+                logChat("⏰ Tool chain timeout after 60s, resetting state", level: .error)
+                toolCallDepth = 0
+                currentToolName = nil
+                if isGenerating {
+                    isGenerating = false
+                    errorMessage = "Tool execution timed out after 60 seconds"
+                }
+            }
+        }
 
         sendMessageWithToolSupport(
             messages: currentMessages,
@@ -968,6 +987,8 @@ struct MacChatView: View {
                     if currentToolName == nil {
                         logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
                         isGenerating = false
+                        toolChainTimeoutTask?.cancel()
+                        toolChainTimeoutTask = nil
                     } else {
                         logChat(
                             "⏳ onComplete: Keeping isGenerating TRUE (tool call pending: \(currentToolName ?? "unknown"))",
@@ -1008,6 +1029,8 @@ struct MacChatView: View {
                     isGenerating = false
                     currentToolName = nil
                     toolCallDepth = 0
+                    toolChainTimeoutTask?.cancel()
+                    toolChainTimeoutTask = nil
                     errorMessage = error.localizedDescription
                 }
             },
@@ -1123,6 +1146,9 @@ struct MacChatView: View {
                                     {
                                         isGenerating = false
                                         currentToolName = nil
+                                        toolCallDepth = 0
+                                        toolChainTimeoutTask?.cancel()
+                                        toolChainTimeoutTask = nil
                                     }
                                     return
                                 }
@@ -1146,6 +1172,9 @@ struct MacChatView: View {
                             await MainActor.run {
                                 isGenerating = false
                                 currentToolName = nil
+                                toolCallDepth = 0
+                                toolChainTimeoutTask?.cancel()
+                                toolChainTimeoutTask = nil
                                 errorMessage = "Tool execution failed: \(error.localizedDescription)"
                             }
                         }

@@ -24,6 +24,8 @@
 		C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
 		C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
 		C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
+		B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
+		B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
 		C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
 		C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */; };
@@ -121,6 +123,7 @@
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 		C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
 		C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
+		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
@@ -291,6 +294,7 @@
 				C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */,
 				C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */,
 				C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */,
+				B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */,
 				C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */,
 				C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */,
 				C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */,
@@ -602,6 +606,7 @@
 				C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
 				C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
 				C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */,
 				C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */,
 				C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
@@ -663,6 +668,7 @@
 				C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
 				C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
 				C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
 				C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,
 				C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,

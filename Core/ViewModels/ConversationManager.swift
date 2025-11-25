@@ -21,6 +21,7 @@ final class ConversationManager: ObservableObject {
     static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
     private let store: EncryptedConversationStore
+    private let persistenceCoordinator: ConversationPersistenceCoordinator
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
     var loadingTask: Task<Void, Never>?
     private var isLoaded = false
@@ -40,6 +41,10 @@ final class ConversationManager: ObservableObject {
     ) {
         self.store = store
         self.saveDebounceDuration = saveDebounceDuration
+        persistenceCoordinator = ConversationPersistenceCoordinator(
+            store: store,
+            debounceDuration: saveDebounceDuration
+        )
         loadingTask = Task {
             await loadConversations()
             // iCloud sync disabled for free developer account
@@ -50,36 +55,18 @@ final class ConversationManager: ObservableObject {
     // MARK: - Persistence
 
     func save(_ conversation: Conversation) {
+        // Cancel any existing local task (for backwards compatibility)
         saveTasks[conversation.id]?.cancel()
-        saveTasks[conversation.id] = Task { @MainActor in
+        saveTasks.removeValue(forKey: conversation.id)
+
+        // Delegate to the actor for thread-safe, debounced persistence
+        Task {
             if !isLoaded {
                 _ = await loadingTask?.value
             }
 
-            try? await Task.sleep(for: saveDebounceDuration)
-            guard !Task.isCancelled else { return }
-
-            do {
-                try await store.save(conversation)
-
-                // Sync to CloudKit
-                // iCloud sync disabled for free developer account
-                /*
-                 let fileURL = store.fileURL(for: conversation.id)
-                 Task.detached {
-                     try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
-                 }
-                 */
-
-                saveTasks.removeValue(forKey: conversation.id)
-                indexConversation(conversation)
-            } catch {
-                logManager(
-                    "❌ Failed to save conversation",
-                    level: .error,
-                    metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
-                )
-            }
+            await persistenceCoordinator.enqueueSave(conversation)
+            indexConversation(conversation)
         }
     }
 
@@ -93,17 +80,7 @@ final class ConversationManager: ObservableObject {
             }
 
             do {
-                try await store.save(conversation)
-
-                // Sync to CloudKit
-                // iCloud sync disabled for free developer account
-                /*
-                 let fileURL = store.fileURL(for: conversation.id)
-                 Task.detached {
-                     try? await CloudKitService.shared.save(conversation: conversation, fileURL: fileURL)
-                 }
-                 */
-
+                try await persistenceCoordinator.saveImmediately(conversation)
                 indexConversation(conversation)
             } catch {
                 logManager(
@@ -118,7 +95,7 @@ final class ConversationManager: ObservableObject {
     func delete(_ conversationId: UUID) {
         Task {
             do {
-                try await store.delete(conversationId)
+                try await persistenceCoordinator.delete(conversationId)
                 // iCloud sync disabled for free developer account
                 /*
                  Task.detached {
@@ -192,6 +169,9 @@ final class ConversationManager: ObservableObject {
         saveTasks.values.forEach { $0.cancel() }
         saveTasks.removeAll()
         Task {
+            // Cancel all pending saves in the coordinator
+            await persistenceCoordinator.cancelAllPendingSaves()
+
             do {
                 try store.clear()
                 logManager("🧹 Cleared encrypted conversation store", level: .info)

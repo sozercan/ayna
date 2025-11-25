@@ -109,7 +109,7 @@ final class MCPServerManagerTests: XCTestCase {
         await fulfillment(of: [reconnectExpectation], timeout: 1.0)
 
         // Wait for state to update to connected since onConnect fires before state update
-        for _ in 0..<10 {
+        for _ in 0 ..< 10 {
             if manager.getServerStatus(config.name)?.state == .connected {
                 break
             }
