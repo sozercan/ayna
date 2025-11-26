@@ -583,6 +583,111 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    // MARK: - Multi-Model Parallel Requests
+
+    /// Sends a message to multiple models in parallel using TaskGroup.
+    /// Each model streams independently, and tool calls are deferred until the user selects a response.
+    ///
+    /// - Parameters:
+    ///   - messages: The conversation history to send
+    ///   - models: Array of model names to query in parallel
+    ///   - temperature: Optional temperature override
+    ///   - onChunk: Called with (modelName, chunk) for each streaming chunk
+    ///   - onModelComplete: Called when a specific model finishes streaming
+    ///   - onAllComplete: Called when all models have finished
+    ///   - onError: Called with (modelName, error) when a model encounters an error
+    ///   - onPendingToolCall: Called when a model requests a tool call (deferred until selection)
+    ///   - onReasoning: Called with (modelName, reasoning) for reasoning content
+    func sendToMultipleModels(
+        messages: [Message],
+        models: [String],
+        temperature: Double? = nil,
+        onChunk: @escaping @Sendable (String, String) -> Void,
+        onModelComplete: @escaping @Sendable (String) -> Void,
+        onAllComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (String, Error) -> Void,
+        onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
+        onReasoning: (@Sendable (String, String) -> Void)? = nil
+    ) {
+        // Validate we have models to query
+        guard !models.isEmpty else {
+            onError("", OpenAIError.missingModel)
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "🔀 Starting multi-model request",
+            metadata: ["models": models.joined(separator: ", ")]
+        )
+
+        // Use a TaskGroup to send requests in parallel
+        Task {
+            await withTaskGroup(of: Void.self) { group in
+                for model in models {
+                    group.addTask { [weak self] in
+                        guard let self else { return }
+
+                        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                            Task { @MainActor in
+                                self.sendMessage(
+                                    messages: messages,
+                                    model: model,
+                                    temperature: temperature,
+                                    stream: true,
+                                    tools: nil, // Tools disabled in multi-model mode - deferred
+                                    conversationId: nil,
+                                    onChunk: { chunk in
+                                        onChunk(model, chunk)
+                                    },
+                                    onComplete: {
+                                        DiagnosticsLogger.log(
+                                            .openAIService,
+                                            level: .info,
+                                            message: "✅ Model completed in multi-model request",
+                                            metadata: ["model": model]
+                                        )
+                                        onModelComplete(model)
+                                        continuation.resume()
+                                    },
+                                    onError: { error in
+                                        DiagnosticsLogger.log(
+                                            .openAIService,
+                                            level: .error,
+                                            message: "❌ Model failed in multi-model request",
+                                            metadata: ["model": model, "error": error.localizedDescription]
+                                        )
+                                        onError(model, error)
+                                        continuation.resume()
+                                    },
+                                    onToolCall: nil, // Deferred - not executed during multi-model
+                                    onToolCallRequested: { toolId, toolName, arguments in
+                                        // Report the tool call as pending (will execute after selection)
+                                        onPendingToolCall?(model, toolId, toolName, arguments)
+                                    },
+                                    onReasoning: { reasoning in
+                                        onReasoning?(model, reasoning)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // All models completed
+            await MainActor.run {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "🏁 All models completed in multi-model request"
+                )
+                onAllComplete()
+            }
+        }
+    }
+
     private func simulateUITestResponse(
         messages: [Message],
         stream: Bool,

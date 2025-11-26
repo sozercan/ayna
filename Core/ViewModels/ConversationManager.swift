@@ -294,6 +294,82 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    // MARK: - Multi-Model Support
+
+    /// Toggles multi-model mode for a conversation
+    func setMultiModelEnabled(for conversation: Conversation, enabled: Bool) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].multiModelEnabled = enabled
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+        }
+    }
+
+    /// Sets the active models for multi-model parallel queries
+    func setActiveModels(for conversation: Conversation, models: [String]) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].activeModels = models
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+        }
+    }
+
+    /// Adds a response group to track parallel responses
+    func addResponseGroup(to conversation: Conversation, group: ResponseGroup) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].addResponseGroup(group)
+            save(conversations[index])
+        }
+    }
+
+    /// Updates a response group (e.g., when streaming completes)
+    func updateResponseGroup(in conversation: Conversation, group: ResponseGroup) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].updateResponseGroup(group)
+            save(conversations[index])
+        }
+    }
+
+    /// Selects a response from a response group, enabling deferred tool execution
+    func selectResponse(in conversation: Conversation, groupId: UUID, messageId: UUID) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[index].selectResponse(in: groupId, messageId: messageId)
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+
+            logManager(
+                "✅ Selected response in multi-model group",
+                level: .info,
+                metadata: [
+                    "conversationId": conversation.id.uuidString,
+                    "groupId": groupId.uuidString,
+                    "selectedMessageId": messageId.uuidString
+                ]
+            )
+        }
+    }
+
+    /// Gets the effective message history for API requests, filtering out unselected responses
+    func getEffectiveHistory(for conversation: Conversation) -> [Message] {
+        conversation.getEffectiveHistory()
+    }
+
+    /// Checks if a message is part of a response group
+    func isPartOfResponseGroup(message: Message, in conversation: Conversation) -> Bool {
+        guard let groupId = message.responseGroupId else { return false }
+        return conversation.getResponseGroup(groupId) != nil
+    }
+
+    /// Gets all responses in a response group
+    func getResponsesInGroup(groupId: UUID, in conversation: Conversation) -> [Message] {
+        conversation.messages.filter { $0.responseGroupId == groupId }
+    }
+
+    /// Checks if a response group has a selection
+    func hasSelection(groupId: UUID, in conversation: Conversation) -> Bool {
+        conversation.getResponseGroup(groupId)?.hasSelection ?? false
+    }
+
     /// Resolves the effective system prompt for a conversation based on its mode.
     /// - Returns: The system prompt string, or nil if no prompt should be used.
     func effectiveSystemPrompt(for conversation: Conversation) -> String? {

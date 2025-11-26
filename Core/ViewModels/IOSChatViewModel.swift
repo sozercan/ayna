@@ -37,6 +37,9 @@ final class IOSChatViewModel: ObservableObject {
     /// Selected model for new chats (ignored for existing conversations).
     @Published var selectedModel: String
 
+    /// Selected models for multi-model chat
+    @Published var selectedModels: Set<String> = []
+
     /// Callback when a new conversation is created and first response completes.
     /// Used by IOSNewChatView to navigate to IOSChatView.
     var onConversationCreated: ((UUID) -> Void)?
@@ -63,6 +66,7 @@ final class IOSChatViewModel: ObservableObject {
         self.conversationManager = conversationManager
         self.openAIService = openAIService
         selectedModel = openAIService.selectedModel
+        selectedModels = [openAIService.selectedModel]
     }
 
     /// Initialize for a new chat (no conversation yet).
@@ -75,6 +79,7 @@ final class IOSChatViewModel: ObservableObject {
         self.conversationManager = conversationManager
         self.openAIService = openAIService
         selectedModel = openAIService.selectedModel
+        selectedModels = [openAIService.selectedModel]
     }
 
     // MARK: - Computed Properties
@@ -118,6 +123,7 @@ final class IOSChatViewModel: ObservableObject {
         errorMessage = nil
         cleanupAttachedFiles()
         selectedModel = openAIService.selectedModel
+        selectedModels = [openAIService.selectedModel]
 
         DiagnosticsLogger.log(
             .chatView,
@@ -193,6 +199,12 @@ final class IOSChatViewModel: ObservableObject {
     func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachedFiles.isEmpty else { return }
+
+        // Check for multi-model mode
+        if selectedModels.count >= 2 {
+            sendMultiModelMessage()
+            return
+        }
 
         // Get or create conversation
         let targetConversation: Conversation
@@ -416,7 +428,233 @@ final class IOSChatViewModel: ObservableObject {
         )
     }
 
+    // MARK: - Multi-Model Message Sending
+
+    private func sendMultiModelMessage() {
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        // Get or create conversation
+        let targetConversation: Conversation
+        if let existing = conversation {
+            targetConversation = existing
+        } else if isNewChatMode {
+            conversationManager.createNewConversation()
+            guard let newConv = conversationManager.conversations.first else { return }
+            targetConversation = newConv
+            conversationId = newConv.id
+
+            // Update conversation with multi-model state
+            var updatedConv = newConv
+            updatedConv.activeModels = Array(selectedModels)
+            updatedConv.multiModelEnabled = true
+            // Set primary model to first selected
+            if let first = selectedModels.first {
+                updatedConv.model = first
+            }
+            conversationManager.updateConversation(updatedConv)
+
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "🆕 Created new multi-model conversation",
+                metadata: ["conversationId": newConv.id.uuidString]
+            )
+        } else {
+            return
+        }
+
+        let conversationId = targetConversation.id
+
+        // Auto-select response if continuing from a multi-model state without selection
+        // Note: This logic is simpler here than in View because we don't have direct access to previous message state easily
+        // But for new chat, there is no previous message. For existing, we rely on user selection.
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔀 Starting iOS multi-model request",
+            metadata: ["models": selectedModels.map(\.self).joined(separator: ", ")]
+        )
+
+        // Create user message
+        let userMessage = Message(role: .user, content: text)
+        conversationManager.addMessage(to: targetConversation, message: userMessage)
+
+        messageText = ""
+        isGenerating = true
+        errorMessage = nil
+
+        // Create response group
+        let responseGroupId = UUID()
+        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessage.id)
+        let models = Array(selectedModels)
+
+        // Create placeholder messages for each model
+        var messageIds: [String: UUID] = [:]
+        for model in models {
+            let messageId = UUID()
+            messageIds[model] = messageId
+            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
+
+            let placeholderMessage = Message(
+                id: messageId,
+                role: .assistant,
+                content: "",
+                model: model,
+                responseGroupId: responseGroupId
+            )
+            conversationManager.addMessage(to: targetConversation, message: placeholderMessage)
+        }
+
+        // Add response group
+        conversationManager.addResponseGroup(to: targetConversation, group: responseGroup)
+
+        // Prepare messages
+        guard let updatedConversation = conversation else { return }
+        var messagesToSend = updatedConversation.getEffectiveHistory()
+        // Remove placeholders
+        messagesToSend = messagesToSend.filter { $0.responseGroupId != responseGroupId }
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        // Send to all models
+        openAIService.sendToMultipleModels(
+            messages: messagesToSend,
+            models: models,
+            temperature: updatedConversation.temperature,
+            onChunk: { [weak self] model, chunk in
+                Task { @MainActor in
+                    self?.handleMultiModelChunk(
+                        model: model,
+                        chunk: chunk,
+                        messageIds: messageIds,
+                        conversationId: conversationId
+                    )
+                }
+            },
+            onModelComplete: { [weak self] model in
+                Task { @MainActor in
+                    self?.handleMultiModelCompletion(
+                        model: model,
+                        messageIds: messageIds,
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId
+                    )
+                }
+            },
+            onAllComplete: { [weak self] in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.isGenerating = false
+                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
+                        self.conversationManager.save(self.conversationManager.conversations[convIndex])
+                    }
+
+                    // Notify that conversation is ready (for new chat navigation)
+                    if self.isNewChatMode {
+                        self.onConversationCreated?(conversationId)
+                    }
+                }
+            },
+            onError: { [weak self] model, error in
+                Task { @MainActor in
+                    self?.handleMultiModelError(
+                        model: model,
+                        error: error,
+                        messageIds: messageIds,
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId
+                    )
+                }
+            },
+            onPendingToolCall: nil,
+            onReasoning: nil
+        )
+    }
+
     // MARK: - Private Methods
+
+    private func handleMultiModelChunk(
+        model: String,
+        chunk: String,
+        messageIds: [String: UUID],
+        conversationId: UUID
+    ) {
+        guard let messageId = messageIds[model] else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Missing message ID for model in multi-model response",
+                metadata: ["model": model]
+            )
+            return
+        }
+
+        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Conversation not found during multi-model streaming",
+                metadata: ["conversationId": conversationId.uuidString]
+            )
+            return
+        }
+
+        guard let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Message not found during multi-model streaming",
+                metadata: ["messageId": messageId.uuidString]
+            )
+            return
+        }
+
+        conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
+    }
+
+    private func handleMultiModelCompletion(
+        model: String,
+        messageIds: [String: UUID],
+        conversationId: UUID,
+        responseGroupId: UUID
+    ) {
+        guard let messageId = messageIds[model] else { return }
+
+        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+              var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+        else { return }
+
+        group.updateStatus(for: messageId, status: .completed)
+        conversationManager.conversations[convIndex].updateResponseGroup(group)
+    }
+
+    private func handleMultiModelError(
+        model: String,
+        error: Error,
+        messageIds: [String: UUID],
+        conversationId: UUID,
+        responseGroupId: UUID
+    ) {
+        guard let messageId = messageIds[model] else { return }
+
+        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+              var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+        else { return }
+
+        group.updateStatus(for: messageId, status: .failed)
+        conversationManager.conversations[convIndex].updateResponseGroup(group)
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .error,
+            message: "❌ Model failed in iOS multi-model",
+            metadata: ["model": model, "error": error.localizedDescription]
+        )
+    }
 
     private func handleImageGeneration(text: String, assistantMessage: Message, conversationId: UUID) {
         guard let conversation else { return }

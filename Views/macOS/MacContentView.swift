@@ -93,6 +93,8 @@ struct MacNewChatView: View {
     @State private var selectedModel = OpenAIService.shared.selectedModel
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
+    @State private var showModelSelector = false
+    @State private var selectedModels: Set<String> = []
 
     // Cached font for text height calculation (computed property to avoid lazy initialization issues)
     private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -155,12 +157,15 @@ struct MacNewChatView: View {
     }
 
     private var composerModelLabel: String {
+        if selectedModels.count > 1 {
+            return "\(selectedModels.count) models"
+        }
         let label = normalizedSelectedModel
         return label.isEmpty ? "Add Model" : label
     }
 
     private func isModelCurrentlySelected(_ model: String) -> Bool {
-        normalizedSelectedModel == model.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedModels.contains(model)
     }
 
     var body: some View {
@@ -311,38 +316,25 @@ struct MacNewChatView: View {
                             }
 
                             // Model selector
-                            Menu {
-                                if openAIService.usableModels.isEmpty {
-                                    SettingsLink {
-                                        Label("Add Model in Settings", systemImage: "slider.horizontal.3")
-                                    }
-                                    .routeSettings(to: .models)
-                                } else {
-                                    ForEach(Array(openAIService.usableModels.enumerated()), id: \.offset) { _, model in
-                                        Button(action: {
-                                            selectedModel = model
-                                            openAIService.selectedModel = model
-                                            updateCurrentConversationModelIfNeeded(using: model)
-                                        }) {
-                                            HStack {
-                                                Text(model)
-                                                if isModelCurrentlySelected(model) {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
+                            Button(action: { showModelSelector.toggle() }) {
                                 HStack(spacing: 4) {
                                     Divider()
                                         .frame(height: 24)
                                         .padding(.leading, 8)
 
-                                    Text(composerModelLabel)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                                    if selectedModels.count > 1 {
+                                        Image(systemName: "square.stack.3d.up.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.accentColor)
+                                        Text("\(selectedModels.count) models")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(Color.accentColor)
+                                    } else {
+                                        Text(composerModelLabel)
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                    }
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.system(size: 10))
                                         .foregroundStyle(.secondary)
@@ -353,6 +345,69 @@ struct MacNewChatView: View {
                             }
                             .buttonStyle(.plain)
                             .fixedSize()
+                            .popover(isPresented: $showModelSelector) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Select models")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    Text("1 model = single response, 2+ = compare")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                    Divider()
+                                        .padding(.vertical, 4)
+
+                                    if openAIService.usableModels.isEmpty {
+                                        SettingsLink {
+                                            Label("Add Model in Settings", systemImage: "slider.horizontal.3")
+                                        }
+                                        .routeSettings(to: .models)
+                                    } else {
+                                        ForEach(openAIService.usableModels, id: \.self) { model in
+                                            Button(action: {
+                                                toggleModelSelection(model)
+                                            }) {
+                                                HStack {
+                                                    Image(systemName: selectedModels.contains(model) ? "checkmark.square.fill" : "square")
+                                                        .foregroundStyle(selectedModels.contains(model) ? Color.accentColor : Color.secondary)
+                                                        .font(.system(size: 14))
+                                                    Text(model)
+                                                        .font(.system(size: 13))
+                                                    Spacer()
+                                                }
+                                                .padding(.vertical, 4)
+                                                .padding(.horizontal, 8)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 6)
+                                                        .fill(selectedModels.contains(model) ? Color.accentColor.opacity(0.1) : Color.clear)
+                                                )
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+
+                                    if selectedModels.count > 1 {
+                                        Divider()
+                                            .padding(.vertical, 4)
+                                        Button(action: {
+                                            if let first = selectedModels.first {
+                                                selectedModels = [first]
+                                                selectedModel = first
+                                                openAIService.selectedModel = first
+                                            }
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "xmark.circle")
+                                                Text("Clear multi-selection")
+                                            }
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding()
+                                .frame(minWidth: 220)
+                            }
 
                             // Send button
                             Button(action: sendMessage) {
@@ -448,8 +503,33 @@ struct MacNewChatView: View {
             !conversationModel.isEmpty
         {
             selectedModel = conversationModel
+            selectedModels = [conversationModel]
         } else {
             selectedModel = openAIService.selectedModel
+            selectedModels = [openAIService.selectedModel]
+        }
+        
+        // Ensure we have at least one model selected if possible
+        if selectedModels.isEmpty, !openAIService.usableModels.isEmpty {
+             let first = openAIService.usableModels.first!
+             selectedModels = [first]
+             selectedModel = first
+        }
+    }
+
+    private func toggleModelSelection(_ model: String) {
+        if selectedModels.contains(model) {
+            if selectedModels.count > 1 {
+                selectedModels.remove(model)
+            }
+        } else {
+            selectedModels.insert(model)
+        }
+        
+        // Update single selection state for compatibility
+        if selectedModels.count == 1, let first = selectedModels.first {
+            selectedModel = first
+            openAIService.selectedModel = first
         }
     }
 
@@ -535,6 +615,12 @@ struct MacNewChatView: View {
         }
 
         conversationManager.updateModel(for: conversation, model: activeModel)
+        
+        // Update conversation with multi-model settings
+        var updatedConversation = conversation
+        updatedConversation.activeModels = Array(selectedModels)
+        updatedConversation.multiModelEnabled = selectedModels.count > 1
+        conversationManager.updateConversation(updatedConversation)
 
         // Build file attachments
         var attachments: [Message.FileAttachment] = []
@@ -567,7 +653,12 @@ struct MacNewChatView: View {
         // The view switch will happen in the completion handler after generation finishes
 
         // Send the message immediately (no delay needed)
-        sendMessageForConversation(conversation, model: activeModel)
+        if selectedModels.count > 1 {
+             isGenerating = true
+             sendMultiModelMessage(userMessageId: userMessage.id, models: Array(selectedModels), temperature: conversation.temperature)
+        } else {
+             sendMessageForConversation(conversation, model: activeModel)
+        }
     }
 
     private func sendMessageForConversation(_ conversation: Conversation, model: String) {
@@ -610,6 +701,138 @@ struct MacNewChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools
+        )
+    }
+
+    // swiftlint:disable:next function_body_length
+    private func sendMultiModelMessage(
+        userMessageId: UUID,
+        models: [String],
+        temperature: Double
+    ) {
+        logNewChat(
+            "🔀 Starting multi-model request",
+            level: .info,
+            metadata: ["models": models.joined(separator: ", ")]
+        )
+
+        // Get updated conversation
+        guard let conversationId = currentConversationId,
+              let updatedConversation = conversationManager.conversations.first(where: {
+            $0.id == conversationId
+        }) else {
+            isGenerating = false
+            return
+        }
+
+        // Create response group
+        let responseGroupId = UUID()
+        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
+
+        // Create placeholder messages for each model
+        var messageIds: [String: UUID] = [:]
+        for model in models {
+            let messageId = UUID()
+            messageIds[model] = messageId
+            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
+
+            let placeholderMessage = Message(
+                id: messageId,
+                role: .assistant,
+                content: "",
+                model: model,
+                responseGroupId: responseGroupId
+            )
+            conversationManager.addMessage(to: updatedConversation, message: placeholderMessage)
+        }
+
+        // Add response group to conversation
+        conversationManager.addResponseGroup(to: updatedConversation, group: responseGroup)
+
+        // Prepare messages for API
+        var messagesToSend = updatedConversation.getEffectiveHistory()
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        // Send to all models in parallel
+        openAIService.sendToMultipleModels(
+            messages: messagesToSend,
+            models: models,
+            temperature: temperature,
+            onChunk: { model, chunk in
+                Task { @MainActor in
+                    guard let messageId = messageIds[model],
+                          let convIndex = conversationManager.conversations.firstIndex(where: {
+                              $0.id == conversationId
+                          }),
+                          let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: {
+                              $0.id == messageId
+                          })
+                    else { return }
+
+                    conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
+                }
+            },
+            onModelComplete: { model in
+                Task { @MainActor in
+                    guard let messageId = messageIds[model] else { return }
+
+                    // Update response group status
+                    if let convIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }),
+                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+                    {
+                        group.updateStatus(for: messageId, status: .completed)
+                        conversationManager.conversations[convIndex].updateResponseGroup(group)
+                    }
+
+                    logNewChat(
+                        "✅ Model completed in multi-model",
+                        level: .info,
+                        metadata: ["model": model]
+                    )
+                }
+            },
+            onAllComplete: {
+                Task { @MainActor in
+                    isGenerating = false
+                    logNewChat("🏁 All models completed", level: .info)
+
+                    // Save the conversation
+                    if let convIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }) {
+                        conversationManager.save(conversationManager.conversations[convIndex])
+                    }
+                    
+                    // Switch to chat view
+                    selectedConversationId = conversationId
+                }
+            },
+            onError: { model, error in
+                Task { @MainActor in
+                    guard let messageId = messageIds[model] else { return }
+
+                    // Update response group status to failed
+                    if let convIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }),
+                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+                    {
+                        group.updateStatus(for: messageId, status: .failed)
+                        conversationManager.conversations[convIndex].updateResponseGroup(group)
+                    }
+
+                    logNewChat(
+                        "❌ Model failed in multi-model",
+                        level: .error,
+                        metadata: ["model": model, "error": error.localizedDescription]
+                    )
+                }
+            }
         )
     }
 
