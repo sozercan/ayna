@@ -16,6 +16,8 @@ struct IOSMultiModelResponseView: View {
     let conversation: Conversation
     var onSelectResponse: ((UUID) -> Void)?
     var onRetry: ((Message) -> Void)?
+    /// ID of the response that would be auto-selected if user continues without choosing
+    var defaultCandidateId: UUID?
 
     @State private var selectedTab = 0
 
@@ -36,6 +38,7 @@ struct IOSMultiModelResponseView: View {
             headerTabs
             Divider()
             contentTabView
+            selectButtonSection
             selectionStatusBar
         }
         .background(Color(uiColor: .secondarySystemBackground))
@@ -61,6 +64,7 @@ struct IOSMultiModelResponseView: View {
         let isResponseSelected = response.id == selectedResponseId
         let isCurrentTab = index == selectedTab
         let status = responseGroup?.responses.first { $0.id == response.id }?.status
+        let isDefault = response.id == defaultCandidateId && !isSelectionMade
 
         return Button {
             withAnimation {
@@ -71,19 +75,28 @@ struct IOSMultiModelResponseView: View {
                 modelName: response.model ?? "Model \(index + 1)",
                 status: status,
                 isSelected: isResponseSelected,
-                isCurrentTab: isCurrentTab
+                isCurrentTab: isCurrentTab,
+                isDefaultCandidate: isDefault
             )
         }
         .buttonStyle(.plain)
         .foregroundStyle(isResponseSelected ? .green : (isCurrentTab ? Color.accentColor : .primary))
     }
 
-    private func headerTabLabel(modelName: String, status: ResponseGroupStatus?, isSelected: Bool, isCurrentTab: Bool) -> some View {
+    private func headerTabLabel(modelName: String, status: ResponseGroupStatus?, isSelected: Bool, isCurrentTab: Bool, isDefaultCandidate: Bool) -> some View {
         HStack(spacing: 4) {
             statusIcon(status: status, isSelected: isSelected)
             Text(modelName)
                 .font(.system(size: 12, weight: isCurrentTab ? .semibold : .regular))
                 .lineLimit(1)
+            if isDefaultCandidate {
+                Text("Default")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.8)))
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -93,7 +106,7 @@ struct IOSMultiModelResponseView: View {
         )
         .overlay(
             Capsule()
-                .strokeBorder(isSelected ? Color.green : (isCurrentTab ? Color.accentColor : Color.clear), lineWidth: 1.5)
+                .strokeBorder(isSelected ? Color.green : (isCurrentTab ? Color.accentColor : (isDefaultCandidate ? Color.orange.opacity(0.5) : Color.clear)), lineWidth: 1.5)
         )
     }
 
@@ -123,17 +136,48 @@ struct IOSMultiModelResponseView: View {
         .frame(minHeight: 200)
     }
 
+    private var currentResponse: Message? {
+        guard selectedTab < responses.count else { return nil }
+        return responses[selectedTab]
+    }
+
+    private var currentResponseStatus: ResponseGroupStatus? {
+        guard let response = currentResponse else { return nil }
+        return responseGroup?.responses.first { $0.id == response.id }?.status
+    }
+
+    @ViewBuilder
+    private var selectButtonSection: some View {
+        if !isSelectionMade,
+           let response = currentResponse,
+           currentResponseStatus != .streaming,
+           currentResponseStatus != .failed
+        {
+            Divider()
+            Button(action: {
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                onSelectResponse?(response.id)
+            }) {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("Use this response")
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .foregroundStyle(.white)
+            .background(Color.accentColor)
+        }
+    }
+
     private func responseCard(index: Int, response: Message) -> some View {
         IOSMultiModelResponseCard(
             message: response,
             isSelected: response.id == selectedResponseId,
             isSelectionMade: isSelectionMade,
             responseStatus: responseGroup?.responses.first { $0.id == response.id }?.status,
-            onSelect: {
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                onSelectResponse?(response.id)
-            },
             onRetry: {
                 onRetry?(response)
             }
@@ -166,7 +210,6 @@ struct IOSMultiModelResponseCard: View {
     let isSelected: Bool
     let isSelectionMade: Bool
     let responseStatus: ResponseGroupStatus?
-    var onSelect: (() -> Void)?
     var onRetry: (() -> Void)?
 
     @State private var contentBlocks: [ContentBlock]
@@ -176,14 +219,12 @@ struct IOSMultiModelResponseCard: View {
         isSelected: Bool,
         isSelectionMade: Bool,
         responseStatus: ResponseGroupStatus?,
-        onSelect: (() -> Void)? = nil,
         onRetry: (() -> Void)? = nil
     ) {
         self.message = message
         self.isSelected = isSelected
         self.isSelectionMade = isSelectionMade
         self.responseStatus = responseStatus
-        self.onSelect = onSelect
         self.onRetry = onRetry
         _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
     }
@@ -199,7 +240,6 @@ struct IOSMultiModelResponseCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             responseContent
-            selectButton
         }
         .background(Color(uiColor: .systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -281,25 +321,6 @@ struct IOSMultiModelResponseCard: View {
             }
             .padding(8)
             .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    @ViewBuilder
-    private var selectButton: some View {
-        if !isSelectionMade, !isStreaming, !hasFailed {
-            Divider()
-            Button(action: {
-                onSelect?()
-            }) {
-                HStack {
-                    Image(systemName: "checkmark.circle")
-                    Text("Use this response")
-                }
-                .font(.system(size: 14, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-            }
-            .foregroundStyle(Color.accentColor)
         }
     }
 }

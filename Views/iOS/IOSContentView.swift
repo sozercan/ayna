@@ -37,6 +37,7 @@ struct IOSNewChatView: View {
 
     @State private var isFileImporterPresented = false
     @State private var showSettings = false
+    @State private var showModelSelector = false
 
     /// Get the pending conversation from the environment's conversation manager
     private var pendingConversation: Conversation? {
@@ -112,27 +113,23 @@ struct IOSNewChatView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Menu {
-                    ForEach(openAIService.usableModels, id: \.self) { model in
-                        Button {
-                            viewModel.selectedModel = model
-                            openAIService.selectedModel = model
-                        } label: {
-                            if viewModel.selectedModel == model {
-                                Label(model, systemImage: "checkmark")
-                            } else {
-                                Text(model)
-                            }
-                        }
-                    }
-                } label: {
+                Button(action: { showModelSelector = true }) {
                     VStack(spacing: 0) {
                         Text("New Chat")
                             .font(.headline)
                         HStack(spacing: 4) {
-                            Text(viewModel.selectedModel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if viewModel.selectedModels.count > 1 {
+                                Image(systemName: "square.stack.3d.up.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.blue)
+                                Text("\(viewModel.selectedModels.count) models")
+                                    .font(.caption)
+                                    .foregroundStyle(.blue)
+                            } else {
+                                Text(viewModel.selectedModel)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             Image(systemName: "chevron.down")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -142,6 +139,28 @@ struct IOSNewChatView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier(TestIdentifiers.ChatView.modelSelector)
             }
+        }
+        .sheet(isPresented: $showModelSelector) {
+            NavigationStack {
+                IOSMultiModelSelector(
+                    selectedModels: $viewModel.selectedModels,
+                    availableModels: openAIService.usableModels,
+                    maxSelection: 4
+                )
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            showModelSelector = false
+                            // Update primary model if needed
+                            if let first = viewModel.selectedModels.first, viewModel.selectedModels.count == 1 {
+                                viewModel.selectedModel = first
+                                openAIService.selectedModel = first
+                            }
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .onAppear {
             // Configure ViewModel with actual environment object

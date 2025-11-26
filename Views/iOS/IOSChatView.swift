@@ -17,7 +17,6 @@ struct IOSChatView: View {
     @State private var isFileImporterPresented = false
     @State private var showingSystemPromptSheet = false
     @State private var showModelSelector = false
-    @State private var selectedModels: Set<String> = []
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     /// Get the conversation from the environment's conversation manager
@@ -58,11 +57,8 @@ struct IOSChatView: View {
                 processedGroupIds.insert(groupId)
 
                 let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-                if groupResponses.count > 1 {
-                    items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-                } else {
-                    items.append(.message(message))
-                }
+                // Always show response groups as multi-model view to prevent UI jumping
+                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
             } else {
                 items.append(.message(message))
             }
@@ -104,7 +100,8 @@ struct IOSChatView: View {
                                         },
                                         onRetry: { message in
                                             viewModel.retryMessage(beforeMessage: message)
-                                        }
+                                        },
+                                        defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
                                     )
                                     .id(item.id)
                                 }
@@ -150,11 +147,7 @@ struct IOSChatView: View {
                 showAttachmentButton: true,
                 identifierPrefix: "chat.composer",
                 onSend: {
-                    if selectedModels.count >= 2 {
-                        sendMultiModelMessage()
-                    } else {
-                        viewModel.sendMessage()
-                    }
+                    viewModel.sendMessage()
                 },
                 onCancel: { viewModel.cancelGeneration() },
                 onAttachmentRequested: { isFileImporterPresented = true }
@@ -178,11 +171,11 @@ struct IOSChatView: View {
 
                         Button(action: { showModelSelector = true }) {
                             HStack(spacing: 4) {
-                                if selectedModels.count > 1 {
+                                if viewModel.selectedModels.count > 1 {
                                     Image(systemName: "square.stack.3d.up.fill")
                                         .font(.system(size: 10))
                                         .foregroundStyle(.blue)
-                                    Text("\(selectedModels.count) models")
+                                    Text("\(viewModel.selectedModels.count) models")
                                         .font(.caption)
                                         .foregroundStyle(.blue)
                                 } else {
@@ -212,48 +205,22 @@ struct IOSChatView: View {
         }
         .sheet(isPresented: $showModelSelector) {
             NavigationStack {
-                List {
-                    Section {
-                        ForEach(openAIService.usableModels, id: \.self) { model in
-                            Button(action: {
-                                if let conversation {
-                                    toggleModelSelection(model, for: conversation)
-                                }
-                            }) {
-                                HStack {
-                                    Text(model)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    Image(systemName: selectedModels.contains(model) ? "checkmark.square.fill" : "square")
-                                        .foregroundStyle(selectedModels.contains(model) ? Color.accentColor : Color.secondary)
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("Select models")
-                    } footer: {
-                        Text("1 model = single response, 2+ models = compare responses side by side")
-                    }
-
-                    if selectedModels.count > 1 {
-                        Section {
-                            Button(role: .destructive) {
-                                if let first = selectedModels.first, let conversation {
-                                    selectedModels = [first]
-                                    conversationManager.updateModel(for: conversation, model: first)
-                                }
-                            } label: {
-                                Label("Clear multi-selection", systemImage: "xmark.circle")
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Models")
-                .navigationBarTitleDisplayMode(.inline)
+                IOSMultiModelSelector(
+                    selectedModels: $viewModel.selectedModels,
+                    availableModels: openAIService.usableModels,
+                    maxSelection: 4
+                )
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
                             showModelSelector = false
+                            if let conversation {
+                                updateConversationMultiModelState()
+                                // If single model selected, update conversation model
+                                if viewModel.selectedModels.count == 1, let first = viewModel.selectedModels.first {
+                                    conversationManager.updateModel(for: conversation, model: first)
+                                }
+                            }
                         }
                     }
                 }
@@ -273,24 +240,83 @@ struct IOSChatView: View {
         }
         .onChange(of: conversation?.model) { _, newModel in
             // Re-initialize if the conversation model changes and selectedModels is empty
-            if selectedModels.isEmpty, let model = newModel, !model.isEmpty {
-                selectedModels = [model]
+            if viewModel.selectedModels.isEmpty, let model = newModel, !model.isEmpty {
+                viewModel.selectedModels = [model]
             }
         }
     }
 
     private func initializeSelectedModelsIfNeeded() {
-        guard selectedModels.isEmpty else { return }
+        guard let conversation else { return }
 
-        if let conversation, !conversation.model.isEmpty {
-            selectedModels = [conversation.model]
+        // If conversation has multi-model enabled, restore those selections
+        if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
+            viewModel.selectedModels = Set(conversation.activeModels)
+            return
+        }
+
+        guard viewModel.selectedModels.isEmpty else { return }
+
+        if !conversation.model.isEmpty {
+            viewModel.selectedModels = [conversation.model]
         } else if let firstAvailable = openAIService.usableModels.first {
             // Fallback to first available model if conversation model is empty
-            selectedModels = [firstAvailable]
-            if let conversation {
-                conversationManager.updateModel(for: conversation, model: firstAvailable)
-            }
+            viewModel.selectedModels = [firstAvailable]
+            conversationManager.updateModel(for: conversation, model: firstAvailable)
         }
+    }
+
+    private func updateConversationMultiModelState() {
+        guard let conversation else { return }
+        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+            var updatedConversation = conversationManager.conversations[index]
+            updatedConversation.activeModels = Array(viewModel.selectedModels)
+            updatedConversation.multiModelEnabled = viewModel.selectedModels.count > 1
+            conversationManager.updateConversation(updatedConversation)
+        }
+    }
+
+    private func autoSelectResponseIfNeeded() {
+        guard let conversation else { return }
+        guard let lastMessage = conversation.messages.last,
+              let groupId = lastMessage.responseGroupId,
+              let group = conversation.getResponseGroup(groupId),
+              group.selectedResponseId == nil
+        else {
+            return
+        }
+
+        let responses = conversation.messages.filter { $0.responseGroupId == groupId }
+        var candidateId: UUID?
+
+        // 1. Primary: conversation.model
+        if let match = responses.first(where: { $0.model == conversation.model }) {
+            candidateId = match.id
+        }
+        // 2. Fallback: First model
+        else if let first = responses.first {
+            candidateId = first.id
+        }
+
+        if let id = candidateId {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "🤖 Auto-selecting response before sending new message",
+                metadata: ["messageId": id.uuidString]
+            )
+            conversationManager.selectResponse(in: conversation, groupId: groupId, messageId: id)
+        }
+    }
+
+    /// Calculates which response would be auto-selected if user continues without choosing (for visual cue)
+    private func defaultCandidateId(for responses: [Message], in conversation: Conversation) -> UUID? {
+        // 1. Primary: conversation.model
+        if let match = responses.first(where: { $0.model == conversation.model }) {
+            return match.id
+        }
+        // 2. Fallback: First response
+        return responses.first?.id
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
@@ -305,138 +331,31 @@ struct IOSChatView: View {
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
 
-        if selectedModels.contains(model) {
-            selectedModels.remove(model)
+        if viewModel.selectedModels.contains(model) {
+            viewModel.selectedModels.remove(model)
             // Keep at least one model selected
-            if selectedModels.isEmpty {
-                selectedModels.insert(model)
-            } else if selectedModels.count == 1, let remaining = selectedModels.first {
+            if viewModel.selectedModels.isEmpty {
+                viewModel.selectedModels.insert(model)
+            } else if viewModel.selectedModels.count == 1, let remaining = viewModel.selectedModels.first {
                 conversationManager.updateModel(for: conversation, model: remaining)
             }
         } else {
             // Allow up to 4 models
-            if selectedModels.count < 4 {
-                selectedModels.insert(model)
-                if selectedModels.count == 1 {
+            if viewModel.selectedModels.count < 4 {
+                viewModel.selectedModels.insert(model)
+                if viewModel.selectedModels.count == 1 {
                     conversationManager.updateModel(for: conversation, model: model)
                 }
             }
         }
+        updateConversationMultiModelState()
     }
 
     // MARK: - Multi-Model Message Sending
 
     private func sendMultiModelMessage() {
-        let text = viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let conversation else { return }
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🔀 Starting iOS multi-model request",
-            metadata: ["models": selectedModels.map(\.self).joined(separator: ", ")]
-        )
-
-        // Create user message
-        let userMessage = Message(role: .user, content: text)
-        conversationManager.addMessage(to: conversation, message: userMessage)
-
-        viewModel.messageText = ""
-        viewModel.isGenerating = true
-        viewModel.errorMessage = nil
-
-        // Create response group
-        let responseGroupId = UUID()
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessage.id)
-        let models = Array(selectedModels)
-
-        // Create placeholder messages for each model
-        var messageIds: [String: UUID] = [:]
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId
-            )
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-        }
-
-        // Add response group
-        conversationManager.addResponseGroup(to: conversation, group: responseGroup)
-
-        // Prepare messages
-        guard let updatedConversation = self.conversation else { return }
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        // Remove placeholders
-        messagesToSend = messagesToSend.filter { $0.responseGroupId != responseGroupId }
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
-
-        let conversationId = conversation.id
-
-        // Send to all models
-        openAIService.sendToMultipleModels(
-            messages: messagesToSend,
-            models: models,
-            temperature: updatedConversation.temperature,
-            onChunk: { model, chunk in
-                Task { @MainActor in
-                    guard let messageId = messageIds[model],
-                          let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                          let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
-                    else { return }
-
-                    conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
-                }
-            },
-            onModelComplete: { model in
-                Task { @MainActor in
-                    guard let messageId = messageIds[model],
-                          let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                          var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    else { return }
-
-                    group.updateStatus(for: messageId, status: .completed)
-                    conversationManager.conversations[convIndex].updateResponseGroup(group)
-                }
-            },
-            onAllComplete: {
-                Task { @MainActor in
-                    viewModel.isGenerating = false
-                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-                        conversationManager.save(conversationManager.conversations[convIndex])
-                    }
-                }
-            },
-            onError: { model, error in
-                Task { @MainActor in
-                    guard let messageId = messageIds[model],
-                          let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                          var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    else { return }
-
-                    group.updateStatus(for: messageId, status: .failed)
-                    conversationManager.conversations[convIndex].updateResponseGroup(group)
-
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "❌ Model failed in iOS multi-model",
-                        metadata: ["model": model, "error": error.localizedDescription]
-                    )
-                }
-            },
-            onPendingToolCall: nil,
-            onReasoning: nil
-        )
+        // Delegated to ViewModel
+        viewModel.sendMessage()
     }
 }
 
