@@ -6,6 +6,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
 - ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
+- 🔀 **Multi-Model Chat**: Compare responses from multiple models simultaneously.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
 - 🏠 **Local Models**: Run models locally for complete privacy.
 - 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
@@ -46,6 +47,12 @@ brew install --cask ayna
 1. Open **Settings** (`Cmd+,`) → **API**.
 2. Select **OpenAI** (Apple Intelligence or AIKit for on-device/local) and add a model. Use your OpenAI endpoint (or `https://<resource>.openai.azure.com` for Azure, using the deployment name as the model name) plus API key.
 3. Start chatting!
+
+### Multi-Model Chat
+1. Start a **New Chat** (`Cmd+N`).
+2. In the model selector, choose **multiple models** (e.g., GPT-4o and Claude 3.5 Sonnet).
+3. Send your prompt.
+4. Ayna will stream responses from all selected models in parallel, allowing you to compare their outputs side-by-side.
 
 ### Run Local Models (AIKit)
 1. Install [Podman](https://podman-desktop.io/) configured with [GPU access](https://podman-desktop.io/docs/podman/gpu).

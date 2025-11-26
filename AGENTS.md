@@ -67,6 +67,18 @@ Decomposed into single-responsibility components:
 - `OpenAIStreamParser.swift`: SSE parsing and tool call handling.
 - `OpenAIRetryPolicy.swift`: Exponential backoff.
 
+### Multi-Model Architecture
+- **Concept**: Allows sending a single prompt to multiple models simultaneously for comparison.
+- **Data Model**:
+  - `ResponseGroup`: Links a user message to multiple assistant messages (one per model).
+  - `Message`: Each assistant response is a separate `Message` entity with a `model` property.
+- **Execution**:
+  - `OpenAIService.sendToMultipleModels`: Manages concurrent `Task`s for each model.
+  - **Streaming**: Callbacks (`onChunk`, `onModelComplete`, `onError`) are keyed by `model` name to route data to the correct message.
+- **State Management**:
+  - ViewModels (`IOSChatViewModel`) maintain a mapping of `model -> messageId`.
+  - Updates are applied atomically to `ConversationManager` to prevent race conditions during parallel streaming.
+
 ### AIKit (Local Models)
 - **macOS Only**.
 - Uses Podman to run containerized models (Llama, Mixtral, etc.).
