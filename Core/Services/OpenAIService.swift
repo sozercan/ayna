@@ -59,6 +59,8 @@ class OpenAIService: ObservableObject {
     // Track current task for cancellation
     private var currentTask: URLSessionDataTask?
     private var currentStreamTask: Task<Void, Never>?
+    private var multiModelTask: Task<Void, Never>?
+    private var appleIntelligenceTask: Task<Void, Never>?
 
     @Published var provider: AIProvider {
         didSet {
@@ -404,6 +406,10 @@ class OpenAIService: ObservableObject {
         currentTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        multiModelTask?.cancel()
+        multiModelTask = nil
+        appleIntelligenceTask?.cancel()
+        appleIntelligenceTask = nil
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
@@ -622,15 +628,35 @@ class OpenAIService: ObservableObject {
             metadata: ["models": models.joined(separator: ", ")]
         )
 
+        // Cancel any existing multi-model task
+        multiModelTask?.cancel()
+
         // Use a TaskGroup to send requests in parallel
-        Task {
+        let task = Task {
             await withTaskGroup(of: Void.self) { group in
                 for model in models {
                     group.addTask { [weak self] in
                         guard let self else { return }
 
+                        // Check for cancellation before starting
+                        if Task.isCancelled {
+                            DiagnosticsLogger.log(
+                                .openAIService,
+                                level: .info,
+                                message: "🛑 Multi-model task cancelled before starting model",
+                                metadata: ["model": model]
+                            )
+                            return
+                        }
+
                         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                             Task { @MainActor in
+                                // Check for cancellation again on MainActor
+                                if Task.isCancelled {
+                                    continuation.resume()
+                                    return
+                                }
+
                                 self.sendMessage(
                                     messages: messages,
                                     model: model,
@@ -676,8 +702,19 @@ class OpenAIService: ObservableObject {
                 }
             }
 
+            // Check for cancellation before calling onAllComplete
+            if Task.isCancelled {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "🛑 Multi-model task cancelled, not calling onAllComplete"
+                )
+                return
+            }
+
             // All models completed
             await MainActor.run {
+                self.multiModelTask = nil
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .info,
@@ -686,6 +723,7 @@ class OpenAIService: ObservableObject {
                 onAllComplete()
             }
         }
+        multiModelTask = task
     }
 
     private func simulateUITestResponse(
@@ -867,114 +905,129 @@ class OpenAIService: ObservableObject {
         attempt: Int = 0
     ) {
         let session = urlSession
-        let task = Task.detached { [weak self] in
+
+        // Cancel any existing stream task before starting a new one
+        currentStreamTask?.cancel()
+
+        let task = Task { [weak self] in
             guard let self else { return }
             var hasReceivedData = false
+
             do {
-                let (bytes, response) = try await session.bytes(for: request)
+                // Use withTaskCancellationHandler to ensure proper cleanup
+                try await withTaskCancellationHandler {
+                    let (bytes, response) = try await session.bytes(for: request)
 
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw OpenAIError.invalidResponse
-                }
-
-                guard httpResponse.statusCode == 200 else {
-                    let errorMessage = getHTTPErrorMessage(
-                        statusCode: httpResponse.statusCode,
-                        requestURL: request.url
-                    )
-                    throw OpenAIError.apiError(errorMessage)
-                }
-
-                var buffer = Data()
-                var currentToolCallBuffer: [String: Any] = [:]
-                var toolCallId = ""
-
-                // Batching buffers
-                var contentBuffer = ""
-                var reasoningBuffer = ""
-                var lastUpdateTime = Date()
-
-                for try await byte in bytes {
-                    hasReceivedData = true
-                    // Check if task was cancelled
-                    if Task.isCancelled {
-                        await MainActor.run {
-                            DiagnosticsLogger.log(
-                                .openAIService,
-                                level: .info,
-                                message: "Stream task cancelled; stopping iteration"
-                            )
-                            self.currentStreamTask = nil
-                        }
-                        return
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw OpenAIError.invalidResponse
                     }
 
-                    buffer.append(byte)
-
-                    // Check if we have a newline (UTF-8: 0x0A)
-                    if byte == 0x0A {
-                        if let line = String(data: buffer, encoding: .utf8) {
-                            let result = await OpenAIStreamParser.processStreamLine(
-                                line,
-                                toolCallBuffer: currentToolCallBuffer,
-                                toolCallId: toolCallId,
-                                onToolCall: callbacks.onToolCall,
-                                onToolCallRequested: callbacks.onToolCallRequested
+                    guard httpResponse.statusCode == 200 else {
+                        let errorMessage = await MainActor.run {
+                            self.getHTTPErrorMessage(
+                                statusCode: httpResponse.statusCode,
+                                requestURL: request.url
                             )
-                            currentToolCallBuffer = result.toolCallBuffer
-                            toolCallId = result.toolCallId
+                        }
+                        throw OpenAIError.apiError(errorMessage)
+                    }
 
-                            if let content = result.content {
-                                contentBuffer += content
-                            }
-                            if let reasoning = result.reasoning {
-                                reasoningBuffer += reasoning
-                            }
+                    var buffer = Data()
+                    var currentToolCallBuffer: [String: Any] = [:]
+                    var toolCallId = ""
 
-                            if result.shouldComplete {
-                                // Flush remaining buffers
-                                let contentToSend = contentBuffer
-                                let reasoningToSend = reasoningBuffer
-                                await MainActor.run {
-                                    if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
-                                    if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
-                                    self.currentStreamTask = nil
-                                    callbacks.onComplete()
+                    // Batching buffers
+                    var contentBuffer = ""
+                    var reasoningBuffer = ""
+                    var lastUpdateTime = Date()
+
+                    for try await byte in bytes {
+                        // Check for cancellation at each byte
+                        try Task.checkCancellation()
+
+                        hasReceivedData = true
+                        buffer.append(byte)
+
+                        // Check if we have a newline (UTF-8: 0x0A)
+                        if byte == 0x0A {
+                            if let line = String(data: buffer, encoding: .utf8) {
+                                let result = await OpenAIStreamParser.processStreamLine(
+                                    line,
+                                    toolCallBuffer: currentToolCallBuffer,
+                                    toolCallId: toolCallId,
+                                    onToolCall: callbacks.onToolCall,
+                                    onToolCallRequested: callbacks.onToolCallRequested
+                                )
+                                currentToolCallBuffer = result.toolCallBuffer
+                                toolCallId = result.toolCallId
+
+                                if let content = result.content {
+                                    contentBuffer += content
                                 }
-                                return
-                            }
+                                if let reasoning = result.reasoning {
+                                    reasoningBuffer += reasoning
+                                }
 
-                            // Check if we should dispatch batch
-                            if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
-                                if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
+                                if result.shouldComplete {
+                                    // Flush remaining buffers
                                     let contentToSend = contentBuffer
                                     let reasoningToSend = reasoningBuffer
                                     await MainActor.run {
                                         if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
                                         if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                                        self.currentStreamTask = nil
+                                        callbacks.onComplete()
                                     }
-                                    contentBuffer = ""
-                                    reasoningBuffer = ""
-                                    lastUpdateTime = Date()
+                                    return
+                                }
+
+                                // Check if we should dispatch batch
+                                if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+                                    let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
+                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
+                                        let contentToSend = contentBuffer
+                                        let reasoningToSend = reasoningBuffer
+                                        await MainActor.run {
+                                            if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
+                                            if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                                        }
+                                        contentBuffer = ""
+                                        reasoningBuffer = ""
+                                        lastUpdateTime = Date()
+                                    }
                                 }
                             }
+                            buffer.removeAll()
                         }
-                        buffer.removeAll()
                     }
-                }
 
-                // Flush any remaining content
-                let contentToSend = contentBuffer
-                let reasoningToSend = reasoningBuffer
+                    // Flush any remaining content
+                    let contentToSend = contentBuffer
+                    let reasoningToSend = reasoningBuffer
+                    await MainActor.run {
+                        if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
+                        if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                        self.currentStreamTask = nil
+                        callbacks.onComplete()
+                    }
+                } onCancel: {
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "Stream task cancellation handler triggered"
+                    )
+                }
+            } catch is CancellationError {
                 await MainActor.run {
-                    if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
-                    if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "Stream task cancelled via CancellationError"
+                    )
                     self.currentStreamTask = nil
-                    callbacks.onComplete()
                 }
             } catch {
-                await handleStreamError(
+                await self.handleStreamError(
                     error: error,
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
@@ -984,6 +1037,94 @@ class OpenAIService: ObservableObject {
             }
         }
         currentStreamTask = task
+    }
+
+    /// Parse Server-Sent Events data and deliver chunks (used for non-streaming fallback)
+    private func parseSSEData(_ data: Data, callbacks: StreamCallbacks) {
+        guard let text = String(data: data, encoding: .utf8) else {
+            callbacks.onComplete()
+            return
+        }
+
+        let lines = text.components(separatedBy: "\n")
+        var currentToolCallBuffer: [String: Any] = [:]
+        var toolCallId = ""
+
+        for line in lines {
+            // Skip empty lines and comments
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            if trimmedLine.isEmpty || trimmedLine.hasPrefix(":") {
+                continue
+            }
+
+            // Handle data: prefix
+            if trimmedLine.hasPrefix("data:") {
+                let jsonString = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+
+                if jsonString == "[DONE]" {
+                    callbacks.onComplete()
+                    return
+                }
+
+                guard let jsonData = jsonString.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let firstChoice = choices.first
+                else {
+                    continue
+                }
+
+                // Handle delta content
+                if let delta = firstChoice["delta"] as? [String: Any] {
+                    // Handle regular content
+                    if let content = delta["content"] as? String, !content.isEmpty {
+                        callbacks.onChunk(content)
+                    }
+
+                    // Handle reasoning content
+                    if let reasoning = delta["reasoning"] as? String, !reasoning.isEmpty {
+                        callbacks.onReasoning?(reasoning)
+                    } else if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
+                        callbacks.onReasoning?(reasoning)
+                    }
+
+                    // Handle tool calls
+                    if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
+                        for toolCall in toolCalls {
+                            if let id = toolCall["id"] as? String {
+                                toolCallId = id
+                                currentToolCallBuffer = [:]
+                            }
+                            if let function = toolCall["function"] as? [String: Any] {
+                                if let name = function["name"] as? String {
+                                    currentToolCallBuffer["name"] = name
+                                }
+                                if let args = function["arguments"] as? String {
+                                    let existing = currentToolCallBuffer["arguments"] as? String ?? ""
+                                    currentToolCallBuffer["arguments"] = existing + args
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check for finish_reason
+                if let finishReason = firstChoice["finish_reason"] as? String {
+                    if finishReason == "tool_calls",
+                       let name = currentToolCallBuffer["name"] as? String,
+                       let argsString = currentToolCallBuffer["arguments"] as? String
+                    {
+                        if let argsData = argsString.data(using: .utf8),
+                           let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
+                        {
+                            callbacks.onToolCallRequested?(toolCallId, name, arguments)
+                        }
+                    }
+                }
+            }
+        }
+
+        callbacks.onComplete()
     }
 
     private func handleStreamError(
@@ -1198,7 +1339,10 @@ class OpenAIService: ObservableObject {
 
         let requestTemp = temperature ?? 0.7
 
-        Task {
+        // Cancel any existing Apple Intelligence task
+        appleIntelligenceTask?.cancel()
+
+        let task = Task {
             if stream {
                 await service.streamResponse(
                     conversationId: convId,
@@ -1231,6 +1375,7 @@ class OpenAIService: ObservableObject {
                 )
             }
         }
+        appleIntelligenceTask = task
     }
 
     // Retry logic delegated to OpenAIRetryPolicy

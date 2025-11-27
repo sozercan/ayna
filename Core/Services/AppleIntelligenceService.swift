@@ -209,6 +209,9 @@ enum AppleIntelligenceError: LocalizedError {
                             return
                         }
                     }
+                } catch is CancellationError {
+                    log("Apple Intelligence stream cancelled", metadata: ["conversationId": conversationId])
+                    return
                 } catch {
                     log(
                         "Apple Intelligence stream failed",
@@ -269,6 +272,8 @@ enum AppleIntelligenceError: LocalizedError {
                     onComplete(response.content)
                 }
                 log("Generated Apple Intelligence response", metadata: ["conversationId": conversationId])
+            } catch is CancellationError {
+                log("Apple Intelligence generation cancelled", metadata: ["conversationId": conversationId])
             } catch {
                 log(
                     "Apple Intelligence generation failed",
