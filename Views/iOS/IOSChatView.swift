@@ -110,7 +110,6 @@ struct IOSChatView: View {
                         .padding()
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
-                    .defaultScrollAnchor(.bottom)
                     .onChange(of: conversation.messages.count) { _ in
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
