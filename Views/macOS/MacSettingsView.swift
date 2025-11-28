@@ -763,6 +763,16 @@ struct APISettingsView: View {
         .onAppear {
             tempAPIKey = openAIService.apiKey
             tempEndpoint = "https://api.openai.com/"
+            // Default to "new model" state for GitHub Models
+            if openAIService.provider == .githubModels {
+                createNewModel()
+            }
+        }
+        .onChange(of: openAIService.provider) { _, newProvider in
+            // Reset to "new model" state when switching to GitHub Models
+            if newProvider == .githubModels {
+                createNewModel()
+            }
         }
     }
 
