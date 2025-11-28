@@ -5,7 +5,7 @@ A native macOS ChatGPT client built for speed and simplicity.
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
-- ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
+- ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [GitHub Models](https://github.com/marketplace/models), [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
 - 🔀 **Multi-Model Chat**: Compare responses from multiple models simultaneously.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
 - 🏠 **Local Models**: Run models locally for complete privacy.
@@ -39,13 +39,17 @@ brew install --cask ayna
 ### Requirements
 
 - macOS 14.0 (Sonoma) or newer.
-- An API key for OpenAI, Azure OpenAI, Gemini or Claude (optional if using local models).
+- An API key for OpenAI, Azure OpenAI, Gemini or Claude, or a GitHub account for GitHub Models (optional if using local models).
 
 ## User Guide
 
 ### Connect to AI Providers
 1. Open **Settings** (`Cmd+,`) → **API**.
-2. Select **OpenAI** (Apple Intelligence or AIKit for on-device/local) and add a model. Use your OpenAI endpoint (or `https://<resource>.openai.azure.com` for Azure, using the deployment name as the model name) plus API key.
+2. Select your provider and add a model:
+   - **OpenAI**: Use the default endpoint or a custom OpenAI-compatible endpoint.
+   - **Azure OpenAI**: Use `https://<resource>.openai.azure.com` with your deployment name as the model.
+   - **GitHub Models**: Sign in with your GitHub account (OAuth) or use a Personal Access Token with `models:read` permission.
+   - **Apple Intelligence / AIKit**: For on-device/local inference.
 3. Start chatting!
 
 ### Multi-Model Chat

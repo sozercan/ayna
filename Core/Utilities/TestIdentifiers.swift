@@ -64,4 +64,12 @@ enum TestIdentifiers {
             "settings.modelRow.\(modelName)"
         }
     }
+
+    // MARK: - Rate Limit
+
+    enum RateLimit {
+        static let warningBanner = "rateLimit.warningBanner"
+        static let warningIcon = "rateLimit.warningIcon"
+        static let warningMessage = "rateLimit.warningMessage"
+    }
 }

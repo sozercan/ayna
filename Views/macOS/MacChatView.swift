@@ -308,6 +308,15 @@ struct MacChatView: View {
                     }
                 }
 
+                // Rate Limit Warning Banner (GitHub Models only)
+                if openAIService.provider == .githubModels {
+                    RateLimitWarningBanner(
+                        rateLimitInfo: GitHubOAuthService.shared.rateLimitInfo,
+                        retryAfterDate: GitHubOAuthService.shared.retryAfterDate
+                    )
+                    .padding(.horizontal, 24)
+                }
+
                 // Error Message
                 if let error = errorMessage {
                     HStack {

@@ -354,6 +354,15 @@ struct IOSModelEditView: View {
                                         Text(deviceCode.userCode)
                                             .font(.headline.monospaced())
                                             .textSelection(.enabled)
+                                        Button {
+                                            UIPasteboard.general.string = deviceCode.userCode
+                                        } label: {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.caption)
+                                        }
+                                        Text("(copied)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
                                     }
                                     
                                     Link("Open GitHub", destination: URL(string: "\(deviceCode.verificationUri)?user_code=\(deviceCode.userCode)")!)
@@ -610,13 +619,26 @@ struct IOSGitHubAccountView: View {
                         ProgressView()
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Enter this code on GitHub:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack(spacing: 4) {
+                                Text("Enter this code on GitHub:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("(copied)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
 
-                            Text(deviceCode.userCode)
-                                .font(.system(.title2, design: .monospaced))
-                                .fontWeight(.bold)
+                            HStack(spacing: 8) {
+                                Text(deviceCode.userCode)
+                                    .font(.system(.title2, design: .monospaced))
+                                    .fontWeight(.bold)
+                                Button {
+                                    UIPasteboard.general.string = deviceCode.userCode
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.body)
+                                }
+                            }
                         }
                     }
 

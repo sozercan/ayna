@@ -988,6 +988,16 @@ class OpenAIService: ObservableObject {
         return "HTTP \(statusCode)"
     }
 
+    /// Check if error body indicates rate limiting (for 403 responses)
+    private nonisolated func isRateLimitErrorBody(_ data: Data) -> Bool {
+        guard let errorString = String(data: data, encoding: .utf8) else { return false }
+        let lowercased = errorString.lowercased()
+        return lowercased.contains("rate limit") ||
+               lowercased.contains("rate_limit") ||
+               lowercased.contains("too many requests") ||
+               lowercased.contains("ratelimit")
+    }
+
     private func streamResponse(
         request: URLRequest,
         callbacks: StreamCallbacks,
@@ -1024,6 +1034,20 @@ class OpenAIService: ObservableObject {
                             // Ignore errors reading error body
                         }
 
+                        // Capture rate limit headers for GitHub Models (even on error)
+                        if self.provider == .githubModels {
+                            await MainActor.run {
+                                GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
+                                
+                                // Check if this is a rate limit error (429 or 403 with rate limit message)
+                                let statusCode = httpResponse.statusCode
+                                if statusCode == 429 ||
+                                   (statusCode == 403 && self.isRateLimitErrorBody(errorData)) {
+                                    GitHubOAuthService.shared.updateRetryAfter(from: httpResponse)
+                                }
+                            }
+                        }
+
                         let errorMessage: String
                         if !errorData.isEmpty {
                             errorMessage = self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
@@ -1047,6 +1071,14 @@ class OpenAIService: ObservableObject {
                             ]
                         )
                         throw OpenAIError.apiError(errorMessage)
+                    }
+
+                    // Capture rate limit headers on success for GitHub Models
+                    if self.provider == .githubModels {
+                        await MainActor.run {
+                            GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
+                            GitHubOAuthService.shared.clearRetryAfter()
+                        }
                     }
 
                     var buffer = Data()
@@ -1252,13 +1284,21 @@ class OpenAIService: ObservableObject {
         callbacks: StreamCallbacks
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
+            // Get retry-after date for GitHub Models rate limits
+            let retryAfterDate = (provider == .githubModels)
+                ? await MainActor.run { GitHubOAuthService.shared.retryAfterDate }
+                : nil
+            
             DiagnosticsLogger.log(
                 .openAIService,
                 level: .info,
                 message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
-                metadata: ["error": error.localizedDescription]
+                metadata: [
+                    "error": error.localizedDescription,
+                    "retryAfter": retryAfterDate?.description ?? "none"
+                ]
             )
-            await delay(for: attempt)
+            await delay(for: attempt, retryAfterDate: retryAfterDate)
             await MainActor.run {
                 streamResponse(
                     request: request,
@@ -1504,8 +1544,8 @@ class OpenAIService: ObservableObject {
         )
     }
 
-    private func delay(for attempt: Int) async {
-        await OpenAIRetryPolicy.wait(for: attempt)
+    private func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
+        await OpenAIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
     }
 
     enum OpenAIError: LocalizedError {

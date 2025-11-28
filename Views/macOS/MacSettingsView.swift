@@ -1046,26 +1046,68 @@ struct GitHubModelsConfigurationView: View {
 
                 // Show OAuth status if signed in
                 if githubOAuth.isAuthenticated {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        if let user = githubOAuth.currentUser {
-                            Text("Signed in as @\(user.login)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Signed in with GitHub")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            if let user = githubOAuth.currentUser {
+                                Text("Signed in as @\(user.login)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Signed in with GitHub")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            // Token refresh indicator
+                            if githubOAuth.isRefreshing {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .help("Refreshing token...")
+                            }
+                            
+                            Button("Sign Out") {
+                                githubOAuth.signOut()
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
                         }
                         
-                        Spacer()
-                        
-                        Button("Sign Out") {
-                            githubOAuth.signOut()
+                        // Token expiration indicator
+                        if let expiresAt = githubOAuth.tokenExpiresAt {
+                            let remaining = expiresAt.timeIntervalSinceNow
+                            if remaining > 0 {
+                                HStack(spacing: 4) {
+                                    if remaining < 3600 { // < 1 hour
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundStyle(.orange)
+                                            .font(.caption2)
+                                        Text("Token expires in \(formatTimeRemaining(remaining))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    } else {
+                                        Image(systemName: "clock")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption2)
+                                        Text("Token expires in \(formatTimeRemaining(remaining))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                            } else {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.red)
+                                        .font(.caption2)
+                                    Text("Token expired - will refresh automatically")
+                                        .font(.caption2)
+                                        .foregroundStyle(.red)
+                                }
+                            }
                         }
-                        .buttonStyle(.link)
-                        .font(.caption)
                     }
                     .padding(8)
                     .background(Color.green.opacity(0.1))
@@ -1113,6 +1155,18 @@ struct GitHubModelsConfigurationView: View {
                                         Text(deviceCode.userCode)
                                             .font(.headline.monospaced())
                                             .textSelection(.enabled)
+                                        Button {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(deviceCode.userCode, forType: .string)
+                                        } label: {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.caption)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Copy code to clipboard")
+                                        Text("(copied)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
                                     }
                                     
                                     Link("Open GitHub", destination: URL(string: "\(deviceCode.verificationUri)?user_code=\(deviceCode.userCode)")!)
@@ -1509,6 +1563,23 @@ struct GitHubModelsConfigurationView: View {
         }
 
         validationStatus = .notChecked
+    }
+    
+    /// Formats a time interval into a human-readable string
+    private func formatTimeRemaining(_ interval: TimeInterval) -> String {
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        
+        if hours > 24 {
+            let days = hours / 24
+            return "\(days) day\(days == 1 ? "" : "s")"
+        } else if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else if minutes > 0 {
+            return "\(minutes) minute\(minutes == 1 ? "" : "s")"
+        } else {
+            return "less than a minute"
+        }
     }
 }
 
