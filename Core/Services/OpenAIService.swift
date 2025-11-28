@@ -1563,6 +1563,15 @@ extension OpenAIService {
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard providerRequiresAPIKey(provider) else { return true }
 
+        // For GitHub Models, check OAuth token first
+        if provider == .githubModels {
+            if GitHubOAuthService.shared.isAuthenticated,
+               let token = GitHubOAuthService.shared.getAccessToken(),
+               !token.isEmpty {
+                return true
+            }
+        }
+
         if let model,
            let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !modelKey.isEmpty
