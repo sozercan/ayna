@@ -97,6 +97,8 @@ A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildF
 A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
 A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */; };
 A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */; };
+		GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
+		GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -141,6 +143,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 		C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
 		C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
+		GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubOAuthService.swift; sourceTree = "<group>"; };
 		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
@@ -325,6 +328,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */,
 				B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */,
 				C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */,
+				GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */,
 				C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */,
 				C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */,
 				C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */,
@@ -651,6 +655,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */,
 				D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */,
 				C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */,
 				B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */,
 				C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */,
@@ -721,6 +726,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				D0A1B2CC13064F88B81B4CA3 /* OpenAIStreamParser.swift in Sources */,
 				D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */,
 				C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
+				GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */,
 				B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
 				C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,

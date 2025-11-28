@@ -11,6 +11,7 @@ import SwiftUI
 struct IOSSettingsView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject var conversationManager: ConversationManager
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
 
@@ -230,7 +231,9 @@ struct IOSSystemPromptSettingsView: View {
 
 struct IOSModelEditView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.openURL) var openURL
     @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var githubOAuth = GitHubOAuthService.shared
 
     let isNew: Bool
     @State var modelName: String
@@ -245,11 +248,23 @@ struct IOSModelEditView: View {
         self.isNew = isNew
     }
 
+    /// Returns the effective API key - OAuth token if signed in, otherwise manual PAT
+    private var effectiveAPIKey: String {
+        if provider == .githubModels && githubOAuth.isAuthenticated,
+           let token = githubOAuth.getAccessToken()
+        {
+            return token
+        }
+        return apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var body: some View {
         Form {
             Section("Model Details") {
                 if isNew {
                     TextField("Model Name", text: $modelName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 } else {
                     Text(modelName)
                         .foregroundStyle(.secondary)
@@ -257,6 +272,7 @@ struct IOSModelEditView: View {
 
                 Picker("Provider", selection: $provider) {
                     Text("OpenAI").tag(AIProvider.openai)
+                    Text("GitHub Models").tag(AIProvider.githubModels)
                     Text("Apple Intelligence").tag(AIProvider.appleIntelligence)
                 }
             }
@@ -276,6 +292,154 @@ struct IOSModelEditView: View {
                         }
                     }
                 }
+            } else if provider == .githubModels {
+                // Show OAuth status if signed in
+                if githubOAuth.isAuthenticated {
+                    Section {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            if let user = githubOAuth.currentUser {
+                                Text("Signed in as @\(user.login)")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Signed in with GitHub")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Button("Sign Out", role: .destructive) {
+                            githubOAuth.signOut()
+                        }
+                    } header: {
+                        Text("Authentication")
+                    } footer: {
+                        Text("Using your GitHub account for authentication. No PAT needed.")
+                    }
+                } else {
+                    Section {
+                        Button {
+                            Task {
+                                do {
+                                    let response = try await githubOAuth.startDeviceFlow()
+                                    // Auto-open the verification URL with the code pre-filled
+                                    if let url = URL(string: "\(response.verificationUri)?user_code=\(response.userCode)") {
+                                        await UIApplication.shared.open(url)
+                                    }
+                                } catch {
+                                    // Error is already handled by GitHubOAuthService
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "person.badge.key.fill")
+                                Text("Sign in with GitHub")
+                            }
+                        }
+                        .disabled(githubOAuth.isAuthenticating)
+                        
+                        if githubOAuth.isAuthenticating {
+                            if let deviceCode = githubOAuth.deviceCode {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        ProgressView()
+                                        Text("Waiting for authorization...")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    HStack {
+                                        Text("Code:")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text(deviceCode.userCode)
+                                            .font(.headline.monospaced())
+                                            .textSelection(.enabled)
+                                    }
+                                    
+                                    Link("Open GitHub", destination: URL(string: "\(deviceCode.verificationUri)?user_code=\(deviceCode.userCode)")!)
+                                        .font(.caption)
+                                    
+                                    Button("Cancel", role: .destructive) {
+                                        githubOAuth.cancelAuthentication()
+                                    }
+                                }
+                            } else {
+                                HStack {
+                                    ProgressView()
+                                    Text("Starting authentication...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        
+                        if let error = githubOAuth.authError {
+                            Text(error).foregroundStyle(.red).font(.caption)
+                        }
+                    } header: {
+                        Text("Sign In")
+                    }
+                    
+                    Section {
+                        SecureField("Or Enter Personal Access Token", text: $apiKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Alternative: PAT")
+                    } footer: {
+                        Text("Create a PAT with 'models:read' scope if you prefer not to sign in.")
+                    }
+                }
+
+                Section {
+                    if githubOAuth.isLoadingModels {
+                        HStack {
+                            ProgressView()
+                            Text("Loading models...")
+                        }
+                    } else if !githubOAuth.availableModels.isEmpty {
+                        Picker("Select Model", selection: $modelName) {
+                            Text("Select...").tag("")
+                            ForEach(githubOAuth.availableModels) { model in
+                                Text(model.displayName).tag(model.id)
+                            }
+                        }
+                        Text("\(githubOAuth.availableModels.count) models available")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let error = githubOAuth.modelsError {
+                        TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Retry") {
+                            Task { await githubOAuth.fetchModels() }
+                        }
+                    } else {
+                        TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        if githubOAuth.isAuthenticated {
+                            Button("Load Available Models") {
+                                Task { await githubOAuth.fetchModels() }
+                            }
+                        } else {
+                            Text("Sign in to see available models")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Model Selection")
+                } footer: {
+                    Text("Select from available GitHub Models or enter model ID in format: publisher/model_name")
+                }
             }
         }
         .navigationTitle(isNew ? "Add Model" : "Edit Model")
@@ -293,7 +457,7 @@ struct IOSModelEditView: View {
                     saveModel()
                     dismiss()
                 }
-                .disabled(modelName.isEmpty)
+                .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated && apiKey.isEmpty))
             }
         }
         .onAppear {
@@ -359,11 +523,148 @@ struct IOSModelEditView: View {
                 openAIService.modelEndpoints[modelName] = endpoint
             }
             openAIService.modelEndpointTypes[modelName] = endpointType
+        } else if provider == .githubModels {
+            // Use OAuth if signed in, otherwise store PAT
+            if githubOAuth.isAuthenticated {
+                openAIService.modelUsesGitHubOAuth[modelName] = true
+                openAIService.modelAPIKeys.removeValue(forKey: modelName)
+            } else if !apiKey.isEmpty {
+                openAIService.modelAPIKeys[modelName] = apiKey
+                openAIService.modelUsesGitHubOAuth[modelName] = false
+            }
         }
 
         // If this is the first model, select it
         if openAIService.customModels.count == 1 {
             openAIService.selectedModel = modelName
+        }
+    }
+}
+
+// MARK: - iOS GitHub Account View
+
+struct IOSGitHubAccountView: View {
+    @ObservedObject private var githubOAuth = GitHubOAuthService.shared
+    @Environment(\.openURL) private var openURL
+    @State private var showingSignOutAlert = false
+
+    var body: some View {
+        if githubOAuth.isAuthenticated {
+            // Signed in state
+            HStack(spacing: 12) {
+                // Avatar
+                if let avatarUrl = githubOAuth.currentUser?.avatarUrl,
+                   let url = URL(string: avatarUrl)
+                {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    if let user = githubOAuth.currentUser {
+                        Text(user.name ?? user.login)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("@\(user.login)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Signed in")
+                            .font(.subheadline)
+                    }
+                }
+
+                Spacer()
+
+                Button("Sign Out", role: .destructive) {
+                    showingSignOutAlert = true
+                }
+                .buttonStyle(.borderless)
+            }
+            .alert("Sign Out", isPresented: $showingSignOutAlert) {
+                Button("Cancel", role: .cancel) {}
+                Button("Sign Out", role: .destructive) {
+                    githubOAuth.signOut()
+                }
+            } message: {
+                Text("Are you sure you want to sign out of GitHub?")
+            }
+        } else if githubOAuth.isAuthenticating {
+            // Authenticating state
+            VStack(alignment: .leading, spacing: 12) {
+                if let deviceCode = githubOAuth.deviceCode {
+                    HStack(spacing: 12) {
+                        ProgressView()
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Enter this code on GitHub:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Text(deviceCode.userCode)
+                                .font(.system(.title2, design: .monospaced))
+                                .fontWeight(.bold)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Button("Open GitHub") {
+                            if let url = URL(string: deviceCode.verificationUri) {
+                                openURL(url)
+                            }
+                        }
+
+                        Button("Cancel", role: .cancel) {
+                            githubOAuth.cancelAuthentication()
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Starting authentication...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } else {
+            // Signed out state
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    Task {
+                        do {
+                            _ = try await githubOAuth.startDeviceFlow()
+                        } catch {
+                            // Error is handled in the service
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "person.badge.key.fill")
+                        Text("Sign in with GitHub")
+                    }
+                }
+
+                if let error = githubOAuth.authError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
         }
     }
 }

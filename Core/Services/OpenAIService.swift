@@ -14,6 +14,7 @@ import os
 
 enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
+    case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
     case aikit = "AIKit"
 
@@ -121,6 +122,14 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    /// Tracks which models use GitHub OAuth instead of a stored PAT
+    @Published var modelUsesGitHubOAuth: [String: Bool] {
+        didSet {
+            let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }
+            AppPreferences.storage.set(dict, forKey: "modelUsesGitHubOAuth")
+        }
+    }
+
     // Image generation settings
     @Published var imageSize: String {
         didSet {
@@ -206,6 +215,13 @@ class OpenAIService: ObservableObject {
 
         // Load per-model API keys
         modelAPIKeys = OpenAIService.loadModelAPIKeys()
+
+        // Load GitHub OAuth flags for models
+        if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
+            modelUsesGitHubOAuth = savedOAuthFlags.mapValues { $0.boolValue }
+        } else {
+            modelUsesGitHubOAuth = [:]
+        }
 
         // Load selected model, ensure it exists in custom models
         let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
@@ -347,8 +363,47 @@ class OpenAIService: ObservableObject {
     }
 
     // Get API key for a specific model, falling back to global key if not set
+    // For GitHub Models with OAuth, returns the OAuth token
     func getAPIKey(for model: String?) -> String {
         guard let model else { return apiKey }
+
+        // Check if this model uses GitHub OAuth
+        let usesOAuth = modelUsesGitHubOAuth[model] == true
+        let isGitHubModel = modelProviders[model] == .githubModels
+        
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .debug,
+            message: "🔑 Getting API key for model",
+            metadata: [
+                "model": model,
+                "isGitHubModel": "\(isGitHubModel)",
+                "usesOAuth": "\(usesOAuth)",
+                "isAuthenticated": "\(GitHubOAuthService.shared.isAuthenticated)"
+            ]
+        )
+        
+        // For GitHub Models, always try OAuth token first if authenticated
+        if isGitHubModel {
+            if GitHubOAuthService.shared.isAuthenticated,
+               let token = GitHubOAuthService.shared.getAccessToken(),
+               !token.isEmpty {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "🔑 Using GitHub OAuth token",
+                    metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
+                )
+                return token
+            } else {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "⚠️ GitHub OAuth not available, using stored API key"
+                )
+            }
+        }
+
         return modelAPIKeys[model] ?? apiKey
     }
 
@@ -531,9 +586,13 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        // Check if this model should use the responses API
+        // Check if this model should use the responses API (not supported for GitHub Models)
         let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
         if endpointType == .responses {
+            if effectiveProvider == .githubModels {
+                onError(OpenAIError.apiError("GitHub Models does not support the Responses API endpoint"))
+                return
+            }
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
@@ -554,7 +613,8 @@ class OpenAIService: ObservableObject {
         }
 
         let modelAPIKey = getAPIKey(for: requestModel)
-        let needsAuth = effectiveProvider == .openai
+        let needsAuth = effectiveProvider == .openai || effectiveProvider == .githubModels
+        let isGitHubModels = effectiveProvider == .githubModels
 
         guard
             let request = OpenAIRequestBuilder.createChatCompletionsRequest(
@@ -564,7 +624,8 @@ class OpenAIService: ObservableObject {
                 stream: stream,
                 tools: tools,
                 apiKey: needsAuth ? modelAPIKey : "",
-                isAzure: usesAzureEndpoint
+                isAzure: usesAzureEndpoint,
+                isGitHubModels: isGitHubModels
             )
         else {
             onError(OpenAIError.invalidRequest)
@@ -899,6 +960,34 @@ class OpenAIService: ObservableObject {
         return "HTTP \(statusCode)"
     }
 
+    /// Extracts error message from API response JSON
+    private nonisolated func extractAPIErrorMessage(from data: Data, statusCode: Int) -> String {
+        // Try to parse as JSON error response
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // OpenAI-style error: {"error": {"message": "..."}}
+            if let error = json["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                return message
+            }
+            // Simple message field: {"message": "..."}
+            if let message = json["message"] as? String {
+                return message
+            }
+            // GitHub Models style: {"error": "...", "error_description": "..."}
+            if let errorDesc = json["error_description"] as? String {
+                return errorDesc
+            }
+            if let error = json["error"] as? String {
+                return error
+            }
+        }
+        // Fall back to raw text if not JSON
+        if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            return String(text.prefix(200))
+        }
+        return "HTTP \(statusCode)"
+    }
+
     private func streamResponse(
         request: URLRequest,
         callbacks: StreamCallbacks,
@@ -923,12 +1012,40 @@ class OpenAIService: ObservableObject {
                     }
 
                     guard httpResponse.statusCode == 200 else {
-                        let errorMessage = await MainActor.run {
-                            self.getHTTPErrorMessage(
-                                statusCode: httpResponse.statusCode,
-                                requestURL: request.url
-                            )
+                        // Read the error response body for better error messages
+                        var errorData = Data()
+                        do {
+                            for try await byte in bytes {
+                                errorData.append(byte)
+                                // Limit error body size to prevent memory issues
+                                if errorData.count > 4096 { break }
+                            }
+                        } catch {
+                            // Ignore errors reading error body
                         }
+
+                        let errorMessage: String
+                        if !errorData.isEmpty {
+                            errorMessage = self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
+                        } else {
+                            errorMessage = await MainActor.run {
+                                self.getHTTPErrorMessage(
+                                    statusCode: httpResponse.statusCode,
+                                    requestURL: request.url
+                                )
+                            }
+                        }
+
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .error,
+                            message: "❌ API error response",
+                            metadata: [
+                                "statusCode": "\(httpResponse.statusCode)",
+                                "error": errorMessage,
+                                "url": request.url?.absoluteString ?? "unknown"
+                            ]
+                        )
                         throw OpenAIError.apiError(errorMessage)
                     }
 
@@ -1432,7 +1549,7 @@ extension OpenAIService {
         switch provider {
         case .aikit, .appleIntelligence:
             false
-        case .openai:
+        case .openai, .githubModels:
             true
         }
     }

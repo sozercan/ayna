@@ -25,6 +25,11 @@ struct AynaIOSApp: App {
             IOSContentView()
                 .environmentObject(conversationManager)
                 .environmentObject(openAIService)
+                .onOpenURL { url in
+                    Task {
+                        await GitHubOAuthService.shared.handleCallbackURL(url)
+                    }
+                }
         }
     }
 }
