@@ -318,17 +318,7 @@ struct IOSModelEditView: View {
                 } else {
                     Section {
                         Button {
-                            Task {
-                                do {
-                                    let response = try await githubOAuth.startDeviceFlow()
-                                    // Auto-open the verification URL with the code pre-filled
-                                    if let url = URL(string: "\(response.verificationUri)?user_code=\(response.userCode)") {
-                                        await UIApplication.shared.open(url)
-                                    }
-                                } catch {
-                                    // Error is already handled by GitHubOAuthService
-                                }
-                            }
+                            githubOAuth.startWebFlow()
                         } label: {
                             HStack {
                                 Image(systemName: "person.badge.key.fill")
@@ -338,47 +328,16 @@ struct IOSModelEditView: View {
                         .disabled(githubOAuth.isAuthenticating)
                         
                         if githubOAuth.isAuthenticating {
-                            if let deviceCode = githubOAuth.deviceCode {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        ProgressView()
-                                        Text("Waiting for authorization...")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    HStack {
-                                        Text("Code:")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Text(deviceCode.userCode)
-                                            .font(.headline.monospaced())
-                                            .textSelection(.enabled)
-                                        Button {
-                                            UIPasteboard.general.string = deviceCode.userCode
-                                        } label: {
-                                            Image(systemName: "doc.on.doc")
-                                                .font(.caption)
-                                        }
-                                        Text("(copied)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    Link("Open GitHub", destination: URL(string: "\(deviceCode.verificationUri)?user_code=\(deviceCode.userCode)")!)
-                                        .font(.caption)
-                                    
-                                    Button("Cancel", role: .destructive) {
-                                        githubOAuth.cancelAuthentication()
-                                    }
+                            HStack {
+                                ProgressView()
+                                Text("Completing sign in...")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Cancel", role: .destructive) {
+                                    githubOAuth.cancelAuthentication()
                                 }
-                            } else {
-                                HStack {
-                                    ProgressView()
-                                    Text("Starting authentication...")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                                .font(.caption)
                             }
                         }
                         
@@ -613,67 +572,22 @@ struct IOSGitHubAccountView: View {
             }
         } else if githubOAuth.isAuthenticating {
             // Authenticating state
-            VStack(alignment: .leading, spacing: 12) {
-                if let deviceCode = githubOAuth.deviceCode {
-                    HStack(spacing: 12) {
-                        ProgressView()
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 4) {
-                                Text("Enter this code on GitHub:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text("(copied)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            HStack(spacing: 8) {
-                                Text(deviceCode.userCode)
-                                    .font(.system(.title2, design: .monospaced))
-                                    .fontWeight(.bold)
-                                Button {
-                                    UIPasteboard.general.string = deviceCode.userCode
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.body)
-                                }
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 12) {
-                        Button("Open GitHub") {
-                            if let url = URL(string: deviceCode.verificationUri) {
-                                openURL(url)
-                            }
-                        }
-
-                        Button("Cancel", role: .cancel) {
-                            githubOAuth.cancelAuthentication()
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                } else {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Starting authentication...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Signing in...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    githubOAuth.cancelAuthentication()
                 }
+                .foregroundStyle(.secondary)
             }
         } else {
             // Signed out state
             VStack(alignment: .leading, spacing: 8) {
                 Button {
-                    Task {
-                        do {
-                            _ = try await githubOAuth.startDeviceFlow()
-                        } catch {
-                            // Error is handled in the service
-                        }
-                    }
+                    githubOAuth.startWebFlow()
                 } label: {
                     HStack {
                         Image(systemName: "person.badge.key.fill")

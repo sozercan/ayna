@@ -7,6 +7,7 @@
 
 import AuthenticationServices
 import Combine
+import CryptoKit
 import Foundation
 import OSLog
 import SwiftUI
@@ -104,6 +105,8 @@ enum GitHubAuthError: LocalizedError {
     case refreshTokenExpired
     case invalidResponse
     case notAuthenticated
+    case invalidState
+    case tokenExchangeFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -117,6 +120,10 @@ enum GitHubAuthError: LocalizedError {
             return "Invalid response from GitHub."
         case .notAuthenticated:
             return "Not authenticated. Please sign in."
+        case .invalidState:
+            return "Invalid state parameter. Authentication may have been tampered with."
+        case .tokenExchangeFailed(let reason):
+            return "Failed to exchange code for token: \(reason)"
         }
     }
 }
@@ -127,6 +134,8 @@ class GitHubOAuthService: NSObject, ObservableObject {
     
     // Configuration
     private let clientId = "Iv23liyO8rlOYBXFGZXW"
+    private let tokenExchangeProxyURL = "https://ayna.sozercan.workers.dev/auth/github/exchange"
+    private let tokenRefreshProxyURL = "https://ayna.sozercan.workers.dev/auth/github/refresh"
     
     // Refresh deduplication - prevents multiple concurrent refresh attempts
     private var refreshTask: Task<String, Error>?
@@ -152,12 +161,10 @@ class GitHubOAuthService: NSObject, ObservableObject {
     /// Retry-After date from a rate limit error (nil if not rate-limited)
     @Published var retryAfterDate: Date?
     
-    // Device Flow State (Legacy/Fallback)
-    @Published var deviceCode: DeviceCodeResponse?
-    private var pollingTimer: Timer?
-    private var pollingStartTime: Date?
-    /// Maximum duration for device flow polling (GitHub device codes expire after 15 minutes)
-    private let maxPollingDuration: TimeInterval = 900
+    // Web Auth Flow State (PKCE)
+    private var webAuthSession: ASWebAuthenticationSession?
+    private var codeVerifier: String?
+    private var authState: String?
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding?
     
     // Keychain Keys
@@ -320,17 +327,18 @@ class GitHubOAuthService: NSObject, ObservableObject {
         await MainActor.run { isRefreshing = true }
         defer { Task { @MainActor in isRefreshing = false } }
         
-        DiagnosticsLogger.log(.app, level: .info, message: "🔄 Refreshing GitHub access token...")
+        DiagnosticsLogger.log(.app, level: .info, message: "🔄 Refreshing GitHub access token via proxy...")
         
-        let url = URL(string: "https://github.com/login/oauth/access_token")!
+        let url = URL(string: tokenRefreshProxyURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Device Flow doesn't require client_secret for refresh
-        let body = "client_id=\(clientId)&grant_type=refresh_token&refresh_token=\(refreshToken)"
-        request.httpBody = body.data(using: .utf8)
+        let body: [String: String] = [
+            "refresh_token": refreshToken
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -466,20 +474,37 @@ class GitHubOAuthService: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Authorization Code Flow (Web)
+    // MARK: - Authorization Code Flow (Web) with PKCE
     
     func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
         self.presentationContextProvider = contextProvider
         isAuthenticating = true
         authError = nil
         
-        // 1. Construct URL
-        // https://github.com/login/oauth/authorize
+        // 1. Generate PKCE code verifier and challenge
+        let verifier = generateCodeVerifier()
+        self.codeVerifier = verifier
+        let challenge = generateCodeChallenge(verifier: verifier)
+        
+        // 2. Generate state for CSRF protection
+        let state = UUID().uuidString
+        self.authState = state
+        
+        DiagnosticsLogger.log(
+            .app,
+            level: .debug,
+            message: "🔐 Starting GitHub Web Flow with PKCE",
+            metadata: ["challengeLength": "\(challenge.count)", "stateLength": "\(state.count)"]
+        )
+        
+        // 3. Construct authorization URL
         var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
         components.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "scope", value: scope),
-            URLQueryItem(name: "state", value: UUID().uuidString)
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         
         guard let url = components.url else {
@@ -488,13 +513,50 @@ class GitHubOAuthService: NSObject, ObservableObject {
             return
         }
         
-        // 2. Start Session
+        // 4. Create and start ASWebAuthenticationSession
         let session = createWebAuthSession(url: url, callbackScheme: callbackScheme) { [weak self] callbackURL, error in
             self?.handleWebAuthResult(callbackURL: callbackURL, error: error)
         }
         
+        // Store session to prevent deallocation
+        self.webAuthSession = session
         session.presentationContextProvider = contextProvider
-        session.start()
+        session.prefersEphemeralWebBrowserSession = false // Allow SSO
+        
+        if !session.start() {
+            authError = "Failed to start authentication session"
+            isAuthenticating = false
+            clearPKCEState()
+        }
+    }
+    
+    // MARK: - PKCE Helpers
+    
+    /// Generates a cryptographically random code verifier (43-128 chars, base64url)
+    private func generateCodeVerifier() -> String {
+        var buffer = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, buffer.count, &buffer)
+        return Data(buffer).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    
+    /// Generates code challenge from verifier using SHA256
+    private func generateCodeChallenge(verifier: String) -> String {
+        guard let data = verifier.data(using: .utf8) else { return "" }
+        let hash = SHA256.hash(data: data)
+        return Data(hash).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    
+    /// Clears PKCE state after auth completes or is cancelled
+    private func clearPKCEState() {
+        codeVerifier = nil
+        authState = nil
+        webAuthSession = nil
     }
     
     private func handleWebAuthResult(callbackURL: URL?, error: Error?) {
@@ -502,16 +564,19 @@ class GitHubOAuthService: NSObject, ObservableObject {
             // ASWebAuthenticationSessionError.canceledLogin is common
             if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
                 self.isAuthenticating = false
+                clearPKCEState()
                 return
             }
             self.authError = error.localizedDescription
             self.isAuthenticating = false
+            clearPKCEState()
             return
         }
         
         guard let callbackURL = callbackURL else {
             self.authError = "No callback URL"
             self.isAuthenticating = false
+            clearPKCEState()
             return
         }
         
@@ -533,18 +598,39 @@ class GitHubOAuthService: NSObject, ObservableObject {
     }
     
     func handleCallbackURL(_ url: URL) async {
-        // Parse code from URL: ayna://?code=...
+        // Parse code and state from URL: ayna://oauth/callback?code=...&state=...
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value
         else {
+            authError = "No authorization code in callback"
+            isAuthenticating = false
+            clearPKCEState()
+            return
+        }
+        
+        // Validate state parameter for CSRF protection
+        let returnedState = components.queryItems?.first(where: { $0.name == "state" })?.value
+        guard returnedState == authState else {
+            DiagnosticsLogger.log(
+                .app,
+                level: .error,
+                message: "❌ State mismatch in OAuth callback",
+                metadata: ["expected": authState ?? "nil", "received": returnedState ?? "nil"]
+            )
+            authError = GitHubAuthError.invalidState.localizedDescription
+            isAuthenticating = false
+            clearPKCEState()
             return
         }
         
         isAuthenticating = true
         
         do {
-            // Exchange code for token (returns GitHubTokenInfo now)
+            // Exchange code for token via proxy (includes code_verifier for PKCE)
             let tokenInfo = try await exchangeCodeForToken(code: code)
+            
+            // Clear PKCE state after successful exchange
+            clearPKCEState()
             
             // Save token info
             try saveTokenInfo(tokenInfo)
@@ -566,21 +652,26 @@ class GitHubOAuthService: NSObject, ObservableObject {
         } catch {
             authError = error.localizedDescription
             isAuthenticating = false
+            clearPKCEState()
             DiagnosticsLogger.log(.app, level: .error, message: "❌ GitHub Web Auth Failed", metadata: ["error": error.localizedDescription])
         }
     }
     
     private func exchangeCodeForToken(code: String) async throws -> GitHubTokenInfo {
-        let url = URL(string: "https://github.com/login/oauth/access_token")!
+        guard let verifier = codeVerifier else {
+            throw GitHubAuthError.tokenExchangeFailed("Missing code verifier")
+        }
+        
+        let url = URL(string: tokenExchangeProxyURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // GitHub OAuth can exchange code with just client_id for public native apps
+        // Send code and code_verifier to proxy (proxy adds client_id and client_secret)
         let body: [String: String] = [
-            "client_id": clientId,
-            "code": code
+            "code": code,
+            "code_verifier": verifier
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -600,253 +691,49 @@ class GitHubOAuthService: NSObject, ObservableObject {
         )
         
         // Parse response
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let error = json["error"] as? String {
-                let errorDescription = json["error_description"] as? String ?? error
-                throw NSError(domain: "GitHubOAuth", code: -1, userInfo: [NSLocalizedDescriptionKey: errorDescription])
-            }
-            
-            if let accessToken = json["access_token"] as? String, !accessToken.isEmpty {
-                // Parse optional expiration fields
-                let expiresIn = json["expires_in"] as? Int
-                let refreshToken = json["refresh_token"] as? String
-                let scope = json["scope"] as? String
-                let expiresAt = expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) }
-                
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .info,
-                    message: "✅ GitHub token exchange successful",
-                    metadata: [
-                        "tokenPrefix": String(accessToken.prefix(10)) + "...",
-                        "hasRefreshToken": "\(refreshToken != nil)",
-                        "expiresIn": expiresIn.map { "\($0)s" } ?? "never"
-                    ]
-                )
-                
-                return GitHubTokenInfo(
-                    accessToken: accessToken,
-                    refreshToken: refreshToken,
-                    expiresAt: expiresAt,
-                    scope: scope
-                )
-            }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw GitHubAuthError.invalidResponse
         }
         
-        throw NSError(domain: "GitHubOAuth", code: -2, userInfo: [NSLocalizedDescriptionKey: "No access token in response"])
-    }
-    
-    // MARK: - Device Flow (Robust)
-    
-    func startDeviceFlow() async throws -> DeviceCodeResponse {
-        isAuthenticating = true
-        authError = nil
+        if let error = json["error"] as? String {
+            let errorDescription = json["error_description"] as? String ?? error
+            throw GitHubAuthError.tokenExchangeFailed(errorDescription)
+        }
         
-        DiagnosticsLogger.log(.app, level: .info, message: "🔐 Starting GitHub Device Flow")
+        guard let accessToken = json["access_token"] as? String, !accessToken.isEmpty else {
+            throw GitHubAuthError.tokenExchangeFailed("No access token in response")
+        }
         
-        // 1. Request Device Code
-        let url = URL(string: "https://github.com/login/device/code")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body = [
-            "client_id": clientId,
-            "scope": scope
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        let responseString = String(data: data, encoding: .utf8) ?? "nil"
-        DiagnosticsLogger.log(
-            .app,
-            level: .debug,
-            message: "📦 Device code response",
-            metadata: [
-                "statusCode": "\((response as? HTTPURLResponse)?.statusCode ?? 0)",
-                "responsePreview": String(responseString.prefix(200))
-            ]
-        )
-        
-        let deviceResponse = try JSONDecoder().decode(DeviceCodeResponse.self, from: data)
-        
-        self.deviceCode = deviceResponse
-        
-        // Auto-copy user code to clipboard for convenience
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(deviceResponse.userCode, forType: .string)
-        #elseif os(iOS)
-        UIPasteboard.general.string = deviceResponse.userCode
-        #endif
+        // Parse optional expiration fields
+        let expiresIn = json["expires_in"] as? Int
+        let refreshToken = json["refresh_token"] as? String
+        let scope = json["scope"] as? String
+        let expiresAt = expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) }
         
         DiagnosticsLogger.log(
             .app,
             level: .info,
-            message: "✅ Got device code (copied to clipboard)",
+            message: "✅ GitHub token exchange successful",
             metadata: [
-                "userCode": deviceResponse.userCode,
-                "verificationUri": deviceResponse.verificationUri
+                "tokenPrefix": String(accessToken.prefix(10)) + "...",
+                "hasRefreshToken": "\(refreshToken != nil)",
+                "expiresIn": expiresIn.map { "\($0)s" } ?? "never"
             ]
         )
         
-        // 2. Start Polling
-        startPolling(interval: deviceResponse.interval)
-        
-        return deviceResponse
-    }
-    
-    private func startPolling(interval: Int) {
-        pollingTimer?.invalidate()
-        
-        // Track when polling started (only set on first call, not on interval changes)
-        if pollingStartTime == nil {
-            pollingStartTime = Date()
-        }
-        
-        DiagnosticsLogger.log(.app, level: .debug, message: "🔄 Starting polling", metadata: ["interval": "\(interval)"])
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(interval), repeats: true) { [weak self] timer in
-            guard let self else {
-                timer.invalidate()
-                return
-            }
-            
-            // Check for polling timeout
-            if let start = self.pollingStartTime,
-               Date().timeIntervalSince(start) > self.maxPollingDuration {
-                DiagnosticsLogger.log(.app, level: .default, message: "⏰ Device flow polling timed out after 15 minutes")
-                Task { @MainActor in
-                    self.stopPolling()
-                    self.authError = "Authentication timed out. Please try again."
-                    self.isAuthenticating = false
-                    self.deviceCode = nil
-                }
-                return
-            }
-            
-            Task { @MainActor in
-                await self.pollForToken()
-            }
-        }
-    }
-    
-    private func pollForToken() async {
-        guard let deviceCode = deviceCode?.deviceCode else {
-            DiagnosticsLogger.log(.app, level: .error, message: "❌ No device code for polling")
-            return
-        }
-        
-        DiagnosticsLogger.log(.app, level: .debug, message: "🔄 Polling for token...")
-        
-        let url = URL(string: "https://github.com/login/oauth/access_token")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body = [
-            "client_id": clientId,
-            "device_code": deviceCode,
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let responseString = String(data: data, encoding: .utf8) ?? ""
-            DiagnosticsLogger.log(
-                .app,
-                level: .debug,
-                message: "📦 Poll response",
-                metadata: ["statusCode": "\(statusCode)", "response": String(responseString.prefix(200))]
-            )
-            
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                if let error = json["error"] as? String {
-                    if error == "authorization_pending" {
-                        // Continue polling - user hasn't authorized yet
-                        DiagnosticsLogger.log(.app, level: .debug, message: "⏳ Authorization pending...")
-                        return
-                    } else if error == "slow_down" {
-                        // GitHub is asking us to slow down - restart polling with new interval
-                        let newInterval = json["interval"] as? Int ?? 10
-                        DiagnosticsLogger.log(.app, level: .default, message: "⚠️ Slow down requested, increasing interval", metadata: ["newInterval": "\(newInterval)"])
-                        startPolling(interval: newInterval)
-                        return
-                    } else {
-                        // Fatal error
-                        DiagnosticsLogger.log(.app, level: .error, message: "❌ Polling error: \(error)")
-                        stopPolling()
-                        await MainActor.run {
-                            self.authError = error
-                            self.isAuthenticating = false
-                        }
-                        return
-                    }
-                }
-                
-                if let accessToken = json["access_token"] as? String {
-                    stopPolling()
-                    
-                    // Parse optional expiration fields (present if token expiration is enabled on GitHub App)
-                    let expiresIn = json["expires_in"] as? Int
-                    let refreshToken = json["refresh_token"] as? String
-                    let scope = json["scope"] as? String
-                    let expiresAt = expiresIn.map { Date().addingTimeInterval(TimeInterval($0)) }
-                    
-                    let tokenInfo = GitHubTokenInfo(
-                        accessToken: accessToken,
-                        refreshToken: refreshToken,
-                        expiresAt: expiresAt,
-                        scope: scope
-                    )
-                    
-                    DiagnosticsLogger.log(
-                        .app,
-                        level: .info,
-                        message: "✅ GitHub Device Flow successful",
-                        metadata: [
-                            "tokenPrefix": String(accessToken.prefix(10)) + "...",
-                            "hasRefreshToken": "\(refreshToken != nil)",
-                            "expiresIn": expiresIn.map { "\($0)s" } ?? "never"
-                        ]
-                    )
-                    
-                    try saveTokenInfo(tokenInfo)
-                    await fetchUserInfo(token: accessToken)
-                    await MainActor.run {
-                        self.isAuthenticated = true
-                        self.isAuthenticating = false
-                        self.deviceCode = nil
-                        self.tokenExpiresAt = expiresAt
-                    }
-                    // Fetch models in the background after authentication
-                    Task {
-                        await self.fetchModels()
-                    }
-                }
-            }
-        } catch {
-            DiagnosticsLogger.log(.app, level: .error, message: "❌ Polling network error: \(error.localizedDescription)")
-        }
+        return GitHubTokenInfo(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            expiresAt: expiresAt,
+            scope: scope
+        )
     }
     
     func cancelAuthentication() {
-        stopPolling()
-        pollingStartTime = nil
+        webAuthSession?.cancel()
+        clearPKCEState()
         isAuthenticating = false
-        deviceCode = nil
         authError = nil
-    }
-    
-    private func stopPolling() {
-        pollingTimer?.invalidate()
-        pollingTimer = nil
-        pollingStartTime = nil
     }
     
     // MARK: - User Info
@@ -987,22 +874,6 @@ class GitHubOAuthService: NSObject, ObservableObject {
 }
 
 // MARK: - Models
-
-struct DeviceCodeResponse: Codable {
-    let deviceCode: String
-    let userCode: String
-    let verificationUri: String
-    let expiresIn: Int
-    let interval: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case deviceCode = "device_code"
-        case userCode = "user_code"
-        case verificationUri = "verification_uri"
-        case expiresIn = "expires_in"
-        case interval
-    }
-}
 
 struct GitHubUser: Codable {
     let login: String

@@ -1075,39 +1075,6 @@ struct GitHubModelsConfigurationView: View {
                             .buttonStyle(.link)
                             .font(.caption)
                         }
-                        
-                        // Token expiration indicator
-                        if let expiresAt = githubOAuth.tokenExpiresAt {
-                            let remaining = expiresAt.timeIntervalSinceNow
-                            if remaining > 0 {
-                                HStack(spacing: 4) {
-                                    if remaining < 3600 { // < 1 hour
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundStyle(.orange)
-                                            .font(.caption2)
-                                        Text("Token expires in \(formatTimeRemaining(remaining))")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                    } else {
-                                        Image(systemName: "clock")
-                                            .foregroundStyle(.secondary)
-                                            .font(.caption2)
-                                        Text("Token expires in \(formatTimeRemaining(remaining))")
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                }
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.red)
-                                        .font(.caption2)
-                                    Text("Token expired - will refresh automatically")
-                                        .font(.caption2)
-                                        .foregroundStyle(.red)
-                                }
-                            }
-                        }
                     }
                     .padding(8)
                     .background(Color.green.opacity(0.1))
@@ -1116,17 +1083,7 @@ struct GitHubModelsConfigurationView: View {
                     // Sign In Button
                     VStack(alignment: .leading, spacing: 8) {
                         Button {
-                            Task {
-                                do {
-                                    let response = try await githubOAuth.startDeviceFlow()
-                                    // Auto-open the verification URL with the code pre-filled
-                                    if let url = URL(string: "\(response.verificationUri)?user_code=\(response.userCode)") {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                } catch {
-                                    // Error is already handled by GitHubOAuthService
-                                }
-                            }
+                            githubOAuth.startWebFlow()
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "person.badge.key.fill")
@@ -1138,57 +1095,31 @@ struct GitHubModelsConfigurationView: View {
                         .disabled(githubOAuth.isAuthenticating)
                         
                         if githubOAuth.isAuthenticating {
-                            if let deviceCode = githubOAuth.deviceCode {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        ProgressView()
-                                            .scaleEffect(0.8)
-                                        Text("Waiting for authorization...")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    HStack {
-                                        Text("Code:")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Text(deviceCode.userCode)
-                                            .font(.headline.monospaced())
-                                            .textSelection(.enabled)
-                                        Button {
-                                            NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(deviceCode.userCode, forType: .string)
-                                        } label: {
-                                            Image(systemName: "doc.on.doc")
-                                                .font(.caption)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("Copy code to clipboard")
-                                        Text("(copied)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    Link("Open GitHub", destination: URL(string: "\(deviceCode.verificationUri)?user_code=\(deviceCode.userCode)")!)
-                                        .font(.caption)
-                                    
-                                    Button("Cancel") {
-                                        githubOAuth.cancelAuthentication()
-                                    }
-                                    .buttonStyle(.link)
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Completing sign in...")
                                     .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Cancel") {
+                                    githubOAuth.cancelAuthentication()
                                 }
-                                .padding(8)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(6)
-                            } else {
-                                HStack {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                    Text("Starting authentication...")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                                .buttonStyle(.link)
+                                .font(.caption)
+                            }
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        
+                        if let error = githubOAuth.authError {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
                             }
                         }
                         
@@ -1563,23 +1494,6 @@ struct GitHubModelsConfigurationView: View {
         }
 
         validationStatus = .notChecked
-    }
-    
-    /// Formats a time interval into a human-readable string
-    private func formatTimeRemaining(_ interval: TimeInterval) -> String {
-        let hours = Int(interval) / 3600
-        let minutes = (Int(interval) % 3600) / 60
-        
-        if hours > 24 {
-            let days = hours / 24
-            return "\(days) day\(days == 1 ? "" : "s")"
-        } else if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else if minutes > 0 {
-            return "\(minutes) minute\(minutes == 1 ? "" : "s")"
-        } else {
-            return "less than a minute"
-        }
     }
 }
 
