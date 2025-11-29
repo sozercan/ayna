@@ -287,7 +287,7 @@ enum OpenAIRequestBuilder {
         if isAzure {
             request.setValue(apiKey, forHTTPHeaderField: "api-key")
         } else if isGitHubModels {
-            // GitHub Models uses Bearer token with GitHub PAT
+            // GitHub Models uses Bearer token with GitHub OAuth token
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")

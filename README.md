@@ -48,7 +48,7 @@ brew install --cask ayna
 2. Select your provider and add a model:
    - **OpenAI**: Use the default endpoint or a custom OpenAI-compatible endpoint.
    - **Azure OpenAI**: Use `https://<resource>.openai.azure.com` with your deployment name as the model.
-   - **GitHub Models**: Sign in with your GitHub account (OAuth) or use a Personal Access Token with `models:read` permission.
+   - **GitHub Models**: Sign in with your GitHub account (OAuth).
    - **Apple Intelligence / AIKit**: For on-device/local inference.
 3. Start chatting!
 

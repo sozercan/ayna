@@ -1020,12 +1020,12 @@ struct GitHubModelsConfigurationView: View {
 
     @State private var isValidating = false
 
-    /// Returns the effective API key - OAuth token if signed in, otherwise manual PAT
+    /// Returns the effective API key - OAuth token if signed in
     private var effectiveAPIKey: String {
         if githubOAuth.isAuthenticated, let token = githubOAuth.getAccessToken() {
             return token
         }
-        return tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ""
     }
 
     var body: some View {
@@ -1039,7 +1039,7 @@ struct GitHubModelsConfigurationView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle")
                         .foregroundStyle(.blue)
-                    Text("Access AI models through GitHub Models using your GitHub account or Personal Access Token")
+                    Text("Access AI models through GitHub Models using your GitHub account")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1121,56 +1121,6 @@ struct GitHubModelsConfigurationView: View {
                                     .font(.caption)
                                     .foregroundStyle(.red)
                             }
-                        }
-                        
-                        HStack {
-                            VStack { Divider() }
-                            Text("OR")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            VStack { Divider() }
-                        }
-                        .padding(.vertical, 4)
-                        
-                        // GitHub PAT (only show if not signed in)
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Personal Access Token")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("Optional")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.secondary.opacity(0.1))
-                                    .cornerRadius(4)
-                            }
-                            HStack(spacing: 8) {
-                                if showAPIKey {
-                                    TextField("ghp_...", text: $tempAPIKey)
-                                        .textFieldStyle(.roundedBorder)
-                                } else {
-                                    SecureField("ghp_...", text: $tempAPIKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                Button(action: {
-                                    showAPIKey.toggle()
-                                }) {
-                                    Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 32, height: 32)
-                                        .background(Color.secondary.opacity(0.1))
-                                        .cornerRadius(6)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            Text("Use a PAT if you prefer not to sign in.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -1366,7 +1316,7 @@ struct GitHubModelsConfigurationView: View {
         guard !apiKey.isEmpty else {
             await MainActor.run {
                 isValidating = false
-                validationStatus = .invalid("GitHub authentication is required. Sign in with GitHub or provide a PAT.")
+                validationStatus = .invalid("GitHub authentication is required. Sign in with GitHub.")
             }
             return
         }
@@ -1413,7 +1363,7 @@ struct GitHubModelsConfigurationView: View {
                 case 200:
                     validationStatus = .valid
                 case 401, 403:
-                    validationStatus = .invalid("Invalid GitHub PAT or insufficient permissions. Ensure token has 'models:read' scope.")
+                    validationStatus = .invalid("Invalid GitHub authentication or insufficient permissions. Ensure token has 'models:read' scope.")
                 case 404:
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
@@ -1452,13 +1402,6 @@ struct GitHubModelsConfigurationView: View {
         openAIService.customModels.append(modelName)
         openAIService.modelProviders[modelName] = .githubModels
 
-        // Save per-model API key only if not using OAuth (OAuth token is retrieved dynamically)
-        if !githubOAuth.isAuthenticated {
-            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[modelName] = apiKey
-            }
-        }
         // Mark that this model uses OAuth if signed in
         if githubOAuth.isAuthenticated {
             openAIService.modelUsesGitHubOAuth[modelName] = true
@@ -1478,20 +1421,9 @@ struct GitHubModelsConfigurationView: View {
 
         openAIService.modelProviders[modelName] = .githubModels
 
-        // Update per-model API key only if not using OAuth
-        if !githubOAuth.isAuthenticated {
-            let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[modelName] = apiKey
-            } else {
-                openAIService.modelAPIKeys.removeValue(forKey: modelName)
-            }
-            openAIService.modelUsesGitHubOAuth[modelName] = false
-        } else {
-            // Using OAuth, remove any stored PAT
-            openAIService.modelAPIKeys.removeValue(forKey: modelName)
-            openAIService.modelUsesGitHubOAuth[modelName] = true
-        }
+        // Using OAuth, remove any stored PAT
+        openAIService.modelAPIKeys.removeValue(forKey: modelName)
+        openAIService.modelUsesGitHubOAuth[modelName] = true
 
         validationStatus = .notChecked
     }

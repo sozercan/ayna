@@ -69,7 +69,9 @@ Decomposed into single-responsibility components:
 
 ### GitHub Models
 - **Cross-Platform**: Works on both macOS and iOS.
-- **Authentication**: Uses GitHub OAuth Device Flow (`GitHubOAuthService.swift`) or Personal Access Token with `models:read` permission.
+- **Authentication**: Uses GitHub OAuth Web Flow with PKCE (`GitHubOAuthService.swift`).
+  - **Token Exchange**: Proxied via Cloudflare Worker (`https://ayna.sozercan.workers.dev`) to secure `client_secret`.
+  - **Flow**: `ASWebAuthenticationSession` handles the browser interaction.
 - **API Endpoint**: `https://models.github.ai/inference/chat/completions`.
 - **Headers**: Requires `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`.
 - **Model Catalog**: Available models fetched from `https://models.github.ai/catalog/models`.

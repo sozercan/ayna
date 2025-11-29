@@ -122,7 +122,7 @@ class OpenAIService: ObservableObject {
         }
     }
 
-    /// Tracks which models use GitHub OAuth instead of a stored PAT
+    /// Tracks which models use GitHub OAuth
     @Published var modelUsesGitHubOAuth: [String: Bool] {
         didSet {
             let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }

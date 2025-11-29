@@ -248,14 +248,14 @@ struct IOSModelEditView: View {
         self.isNew = isNew
     }
 
-    /// Returns the effective API key - OAuth token if signed in, otherwise manual PAT
+    /// Returns the effective API key - OAuth token if signed in
     private var effectiveAPIKey: String {
         if provider == .githubModels && githubOAuth.isAuthenticated,
            let token = githubOAuth.getAccessToken()
         {
             return token
         }
-        return apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ""
     }
 
     var body: some View {
@@ -313,7 +313,7 @@ struct IOSModelEditView: View {
                     } header: {
                         Text("Authentication")
                     } footer: {
-                        Text("Using your GitHub account for authentication. No PAT needed.")
+                        Text("Using your GitHub account for authentication.")
                     }
                 } else {
                     Section {
@@ -346,16 +346,6 @@ struct IOSModelEditView: View {
                         }
                     } header: {
                         Text("Sign In")
-                    }
-                    
-                    Section {
-                        SecureField("Or Enter Personal Access Token", text: $apiKey)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    } header: {
-                        Text("Alternative: PAT")
-                    } footer: {
-                        Text("Create a PAT with 'models:read' scope if you prefer not to sign in.")
                     }
                 }
 
@@ -425,7 +415,7 @@ struct IOSModelEditView: View {
                     saveModel()
                     dismiss()
                 }
-                .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated && apiKey.isEmpty))
+                .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated))
             }
         }
         .onAppear {
@@ -492,13 +482,10 @@ struct IOSModelEditView: View {
             }
             openAIService.modelEndpointTypes[modelName] = endpointType
         } else if provider == .githubModels {
-            // Use OAuth if signed in, otherwise store PAT
+            // Use OAuth if signed in
             if githubOAuth.isAuthenticated {
                 openAIService.modelUsesGitHubOAuth[modelName] = true
                 openAIService.modelAPIKeys.removeValue(forKey: modelName)
-            } else if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[modelName] = apiKey
-                openAIService.modelUsesGitHubOAuth[modelName] = false
             }
         }
 
