@@ -406,6 +406,38 @@ class OpenAIService: ObservableObject {
 
         return modelAPIKeys[model] ?? apiKey
     }
+    
+    /// Async version of getAPIKey that ensures the token is valid before returning.
+    /// For GitHub Models with OAuth, this will refresh the token if it's expiring soon.
+    /// Use this for critical API requests where you can await.
+    func getValidAPIKey(for model: String?) async throws -> String {
+        guard let model else { return apiKey }
+        
+        let isGitHubModel = modelProviders[model] == .githubModels
+        
+        // For GitHub Models, use the async method that handles refresh deduplication
+        if isGitHubModel, GitHubOAuthService.shared.isAuthenticated {
+            do {
+                let token = try await GitHubOAuthService.shared.getValidAccessToken()
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "🔑 Using validated GitHub OAuth token",
+                    metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
+                )
+                return token
+            } catch {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "❌ Failed to get valid GitHub token: \(error.localizedDescription)"
+                )
+                // Fall back to stored API key
+            }
+        }
+        
+        return modelAPIKeys[model] ?? apiKey
+    }
 
     private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
         let effectiveProvider = provider ?? self.provider
@@ -525,6 +557,27 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    /// Checks if GitHub Models rate limit is currently blocking requests.
+    /// Returns an error message if rate-limited, nil if requests can proceed.
+    private func checkGitHubModelsRateLimit() -> String? {
+        let oauthService = GitHubOAuthService.shared
+        
+        // Check if we have an active retry-after from a previous 429/403
+        if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            let timeRemaining = formatter.localizedString(for: retryAfter, relativeTo: Date())
+            return "Rate limited. Please try again \(timeRemaining)."
+        }
+        
+        // Check if rate limit is exhausted
+        if let rateLimitInfo = oauthService.rateLimitInfo, rateLimitInfo.isExhausted {
+            return "Rate limit exhausted. Resets \(rateLimitInfo.formattedReset)."
+        }
+        
+        return nil
+    }
+
     func sendMessage(
         messages: [Message],
         model: String? = nil,
@@ -584,6 +637,14 @@ class OpenAIService: ObservableObject {
         } catch {
             onError(error)
             return
+        }
+
+        // Check GitHub Models rate limit before making request
+        if effectiveProvider == .githubModels {
+            if let rateLimitError = checkGitHubModelsRateLimit() {
+                onError(OpenAIError.apiError(rateLimitError))
+                return
+            }
         }
 
         // Check if this model should use the responses API (not supported for GitHub Models)

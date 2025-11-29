@@ -127,6 +127,9 @@ class GitHubOAuthService: NSObject, ObservableObject {
     
     // Configuration
     private let clientId = "Iv23liyO8rlOYBXFGZXW"
+    
+    // Refresh deduplication - prevents multiple concurrent refresh attempts
+    private var refreshTask: Task<String, Error>?
     private let callbackScheme = "ayna"
     // GitHub Models inference requires 'models:read' scope per docs:
     // https://docs.github.com/en/rest/models/inference
@@ -152,6 +155,9 @@ class GitHubOAuthService: NSObject, ObservableObject {
     // Device Flow State (Legacy/Fallback)
     @Published var deviceCode: DeviceCodeResponse?
     private var pollingTimer: Timer?
+    private var pollingStartTime: Date?
+    /// Maximum duration for device flow polling (GitHub device codes expire after 15 minutes)
+    private let maxPollingDuration: TimeInterval = 900
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding?
     
     // Keychain Keys
@@ -189,22 +195,19 @@ class GitHubOAuthService: NSObject, ObservableObject {
         )
         
         // Trigger background refresh if expiring soon and we have a refresh token
+        // We use getValidAccessToken() inside a Task to handle deduplication correctly
         if tokenInfo.isExpiringSoon, tokenInfo.refreshToken != nil {
             Task {
-                do {
-                    _ = try await refreshAccessToken()
-                    DiagnosticsLogger.log(.app, level: .info, message: "✅ Background token refresh succeeded")
-                } catch {
-                    DiagnosticsLogger.log(.app, level: .error, message: "❌ Background token refresh failed: \(error.localizedDescription)")
-                }
+                try? await getValidAccessToken()
             }
         }
         
         return tokenInfo.accessToken
     }
     
-    /// Gets a valid access token, refreshing if necessary
-    /// Use this for operations where you can await
+    /// Gets a valid access token, refreshing if necessary.
+    /// This method deduplicates concurrent refresh requests - multiple callers will share the same refresh operation.
+    /// Use this for operations where you can await (preferred over getAccessToken for critical requests).
     func getValidAccessToken() async throws -> String {
         guard let tokenInfo = loadTokenInfo() else {
             throw GitHubAuthError.notAuthenticated
@@ -221,8 +224,26 @@ class GitHubOAuthService: NSObject, ObservableObject {
             return tokenInfo.accessToken
         }
         
-        // Refresh proactively
-        return try await refreshAccessToken()
+        // Deduplicate concurrent refresh requests - if a refresh is already in progress, wait for it
+        if let existingTask = refreshTask {
+            DiagnosticsLogger.log(.app, level: .debug, message: "🔄 Joining existing token refresh task")
+            return try await existingTask.value
+        }
+        
+        // Start a new refresh task
+        let task = Task<String, Error> {
+            try await performTokenRefresh()
+        }
+        refreshTask = task
+        
+        do {
+            let token = try await task.value
+            refreshTask = nil
+            return token
+        } catch {
+            refreshTask = nil
+            throw error
+        }
     }
     
     func signOut() {
@@ -276,10 +297,18 @@ class GitHubOAuthService: NSObject, ObservableObject {
     
     // MARK: - Token Refresh
     
-    /// Refreshes the access token using the stored refresh token
-    /// Returns the new access token on success
+    /// Refreshes the access token using the stored refresh token.
+    /// For most cases, prefer using `getValidAccessToken()` which handles deduplication.
+    /// Returns the new access token on success.
     @discardableResult
     func refreshAccessToken() async throws -> String {
+        // Use getValidAccessToken for deduplication if called directly
+        return try await getValidAccessToken()
+    }
+    
+    /// Internal method that performs the actual token refresh.
+    /// This should only be called from getValidAccessToken() to ensure deduplication.
+    private func performTokenRefresh() async throws -> String {
         guard let tokenInfo = loadTokenInfo() else {
             throw GitHubAuthError.notAuthenticated
         }
@@ -671,10 +700,34 @@ class GitHubOAuthService: NSObject, ObservableObject {
     
     private func startPolling(interval: Int) {
         pollingTimer?.invalidate()
+        
+        // Track when polling started (only set on first call, not on interval changes)
+        if pollingStartTime == nil {
+            pollingStartTime = Date()
+        }
+        
         DiagnosticsLogger.log(.app, level: .debug, message: "🔄 Starting polling", metadata: ["interval": "\(interval)"])
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(interval), repeats: true) { [weak self] _ in
-            Task { [weak self] in
-                await self?.pollForToken()
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(interval), repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+            
+            // Check for polling timeout
+            if let start = self.pollingStartTime,
+               Date().timeIntervalSince(start) > self.maxPollingDuration {
+                DiagnosticsLogger.log(.app, level: .default, message: "⏰ Device flow polling timed out after 15 minutes")
+                Task { @MainActor in
+                    self.stopPolling()
+                    self.authError = "Authentication timed out. Please try again."
+                    self.isAuthenticating = false
+                    self.deviceCode = nil
+                }
+                return
+            }
+            
+            Task { @MainActor in
+                await self.pollForToken()
             }
         }
     }
@@ -784,6 +837,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
     
     func cancelAuthentication() {
         stopPolling()
+        pollingStartTime = nil
         isAuthenticating = false
         deviceCode = nil
         authError = nil
@@ -792,6 +846,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
     private func stopPolling() {
         pollingTimer?.invalidate()
         pollingTimer = nil
+        pollingStartTime = nil
     }
     
     // MARK: - User Info
