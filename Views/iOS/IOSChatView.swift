@@ -13,6 +13,7 @@ struct IOSChatView: View {
     let conversationId: UUID
     @EnvironmentObject var conversationManager: ConversationManager
     @StateObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var gitHubOAuthService = GitHubOAuthService.shared
 
     @State private var isFileImporterPresented = false
     @State private var showingSystemPromptSheet = false
@@ -136,6 +137,15 @@ struct IOSChatView: View {
             } else {
                 ContentUnavailableView("Conversation not found", systemImage: "exclamationmark.triangle")
                     .accessibilityIdentifier(TestIdentifiers.ChatView.emptyState)
+            }
+
+            // Rate Limit Warning Banner (GitHub Models only)
+            if openAIService.provider == .githubModels {
+                RateLimitWarningBanner(
+                    rateLimitInfo: gitHubOAuthService.rateLimitInfo,
+                    retryAfterDate: gitHubOAuthService.retryAfterDate
+                )
+                .padding(.horizontal)
             }
 
             IOSMessageComposer(

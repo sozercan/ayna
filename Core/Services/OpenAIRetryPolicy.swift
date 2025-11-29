@@ -63,11 +63,24 @@ enum OpenAIRetryPolicy {
 
     /// Calculates the delay before the next retry attempt.
     /// Uses exponential backoff with jitter to avoid thundering herd.
+    /// If a retry-after date is provided (from rate limit headers), uses that instead.
     /// - Parameters:
     ///   - attempt: The current attempt number (0-based)
+    ///   - retryAfterDate: Optional date from retry-after header
     ///   - config: Retry configuration
     /// - Returns: The delay in seconds
-    static func delay(for attempt: Int, config: Config = .default) -> TimeInterval {
+    static func delay(
+        for attempt: Int,
+        retryAfterDate: Date? = nil,
+        config: Config = .default
+    ) -> TimeInterval {
+        // If we have a retry-after date, use that (capped at 60s to avoid very long waits)
+        if let retryAfter = retryAfterDate {
+            let retryDelay = max(0, retryAfter.timeIntervalSinceNow)
+            return min(retryDelay, 60.0)
+        }
+        
+        // Fall back to exponential backoff with jitter
         let exponentialDelay = config.initialDelay * pow(2.0, Double(attempt))
         let cappedDelay = min(exponentialDelay, config.maxDelay)
         let jitter = Double.random(in: 0 ... 0.1)
@@ -75,8 +88,16 @@ enum OpenAIRetryPolicy {
     }
 
     /// Async helper that waits for the appropriate retry delay.
-    static func wait(for attempt: Int, config: Config = .default) async {
-        let delaySeconds = delay(for: attempt, config: config)
+    /// - Parameters:
+    ///   - attempt: The current attempt number (0-based)
+    ///   - retryAfterDate: Optional date from retry-after header
+    ///   - config: Retry configuration
+    static func wait(
+        for attempt: Int,
+        retryAfterDate: Date? = nil,
+        config: Config = .default
+    ) async {
+        let delaySeconds = delay(for: attempt, retryAfterDate: retryAfterDate, config: config)
         try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
     }
 

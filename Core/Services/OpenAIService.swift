@@ -14,6 +14,7 @@ import os
 
 enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
+    case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
     case aikit = "AIKit"
 
@@ -121,6 +122,14 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    /// Tracks which models use GitHub OAuth
+    @Published var modelUsesGitHubOAuth: [String: Bool] {
+        didSet {
+            let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }
+            AppPreferences.storage.set(dict, forKey: "modelUsesGitHubOAuth")
+        }
+    }
+
     // Image generation settings
     @Published var imageSize: String {
         didSet {
@@ -206,6 +215,13 @@ class OpenAIService: ObservableObject {
 
         // Load per-model API keys
         modelAPIKeys = OpenAIService.loadModelAPIKeys()
+
+        // Load GitHub OAuth flags for models
+        if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
+            modelUsesGitHubOAuth = savedOAuthFlags.mapValues { $0.boolValue }
+        } else {
+            modelUsesGitHubOAuth = [:]
+        }
 
         // Load selected model, ensure it exists in custom models
         let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
@@ -347,8 +363,79 @@ class OpenAIService: ObservableObject {
     }
 
     // Get API key for a specific model, falling back to global key if not set
+    // For GitHub Models with OAuth, returns the OAuth token
     func getAPIKey(for model: String?) -> String {
         guard let model else { return apiKey }
+
+        // Check if this model uses GitHub OAuth
+        let usesOAuth = modelUsesGitHubOAuth[model] == true
+        let isGitHubModel = modelProviders[model] == .githubModels
+        
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .debug,
+            message: "🔑 Getting API key for model",
+            metadata: [
+                "model": model,
+                "isGitHubModel": "\(isGitHubModel)",
+                "usesOAuth": "\(usesOAuth)",
+                "isAuthenticated": "\(GitHubOAuthService.shared.isAuthenticated)"
+            ]
+        )
+        
+        // For GitHub Models, always try OAuth token first if authenticated
+        if isGitHubModel {
+            if GitHubOAuthService.shared.isAuthenticated,
+               let token = GitHubOAuthService.shared.getAccessToken(),
+               !token.isEmpty {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "🔑 Using GitHub OAuth token",
+                    metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
+                )
+                return token
+            } else {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "⚠️ GitHub OAuth not available, using stored API key"
+                )
+            }
+        }
+
+        return modelAPIKeys[model] ?? apiKey
+    }
+    
+    /// Async version of getAPIKey that ensures the token is valid before returning.
+    /// For GitHub Models with OAuth, this will refresh the token if it's expiring soon.
+    /// Use this for critical API requests where you can await.
+    func getValidAPIKey(for model: String?) async throws -> String {
+        guard let model else { return apiKey }
+        
+        let isGitHubModel = modelProviders[model] == .githubModels
+        
+        // For GitHub Models, use the async method that handles refresh deduplication
+        if isGitHubModel, GitHubOAuthService.shared.isAuthenticated {
+            do {
+                let token = try await GitHubOAuthService.shared.getValidAccessToken()
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "🔑 Using validated GitHub OAuth token",
+                    metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
+                )
+                return token
+            } catch {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "❌ Failed to get valid GitHub token: \(error.localizedDescription)"
+                )
+                // Fall back to stored API key
+            }
+        }
+        
         return modelAPIKeys[model] ?? apiKey
     }
 
@@ -470,6 +557,27 @@ class OpenAIService: ObservableObject {
         }
     }
 
+    /// Checks if GitHub Models rate limit is currently blocking requests.
+    /// Returns an error message if rate-limited, nil if requests can proceed.
+    private func checkGitHubModelsRateLimit() -> String? {
+        let oauthService = GitHubOAuthService.shared
+        
+        // Check if we have an active retry-after from a previous 429/403
+        if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            let timeRemaining = formatter.localizedString(for: retryAfter, relativeTo: Date())
+            return "Rate limited. Please try again \(timeRemaining)."
+        }
+        
+        // Check if rate limit is exhausted
+        if let rateLimitInfo = oauthService.rateLimitInfo, rateLimitInfo.isExhausted {
+            return "Rate limit exhausted. Resets \(rateLimitInfo.formattedReset)."
+        }
+        
+        return nil
+    }
+
     func sendMessage(
         messages: [Message],
         model: String? = nil,
@@ -531,9 +639,21 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        // Check if this model should use the responses API
+        // Check GitHub Models rate limit before making request
+        if effectiveProvider == .githubModels {
+            if let rateLimitError = checkGitHubModelsRateLimit() {
+                onError(OpenAIError.apiError(rateLimitError))
+                return
+            }
+        }
+
+        // Check if this model should use the responses API (not supported for GitHub Models)
         let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
         if endpointType == .responses {
+            if effectiveProvider == .githubModels {
+                onError(OpenAIError.apiError("GitHub Models does not support the Responses API endpoint"))
+                return
+            }
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
@@ -554,7 +674,8 @@ class OpenAIService: ObservableObject {
         }
 
         let modelAPIKey = getAPIKey(for: requestModel)
-        let needsAuth = effectiveProvider == .openai
+        let needsAuth = effectiveProvider == .openai || effectiveProvider == .githubModels
+        let isGitHubModels = effectiveProvider == .githubModels
 
         guard
             let request = OpenAIRequestBuilder.createChatCompletionsRequest(
@@ -564,7 +685,8 @@ class OpenAIService: ObservableObject {
                 stream: stream,
                 tools: tools,
                 apiKey: needsAuth ? modelAPIKey : "",
-                isAzure: usesAzureEndpoint
+                isAzure: usesAzureEndpoint,
+                isGitHubModels: isGitHubModels
             )
         else {
             onError(OpenAIError.invalidRequest)
@@ -899,6 +1021,44 @@ class OpenAIService: ObservableObject {
         return "HTTP \(statusCode)"
     }
 
+    /// Extracts error message from API response JSON
+    private nonisolated func extractAPIErrorMessage(from data: Data, statusCode: Int) -> String {
+        // Try to parse as JSON error response
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // OpenAI-style error: {"error": {"message": "..."}}
+            if let error = json["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                return message
+            }
+            // Simple message field: {"message": "..."}
+            if let message = json["message"] as? String {
+                return message
+            }
+            // GitHub Models style: {"error": "...", "error_description": "..."}
+            if let errorDesc = json["error_description"] as? String {
+                return errorDesc
+            }
+            if let error = json["error"] as? String {
+                return error
+            }
+        }
+        // Fall back to raw text if not JSON
+        if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            return String(text.prefix(200))
+        }
+        return "HTTP \(statusCode)"
+    }
+
+    /// Check if error body indicates rate limiting (for 403 responses)
+    private nonisolated func isRateLimitErrorBody(_ data: Data) -> Bool {
+        guard let errorString = String(data: data, encoding: .utf8) else { return false }
+        let lowercased = errorString.lowercased()
+        return lowercased.contains("rate limit") ||
+               lowercased.contains("rate_limit") ||
+               lowercased.contains("too many requests") ||
+               lowercased.contains("ratelimit")
+    }
+
     private func streamResponse(
         request: URLRequest,
         callbacks: StreamCallbacks,
@@ -923,13 +1083,63 @@ class OpenAIService: ObservableObject {
                     }
 
                     guard httpResponse.statusCode == 200 else {
-                        let errorMessage = await MainActor.run {
-                            self.getHTTPErrorMessage(
-                                statusCode: httpResponse.statusCode,
-                                requestURL: request.url
-                            )
+                        // Read the error response body for better error messages
+                        var errorData = Data()
+                        do {
+                            for try await byte in bytes {
+                                errorData.append(byte)
+                                // Limit error body size to prevent memory issues
+                                if errorData.count > 4096 { break }
+                            }
+                        } catch {
+                            // Ignore errors reading error body
                         }
+
+                        // Capture rate limit headers for GitHub Models (even on error)
+                        if self.provider == .githubModels {
+                            await MainActor.run {
+                                GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
+                                
+                                // Check if this is a rate limit error (429 or 403 with rate limit message)
+                                let statusCode = httpResponse.statusCode
+                                if statusCode == 429 ||
+                                   (statusCode == 403 && self.isRateLimitErrorBody(errorData)) {
+                                    GitHubOAuthService.shared.updateRetryAfter(from: httpResponse)
+                                }
+                            }
+                        }
+
+                        let errorMessage: String
+                        if !errorData.isEmpty {
+                            errorMessage = self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
+                        } else {
+                            errorMessage = await MainActor.run {
+                                self.getHTTPErrorMessage(
+                                    statusCode: httpResponse.statusCode,
+                                    requestURL: request.url
+                                )
+                            }
+                        }
+
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .error,
+                            message: "❌ API error response",
+                            metadata: [
+                                "statusCode": "\(httpResponse.statusCode)",
+                                "error": errorMessage,
+                                "url": request.url?.absoluteString ?? "unknown"
+                            ]
+                        )
                         throw OpenAIError.apiError(errorMessage)
+                    }
+
+                    // Capture rate limit headers on success for GitHub Models
+                    if self.provider == .githubModels {
+                        await MainActor.run {
+                            GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
+                            GitHubOAuthService.shared.clearRetryAfter()
+                        }
                     }
 
                     var buffer = Data()
@@ -1135,13 +1345,21 @@ class OpenAIService: ObservableObject {
         callbacks: StreamCallbacks
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
+            // Get retry-after date for GitHub Models rate limits
+            let retryAfterDate = (provider == .githubModels)
+                ? await MainActor.run { GitHubOAuthService.shared.retryAfterDate }
+                : nil
+            
             DiagnosticsLogger.log(
                 .openAIService,
                 level: .info,
                 message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
-                metadata: ["error": error.localizedDescription]
+                metadata: [
+                    "error": error.localizedDescription,
+                    "retryAfter": retryAfterDate?.description ?? "none"
+                ]
             )
-            await delay(for: attempt)
+            await delay(for: attempt, retryAfterDate: retryAfterDate)
             await MainActor.run {
                 streamResponse(
                     request: request,
@@ -1387,8 +1605,8 @@ class OpenAIService: ObservableObject {
         )
     }
 
-    private func delay(for attempt: Int) async {
-        await OpenAIRetryPolicy.wait(for: attempt)
+    private func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
+        await OpenAIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
     }
 
     enum OpenAIError: LocalizedError {
@@ -1432,7 +1650,7 @@ extension OpenAIService {
         switch provider {
         case .aikit, .appleIntelligence:
             false
-        case .openai:
+        case .openai, .githubModels:
             true
         }
     }
@@ -1445,6 +1663,15 @@ extension OpenAIService {
 
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard providerRequiresAPIKey(provider) else { return true }
+
+        // For GitHub Models, check OAuth token first
+        if provider == .githubModels {
+            if GitHubOAuthService.shared.isAuthenticated,
+               let token = GitHubOAuthService.shared.getAccessToken(),
+               !token.isEmpty {
+                return true
+            }
+        }
 
         if let model,
            let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),

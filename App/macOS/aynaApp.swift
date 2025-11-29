@@ -87,6 +87,23 @@ struct aynaApp: App {
         Settings {
             MacSettingsView()
                 .environmentObject(conversationManager)
+                .onOpenURL { url in
+                    Task {
+                        await GitHubOAuthService.shared.handleCallbackURL(url)
+                    }
+                }
+        }
+        .commands {
+            SidebarCommands()
+            CommandGroup(replacing: .newItem) {
+                Button("New Conversation") {
+                    NotificationCenter.default.post(
+                        name: .newConversationRequested,
+                        object: nil
+                    )
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
         }
     }
 }

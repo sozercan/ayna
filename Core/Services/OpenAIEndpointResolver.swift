@@ -36,6 +36,7 @@ enum OpenAIEndpointResolver {
     private static let openAIChatURL = "https://api.openai.com/v1/chat/completions"
     private static let openAIResponsesURL = "https://api.openai.com/v1/responses"
     private static let openAIImagesURL = "https://api.openai.com/v1/images/generations"
+    private static let githubModelsChatURL = "https://models.github.ai/inference/chat/completions"
     private static let aikitBaseURL = "http://localhost:8080"
 
     // MARK: - Public API
@@ -45,6 +46,8 @@ enum OpenAIEndpointResolver {
         switch config.provider {
         case .openai:
             resolveOpenAIChatURL(config)
+        case .githubModels:
+            githubModelsChatURL
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
         case .aikit:
@@ -57,6 +60,8 @@ enum OpenAIEndpointResolver {
         switch config.provider {
         case .openai:
             resolveOpenAIResponsesURL(config)
+        case .githubModels:
+            "" // GitHub Models doesn't support the Responses API
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
         case .aikit:
@@ -66,8 +71,13 @@ enum OpenAIEndpointResolver {
 
     /// Resolves the image generation endpoint URL.
     static func imageGenerationURL(for config: EndpointConfig) -> String {
-        guard config.provider == .openai else {
-            return "" // Only OpenAI supports image generation
+        guard config.provider == .openai || config.provider == .githubModels else {
+            return "" // Only OpenAI and GitHub Models support image generation
+        }
+
+        // GitHub Models doesn't support image generation yet
+        if config.provider == .githubModels {
+            return ""
         }
 
         guard let customEndpoint = config.customEndpoint,

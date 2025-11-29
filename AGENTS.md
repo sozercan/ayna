@@ -62,10 +62,20 @@ The app supports multiple AI providers via the `AIProvider` enum and `OpenAIServ
 ### OpenAI Service Architecture
 Decomposed into single-responsibility components:
 - `OpenAIService.swift`: Coordinator/Facade.
-- `OpenAIEndpointResolver.swift`: URL resolution (OpenAI, Azure, AIKit).
+- `OpenAIEndpointResolver.swift`: URL resolution (OpenAI, Azure, GitHub Models, AIKit).
 - `OpenAIRequestBuilder.swift`: Request factory (`@MainActor`).
 - `OpenAIStreamParser.swift`: SSE parsing and tool call handling.
 - `OpenAIRetryPolicy.swift`: Exponential backoff.
+
+### GitHub Models
+- **Cross-Platform**: Works on both macOS and iOS.
+- **Authentication**: Uses GitHub OAuth Web Flow with PKCE (`GitHubOAuthService.swift`).
+  - **Token Exchange**: Proxied via Cloudflare Worker (`https://ayna.sozercan.workers.dev`) to secure `client_secret`.
+  - **Flow**: `ASWebAuthenticationSession` handles the browser interaction.
+- **API Endpoint**: `https://models.github.ai/inference/chat/completions`.
+- **Headers**: Requires `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`.
+- **Model Catalog**: Available models fetched from `https://models.github.ai/catalog/models`.
+- **Key Files**: `GitHubOAuthService.swift` (OAuth flow), `GitHubModelsConfigurationView` (in `MacSettingsView.swift`).
 
 ### Multi-Model Architecture
 - **Concept**: Allows sending a single prompt to multiple models simultaneously for comparison.
@@ -111,6 +121,7 @@ Tests run with `AYNA_UI_TESTING=1`, injecting:
 
 | Feature | macOS | iOS |
 |---------|-------|-----|
+| **GitHub Models** | ✅ Full Support | ✅ Full Support |
 | **MCP / AIKit** | ✅ Full Support | ❌ Not Supported (Sandboxing/Runtime limits) |
 | **UI Metaphor** | Sidebar + Detail (`NavigationSplitView`) | TabView / Stack |
 | **Inputs** | Keyboard Shortcuts (Cmd+N) | Swipe Actions |
