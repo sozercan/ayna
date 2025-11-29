@@ -129,7 +129,7 @@ struct MacMessageView: View {
 
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                     .contentShape(Rectangle())
                 }
@@ -138,7 +138,7 @@ struct MacMessageView: View {
                 if !isExpanded {
                     Text(previewText)
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.9))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -146,24 +146,27 @@ struct MacMessageView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Arguments")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.7))
                             ScrollView(.horizontal, showsIndicators: false) {
                                 Text(arguments)
                                     .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(.white)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(8)
-                            .background(Color.orange.opacity(0.08))
+                            .background(Color.black.opacity(0.15))
                             .cornerRadius(8)
                         }
                     }
 
                     Divider()
+                        .background(Color.white.opacity(0.3))
 
                     if contentBlocks.isEmpty {
                         Text(previewText)
                             .font(.system(size: 13))
+                            .foregroundStyle(.white)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
@@ -172,6 +175,7 @@ struct MacMessageView: View {
                                 block.view
                             }
                         }
+                        .foregroundStyle(.white)
                     }
                 }
             }

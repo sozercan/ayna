@@ -370,7 +370,7 @@ class OpenAIService: ObservableObject {
         // Check if this model uses GitHub OAuth
         let usesOAuth = modelUsesGitHubOAuth[model] == true
         let isGitHubModel = modelProviders[model] == .githubModels
-        
+
         DiagnosticsLogger.log(
             .openAIService,
             level: .debug,
@@ -382,12 +382,13 @@ class OpenAIService: ObservableObject {
                 "isAuthenticated": "\(GitHubOAuthService.shared.isAuthenticated)"
             ]
         )
-        
+
         // For GitHub Models, always try OAuth token first if authenticated
         if isGitHubModel {
             if GitHubOAuthService.shared.isAuthenticated,
                let token = GitHubOAuthService.shared.getAccessToken(),
-               !token.isEmpty {
+               !token.isEmpty
+            {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .debug,
@@ -406,15 +407,15 @@ class OpenAIService: ObservableObject {
 
         return modelAPIKeys[model] ?? apiKey
     }
-    
+
     /// Async version of getAPIKey that ensures the token is valid before returning.
     /// For GitHub Models with OAuth, this will refresh the token if it's expiring soon.
     /// Use this for critical API requests where you can await.
     func getValidAPIKey(for model: String?) async throws -> String {
         guard let model else { return apiKey }
-        
+
         let isGitHubModel = modelProviders[model] == .githubModels
-        
+
         // For GitHub Models, use the async method that handles refresh deduplication
         if isGitHubModel, GitHubOAuthService.shared.isAuthenticated {
             do {
@@ -435,7 +436,7 @@ class OpenAIService: ObservableObject {
                 // Fall back to stored API key
             }
         }
-        
+
         return modelAPIKeys[model] ?? apiKey
     }
 
@@ -561,7 +562,7 @@ class OpenAIService: ObservableObject {
     /// Returns an error message if rate-limited, nil if requests can proceed.
     private func checkGitHubModelsRateLimit() -> String? {
         let oauthService = GitHubOAuthService.shared
-        
+
         // Check if we have an active retry-after from a previous 429/403
         if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
             let formatter = RelativeDateTimeFormatter()
@@ -569,12 +570,12 @@ class OpenAIService: ObservableObject {
             let timeRemaining = formatter.localizedString(for: retryAfter, relativeTo: Date())
             return "Rate limited. Please try again \(timeRemaining)."
         }
-        
+
         // Check if rate limit is exhausted
         if let rateLimitInfo = oauthService.rateLimitInfo, rateLimitInfo.isExhausted {
             return "Rate limit exhausted. Resets \(rateLimitInfo.formattedReset)."
         }
-        
+
         return nil
     }
 
@@ -592,6 +593,20 @@ class OpenAIService: ObservableObject {
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil
     ) {
+        let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📤 sendMessage called",
+            metadata: [
+                "model": requestModel,
+                "messagesCount": "\(messages.count)",
+                "stream": "\(stream)",
+                "hasTools": "\(tools != nil)"
+            ]
+        )
+
         #if !os(iOS)
             if UITestEnvironment.isEnabled {
                 simulateUITestResponse(
@@ -604,14 +619,30 @@ class OpenAIService: ObservableObject {
             }
         #endif
 
-        let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestModel.isEmpty else {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "❌ Model is empty"
+            )
             onError(OpenAIError.missingModel)
             return
         }
         let effectiveProvider = modelProviders[requestModel] ?? provider
         let endpointInfo = customEndpoint(for: requestModel)
         let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📤 Provider resolved",
+            metadata: [
+                "model": requestModel,
+                "provider": effectiveProvider.rawValue,
+                "hasCustomEndpoint": "\(endpointInfo != nil)",
+                "isAzure": "\(usesAzureEndpoint)"
+            ]
+        )
 
         // Handle Apple Intelligence separately
         if effectiveProvider == .appleIntelligence {
@@ -669,6 +700,12 @@ class OpenAIService: ObservableObject {
         let apiURL = getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
 
         guard let url = URL(string: apiURL) else {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "❌ Invalid URL",
+                metadata: ["url": apiURL]
+            )
             onError(OpenAIError.invalidURL)
             return
         }
@@ -676,6 +713,18 @@ class OpenAIService: ObservableObject {
         let modelAPIKey = getAPIKey(for: requestModel)
         let needsAuth = effectiveProvider == .openai || effectiveProvider == .githubModels
         let isGitHubModels = effectiveProvider == .githubModels
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📤 Building request",
+            metadata: [
+                "url": apiURL,
+                "hasAPIKey": "\(!modelAPIKey.isEmpty)",
+                "needsAuth": "\(needsAuth)",
+                "isGitHubModels": "\(isGitHubModels)"
+            ]
+        )
 
         guard
             let request = OpenAIRequestBuilder.createChatCompletionsRequest(
@@ -689,9 +738,25 @@ class OpenAIService: ObservableObject {
                 isGitHubModels: isGitHubModels
             )
         else {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "❌ Failed to create request"
+            )
             onError(OpenAIError.invalidRequest)
             return
         }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "🌐 Starting stream request",
+            metadata: [
+                "url": url.absoluteString,
+                "model": requestModel,
+                "stream": "\(stream)"
+            ]
+        )
 
         if stream {
             let callbacks = StreamCallbacks(
@@ -1027,7 +1092,8 @@ class OpenAIService: ObservableObject {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             // OpenAI-style error: {"error": {"message": "..."}}
             if let error = json["error"] as? [String: Any],
-               let message = error["message"] as? String {
+               let message = error["message"] as? String
+            {
                 return message
             }
             // Simple message field: {"message": "..."}
@@ -1054,9 +1120,9 @@ class OpenAIService: ObservableObject {
         guard let errorString = String(data: data, encoding: .utf8) else { return false }
         let lowercased = errorString.lowercased()
         return lowercased.contains("rate limit") ||
-               lowercased.contains("rate_limit") ||
-               lowercased.contains("too many requests") ||
-               lowercased.contains("ratelimit")
+            lowercased.contains("rate_limit") ||
+            lowercased.contains("too many requests") ||
+            lowercased.contains("ratelimit")
     }
 
     private func streamResponse(
@@ -1067,7 +1133,21 @@ class OpenAIService: ObservableObject {
         let session = urlSession
 
         // Cancel any existing stream task before starting a new one
-        currentStreamTask?.cancel()
+        if currentStreamTask != nil {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .info,
+                message: "⚠️ Cancelling existing stream task before starting new one"
+            )
+            currentStreamTask?.cancel()
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "🔄 Creating new stream task",
+            metadata: ["url": request.url?.absoluteString ?? "unknown"]
+        )
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1079,8 +1159,23 @@ class OpenAIService: ObservableObject {
                     let (bytes, response) = try await session.bytes(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .error,
+                            message: "❌ Invalid response type"
+                        )
                         throw OpenAIError.invalidResponse
                     }
+
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "📥 HTTP response received",
+                        metadata: [
+                            "statusCode": "\(httpResponse.statusCode)",
+                            "url": request.url?.absoluteString ?? "unknown"
+                        ]
+                    )
 
                     guard httpResponse.statusCode == 200 else {
                         // Read the error response body for better error messages
@@ -1099,21 +1194,21 @@ class OpenAIService: ObservableObject {
                         if self.provider == .githubModels {
                             await MainActor.run {
                                 GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
-                                
+
                                 // Check if this is a rate limit error (429 or 403 with rate limit message)
                                 let statusCode = httpResponse.statusCode
                                 if statusCode == 429 ||
-                                   (statusCode == 403 && self.isRateLimitErrorBody(errorData)) {
+                                    (statusCode == 403 && self.isRateLimitErrorBody(errorData))
+                                {
                                     GitHubOAuthService.shared.updateRetryAfter(from: httpResponse)
                                 }
                             }
                         }
 
-                        let errorMessage: String
-                        if !errorData.isEmpty {
-                            errorMessage = self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
+                        let errorMessage: String = if !errorData.isEmpty {
+                            self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
                         } else {
-                            errorMessage = await MainActor.run {
+                            await MainActor.run {
                                 self.getHTTPErrorMessage(
                                     statusCode: httpResponse.statusCode,
                                     requestURL: request.url
@@ -1150,13 +1245,24 @@ class OpenAIService: ObservableObject {
                     var contentBuffer = ""
                     var reasoningBuffer = ""
                     var lastUpdateTime = Date()
+                    var totalBytesReceived = 0
 
                     for try await byte in bytes {
                         // Check for cancellation at each byte
                         try Task.checkCancellation()
 
                         hasReceivedData = true
+                        totalBytesReceived += 1
                         buffer.append(byte)
+
+                        // Log first byte received
+                        if totalBytesReceived == 1 {
+                            DiagnosticsLogger.log(
+                                .openAIService,
+                                level: .info,
+                                message: "📦 First byte received from stream"
+                            )
+                        }
 
                         // Check if we have a newline (UTF-8: 0x0A)
                         if byte == 0x0A {
@@ -1214,10 +1320,35 @@ class OpenAIService: ObservableObject {
                     // Flush any remaining content
                     let contentToSend = contentBuffer
                     let reasoningToSend = reasoningBuffer
+                    let receivedData = hasReceivedData
+                    let bytesReceived = totalBytesReceived
                     await MainActor.run {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .info,
+                            message: "📊 Stream ended",
+                            metadata: [
+                                "totalBytesReceived": "\(bytesReceived)",
+                                "hasReceivedData": "\(receivedData)",
+                                "contentBufferLength": "\(contentToSend.count)",
+                                "reasoningBufferLength": "\(reasoningToSend.count)"
+                            ]
+                        )
+                        
                         if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
                         if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
                         self.currentStreamTask = nil
+
+                        // Log warning if no data was received but no error occurred
+                        if !receivedData {
+                            DiagnosticsLogger.log(
+                                .openAIService,
+                                level: .error,
+                                message: "⚠️ Stream completed with no data received",
+                                metadata: ["url": request.url?.absoluteString ?? "unknown"]
+                            )
+                        }
+
                         callbacks.onComplete()
                     }
                 } onCancel: {
@@ -1237,7 +1368,7 @@ class OpenAIService: ObservableObject {
                     self.currentStreamTask = nil
                 }
             } catch {
-                await self.handleStreamError(
+                await handleStreamError(
                     error: error,
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
@@ -1349,7 +1480,7 @@ class OpenAIService: ObservableObject {
             let retryAfterDate = (provider == .githubModels)
                 ? await MainActor.run { GitHubOAuthService.shared.retryAfterDate }
                 : nil
-            
+
             DiagnosticsLogger.log(
                 .openAIService,
                 level: .info,
@@ -1668,7 +1799,8 @@ extension OpenAIService {
         if provider == .githubModels {
             if GitHubOAuthService.shared.isAuthenticated,
                let token = GitHubOAuthService.shared.getAccessToken(),
-               !token.isEmpty {
+               !token.isEmpty
+            {
                 return true
             }
         }
@@ -1757,6 +1889,50 @@ extension OpenAIService {
             if let endpoints = store.dictionary(forKey: "modelEndpoints") as? [String: String] {
                 self.modelEndpoints = endpoints
             }
+        }
+    }
+}
+
+// MARK: - Tool Management
+
+extension OpenAIService {
+    /// Returns all available tools for function calling, including built-in tools and MCP tools.
+    /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
+    func getAllAvailableTools() -> [[String: Any]]? {
+        var tools: [[String: Any]] = []
+
+        // Add Tavily web search if available (cross-platform)
+        if TavilyService.shared.isAvailable {
+            tools.append(TavilyService.shared.toolDefinition())
+        }
+
+        // Add MCP tools (macOS only)
+        #if os(macOS)
+            let mcpTools = MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
+            tools.append(contentsOf: mcpTools)
+        #endif
+
+        return tools.isEmpty ? nil : tools
+    }
+
+    /// Checks if a tool call is for a built-in tool (like web_search) that we handle internally.
+    /// - Parameter toolName: The name of the tool being called
+    /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
+    func isBuiltInTool(_ toolName: String) -> Bool {
+        toolName == TavilyService.toolName
+    }
+
+    /// Executes a built-in tool call and returns the result.
+    /// - Parameters:
+    ///   - toolName: The name of the tool to execute
+    ///   - arguments: The arguments passed to the tool
+    /// - Returns: The tool execution result as a string
+    func executeBuiltInTool(name toolName: String, arguments: [String: Any]) async -> String {
+        switch toolName {
+        case TavilyService.toolName:
+            await TavilyService.shared.executeToolCall(arguments: arguments)
+        default:
+            "Error: Unknown built-in tool '\(toolName)'"
         }
     }
 }

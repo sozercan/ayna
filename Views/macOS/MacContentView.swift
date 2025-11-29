@@ -508,12 +508,12 @@ struct MacNewChatView: View {
             selectedModel = openAIService.selectedModel
             selectedModels = [openAIService.selectedModel]
         }
-        
+
         // Ensure we have at least one model selected if possible
         if selectedModels.isEmpty, !openAIService.usableModels.isEmpty {
-             let first = openAIService.usableModels.first!
-             selectedModels = [first]
-             selectedModel = first
+            let first = openAIService.usableModels.first!
+            selectedModels = [first]
+            selectedModel = first
         }
     }
 
@@ -525,7 +525,7 @@ struct MacNewChatView: View {
         } else {
             selectedModels.insert(model)
         }
-        
+
         // Update single selection state for compatibility
         if selectedModels.count == 1, let first = selectedModels.first {
             selectedModel = first
@@ -615,7 +615,7 @@ struct MacNewChatView: View {
         }
 
         conversationManager.updateModel(for: conversation, model: activeModel)
-        
+
         // Update conversation with multi-model settings
         var updatedConversation = conversation
         updatedConversation.activeModels = Array(selectedModels)
@@ -654,10 +654,10 @@ struct MacNewChatView: View {
 
         // Send the message immediately (no delay needed)
         if selectedModels.count > 1 {
-             isGenerating = true
-             sendMultiModelMessage(userMessageId: userMessage.id, models: Array(selectedModels), temperature: conversation.temperature)
+            isGenerating = true
+            sendMultiModelMessage(userMessageId: userMessage.id, models: Array(selectedModels), temperature: conversation.temperature)
         } else {
-             sendMessageForConversation(conversation, model: activeModel)
+            sendMessageForConversation(conversation, model: activeModel)
         }
     }
 
@@ -689,10 +689,8 @@ struct MacNewChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
-        let mcpManager = MCPServerManager.shared
-        let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
+        // Get available tools (Tavily + MCP)
+        let tools = openAIService.getAllAvailableTools()
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
@@ -704,7 +702,6 @@ struct MacNewChatView: View {
         )
     }
 
-    // swiftlint:disable:next function_body_length
     private func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],
@@ -719,8 +716,9 @@ struct MacNewChatView: View {
         // Get updated conversation
         guard let conversationId = currentConversationId,
               let updatedConversation = conversationManager.conversations.first(where: {
-            $0.id == conversationId
-        }) else {
+                  $0.id == conversationId
+              })
+        else {
             isGenerating = false
             return
         }
@@ -807,7 +805,7 @@ struct MacNewChatView: View {
                     }) {
                         conversationManager.save(conversationManager.conversations[convIndex])
                     }
-                    
+
                     // Switch to chat view
                     selectedConversationId = conversationId
                 }
@@ -966,7 +964,16 @@ struct MacNewChatView: View {
                                 level: .info,
                                 metadata: ["toolName": toolName]
                             )
-                            let result = try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+
+                            // Route to appropriate tool handler
+                            let result: String = if openAIService.isBuiltInTool(toolName) {
+                                // Built-in tool (e.g., web_search via Tavily)
+                                await openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+                            } else {
+                                // MCP tool
+                                try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+                            }
+
                             await MainActor.run {
                                 let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
                                     result[pair.key] = AnyCodable(pair.value)

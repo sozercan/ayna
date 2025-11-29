@@ -30,9 +30,9 @@ struct MacSettingsView: View {
                 }
                 .tag(SettingsTab.models)
 
-            MCPSettingsView()
+            ToolsSettingsView()
                 .tabItem {
-                    Label("MCP Tools", systemImage: "wrench.and.screwdriver")
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
                 .tag(SettingsTab.mcp)
         }
@@ -142,6 +142,512 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+}
+
+/// Settings section for Tavily Web Search configuration
+struct WebSearchSettingsSection: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var showAPIKey = false
+
+    var body: some View {
+        Section {
+            Toggle("Enable Web Search", isOn: $tavilyService.isEnabled)
+                .help("Allow models to search the web for current information")
+                .accessibilityIdentifier("settings.webSearch.enableToggle")
+
+            if tavilyService.isEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Tavily API Key")
+                            .font(.subheadline)
+                        Spacer()
+                        if tavilyService.isConfigured {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.caption)
+                        } else {
+                            Text("Required")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        if showAPIKey {
+                            TextField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.webSearch.apiKey.textField")
+                        } else {
+                            SecureField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.webSearch.apiKey.secureField")
+                        }
+
+                        Button(action: {
+                            showAPIKey.toggle()
+                        }) {
+                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.webSearch.apiKey.toggleVisibility")
+                    }
+
+                    HStack(spacing: 4) {
+                        Text("Get your API key at")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Link("tavily.com", destination: URL(string: "https://tavily.com")!)
+                            .font(.caption)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        } header: {
+            Text("Web Search")
+        } footer: {
+            Text("When enabled, models can search the web for current information using Tavily. This allows answering questions about recent events, current prices, and other time-sensitive topics.")
+                .font(.caption)
+        }
+    }
+}
+
+/// Combined Tools settings view containing Web Search and MCP Servers
+struct ToolsSettingsView: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+    @StateObject private var mcpManager = MCPServerManager.shared
+
+    var body: some View {
+        HSplitView {
+            // Left panel - Tool Configuration
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Tools")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+
+                        let toolCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0) + mcpManager.availableTools.count
+                        Text("\(toolCount) tools available")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(action: {
+                        Task {
+                            await mcpManager.discoverAllTools()
+                        }
+                    }) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(mcpManager.isDiscovering)
+                }
+                .padding()
+
+                Divider()
+
+                // Tools list
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Built-in Tools Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Built-in Tools")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+
+                            WebSearchToolRow()
+                        }
+                        .padding(.horizontal)
+
+                        Divider()
+                            .padding(.horizontal)
+
+                        // MCP Tools Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("MCP Servers")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.secondary)
+
+                                Spacer()
+
+                                Text("\(mcpManager.getConnectedServerCount()) connected")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            MCPServersList()
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.vertical)
+                }
+            }
+            .frame(minWidth: 300)
+
+            // Right panel - Details/Configuration
+            ToolConfigurationPanel()
+        }
+        .accessibilityIdentifier("settings.tools.view")
+    }
+}
+
+/// Row displaying Web Search tool status
+struct WebSearchToolRow: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+
+    var body: some View {
+        HStack {
+            Image(systemName: "globe")
+                .font(.title2)
+                .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? .blue : .secondary)
+                .frame(width: 32, height: 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Web Search")
+                    .font(.headline)
+
+                if tavilyService.isEnabled {
+                    if tavilyService.isConfigured {
+                        Text("Powered by Tavily")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("API key required")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                } else {
+                    Text("Disabled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $tavilyService.isEnabled)
+                .labelsHidden()
+                .accessibilityIdentifier("settings.tools.webSearch.toggle")
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// List of MCP servers
+struct MCPServersList: View {
+    @StateObject private var mcpManager = MCPServerManager.shared
+    @State private var showingAddServer = false
+    @State private var editingServer: MCPServerConfig?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if mcpManager.serverConfigs.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "server.rack")
+                        .font(.title)
+                        .foregroundStyle(.secondary.opacity(0.5))
+
+                    Text("No MCP Servers")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Button("Add Server") {
+                        showingAddServer = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical)
+            } else {
+                ForEach(mcpManager.serverConfigs) { config in
+                    MCPServerRow(
+                        config: config,
+                        status: mcpManager.getServerStatus(config.name),
+                        tools: mcpManager.availableTools.filter { $0.serverName == config.name },
+                        onEdit: { editingServer = config },
+                        onDelete: { mcpManager.removeServerConfig(config) },
+                        onToggle: {
+                            var updated = config
+                            updated.enabled.toggle()
+                            mcpManager.updateServerConfig(updated)
+                        },
+                        onRetry: {
+                            Task {
+                                await mcpManager.connectToServer(config, autoDisableOnFailure: false)
+                            }
+                        }
+                    )
+                }
+
+                Button {
+                    showingAddServer = true
+                } label: {
+                    Label("Add Server", systemImage: "plus")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .sheet(isPresented: $showingAddServer) {
+            ServerConfigSheet(
+                config: nil,
+                onSave: { config in
+                    mcpManager.addServerConfig(config)
+                    showingAddServer = false
+                },
+                onCancel: {
+                    showingAddServer = false
+                }
+            )
+        }
+        .sheet(item: $editingServer) { config in
+            ServerConfigSheet(
+                config: config,
+                onSave: { updated in
+                    mcpManager.updateServerConfig(updated)
+                    editingServer = nil
+                },
+                onCancel: {
+                    editingServer = nil
+                }
+            )
+        }
+    }
+}
+
+/// Compact MCP Server row
+struct MCPServerRow: View {
+    let config: MCPServerConfig
+    let status: MCPServerStatus?
+    let tools: [MCPTool]
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onToggle: () -> Void
+    let onRetry: () -> Void
+
+    @State private var isEnabled: Bool
+
+    init(
+        config: MCPServerConfig,
+        status: MCPServerStatus?,
+        tools: [MCPTool],
+        onEdit: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
+        onToggle: @escaping () -> Void,
+        onRetry: @escaping () -> Void
+    ) {
+        self.config = config
+        self.status = status
+        self.tools = tools
+        self.onEdit = onEdit
+        self.onDelete = onDelete
+        self.onToggle = onToggle
+        self.onRetry = onRetry
+        _isEnabled = State(initialValue: config.enabled)
+    }
+
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(config.name)
+                    .font(.headline)
+
+                HStack(spacing: 4) {
+                    Text(statusDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if !tools.isEmpty {
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text("\(tools.count) tools")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .onChange(of: isEnabled) { _, _ in
+                    onToggle()
+                }
+
+            Menu {
+                Button("Edit") { onEdit() }
+                if canRetry {
+                    Button("Retry Connection") { onRetry() }
+                }
+                Divider()
+                Button("Delete", role: .destructive) { onDelete() }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var statusColor: Color {
+        switch status?.state {
+        case .connected: .green
+        case .connecting, .reconnecting: .orange
+        case .error: .red
+        case .disabled: .gray
+        default: config.enabled ? .secondary : .gray
+        }
+    }
+
+    private var statusDescription: String {
+        switch status?.state {
+        case .connected: "Connected"
+        case .connecting: "Connecting"
+        case .reconnecting: "Reconnecting"
+        case .error: "Error"
+        case .disabled: "Disabled"
+        default: config.enabled ? "Idle" : "Disabled"
+        }
+    }
+
+    private var canRetry: Bool {
+        guard config.enabled else { return false }
+        switch status?.state {
+        case .connected, .connecting, .reconnecting, .disabled: return false
+        default: return true
+        }
+    }
+}
+
+/// Right panel for tool configuration
+struct ToolConfigurationPanel: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var showAPIKey = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Configuration")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Web Search Configuration
+                    if tavilyService.isEnabled {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Web Search")
+                                .font(.headline)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Tavily API Key")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    if tavilyService.isConfigured {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                            .font(.caption)
+                                    } else {
+                                        Text("Required")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange.opacity(0.1))
+                                            .cornerRadius(4)
+                                    }
+                                }
+
+                                HStack(spacing: 8) {
+                                    if showAPIKey {
+                                        TextField("tvly-...", text: $tavilyService.apiKey)
+                                            .textFieldStyle(.roundedBorder)
+                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
+                                    } else {
+                                        SecureField("tvly-...", text: $tavilyService.apiKey)
+                                            .textFieldStyle(.roundedBorder)
+                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
+                                    }
+
+                                    Button(action: { showAPIKey.toggle() }) {
+                                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 32, height: 32)
+                                            .background(Color.secondary.opacity(0.1))
+                                            .cornerRadius(6)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
+                                }
+
+                                HStack(spacing: 4) {
+                                    Text("Get your API key at")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                    Link("tavily.com", destination: URL(string: "https://tavily.com")!)
+                                        .font(.caption)
+                                }
+                            }
+                            .padding()
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+
+                    // Info text
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("About Tools")
+                            .font(.headline)
+
+                        Text("Tools extend the capabilities of AI models by allowing them to access external data and services. When enabled, models can automatically use these tools to provide more accurate and up-to-date responses.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("• **Web Search**: Search the web for current information\n• **MCP Servers**: Connect to external services via the Model Context Protocol")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding()
+            }
+        }
+        .frame(minWidth: 280)
     }
 }
 
@@ -1059,16 +1565,16 @@ struct GitHubModelsConfigurationView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                            
+
                             Spacer()
-                            
+
                             // Token refresh indicator
                             if githubOAuth.isRefreshing {
                                 ProgressView()
                                     .scaleEffect(0.6)
                                     .help("Refreshing token...")
                             }
-                            
+
                             Button("Sign Out") {
                                 githubOAuth.signOut()
                             }
@@ -1093,7 +1599,7 @@ struct GitHubModelsConfigurationView: View {
                         }
                         .controlSize(.large)
                         .disabled(githubOAuth.isAuthenticating)
-                        
+
                         if githubOAuth.isAuthenticating {
                             HStack(spacing: 8) {
                                 ProgressView()
@@ -1112,7 +1618,7 @@ struct GitHubModelsConfigurationView: View {
                             .background(Color.blue.opacity(0.1))
                             .cornerRadius(6)
                         }
-                        
+
                         if let error = githubOAuth.authError {
                             HStack(spacing: 4) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -1153,7 +1659,7 @@ struct GitHubModelsConfigurationView: View {
                             .background(Color.secondary.opacity(0.1))
                             .cornerRadius(4)
                     }
-                    
+
                     // Model Picker or fallback text field
                     if !githubOAuth.availableModels.isEmpty {
                         Picker("", selection: $tempModelName) {
@@ -1163,7 +1669,7 @@ struct GitHubModelsConfigurationView: View {
                             }
                         }
                         .labelsHidden()
-                        
+
                         Text("\(githubOAuth.availableModels.count) models available")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -1202,13 +1708,11 @@ struct GitHubModelsConfigurationView: View {
                             }
                         }
                     }
-                    
+
                     Text("Model ID in format: publisher/model_name")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
-
-
 
                 // Validation Status
                 if isValidating {
@@ -1641,8 +2145,8 @@ struct AIKitConfigurationView: View {
 }
 
 // MARK: - GitHub Account View
-// Removed as it is now integrated into GitHubModelsConfigurationView
 
+// Removed as it is now integrated into GitHubModelsConfigurationView
 
 #Preview {
     MacSettingsView()

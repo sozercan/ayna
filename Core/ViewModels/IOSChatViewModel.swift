@@ -9,6 +9,15 @@ import Combine
 import Foundation
 import os.log
 
+/// A wrapper to make non-Sendable types Sendable by unchecked conformance.
+/// Use this only when you are sure the value is thread-safe or accessed safely.
+private final class UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
 /// A shared ViewModel that encapsulates common chat logic for iOS views.
 /// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
 @MainActor
@@ -20,10 +29,19 @@ final class IOSChatViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
 
+    /// The name of the tool currently being executed (for UI indicator)
+    @Published var currentToolName: String?
+
     // MARK: - Dependencies
 
     private var conversationManager: ConversationManager
     private let openAIService: OpenAIService
+
+    // MARK: - Tool Call State
+
+    /// Tracks the depth of recursive tool calls to prevent infinite loops
+    private var toolCallDepth = 0
+    private let maxToolCallDepth = 10
 
     // MARK: - Configuration
 
@@ -198,7 +216,37 @@ final class IOSChatViewModel: ObservableObject {
     /// Send a message in the current conversation.
     func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !attachedFiles.isEmpty else { return }
+        
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🚀 sendMessage() called",
+            metadata: [
+                "textLength": "\(text.count)",
+                "isGenerating": "\(isGenerating)",
+                "hasConversation": "\(conversation != nil)",
+                "isNewChatMode": "\(isNewChatMode)"
+            ]
+        )
+        
+        guard !text.isEmpty || !attachedFiles.isEmpty else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "⚠️ Empty message, ignoring"
+            )
+            return
+        }
+
+        // Prevent sending while already generating
+        guard !isGenerating else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "⚠️ Ignoring send request - already generating"
+            )
+            return
+        }
 
         // Check for multi-model mode
         if selectedModels.count >= 2 {
@@ -266,13 +314,34 @@ final class IOSChatViewModel: ObservableObject {
         messageText = ""
         isGenerating = true
         errorMessage = nil
+        
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "📝 User message added, isGenerating=true",
+            metadata: ["userMessageId": userMessage.id.uuidString]
+        )
 
         // Create placeholder assistant message
         let assistantMessage = Message(role: .assistant, content: "")
         conversationManager.addMessage(to: targetConversation, message: assistantMessage)
 
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🤖 Assistant placeholder created",
+            metadata: ["assistantMessageId": assistantMessage.id.uuidString]
+        )
+
         // Re-fetch conversation with updated messages
-        guard let updatedConversation = conversation else { return }
+        guard let updatedConversation = conversation else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to re-fetch conversation after adding messages"
+            )
+            return
+        }
 
         // Check if this is an image generation model
         let capability = openAIService.getModelCapability(updatedConversation.model)
@@ -294,56 +363,323 @@ final class IOSChatViewModel: ObservableObject {
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        openAIService.sendMessage(
+        // Get available tools (Tavily web search on iOS)
+        let tools = openAIService.getAllAvailableTools()
+        toolCallDepth = 0
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "📡 Calling sendMessageWithToolSupport",
+            metadata: [
+                "model": updatedConversation.model,
+                "messageCount": "\(messagesToSend.count)",
+                "hasTools": "\(tools != nil)",
+                "toolCount": "\(tools?.count ?? 0)"
+            ]
+        )
+
+        sendMessageWithToolSupport(
             messages: messagesToSend,
             model: updatedConversation.model,
+            conversationId: targetConversationId,
+            assistantMessageId: assistantMessage.id,
+            tools: tools
+        )
+    }
+
+    // Helper method to send messages with tool call support
+    // swiftlint:disable:next function_body_length
+    private func sendMessageWithToolSupport( // swiftlint:disable:this superfluous_disable_command
+        messages: [Message],
+        model: String,
+        conversationId: UUID,
+        assistantMessageId: UUID,
+        tools: [[String: Any]]?
+    ) {
+        let toolsWrapper = UncheckedSendable(tools)
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔌 sendMessageWithToolSupport: Calling OpenAI service",
+            metadata: [
+                "assistantMessageId": assistantMessageId.uuidString,
+                "model": model
+            ]
+        )
+
+        openAIService.sendMessage(
+            messages: messages,
+            model: model,
             stream: true,
+            tools: tools,
             onChunk: { [weak self] chunk in
                 Task { @MainActor in
-                    self?.updateAssistantMessage(assistantMessage.id, appendingChunk: chunk, conversationId: targetConversationId)
+                    guard let self else { return }
+                    // Log first chunk received
+                    if chunk.count > 0 {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .debug,
+                            message: "📥 onChunk received",
+                            metadata: [
+                                "chunkLength": "\(chunk.count)",
+                                "assistantMessageId": assistantMessageId.uuidString
+                            ]
+                        )
+                    }
+                    // Clear tool indicator when we start receiving content
+                    if self.currentToolName != nil {
+                        self.currentToolName = nil
+                    }
+                    self.updateAssistantMessage(
+                        assistantMessageId,
+                        appendingChunk: chunk,
+                        conversationId: conversationId
+                    )
                 }
             },
             onComplete: { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }
-                    self.isGenerating = false
-                    if let finalConversation = self.conversationManager.conversations.first(where: { $0.id == targetConversationId }) {
-                        self.conversationManager.save(finalConversation)
-                    }
-
-                    // Notify that conversation is ready (for new chat navigation)
-                    if self.isNewChatMode {
-                        self.onConversationCreated?(targetConversationId)
-                    }
 
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .info,
-                        message: "✅ Message generation completed",
-                        metadata: ["conversationId": targetConversationId.uuidString]
+                        message: "✅ onComplete called",
+                        metadata: [
+                            "currentToolName": self.currentToolName ?? "none",
+                            "assistantMessageId": assistantMessageId.uuidString
+                        ]
                     )
+
+                    // Only stop generating if no tool call is pending
+                    // If a tool call was requested, keep generating until tool execution completes
+                    if self.currentToolName == nil {
+                        self.isGenerating = false
+                        if let finalConversation = self.conversationManager.conversations.first(where: { $0.id == conversationId }) {
+                            self.conversationManager.save(finalConversation)
+                        }
+
+                        // Notify that conversation is ready (for new chat navigation)
+                        if self.isNewChatMode {
+                            self.onConversationCreated?(conversationId)
+                        }
+
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "✅ Message generation completed",
+                            metadata: ["conversationId": conversationId.uuidString]
+                        )
+                    } else {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "⏳ onComplete: Tool call pending, keeping isGenerating=true",
+                            metadata: ["toolName": self.currentToolName ?? "unknown"]
+                        )
+                    }
                 }
             },
             onError: { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
+                    
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "🚨 onError callback fired",
+                        metadata: [
+                            "error": error.localizedDescription,
+                            "assistantMessageId": assistantMessageId.uuidString
+                        ]
+                    )
+                    
                     self.isGenerating = false
+                    self.currentToolName = nil
+                    self.toolCallDepth = 0
                     self.errorMessage = error.localizedDescription
+
+                    // Update the specific assistant message with error content so it persists
+                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                       let msgIndex = self.conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessageId })
+                    {
+                        self.conversationManager.conversations[convIndex].messages[msgIndex].content =
+                            "⚠️ Error: \(error.localizedDescription)"
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "📝 Updated assistant message with error"
+                        )
+                    } else {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .error,
+                            message: "❌ Could not find assistant message to update with error"
+                        )
+                    }
 
                     // Still notify for navigation even on error if conversation was created
                     if self.isNewChatMode {
-                        self.onConversationCreated?(targetConversationId)
+                        self.onConversationCreated?(conversationId)
                     }
 
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
                         message: "❌ Message generation failed: \(error.localizedDescription)",
-                        metadata: ["conversationId": targetConversationId.uuidString]
+                        metadata: ["conversationId": conversationId.uuidString]
                     )
+                }
+            },
+            onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                let argumentsWrapper = UncheckedSendable(arguments)
+                Task { @MainActor in
+                    guard let self else { return }
+                    let arguments = argumentsWrapper.value
+
+                    // Validate conversation still exists
+                    guard self.conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .default,
+                            message: "⚠️ Tool call requested but conversation no longer exists"
+                        )
+                        return
+                    }
+
+                    self.currentToolName = toolName
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "🔧 Tool call requested: \(toolName)",
+                        metadata: ["toolName": toolName]
+                    )
+
+                    // Check depth limit
+                    guard self.toolCallDepth < self.maxToolCallDepth else {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .error,
+                            message: "⚠️ Max tool call depth reached"
+                        )
+                        self.isGenerating = false
+                        self.currentToolName = nil
+                        return
+                    }
+
+                    self.toolCallDepth += 1
+
+                    // Store tool call in the last assistant message
+                    if let index = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                       var lastMessage = self.conversationManager.conversations[index].messages.last,
+                       lastMessage.role == .assistant
+                    {
+                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                            result[pair.key] = AnyCodable(pair.value)
+                        }
+                        let toolCall = MCPToolCall(
+                            id: toolCallId,
+                            toolName: toolName,
+                            arguments: anyCodableArgs
+                        )
+                        lastMessage.toolCalls = [toolCall]
+                        self.conversationManager.conversations[index].messages[
+                            self.conversationManager.conversations[index].messages.count - 1
+                        ] = lastMessage
+                        self.conversationManager.save(self.conversationManager.conversations[index])
+                    }
+
+                    // Execute the tool
+                    Task {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "⚙️ Executing tool: \(toolName)"
+                        )
+
+                        // Execute built-in tool (Tavily web search)
+                        let result = await self.openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "✅ Tool result received (\(result.count) chars)"
+                        )
+
+                        await MainActor.run {
+                            let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
+                                result[pair.key] = AnyCodable(pair.value)
+                            }
+
+                            var toolMessage = Message(role: .tool, content: result)
+                            toolMessage.toolCalls = [
+                                MCPToolCall(
+                                    id: toolCallId,
+                                    toolName: toolName,
+                                    arguments: anyCodableArgs,
+                                    result: result
+                                )
+                            ]
+                            guard let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                self.isGenerating = false
+                                self.currentToolName = nil
+                                self.toolCallDepth = 0
+                                return
+                            }
+                            self.conversationManager.addMessage(to: conv, message: toolMessage)
+
+                            // Continue conversation with tool result
+                            guard let updatedConv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                self.isGenerating = false
+                                self.currentToolName = nil
+                                self.toolCallDepth = 0
+                                return
+                            }
+
+                            // Add a new empty assistant message for the model's response
+                            let continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                            self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
+
+                            // Get conversation again with new assistant message
+                            guard let convWithAssistant = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                self.isGenerating = false
+                                self.currentToolName = nil
+                                self.toolCallDepth = 0
+                                return
+                            }
+
+                            var continuationMessages = convWithAssistant.messages
+                            if let sysPrompt = self.conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
+                                let sysMessage = Message(role: .system, content: sysPrompt)
+                                continuationMessages.insert(sysMessage, at: 0)
+                            }
+
+                            self.sendMessageWithToolSupport(
+                                messages: continuationMessages,
+                                model: model,
+                                conversationId: conversationId,
+                                assistantMessageId: continuationAssistantMessage.id,
+                                tools: toolsWrapper.value
+                            )
+                        }
+                    }
                 }
             }
         )
+    }
+
+    /// Get the ID of the last assistant message in the conversation
+    private func getLastAssistantMessageId(conversationId: UUID) -> UUID? {
+        guard let conv = conversationManager.conversations.first(where: { $0.id == conversationId }),
+              let lastMessage = conv.messages.last,
+              lastMessage.role == .assistant
+        else {
+            return nil
+        }
+        return lastMessage.id
     }
 
     /// Retry from a specific assistant message.
@@ -388,43 +724,16 @@ final class IOSChatViewModel: ObservableObject {
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        openAIService.sendMessage(
+        // Get available tools and use helper method
+        let tools = openAIService.getAllAvailableTools()
+        toolCallDepth = 0
+
+        sendMessageWithToolSupport(
             messages: messagesToSend,
             model: updatedConversation.model,
-            stream: true,
-            onChunk: { [weak self] chunk in
-                Task { @MainActor in
-                    self?.updateAssistantMessage(assistantMessage.id, appendingChunk: chunk, conversationId: targetConversationId)
-                }
-            },
-            onComplete: { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.isGenerating = false
-                    if let finalConversation = self.conversationManager.conversations.first(where: { $0.id == targetConversationId }) {
-                        self.conversationManager.save(finalConversation)
-                    }
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .info,
-                        message: "✅ Retry completed",
-                        metadata: ["conversationId": targetConversationId.uuidString]
-                    )
-                }
-            },
-            onError: { [weak self] error in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.isGenerating = false
-                    self.errorMessage = error.localizedDescription
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "❌ Retry failed: \(error.localizedDescription)",
-                        metadata: ["conversationId": targetConversationId.uuidString]
-                    )
-                }
-            }
+            conversationId: targetConversationId,
+            assistantMessageId: assistantMessage.id,
+            tools: tools
         )
     }
 
