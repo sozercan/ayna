@@ -10,66 +10,58 @@
 import SwiftUI
 
 /// Chat view for Watch showing messages and input
-/// Mimics iMessage style with bubbles and bottom reply button
+/// Mimics iMessage style with bubbles and bottom composer bar
 struct WatchChatView: View {
     let conversationId: UUID
     @ObservedObject var viewModel: WatchChatViewModel
     @EnvironmentObject var conversationStore: WatchConversationStore
 
-    @State private var showingComposer = false
+    @State private var messageText = ""
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    if let conversation = conversationStore.conversation(for: conversationId) {
-                        ForEach(conversation.messages) { message in
-                            WatchMessageView(message: message)
-                                .id(message.id)
-                        }
+        VStack(spacing: 0) {
+            // Messages list
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        if let conversation = conversationStore.conversation(for: conversationId) {
+                            ForEach(conversation.messages) { message in
+                                WatchMessageView(message: message)
+                                    .id(message.id)
+                            }
 
-                        // Typing indicator when loading
+                            // Typing indicator when loading
+                            if viewModel.isLoading {
+                                typingIndicator
+                                    .id("typing")
+                            }
+
+                            // Error message if any
+                            if let error = viewModel.errorMessage {
+                                errorView(error)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 8)
+                }
+                .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
+                    // Scroll to bottom when new message arrives
+                    withAnimation {
                         if viewModel.isLoading {
-                            typingIndicator
-                                .id("typing")
+                            proxy.scrollTo("typing", anchor: .bottom)
+                        } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
+                            proxy.scrollTo(lastId, anchor: .bottom)
                         }
+                    }
+                }
+            }
 
-                        // Error message if any
-                        if let error = viewModel.errorMessage {
-                            errorView(error)
-                        }
-                    }
-                }
-                .padding(.horizontal, 4)
-                .padding(.bottom, 60) // Space for reply button
-            }
-            .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
-                // Scroll to bottom when new message arrives
-                withAnimation {
-                    if viewModel.isLoading {
-                        proxy.scrollTo("typing", anchor: .bottom)
-                    } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
-                        proxy.scrollTo(lastId, anchor: .bottom)
-                    }
-                }
-            }
+            // Bottom composer bar (iMessage style)
+            composerBar
         }
         .navigationTitle(conversationTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .overlay(alignment: .bottom) {
-            replyButton
-        }
-        .sheet(isPresented: $showingComposer) {
-            WatchMessageComposer(
-                onSend: { text in
-                    viewModel.sendMessage(text)
-                    showingComposer = false
-                },
-                onCancel: {
-                    showingComposer = false
-                }
-            )
-        }
         .onAppear {
             viewModel.setConversation(conversationId)
         }
@@ -79,29 +71,51 @@ struct WatchChatView: View {
         conversationStore.conversation(for: conversationId)?.title ?? "Chat"
     }
 
-    private var replyButton: some View {
-        Button {
+    /// iMessage-style bottom composer bar with inline TextField
+    private var composerBar: some View {
+        HStack(spacing: 8) {
             if viewModel.isLoading {
-                viewModel.cancelRequest()
+                // Stop button when generating
+                Button {
+                    viewModel.cancelRequest()
+                } label: {
+                    HStack {
+                        Image(systemName: "stop.fill")
+                        Text("Stop")
+                    }
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.red)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             } else {
-                showingComposer = true
+                // Inline text field - tapping triggers dictation automatically on watchOS
+                TextField("Message", text: $messageText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.3))
+                    .clipShape(Capsule())
+                    .submitLabel(.send)
+                    .onSubmit {
+                        sendMessage()
+                    }
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: viewModel.isLoading ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 14))
-
-                Text(viewModel.isLoading ? "Stop" : "Reply")
-                    .font(.system(size: 14, weight: .medium))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(viewModel.isLoading ? Color.red : Color.blue)
-            .clipShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
+    }
+
+    private func sendMessage() {
+        let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        viewModel.sendMessage(trimmed)
+        messageText = ""
     }
 
     private var typingIndicator: some View {

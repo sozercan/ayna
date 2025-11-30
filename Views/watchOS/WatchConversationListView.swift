@@ -25,6 +25,13 @@ struct WatchConversationListView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink {
+                    WatchModelSelectionView()
+                } label: {
+                    Image(systemName: "cpu")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     let newId = viewModel.createNewConversation()

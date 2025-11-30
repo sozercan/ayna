@@ -1,0 +1,16 @@
+{
+  "source": "/Users/sozercan/projects/ayna/Views/watchOS/WatchContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Ayna",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 22
+        }
+      }
+    ]
+  },
+  "version": 1
+}

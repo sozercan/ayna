@@ -1,0 +1,616 @@
+[
+  {
+    "isFramework" : true,
+    "moduleName" : "Accessibility",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Accessibility.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "AuthenticationServices",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/AuthenticationServices.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Combine",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Combine.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreData",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreData.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "CoreFoundation",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreFoundation.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreGraphics",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreGraphics.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "CoreLocation",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreLocation.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreText",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreText.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreTransferable",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreTransferable.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CoreVideo",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CoreVideo.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "CryptoKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/CryptoKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Darwin",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Darwin.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "DataDetection",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/DataDetection.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "DeveloperToolsSupport",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/DeveloperToolsSupport.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Dispatch",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Dispatch.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Foundation",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Foundation.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "GeoToolbox",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/GeoToolbox.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "HomeKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/HomeKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "LocalAuthentication",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/LocalAuthentication.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "MapKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/MapKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "OSLog",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/OSLog.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "ObjectiveC",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/ObjectiveC.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Observation",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Observation.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "QuartzCore",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/QuartzCore.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "SceneKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/SceneKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Spatial",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Spatial.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "Swift",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Swift.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "SwiftUI",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/SwiftUI.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "SwiftUICore",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/SwiftUICore.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "Symbols",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/Symbols.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "System",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/System.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "UIKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/UIKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "UniformTypeIdentifiers",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/UniformTypeIdentifiers.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "WatchKit",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/WatchKit.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : true,
+    "moduleName" : "_AuthenticationServices_SwiftUI",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_AuthenticationServices_SwiftUI.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_Builtin_float",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_Builtin_float.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_Concurrency",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_Concurrency.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation1",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_DarwinFoundation1.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation2",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_DarwinFoundation2.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation3",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_DarwinFoundation3.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "_StringProcessing",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/_StringProcessing.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "os",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/os.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "isFramework" : false,
+    "moduleName" : "simd",
+    "modulePath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/swift\/watchos\/prebuilt-modules\/26.1\/simd.swiftmodule\/arm64e-apple-watchos.swiftmodule"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/Accessibility.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Accessibility-6Q65ZA89TNIDZWN1R7H6JKXQ9.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Accessibility"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/AuthenticationServices.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/AuthenticationServices-DWFHTTH73VE1DMSNO3ENVDXPS.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "AuthenticationServices"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreData.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreData-17Q2EBHZ5RSJFQV4UOSUZBAY0.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreData"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreFoundation.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreFoundation-83ROQUBSIRGKD7R8JVP9XNIGT.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreFoundation"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreGraphics.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreGraphics-717DEX5CHPFWYOVKE9QDRDM50.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreGraphics"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreLocation.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreLocation-1IMYZOL5TMTE36ZRSUO9MF2TV.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreLocation"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreText.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreText-3G0WZGPTFFSZ6RORUCOZ03XWV.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreText"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreTransferable.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreTransferable-11IJAZX1W9KOEVJADIDMPX6ER.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreTransferable"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/CoreVideo.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/CoreVideo-5QJSRMY9MXOEJ1VB36HJ70VV3.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "CoreVideo"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/Darwin.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Darwin-4PBR7ZPXUJTJSKB143O33IHF3.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Darwin"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/DataDetection.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/DataDetection-BODXNXUT7AU8IQA35R2Z2FWI3.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "DataDetection"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/DeveloperToolsSupport.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/DeveloperToolsSupport-BDPK4Y3CSI1L2B1OX7DFXQP2W.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "DeveloperToolsSupport"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/dispatch.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Dispatch-AO6EC3YSC4AJLV0RB7OM6D8OC.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Dispatch"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/Foundation.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Foundation-BZBXB075J979W6IO84CJ6QE93.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Foundation"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/HomeKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/HomeKit-DUS891ZAFF1V524ZK0DPK7WZU.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "HomeKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/LocalAuthentication.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/LocalAuthentication-14V1ABDDOKJQYFYPB3Y69BOW3.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "LocalAuthentication"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinBasic.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/MachO-9TSVI23R92YGQQQ7DMZ04HQ6H.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "MachO"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/MapKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/MapKit-BUG2LIZRPGPKCVXZD732QXQ9N.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "MapKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/OSLog.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/OSLog-73VHEF7R9EHJDF2UOVLJ5DDNF.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "OSLog"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/ObjectiveC.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/ObjectiveC-AJ6SS0VF0WA8IFXNOMK51KTDT.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ObjectiveC"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/QuartzCore.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/QuartzCore-58S4NN46SLGJ3GYNE7JYA8JL7.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "QuartzCore"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/SceneKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/SceneKit-EZ99TXHTIE5ONT0XCF82IOEQL.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SceneKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/Security.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Security-8LGBCO7JUADDHW9AJB9ADGKR8.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Security"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/Spatial\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Spatial-5GD4YLUZIH6GOJEKP6J6KQ154.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Spatial"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/SwiftShims-7166DHT9QQKBV65P53D5BIU07.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftShims"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/SwiftUI.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/SwiftUI-3G4U05SN9KXVWX1EARZ0JPSHZ.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftUI"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/SwiftUICore.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/SwiftUICore-D1MVR8J8QHP2RG3WOQDBABG1E.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SwiftUICore"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/Symbols.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/Symbols-9XTBKWYYSE340WYN141VOBZ65.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "Symbols"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/UIKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/UIKit-A3EYAVV76GHKJVH2LIEJGE7SK.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "UIKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/SubFrameworks\/UIUtilities.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/UIUtilities-19XUBYRT9U0MNLBJDU7QFG7FS.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "UIUtilities"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/UniformTypeIdentifiers.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/UniformTypeIdentifiers-CNLZ13CFRMBNKEYNKUF275OQO.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "UniformTypeIdentifiers"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/UserNotifications.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/UserNotifications-29W12WTM2O2D4Y0U182JD0ZPO.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "UserNotifications"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/WatchConnectivity.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/WatchConnectivity-31TRP56JRSBE7F4RNRQOQ7GP0.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "WatchConnectivity"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/WatchKit.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/WatchKit-17KQO32RTVJT4WY4DGJAU11CV.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "WatchKit"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinFoundation1.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_AvailabilityInternal-36E6TFE9RWVSM5DN9H87S7FMR.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_AvailabilityInternal"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_float-ABFHXV6BLDDH7992FV9F8OT64.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_float"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_intrinsics-1H42YGPOWYTUXVY8OSLB6XG0G.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_intrinsics"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_inttypes-1ZAH4XMWHT527C8Q3QZSVNCJO.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_inttypes"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_limits-5J4W5OFXQXK1F8MZRQ11EVQZZ.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_limits"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdarg-E5NC8N9U0PQ3WKP8P9B0ZFWHX.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdarg"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdatomic-7YBY7HGYQL3G2S148VDRIXULH.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdatomic"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdbool-9B15CURBUU0GQ4JKLO3IS08NE.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdbool"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stddef-9KXYFGWYBTRT47S1DQ791AY4R.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stddef"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdint-CZXKWD9Y1IY09ZGJCEEEQXG0Y.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_stdint"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_Builtin_tgmath-7WYOBCO50XH7LYRKP0YE04RJ0.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_Builtin_tgmath"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinFoundation1.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation1-7Y3CIAE8OFMTPYXI5U9B6L7PZ.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation1"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinFoundation2.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation2-1ZCWLVZBDXS8DQMDIRUURMBMU.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation2"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinFoundation3.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation3-DNYXHN9I73BB8T8MDT2LJGFT9.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_DarwinFoundation3"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/System\/Library\/Frameworks\/_LocationEssentials.framework\/Modules\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_LocationEssentials-1V7BSOSNQC3FI4I6HJVI4V30S.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_LocationEssentials"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/_SwiftConcurrencyShims-AGLBV4DXN2I0N53MMOTED7S5E.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "_SwiftConcurrencyShims"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/os-F4YYVRDAWADM427XDCIIZZ0ZO.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/os_object-3GDGXM6BB6N45XQ0E4H92MTY5.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os_object"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/os.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/os_workgroup-7K4OMJRQN920ENMG2YDV3YY9M.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "os_workgroup"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/ptrauth-6Q6GFP00P440M8K1E8EYS6NN5.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ptrauth"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/17\/include\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/ptrcheck-35IUJK10SQI1PWLD3MZBB38EM.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "ptrcheck"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/simd\/module.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/simd-CJ37OBAAUN53IWVDPEINDV9RS.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "simd"
+  },
+  {
+    "clangModuleMapPath" : "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/WatchOS.platform\/Developer\/SDKs\/WatchOS.sdk\/usr\/include\/DarwinFoundation2.modulemap",
+    "clangModulePath" : "\/Users\/sozercan\/projects\/ayna\/build\/SwiftExplicitPrecompiledModules\/sys_types-9S8CYG0LBL4U6AZP4VEHTJCZ8.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "sys_types"
+  }
+]
