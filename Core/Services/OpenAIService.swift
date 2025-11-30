@@ -1403,7 +1403,7 @@ class OpenAIService: ObservableObject {
                                 "reasoningBufferLength": "\(reasoningToSend.count)"
                             ]
                         )
-                        
+
                         if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
                         if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
                         self.currentStreamTask = nil
