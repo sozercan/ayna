@@ -187,11 +187,13 @@ struct Conversation: Identifiable, Codable, Equatable {
             for msgIndex in messages.indices where messages[msgIndex].responseGroupId == groupId {
                 messages[msgIndex].isSelectedResponse = (messages[msgIndex].id == messageId)
 
+                #if !os(watchOS)
                 // If this is the selected message and it has pending tool calls, activate them
                 if messages[msgIndex].id == messageId, let pendingCalls = messages[msgIndex].pendingToolCalls {
                     messages[msgIndex].toolCalls = pendingCalls
                     messages[msgIndex].pendingToolCalls = nil
                 }
+                #endif
             }
 
             updatedAt = Date()

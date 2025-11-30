@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(WatchConnectivity)
+import WatchConnectivity
+#endif
 
 @main
 struct AynaIOSApp: App {
@@ -30,6 +33,23 @@ struct AynaIOSApp: App {
                         await GitHubOAuthService.shared.handleCallbackURL(url)
                     }
                 }
+                .task {
+                    // Configure WatchConnectivity when WatchConnectivityService is available
+                    // This will be enabled once the file is added to the Xcode project
+                    await setupWatchConnectivity()
+                }
         }
+    }
+
+    @MainActor
+    private func setupWatchConnectivity() async {
+        // Wait for conversations to load before syncing
+        await conversationManager.loadingTask?.value
+        
+        // Configure WatchConnectivity to sync with Apple Watch
+        WatchConnectivityService.shared.configure(with: conversationManager)
+        
+        // Trigger initial sync of settings and conversations (now that they're loaded)
+        WatchConnectivityService.shared.syncConversationsToWatch(conversationManager.conversations)
     }
 }

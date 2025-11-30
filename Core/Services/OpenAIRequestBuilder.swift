@@ -25,6 +25,7 @@ enum OpenAIRequestBuilder {
     static func buildMessagePayload(from message: Message) -> [String: Any] {
         var payload: [String: Any] = ["role": message.role.rawValue]
 
+        #if !os(watchOS)
         // Handle tool role messages (tool results)
         if message.role == .tool {
             payload["content"] = message.content
@@ -79,6 +80,7 @@ enum OpenAIRequestBuilder {
             }
             return payload
         }
+        #endif
 
         // Check if message has attachments (multimodal content)
         if let attachments = message.attachments, !attachments.isEmpty {

@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
+		348246282A314913BC20394F /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
+		7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
+		880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
+		A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */; };
+		A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
+		A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
+		A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */; };
+		A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */; };
+		B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
+		B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
+		BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */; };
 		C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */; };
 		C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
 		C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C81393A62ED3DE9900F5E7F9 /* Info.plist */; };
@@ -23,11 +35,7 @@
 		C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
 		C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
-7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
-1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
-		B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
-		B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */; };
 		C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
 		C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */; };
@@ -47,18 +55,6 @@
 		C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
 		C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
-348246282A314913BC20394F /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
-880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
-		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
-		D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
-		D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
-		D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
-		D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C813064F88B81B4CA3 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
-		D0A1B2CA13064F88B81B4CA3 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
-		D0A1B2CC13064F88B81B4CA3 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
-		D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
 		C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */; };
 		C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */; };
@@ -75,7 +71,6 @@
 		C81394302ED3DEC900F5E7F9 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394262ED3DEC900F5E7F9 /* MacContentView.swift */; };
 		C81394312ED3DEC900F5E7F9 /* MCPToolSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */; };
 		C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394252ED3DEC900F5E7F9 /* MacChatView.swift */; };
-		C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */; };
 		C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */; };
 		C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */; };
 		C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */; };
@@ -86,7 +81,30 @@
 		C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */; };
 		C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */; };
 		C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */; };
-		BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */; };
+		C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */; };
+		C82E6B6C2EDBD6460055158F /* Ayna-watchOS Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C82E6B622EDBD6450055158F /* Ayna-watchOS Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C82E6B8A2EDBD7510055158F /* WatchConnectivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B882EDBD7510055158F /* WatchConnectivityService.swift */; };
+		C82E6B8B2EDBD7510055158F /* WatchConnectivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B882EDBD7510055158F /* WatchConnectivityService.swift */; };
+		C82E6B8E2EDBD7640055158F /* WatchChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B8C2EDBD7640055158F /* WatchChatViewModel.swift */; };
+		C82E6B8F2EDBD7640055158F /* WatchConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B8D2EDBD7640055158F /* WatchConversationStore.swift */; };
+		C82E6B902EDBD7640055158F /* WatchChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B8C2EDBD7640055158F /* WatchChatViewModel.swift */; };
+		C82E6B912EDBD7640055158F /* WatchConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B8D2EDBD7640055158F /* WatchConversationStore.swift */; };
+		C82E6B952EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */; };
+		C82E6B962EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */; };
+		C82E6B972EDBD7A00055158F /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B62ED3DEB800F5E7F9 /* Message.swift */; };
+		C82E6B982EDBD7A00055158F /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B42ED3DEB800F5E7F9 /* Conversation.swift */; };
+		C82E6B992EDBD7A00055158F /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
+		C82E6B9A2EDBD7A00055158F /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
+		C82E6B9B2EDBD7AA0055158F /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
+		C82E6B9C2EDBD7BF0055158F /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
+		C82E6B9D2EDBD7BF0055158F /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C82E6B9E2EDBD7BF0055158F /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
+		C82E6B9F2EDBD7BF0055158F /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
+		C82E6BA02EDBD7BF0055158F /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
+		C82E6BA12EDBD7C50055158F /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
+		C82E6BA22EDBDFF30055158F /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
+		C82E6BA32EDBDFF90055158F /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */; };
+		C82E6BA42EDBE0020055158F /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
@@ -94,19 +112,31 @@
 		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
 		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
 		C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */; };
-		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
 		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
 		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
-		A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */; };
-A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
-A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
-A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */; };
-A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */; };
+		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
+		D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
+		D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
+		D0A1B2C813064F88B81B4CA3 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
+		D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
+		D0A1B2CA13064F88B81B4CA3 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
+		D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
+		D0A1B2CC13064F88B81B4CA3 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
+		D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
+		D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
 		GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
 		GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
+		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C82E6B6A2EDBD6460055158F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C82E6B612EDBD6450055158F;
+			remoteInfo = "Ayna-watchOS Watch App";
+		};
 		C8C534E02ED41F89003D2BAC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 11000001 /* Project object */;
@@ -130,8 +160,30 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		C82E6B6D2EDBD6460055158F /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				C82E6B6C2EDBD6460055158F /* Ayna-watchOS Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0725D9936B654575806A8555 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
+		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
+		8E15F436B8A64DED94529830 /* TavilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyModels.swift; sourceTree = "<group>"; };
+		A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModel.swift; sourceTree = "<group>"; };
+		A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseGroup.swift; sourceTree = "<group>"; };
+		A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiModelResponseView.swift; sourceTree = "<group>"; };
+		A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMultiModelResponseView.swift; sourceTree = "<group>"; };
+		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
 		C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
@@ -142,25 +194,15 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		C81393B42ED3DEB800F5E7F9 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C81393B62ED3DEB800F5E7F9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
-		A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseGroup.swift; sourceTree = "<group>"; };
-8E15F436B8A64DED94529830 /* TavilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyModels.swift; sourceTree = "<group>"; };
 		C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
 		C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 		C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
 		C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStorage.swift; sourceTree = "<group>"; };
-		GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubOAuthService.swift; sourceTree = "<group>"; };
-		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
-0725D9936B654575806A8555 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
-		D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEndpointResolver.swift; sourceTree = "<group>"; };
-		D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRetryPolicy.swift; sourceTree = "<group>"; };
-		D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIImageService.swift; sourceTree = "<group>"; };
-		D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIStreamParser.swift; sourceTree = "<group>"; };
-		D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRequestBuilder.swift; sourceTree = "<group>"; };
 		C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 		C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
@@ -178,40 +220,66 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
 		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
-		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
 		C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSContentView.swift; sourceTree = "<group>"; };
 		C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
-		A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMultiModelResponseView.swift; sourceTree = "<group>"; };
 		C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
 		C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
-		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
 		C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		C81394252ED3DEC900F5E7F9 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
-		C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSystemPromptSheet.swift; sourceTree = "<group>"; };
 		C81394262ED3DEC900F5E7F9 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMessageView.swift; sourceTree = "<group>"; };
-		A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiModelResponseView.swift; sourceTree = "<group>"; };
 		C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSidebarView.swift; sourceTree = "<group>"; };
 		C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
 		C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPToolSummaryView.swift; sourceTree = "<group>"; };
+		C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSystemPromptSheet.swift; sourceTree = "<group>"; };
+		C82E6B622EDBD6450055158F /* Ayna-watchOS Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-watchOS Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C82E6B882EDBD7510055158F /* WatchConnectivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityService.swift; sourceTree = "<group>"; };
+		C82E6B8C2EDBD7640055158F /* WatchChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatViewModel.swift; sourceTree = "<group>"; };
+		C82E6B8D2EDBD7640055158F /* WatchConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConversationStore.swift; sourceTree = "<group>"; };
+		C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownRenderer.swift; sourceTree = "<group>"; };
 		C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9A100013090F5E900ABCD01 /* aynaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModel.swift; sourceTree = "<group>"; };
+		D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEndpointResolver.swift; sourceTree = "<group>"; };
+		D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRetryPolicy.swift; sourceTree = "<group>"; };
+		D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIImageService.swift; sourceTree = "<group>"; };
+		D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIStreamParser.swift; sourceTree = "<group>"; };
+		D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRequestBuilder.swift; sourceTree = "<group>"; };
+		GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubOAuthService.swift; sourceTree = "<group>"; };
+		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		C82E6B7A2EDBD7090055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
+		C82E6B822EDBD7260055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
 		C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSTests"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		05000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C82E6B5F2EDBD6450055158F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -270,6 +338,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				C9A100013090F5E900ABCD01 /* aynaUITests.xctest */,
 				C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */,
 				C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */,
+				C82E6B622EDBD6450055158F /* Ayna-watchOS Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -304,6 +373,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 			children = (
 				C81393A22ED3DE9900F5E7F9 /* iOS */,
 				C81393A72ED3DE9900F5E7F9 /* macOS */,
+				C82E6B7A2EDBD7090055158F /* watchOS */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -323,8 +393,8 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				C81393B42ED3DEB800F5E7F9 /* Conversation.swift */,
 				C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */,
 				C81393B62ED3DEB800F5E7F9 /* Message.swift */,
-							A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */,
-8E15F436B8A64DED94529830 /* TavilyModels.swift */,
+				A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */,
+				8E15F436B8A64DED94529830 /* TavilyModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -332,6 +402,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		C81393C12ED3DEB800F5E7F9 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C82E6B882EDBD7510055158F /* WatchConnectivityService.swift */,
 				C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */,
 				C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */,
 				C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */,
@@ -347,15 +418,16 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 				D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */,
 				D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */,
 				C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */,
-D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
-0725D9936B654575806A8555 /* TavilyService.swift */,
-);
+				D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
+				0725D9936B654575806A8555 /* TavilyService.swift */,
+			);
 			path = Services;
 			sourceTree = "<group>";
 		};
 		C81393CB2ED3DEB800F5E7F9 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */,
 				C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */,
 				C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */,
 				C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */,
@@ -372,6 +444,8 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 		C81393CD2ED3DEB800F5E7F9 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				C82E6B8C2EDBD7640055158F /* WatchChatViewModel.swift */,
+				C82E6B8D2EDBD7640055158F /* WatchConversationStore.swift */,
 				C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */,
 				A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */,
 			);
@@ -430,10 +504,10 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */,
 				C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */,
 				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
-							A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */,
+				A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */,
 				C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */,
 				C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */,
-								2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */,
+				2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -447,7 +521,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */,
 				C81394262ED3DEC900F5E7F9 /* MacContentView.swift */,
 				C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */,
-							A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */,
+				A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */,
 				C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */,
 				C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */,
 				C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */,
@@ -459,6 +533,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 		C813942D2ED3DEC900F5E7F9 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C82E6B822EDBD7260055158F /* watchOS */,
 				C81394222ED3DEC900F5E7F9 /* iOS */,
 				C813942C2ED3DEC900F5E7F9 /* macOS */,
 			);
@@ -483,6 +558,29 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 			name = Ayna;
 			productName = Ayna;
 			productReference = 03000001 /* Ayna.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C82E6B702EDBD6460055158F /* Build configuration list for PBXNativeTarget "Ayna-watchOS Watch App" */;
+			buildPhases = (
+				C82E6B5E2EDBD6450055158F /* Sources */,
+				C82E6B5F2EDBD6450055158F /* Frameworks */,
+				C82E6B602EDBD6450055158F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C82E6B7A2EDBD7090055158F /* watchOS */,
+				C82E6B822EDBD7260055158F /* watchOS */,
+			);
+			name = "Ayna-watchOS Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Ayna-watchOS Watch App";
+			productReference = C82E6B622EDBD6450055158F /* Ayna-watchOS Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C8C534DB2ED41F89003D2BAC /* Ayna-iOSTests */ = {
@@ -532,10 +630,12 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C8FBD3B42ED2F42A00E39928 /* Sources */,
 				C8FBD3B52ED2F42A00E39928 /* Frameworks */,
 				C8FBD3B62ED2F42A00E39928 /* Resources */,
+				C82E6B6D2EDBD6460055158F /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C82E6B6B2EDBD6460055158F /* PBXTargetDependency */,
 			);
 			name = "Ayna-iOS";
 			packageProductDependencies = (
@@ -574,6 +674,9 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 					07000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					C82E6B612EDBD6450055158F = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 					C8C534DB2ED41F89003D2BAC = {
 						CreatedOnToolsVersion = 26.1.1;
 						TestTargetID = C8FBD3B72ED2F42A00E39928;
@@ -608,6 +711,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 			targets = (
 				07000001 /* Ayna */,
 				C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */,
+				C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */,
 				C8F1C0012ED5B4F500B5BC45 /* aynaTests */,
 				C8C534DB2ED41F89003D2BAC /* Ayna-iOSTests */,
 				C9A1C1013090F5E900ABCD01 /* aynaUITests */,
@@ -622,6 +726,13 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 			files = (
 				C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
 				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C82E6B602EDBD6450055158F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -652,7 +763,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393FF2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
 				C81394012ED3DEB800F5E7F9 /* Message.swift in Sources */,
-						A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
+				A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81394032ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81394042ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
 				C81394052ED3DEB800F5E7F9 /* MCPService.swift in Sources */,
@@ -689,10 +800,35 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
 				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
 				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
-						A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,
+				A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,
 				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
-7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */,
-1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */,
+				7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */,
+				1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C82E6B5E2EDBD6450055158F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C82E6BA42EDBE0020055158F /* DiagnosticsLogger.swift in Sources */,
+				C82E6BA12EDBD7C50055158F /* GitHubOAuthService.swift in Sources */,
+				C82E6BA22EDBDFF30055158F /* EphemeralKeychainStorage.swift in Sources */,
+				C82E6B9B2EDBD7AA0055158F /* KeychainStorage.swift in Sources */,
+				C82E6BA32EDBDFF90055158F /* AppPreferences.swift in Sources */,
+				C82E6B902EDBD7640055158F /* WatchChatViewModel.swift in Sources */,
+				C82E6B962EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */,
+				C82E6B912EDBD7640055158F /* WatchConversationStore.swift in Sources */,
+				C82E6B972EDBD7A00055158F /* Message.swift in Sources */,
+				C82E6B982EDBD7A00055158F /* Conversation.swift in Sources */,
+				C82E6B992EDBD7A00055158F /* ResponseGroup.swift in Sources */,
+				C82E6B9A2EDBD7A00055158F /* ContentBlock.swift in Sources */,
+				C82E6B9C2EDBD7BF0055158F /* OpenAIRetryPolicy.swift in Sources */,
+				C82E6B9D2EDBD7BF0055158F /* OpenAIService.swift in Sources */,
+				C82E6B9E2EDBD7BF0055158F /* OpenAIStreamParser.swift in Sources */,
+				C82E6B9F2EDBD7BF0055158F /* OpenAIRequestBuilder.swift in Sources */,
+				C82E6BA02EDBD7BF0055158F /* OpenAIEndpointResolver.swift in Sources */,
+				C82E6B8A2EDBD7510055158F /* WatchConnectivityService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -727,7 +863,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393DE2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
 				C81393E02ED3DEB800F5E7F9 /* Message.swift in Sources */,
-						A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
+				A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81393E22ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81393E32ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
 				C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
@@ -750,16 +886,20 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C81393F52ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */,
 				C81393F72ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */,
 				C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */,
+				C82E6B8E2EDBD7640055158F /* WatchChatViewModel.swift in Sources */,
+				C82E6B952EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */,
+				C82E6B8F2EDBD7640055158F /* WatchConversationStore.swift in Sources */,
 				C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */,
 				C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */,
-						A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */,
+				A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */,
 				C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */,
 				C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */,
-								BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */,
+				BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */,
 				A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */,
+				C82E6B8B2EDBD7510055158F /* WatchConnectivityService.swift in Sources */,
 				C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */,
-348246282A314913BC20394F /* TavilyService.swift in Sources */,
-880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */,
+				348246282A314913BC20394F /* TavilyService.swift in Sources */,
+				880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -775,6 +915,11 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		C82E6B6B2EDBD6460055158F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */;
+			targetProxy = C82E6B6A2EDBD6460055158F /* PBXContainerItemProxy */;
+		};
 		C8C534E12ED41F89003D2BAC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */;
@@ -986,6 +1131,73 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C82E6B6E2EDBD6460055158F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Ayna-watchOS";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.sertacozercan.ayna;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+			};
+			name = Debug;
+		};
+		C82E6B6F2EDBD6460055158F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Ayna-watchOS";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.sertacozercan.ayna;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.1;
 			};
 			name = Release;
 		};
@@ -1222,6 +1434,15 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 			buildConfigurations = (
 				13000001 /* Debug */,
 				13000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C82E6B702EDBD6460055158F /* Build configuration list for PBXNativeTarget "Ayna-watchOS Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C82E6B6E2EDBD6460055158F /* Debug */,
+				C82E6B6F2EDBD6460055158F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

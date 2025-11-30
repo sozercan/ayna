@@ -41,13 +41,19 @@ class OpenAIService: ObservableObject {
 
     @Published var apiKey: String {
         didSet {
+            // Only persist API key on iOS/macOS, not watchOS (Watch receives via WatchConnectivity)
+            #if !os(watchOS)
             saveAPIKey()
+            #endif
         }
     }
 
     @Published var selectedModel: String {
         didSet {
+            // Only persist on iOS/macOS
+            #if !os(watchOS)
             AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
+            #endif
             // Sync with AIKitService if this is an AIKit model
             if modelProviders[selectedModel] == .aikit {
                 #if os(macOS)
@@ -61,11 +67,15 @@ class OpenAIService: ObservableObject {
     private var currentTask: URLSessionDataTask?
     private var currentStreamTask: Task<Void, Never>?
     private var multiModelTask: Task<Void, Never>?
+    #if !os(watchOS)
     private var appleIntelligenceTask: Task<Void, Never>?
+    #endif
 
     @Published var provider: AIProvider {
         didSet {
+            #if !os(watchOS)
             AppPreferences.storage.set(provider.rawValue, forKey: "aiProvider")
+            #endif
         }
     }
 
@@ -76,57 +86,71 @@ class OpenAIService: ObservableObject {
     private let urlSession: URLSession
 
     // Image generation service
+    #if !os(watchOS)
     private let imageService: OpenAIImageService
+    #endif
 
     @Published var customModels: [String] {
         didSet {
+            #if !os(watchOS)
             AppPreferences.storage.set(customModels, forKey: "customModels")
             // iCloud sync disabled for free developer account
             // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
             // NSUbiquitousKeyValueStore.default.synchronize()
+            #endif
         }
     }
 
     @Published var modelProviders: [String: AIProvider] {
         didSet {
+            #if !os(watchOS)
             let encodedDict = modelProviders.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
             // iCloud sync disabled for free developer account
             // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
             // NSUbiquitousKeyValueStore.default.synchronize()
+            #endif
         }
     }
 
     @Published var modelEndpointTypes: [String: APIEndpointType] {
         didSet {
+            #if !os(watchOS)
             let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
             AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
             // iCloud sync disabled for free developer account
             // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
             // NSUbiquitousKeyValueStore.default.synchronize()
+            #endif
         }
     }
 
     @Published var modelEndpoints: [String: String] {
         didSet {
+            #if !os(watchOS)
             AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
             // iCloud sync disabled for free developer account
             // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
             // NSUbiquitousKeyValueStore.default.synchronize()
+            #endif
         }
     }
 
     @Published var modelAPIKeys: [String: String] {
         didSet {
+            #if !os(watchOS)
             persistModelAPIKeys()
+            #endif
         }
     }
 
     /// Tracks which models use GitHub OAuth
     @Published var modelUsesGitHubOAuth: [String: Bool] {
         didSet {
+            #if !os(watchOS)
             let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }
             AppPreferences.storage.set(dict, forKey: "modelUsesGitHubOAuth")
+            #endif
         }
     }
 
@@ -163,13 +187,17 @@ class OpenAIService: ObservableObject {
     init(urlSession: URLSession? = nil) {
         if let session = urlSession {
             self.urlSession = session
+            #if !os(watchOS)
             imageService = OpenAIImageService(urlSession: session)
+            #endif
         } else {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = 120 // 2 minutes
             config.timeoutIntervalForResource = 300 // 5 minutes
             self.urlSession = URLSession(configuration: config)
+            #if !os(watchOS)
             imageService = OpenAIImageService(urlSession: self.urlSession)
+            #endif
         }
         // Load custom models first
         let loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
@@ -496,8 +524,10 @@ class OpenAIService: ObservableObject {
         currentStreamTask = nil
         multiModelTask?.cancel()
         multiModelTask = nil
+        #if !os(watchOS)
         appleIntelligenceTask?.cancel()
         appleIntelligenceTask = nil
+        #endif
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
@@ -505,6 +535,7 @@ class OpenAIService: ObservableObject {
         )
     }
 
+    #if !os(watchOS)
     /// Generates an image from a text prompt.
     /// Delegates to OpenAIImageService for the actual network request.
     func generateImage(
@@ -547,6 +578,7 @@ class OpenAIService: ObservableObject {
             attempt: attempt
         )
     }
+    #endif
 
     // MARK: - Helper Methods for sendMessage
 
@@ -610,7 +642,7 @@ class OpenAIService: ObservableObject {
             ]
         )
 
-        #if !os(iOS)
+        #if !os(iOS) && !os(watchOS)
             if UITestEnvironment.isEnabled {
                 simulateUITestResponse(
                     messages: messages,
@@ -648,6 +680,7 @@ class OpenAIService: ObservableObject {
         )
 
         // Handle Apple Intelligence separately
+        #if !os(watchOS)
         if effectiveProvider == .appleIntelligence {
             if #available(macOS 26.0, iOS 26.0, *) {
                 handleAppleIntelligenceRequest(
@@ -664,6 +697,13 @@ class OpenAIService: ObservableObject {
             }
             return
         }
+        #else
+        // Apple Intelligence is not available on watchOS
+        if effectiveProvider == .appleIntelligence {
+            onError(OpenAIError.apiError("Apple Intelligence is not available on Apple Watch"))
+            return
+        }
+        #endif
 
         // Validate provider settings
         do {
@@ -1683,6 +1723,7 @@ class OpenAIService: ObservableObject {
         task.resume()
     }
 
+    #if !os(watchOS)
     @available(macOS 26.0, *)
     private func handleAppleIntelligenceRequest(
         messages: [Message],
@@ -1755,6 +1796,7 @@ class OpenAIService: ObservableObject {
         }
         appleIntelligenceTask = task
     }
+    #endif
 
     // Retry logic delegated to OpenAIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
@@ -1857,6 +1899,15 @@ extension OpenAIService {
         return isAPIKeyConfigured(for: provider, model: normalizedModel)
     }
 
+    /// Check if a specific model is ready to use (has API key or doesn't need one)
+    func isModelConfigured(_ model: String) -> Bool {
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return isAPIKeyConfigured }
+
+        let modelProvider = modelProviders[trimmedModel] ?? provider
+        return isAPIKeyConfigured(for: modelProvider, model: trimmedModel)
+    }
+
     var configurationIssues: [String] {
         var issues: [String] = []
         let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1879,8 +1930,14 @@ extension OpenAIService {
 
     var usableModels: [String] {
         customModels.filter { model in
-            #if os(iOS)
+            #if os(iOS) || os(watchOS)
                 if modelProviders[model] == .aikit {
+                    return false
+                }
+            #endif
+            #if os(watchOS)
+                // Apple Intelligence is not available on watchOS
+                if modelProviders[model] == .appleIntelligence {
                     return false
                 }
             #endif
@@ -1930,10 +1987,12 @@ extension OpenAIService {
     func getAllAvailableTools() -> [[String: Any]]? {
         var tools: [[String: Any]] = []
 
-        // Add Tavily web search if available (cross-platform)
+        // Add Tavily web search if available (cross-platform, but not on watchOS)
+        #if !os(watchOS)
         if TavilyService.shared.isAvailable {
             tools.append(TavilyService.shared.toolDefinition())
         }
+        #endif
 
         // Add MCP tools (macOS only)
         #if os(macOS)
@@ -1948,7 +2007,11 @@ extension OpenAIService {
     /// - Parameter toolName: The name of the tool being called
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
-        toolName == TavilyService.toolName
+        #if os(watchOS)
+        return false
+        #else
+        return toolName == TavilyService.toolName
+        #endif
     }
 
     /// Executes a built-in tool call and returns the result.
@@ -1957,12 +2020,16 @@ extension OpenAIService {
     ///   - arguments: The arguments passed to the tool
     /// - Returns: The tool execution result as a string
     func executeBuiltInTool(name toolName: String, arguments: [String: Any]) async -> String {
+        #if os(watchOS)
+        return "Error: Tools are not available on watchOS"
+        #else
         switch toolName {
         case TavilyService.toolName:
             await TavilyService.shared.executeToolCall(arguments: arguments)
         default:
             "Error: Unknown built-in tool '\(toolName)'"
         }
+        #endif
     }
 }
 

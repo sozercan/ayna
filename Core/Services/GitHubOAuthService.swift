@@ -166,7 +166,9 @@ class GitHubOAuthService: NSObject, ObservableObject {
     private var webAuthSession: ASWebAuthenticationSession?
     private var codeVerifier: String?
     private var authState: String?
+    #if !os(watchOS)
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding?
+    #endif
 
     // Keychain Keys
     private let keychainKey = "github_oauth_token" // Legacy, kept for backward compatibility
@@ -263,6 +265,14 @@ class GitHubOAuthService: NSObject, ObservableObject {
         tokenExpiresAt = nil
         availableModels = []
         DiagnosticsLogger.log(.app, level: .info, message: "🚪 Signed out of GitHub")
+    }
+
+    /// Set access token received from Watch sync (for watchOS without shared Keychain)
+    func setAccessTokenFromWatch(_ token: String) {
+        let tokenInfo = GitHubTokenInfo(accessToken: token, refreshToken: nil, expiresAt: nil, scope: nil)
+        try? saveTokenInfo(tokenInfo)
+        isAuthenticated = true
+        DiagnosticsLogger.log(.app, level: .info, message: "🔑 Set GitHub token from Watch sync")
     }
 
     // MARK: - Token Storage
@@ -479,6 +489,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
     // MARK: - Authorization Code Flow (Web) with PKCE
 
+    #if !os(watchOS)
     func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
         presentationContextProvider = contextProvider
         isAuthenticating = true
@@ -532,6 +543,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
             clearPKCEState()
         }
     }
+    #endif
 
     // MARK: - PKCE Helpers
 
@@ -925,6 +937,7 @@ struct GitHubModel: Codable, Identifiable {
     import UIKit
 #endif
 
+#if !os(watchOS)
 class DefaultPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
         #if os(macOS)
@@ -937,9 +950,11 @@ class DefaultPresentationContextProvider: NSObject, ASWebAuthenticationPresentat
         #endif
     }
 }
+#endif
 
 // MARK: - Rate Limit Warning Banner
 
+#if !os(watchOS)
 /// Warning banner shown when GitHub Models rate limit is low or exhausted
 struct RateLimitWarningBanner: View {
     let rateLimitInfo: GitHubRateLimitInfo?
@@ -994,3 +1009,4 @@ struct RateLimitWarningBanner: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
+#endif

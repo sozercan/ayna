@@ -7,11 +7,15 @@
 
 import CloudKit
 import Combine
+#if !os(watchOS)
 import CoreSpotlight
+#endif
 import Foundation
 import OSLog
 import SwiftUI
+#if !os(watchOS)
 import UniformTypeIdentifiers
+#endif
 
 @MainActor
 final class ConversationManager: ObservableObject {
@@ -66,7 +70,9 @@ final class ConversationManager: ObservableObject {
             }
 
             await persistenceCoordinator.enqueueSave(conversation)
+            #if !os(watchOS)
             indexConversation(conversation)
+            #endif
         }
     }
 
@@ -81,7 +87,9 @@ final class ConversationManager: ObservableObject {
 
             do {
                 try await persistenceCoordinator.saveImmediately(conversation)
+                #if !os(watchOS)
                 indexConversation(conversation)
+                #endif
             } catch {
                 logManager(
                     "❌ Failed to save conversation",
@@ -150,7 +158,9 @@ final class ConversationManager: ObservableObject {
             )
 
             // Index all conversations for Spotlight
+            #if !os(watchOS)
             indexAllConversations()
+            #endif
         } catch {
             logManager(
                 "❌ Failed to load conversations",
@@ -211,7 +221,9 @@ final class ConversationManager: ObservableObject {
                  try? await CloudKitService.shared.delete(conversationId: conversation.id)
              }
              */
+            #if !os(watchOS)
             deindexConversation(id: conversation.id)
+            #endif
         }
     }
 
@@ -440,6 +452,7 @@ final class ConversationManager: ObservableObject {
 
     // MARK: - Spotlight Indexing
 
+    #if !os(watchOS)
     private nonisolated static func createSearchableItem(for conversation: Conversation)
         -> CSSearchableItem
     {
@@ -530,6 +543,7 @@ final class ConversationManager: ObservableObject {
             }
         }
     }
+    #endif
 
     // MARK: - Search and Filter
 
@@ -538,6 +552,15 @@ final class ConversationManager: ObservableObject {
     {
         guard !query.isEmpty else { return conversations }
 
+        #if os(watchOS)
+        // watchOS doesn't have CoreSpotlight, use manual search
+        return conversations.filter { conversation in
+            conversation.title.localizedCaseInsensitiveContains(query)
+                || conversation.messages.contains { message in
+                    message.content.localizedCaseInsensitiveContains(query)
+                }
+        }
+        #else
         // Use Core Spotlight for high-performance search
         let escapedQuery = query.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -573,6 +596,7 @@ final class ConversationManager: ObservableObject {
 
             searchQuery.start()
         }
+        #endif
     }
 
     func searchConversations(query: String) -> [Conversation] {
