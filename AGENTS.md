@@ -101,6 +101,22 @@ Decomposed into single-responsibility components:
 - Architecture: `MCPServerManager` (Connection), `MCPService` (Stdio), `MCPModels`.
 - Flow: User Message → LLM requests tool → App executes tool → Result sent back → LLM Final Answer.
 
+### Web Search (Tavily)
+- **Cross-Platform**: Works on both macOS and iOS.
+- **Provider**: Tavily API (`https://api.tavily.com/search`).
+- **Authentication**: API key stored in Keychain (`TavilyService.swift`).
+- **Key Files**:
+  - `TavilyService.swift`: API client, tool definition, and execution.
+  - `TavilyModels.swift`: Request/response models (`TavilySearchRequest`, `TavilySearchResponse`, `TavilyError`).
+  - `IOSToolsSettingsView` (in `IOSSettingsView.swift`): iOS configuration UI.
+  - `ToolsSettingsView` (in `MacSettingsView.swift`): macOS configuration UI.
+- **Tool Integration**:
+  - Tool name: `web_search`
+  - Parameters: `query` (required), `topic` (general/news/finance), `max_results` (1-5, default 3).
+  - Results formatted as markdown with AI-generated answer + source snippets.
+- **Flow**: Model requests `web_search` tool → `TavilyService.executeToolCall()` → Results returned to model → Model generates final response.
+- **Performance**: Optimized for speed with reduced result count (3) and shorter snippets (150 chars).
+
 ## 🧪 TESTING STRATEGY
 
 ### Environment Isolation
@@ -122,6 +138,7 @@ Tests run with `AYNA_UI_TESTING=1`, injecting:
 | Feature | macOS | iOS |
 |---------|-------|-----|
 | **GitHub Models** | ✅ Full Support | ✅ Full Support |
+| **Web Search (Tavily)** | ✅ Full Support | ✅ Full Support |
 | **MCP / AIKit** | ✅ Full Support | ❌ Not Supported (Sandboxing/Runtime limits) |
 | **UI Metaphor** | Sidebar + Detail (`NavigationSplitView`) | TabView / Stack |
 | **Inputs** | Keyboard Shortcuts (Cmd+N) | Swipe Actions |
