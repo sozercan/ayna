@@ -94,6 +94,7 @@
 		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
 		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
 		C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */; };
+		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
 		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
 		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
 		A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */; };
@@ -177,6 +178,7 @@ A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */ = {isa
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
 		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
@@ -397,6 +399,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */,
 				C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */,
 				C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */,
+				TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */,
 				C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */,
 			);
 			path = aynaTests;
@@ -711,6 +714,7 @@ D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */,
 				C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */,
 				C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */,
+				TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

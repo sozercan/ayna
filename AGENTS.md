@@ -119,6 +119,13 @@ Decomposed into single-responsibility components:
 
 ## 🧪 TESTING STRATEGY
 
+### Unit Test Requirements
+**CRITICAL**: New code in `Core/` (Services, Models, ViewModels, Utilities) **must** include unit tests.
+- Create test file in `Tests/aynaTests/` matching the source file name (e.g., `TavilyService.swift` → `TavilyServiceTests.swift`).
+- Add the test file to `Ayna.xcodeproj/project.pbxproj` (PBXFileReference, PBXBuildFile, and group entry in aynaTests).
+- Use existing test patterns: `MockURLProtocol` for network, `InMemoryKeychainStorage` for keychain.
+- Run tests before marking work complete: `xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests`
+
 ### Environment Isolation
 Tests run with `AYNA_UI_TESTING=1`, injecting:
 - `InMemoryKeychainStorage`: No system keychain access.
