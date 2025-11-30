@@ -565,10 +565,13 @@ class OpenAIService: ObservableObject {
 
         // Check if we have an active retry-after from a previous 429/403
         if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .short
-            let timeRemaining = formatter.localizedString(for: retryAfter, relativeTo: Date())
-            return "Rate limited. Please try again \(timeRemaining)."
+            let secondsRemaining = Int(retryAfter.timeIntervalSinceNow)
+            if secondsRemaining > 60 {
+                let minutesRemaining = secondsRemaining / 60
+                return "Rate limited. Please wait \(minutesRemaining) minute\(minutesRemaining == 1 ? "" : "s")."
+            } else if secondsRemaining > 0 {
+                return "Rate limited. Please wait \(secondsRemaining) second\(secondsRemaining == 1 ? "" : "s")."
+            }
         }
 
         // Check if rate limit is exhausted
@@ -1076,18 +1079,44 @@ class OpenAIService: ObservableObject {
     // MARK: - Helper Methods for streamResponse
 
     private nonisolated func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
-        if statusCode == 400 {
+        switch statusCode {
+        case 400:
             if requestURL?.absoluteString.lowercased().contains("openai.azure.com") == true {
                 return "HTTP \(statusCode) - Invalid Azure deployment or API version (\(azureAPIVersion))."
             }
             return "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
+        case 429:
+            return "Too many requests. Please wait a minute before trying again."
+        case 403:
+            if requestURL?.absoluteString.contains("models.github.ai") == true {
+                return "Rate limit exceeded. GitHub Models has usage limits. Please wait a few minutes."
+            }
+            return "HTTP \(statusCode) - Forbidden. Check your API key permissions."
+        case 500, 502, 503, 504:
+            return "Server error (\(statusCode)). Please try again in a moment."
+        default:
+            return "HTTP \(statusCode)"
         }
-
-        return "HTTP \(statusCode)"
     }
 
-    /// Extracts error message from API response JSON
+    /// Extracts error message from API response JSON, with special handling for rate limits
     private nonisolated func extractAPIErrorMessage(from data: Data, statusCode: Int) -> String {
+        // Check for rate limit status codes first
+        if statusCode == 429 {
+            // Try to get more specific message, but provide friendly fallback
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = json["error"] as? [String: Any],
+               let message = error["message"] as? String
+            {
+                // Make the message more user-friendly
+                if message.lowercased().contains("rate") || message.lowercased().contains("limit") {
+                    return "Too many requests. Please wait a minute before trying again."
+                }
+                return message
+            }
+            return "Too many requests. Please wait a minute before trying again."
+        }
+
         // Try to parse as JSON error response
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             // OpenAI-style error: {"error": {"message": "..."}}
