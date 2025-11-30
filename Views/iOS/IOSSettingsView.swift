@@ -12,11 +12,20 @@ struct IOSSettingsView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var openAIService = OpenAIService.shared
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
+    @ObservedObject var tavilyService = TavilyService.shared
     @EnvironmentObject var conversationManager: ConversationManager
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
 
     @State private var showingAddSheet = false
     @State private var selectedModelForEditing: String?
+
+    private var toolsSummary: String {
+        if tavilyService.isEnabled && tavilyService.isConfigured {
+            return "1 enabled"
+        } else {
+            return "None"
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,6 +54,23 @@ struct IOSSettingsView: View {
                         )
                     }
                     .accessibilityIdentifier(TestIdentifiers.Settings.clearConversationsButton)
+                }
+
+                // MARK: - Tools
+
+                Section("Tools") {
+                    NavigationLink {
+                        IOSToolsSettingsView()
+                    } label: {
+                        HStack {
+                            Text("Tools")
+                            Spacer()
+                            Text(toolsSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.tools.link")
                 }
 
                 // MARK: - Models
@@ -250,7 +276,7 @@ struct IOSModelEditView: View {
 
     /// Returns the effective API key - OAuth token if signed in
     private var effectiveAPIKey: String {
-        if provider == .githubModels && githubOAuth.isAuthenticated,
+        if provider == .githubModels, githubOAuth.isAuthenticated,
            let token = githubOAuth.getAccessToken()
         {
             return token
@@ -326,7 +352,7 @@ struct IOSModelEditView: View {
                             }
                         }
                         .disabled(githubOAuth.isAuthenticating)
-                        
+
                         if githubOAuth.isAuthenticating {
                             HStack {
                                 ProgressView()
@@ -340,7 +366,7 @@ struct IOSModelEditView: View {
                                 .font(.caption)
                             }
                         }
-                        
+
                         if let error = githubOAuth.authError {
                             Text(error).foregroundStyle(.red).font(.caption)
                         }
@@ -587,6 +613,128 @@ struct IOSGitHubAccountView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Tools Settings View
+
+/// iOS view for managing tools (Web Search)
+struct IOSToolsSettingsView: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+
+    var body: some View {
+        Form {
+            // Built-in Tools
+            Section {
+                HStack {
+                    Image(systemName: "globe")
+                        .font(.title2)
+                        .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? .blue : .secondary)
+                        .frame(width: 32)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Web Search")
+                            .font(.headline)
+
+                        if tavilyService.isEnabled {
+                            if tavilyService.isConfigured {
+                                Text("Powered by Tavily")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("API key required")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        } else {
+                            Text("Disabled")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $tavilyService.isEnabled)
+                        .labelsHidden()
+                        .accessibilityIdentifier("settings.tools.webSearch.toggle")
+                }
+            } header: {
+                Text("Built-in Tools")
+            } footer: {
+                Text("Tools extend the capabilities of AI models by allowing them to access external data and services.")
+            }
+
+            // Web Search Configuration
+            if tavilyService.isEnabled {
+                Section {
+                    HStack {
+                        SecureField("Tavily API Key", text: $tavilyService.apiKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("settings.tools.webSearch.apiKey")
+
+                        if tavilyService.isConfigured {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                } header: {
+                    Text("Web Search Configuration")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !tavilyService.isConfigured {
+                            Text("Enter your Tavily API key to enable web search.")
+                                .foregroundStyle(.orange)
+                        }
+                        Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
+                    }
+                }
+            }
+
+        }
+        .navigationTitle("Tools")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// iOS settings section for Tavily Web Search configuration (legacy, kept for reference)
+struct IOSWebSearchSettingsSection: View {
+    @ObservedObject private var tavilyService = TavilyService.shared
+
+    var body: some View {
+        Section {
+            Toggle("Enable Web Search", isOn: $tavilyService.isEnabled)
+                .accessibilityIdentifier("settings.webSearch.enableToggle")
+
+            if tavilyService.isEnabled {
+                HStack {
+                    SecureField("Tavily API Key", text: $tavilyService.apiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("settings.webSearch.apiKey")
+
+                    if tavilyService.isConfigured {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+            }
+        } header: {
+            Text("Web Search")
+        } footer: {
+            if tavilyService.isEnabled {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !tavilyService.isConfigured {
+                        Text("Enter your Tavily API key to enable web search.")
+                            .foregroundStyle(.orange)
+                    }
+                    Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
+                }
+            } else {
+                Text("When enabled, models can search the web for current information.")
             }
         }
     }

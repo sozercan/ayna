@@ -49,7 +49,23 @@ struct IOSChatView: View {
         var processedGroupIds: Set<UUID> = []
 
         let visibleMessages = conversation.messages.filter { message in
-            message.role != .system
+            // Hide system messages entirely
+            if message.role == .system {
+                return false
+            }
+
+            // Always show tool messages when they have content
+            if message.role == .tool {
+                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+
+            // Don't show empty assistant messages unless we're actively generating
+            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+                // Only show empty assistant message if it's the last message and we're generating
+                return message.id == conversation.messages.last?.id && viewModel.isGenerating
+            }
+
+            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
         }
 
         for message in visibleMessages {

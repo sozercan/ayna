@@ -94,6 +94,12 @@ struct IOSMessageComposer: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .accessibilityIdentifier("\(identifierPrefix).textEditor")
+                        .onSubmit {
+                            if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isGenerating {
+                                handleSendOrCancel()
+                            }
+                        }
+                        .submitLabel(.send)
                 }
                 .background(Color(uiColor: .systemGray6))
                 .clipShape(RoundedRectangle(cornerRadius: 20))

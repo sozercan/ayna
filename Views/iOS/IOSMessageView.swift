@@ -31,7 +31,102 @@ struct IOSMessageView: View {
         _lastContentHash = State(initialValue: message.content.hashValue)
     }
 
+    @State private var isToolExpanded = false
+
     var body: some View {
+        if message.role == .tool {
+            toolMessageView
+        } else {
+            regularMessageView
+        }
+    }
+
+    // MARK: - Tool Message View
+
+    private var toolMessageView: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Tool name label
+                Text(toolDisplayName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+
+                // Tool result content with collapse/expand
+                VStack(alignment: .leading, spacing: 8) {
+                    // Header with expand/collapse button
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isToolExpanded.toggle()
+                        }
+                    } label: {
+                        HStack {
+                            // Preview text when collapsed
+                            if !isToolExpanded {
+                                Text(toolPreviewText)
+                                    .font(.subheadline)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer()
+                            Image(systemName: isToolExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    // Expanded content
+                    if isToolExpanded {
+                        Divider()
+                            .background(Color.white.opacity(0.3))
+
+                        if contentBlocks.isEmpty {
+                            Text(message.content)
+                                .font(.subheadline)
+                        } else {
+                            ForEach(contentBlocks) { block in
+                                IOSContentBlockView(block: block)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.orange)
+                .foregroundStyle(.white)
+                .cornerRadius(16)
+            }
+            .frame(maxWidth: 320, alignment: .leading)
+
+            Spacer()
+        }
+        .onChange(of: message.content) { _, newContent in
+            updateContentBlocks(newContent)
+        }
+    }
+
+    private var toolDisplayName: String {
+        message.toolCalls?.first?.toolName ?? "web_search"
+    }
+
+    private var toolPreviewText: String {
+        let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Extract summary if present, otherwise show first part
+        if let summaryRange = content.range(of: "**Summary:**") {
+            let afterSummary = content[summaryRange.upperBound...]
+            if let endRange = afterSummary.range(of: "\n\n") {
+                return String(afterSummary[..<endRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            }
+            return String(afterSummary.prefix(150)).trimmingCharacters(in: .whitespaces)
+        }
+        return String(content.prefix(100)) + (content.count > 100 ? "..." : "")
+    }
+
+    // MARK: - Regular Message View
+
+    private var regularMessageView: some View {
         HStack(alignment: .top) {
             if message.role == .user {
                 Spacer()
@@ -72,7 +167,9 @@ struct IOSMessageView: View {
                 }
 
                 // Show typing indicator for empty assistant messages (waiting for response)
-                if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
+                // Don't show if the message has tool calls (it's waiting for tool execution)
+                if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
+                   message.toolCalls == nil || message.toolCalls?.isEmpty == true {
                     IOSTypingIndicatorView()
                 } else if contentBlocks.isEmpty {
                     if !message.content.isEmpty {
@@ -191,6 +288,13 @@ struct IOSMessageView: View {
                 contentBlocks = blocks
             }
         }
+    }
+
+    private func updateContentBlocks(_ content: String) {
+        let newHash = content.hashValue
+        guard newHash != lastContentHash else { return }
+        lastContentHash = newHash
+        performParse(content: content)
     }
 }
 

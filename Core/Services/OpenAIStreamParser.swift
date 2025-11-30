@@ -65,6 +65,16 @@ enum OpenAIStreamParser {
         var extractedReasoning: String?
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Log all non-empty lines to track what we receive
+        if !trimmedLine.isEmpty {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .debug,
+                message: "📍 Parser: Processing line",
+                metadata: ["lineLength": String(trimmedLine.count), "hasDataPrefix": String(trimmedLine.hasPrefix("data: "))]
+            )
+        }
+
         guard trimmedLine.hasPrefix("data: ") else {
             return StreamLineResult(
                 shouldComplete: false,
@@ -79,6 +89,11 @@ enum OpenAIStreamParser {
 
         // Check for stream completion marker
         if jsonString == "[DONE]" {
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .debug,
+                message: "📍 Parser: [DONE] marker received"
+            )
             return StreamLineResult(
                 shouldComplete: true,
                 toolCallBuffer: updatedToolCallBuffer,
@@ -95,6 +110,15 @@ enum OpenAIStreamParser {
               let firstChoice = choices.first,
               let delta = firstChoice["delta"] as? [String: Any]
         else {
+            // Log unparseable lines for debugging
+            if !jsonString.isEmpty && jsonString != "[DONE]" {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "📍 Parser: Could not parse line",
+                    metadata: ["linePreview": String(jsonString.prefix(100))]
+                )
+            }
             return StreamLineResult(
                 shouldComplete: false,
                 toolCallBuffer: updatedToolCallBuffer,
@@ -114,6 +138,12 @@ enum OpenAIStreamParser {
 
             if !textSegments.isEmpty {
                 extractedContent = textSegments.joined()
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .debug,
+                    message: "📍 Parser: Extracted content chunk",
+                    metadata: ["chunkLength": String(extractedContent?.count ?? 0)]
+                )
             }
         }
 

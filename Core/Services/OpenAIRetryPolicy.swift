@@ -79,7 +79,7 @@ enum OpenAIRetryPolicy {
             let retryDelay = max(0, retryAfter.timeIntervalSinceNow)
             return min(retryDelay, 60.0)
         }
-        
+
         // Fall back to exponential backoff with jitter
         let exponentialDelay = config.initialDelay * pow(2.0, Double(attempt))
         let cappedDelay = min(exponentialDelay, config.maxDelay)

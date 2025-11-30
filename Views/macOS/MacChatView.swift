@@ -32,7 +32,7 @@ struct MacChatView: View {
         self.conversation = conversation
         _selectedModel = State(initialValue: conversation.model)
         // Initialize selectedModels with the conversation's active models if available, otherwise fallback to single model
-        if conversation.multiModelEnabled && !conversation.activeModels.isEmpty {
+        if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
             _selectedModels = State(initialValue: Set(conversation.activeModels))
         } else if !conversation.model.isEmpty {
             _selectedModels = State(initialValue: [conversation.model])
@@ -158,7 +158,7 @@ struct MacChatView: View {
 
                 // Collect all messages in this group
                 let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-                
+
                 // Always show response groups as a group, even if only one response is currently visible
                 // This prevents UI jumping when responses arrive sequentially
                 items.append(.responseGroup(groupId: groupId, responses: groupResponses))
@@ -700,14 +700,14 @@ struct MacChatView: View {
         else {
             return
         }
-        
+
         let latest = currentConv.model
         if latest != selectedModel {
             selectedModel = latest
         }
-        
+
         // Sync multi-model state from conversation if enabled
-        if currentConv.multiModelEnabled && !currentConv.activeModels.isEmpty {
+        if currentConv.multiModelEnabled, !currentConv.activeModels.isEmpty {
             let activeSet = Set(currentConv.activeModels)
             if selectedModels != activeSet {
                 selectedModels = activeSet
@@ -805,22 +805,23 @@ struct MacChatView: View {
         guard let lastMessage = currentConversation.messages.last,
               let groupId = lastMessage.responseGroupId,
               let group = currentConversation.getResponseGroup(groupId),
-              group.selectedResponseId == nil else {
+              group.selectedResponseId == nil
+        else {
             return
         }
-        
+
         let responses = currentConversation.messages.filter { $0.responseGroupId == groupId }
         var candidateId: UUID?
-        
+
         // 1. Primary: conversation.model
         if let match = responses.first(where: { $0.model == currentConversation.model }) {
             candidateId = match.id
-        } 
+        }
         // 2. Fallback: First model
         else if let first = responses.first {
             candidateId = first.id
         }
-        
+
         if let id = candidateId {
             logChat("🤖 Auto-selecting response before sending new message", metadata: ["messageId": id.uuidString])
             conversationManager.selectResponse(in: currentConversation, groupId: groupId, messageId: id)
@@ -1013,11 +1014,11 @@ struct MacChatView: View {
             ]
         )
 
-        let enabledTools = mcpManager.getEnabledTools()
+        let enabledMCPTools = mcpManager.getEnabledTools()
 
         // If we have enabled servers but no tools yet, wait a moment and try again
         // This handles the race condition where servers are connecting at app startup
-        if enabledTools.isEmpty {
+        if enabledMCPTools.isEmpty {
             let hasEnabledServers = !mcpManager.serverConfigs.filter(\.enabled).isEmpty
             if hasEnabledServers {
                 logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
@@ -1034,18 +1035,22 @@ struct MacChatView: View {
             }
         }
 
-        // Use cached OpenAI function format for better performance
-        let tools =
-            enabledTools.isEmpty ? nil : MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
+        // Use unified tool collection (includes Tavily + MCP tools)
+        let tools = openAIService.getAllAvailableTools()
 
-        if !enabledTools.isEmpty {
+        if let tools, !tools.isEmpty {
+            let toolNames = tools.compactMap { tool -> String? in
+                guard let function = tool["function"] as? [String: Any],
+                      let name = function["name"] as? String else { return nil }
+                return name
+            }
             logChat(
-                "🔧 Available MCP tools: \(enabledTools.map(\.name).joined(separator: ", "))",
+                "🔧 Available tools: \(toolNames.joined(separator: ", "))",
                 level: .info,
-                metadata: ["tools": enabledTools.map(\.name).joined(separator: ", ")]
+                metadata: ["tools": toolNames.joined(separator: ", ")]
             )
         } else {
-            logChat("⚠️ No MCP tools available. Enable servers in Settings → MCP Tools", level: .info)
+            logChat("⚠️ No tools available. Configure web search or MCP servers in Settings", level: .info)
         }
 
         // Reset tool call depth for new user messages
@@ -1127,11 +1132,18 @@ struct MacChatView: View {
                     isGenerating = false
                     errorMessage = error.localizedDescription
 
-                    // Remove the placeholder message
+                    // Update the placeholder message with error content so it persists
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        conversationManager.conversations[index].messages.removeLast()
+                        let lastIndex = conversationManager.conversations[index].messages.count - 1
+                        if lastIndex >= 0,
+                           conversationManager.conversations[index].messages[lastIndex].role == .assistant,
+                           conversationManager.conversations[index].messages[lastIndex].content.isEmpty
+                        {
+                            conversationManager.conversations[index].messages[lastIndex].content =
+                                "⚠️ Error: \(error.localizedDescription)"
+                        }
                     }
                 }
             }
@@ -1442,11 +1454,18 @@ struct MacChatView: View {
                     batchUpdateTask?.cancel()
                     pendingChunks.removeAll()
 
-                    // Always remove the empty assistant message
+                    // Update the empty assistant message with error content
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        conversationManager.conversations[index].messages.removeLast()
+                        let lastIndex = conversationManager.conversations[index].messages.count - 1
+                        if lastIndex >= 0,
+                           conversationManager.conversations[index].messages[lastIndex].role == .assistant,
+                           conversationManager.conversations[index].messages[lastIndex].content.isEmpty
+                        {
+                            conversationManager.conversations[index].messages[lastIndex].content =
+                                "⚠️ Error: \(error.localizedDescription)"
+                        }
                     }
 
                     // Only update UI state if we're viewing this conversation
@@ -1543,7 +1562,16 @@ struct MacChatView: View {
                                 level: .info,
                                 metadata: ["toolName": toolName]
                             )
-                            let result = try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+
+                            // Route to appropriate tool handler
+                            let result: String = if openAIService.isBuiltInTool(toolName) {
+                                // Built-in tool (e.g., web_search via Tavily)
+                                await openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+                            } else {
+                                // MCP tool
+                                try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+                            }
+
                             logChat(
                                 "✅ Tool result received (\(result.count) chars)",
                                 level: .info,
@@ -1592,10 +1620,22 @@ struct MacChatView: View {
                                 }
 
                                 // Continue conversation with tool result
-                                // Recursive call to handle tool output
+                                // Add a new empty assistant message for the model's response
+                                let continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                                conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
+
+                                // Get the conversation again with the new assistant message
+                                guard
+                                    let convWithAssistant = conversationManager.conversations.first(where: {
+                                        $0.id == conversation.id
+                                    })
+                                else {
+                                    return
+                                }
+
                                 // Prepend system prompt for continued conversation
-                                var continuationMessages = updatedConv.messages
-                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: updatedConv) {
+                                var continuationMessages = convWithAssistant.messages
+                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
                                     let sysMessage = Message(role: .system, content: sysPrompt)
                                     continuationMessages.insert(sysMessage, at: 0)
                                 }
@@ -1747,10 +1787,8 @@ struct MacChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools (using cached OpenAI format for performance)
-        let mcpManager = MCPServerManager.shared
-        let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
+        // Get available tools (Tavily + MCP)
+        let tools = openAIService.getAllAvailableTools()
 
         // Reset tool call depth
         toolCallDepth = 0
@@ -1800,10 +1838,8 @@ struct MacChatView: View {
         let assistantMessage = Message(role: .assistant, content: "", model: model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools (using cached OpenAI format for performance)
-        let mcpManager = MCPServerManager.shared
-        let enabledTools = mcpManager.getEnabledTools()
-        let tools = enabledTools.isEmpty ? nil : mcpManager.getEnabledToolsAsOpenAIFunctions()
+        // Get available tools (Tavily + MCP)
+        let tools = openAIService.getAllAvailableTools()
 
         // Reset tool call depth
         toolCallDepth = 0
