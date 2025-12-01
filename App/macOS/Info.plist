@@ -36,5 +36,9 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.sertacozercan.ayna.conversation</string>
+	</array>
 </dict>
 </plist>

@@ -216,7 +216,7 @@ final class IOSChatViewModel: ObservableObject {
     /// Send a message in the current conversation.
     func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         DiagnosticsLogger.log(
             .chatView,
             level: .info,
@@ -228,7 +228,7 @@ final class IOSChatViewModel: ObservableObject {
                 "isNewChatMode": "\(isNewChatMode)"
             ]
         )
-        
+
         guard !text.isEmpty || !attachedFiles.isEmpty else {
             DiagnosticsLogger.log(
                 .chatView,
@@ -314,7 +314,7 @@ final class IOSChatViewModel: ObservableObject {
         messageText = ""
         isGenerating = true
         errorMessage = nil
-        
+
         DiagnosticsLogger.log(
             .chatView,
             level: .info,
@@ -486,7 +486,7 @@ final class IOSChatViewModel: ObservableObject {
             onError: { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
-                    
+
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
@@ -496,7 +496,7 @@ final class IOSChatViewModel: ObservableObject {
                             "assistantMessageId": assistantMessageId.uuidString
                         ]
                     )
-                    
+
                     self.isGenerating = false
                     self.currentToolName = nil
                     self.toolCallDepth = 0

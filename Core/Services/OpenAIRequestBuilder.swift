@@ -26,60 +26,60 @@ enum OpenAIRequestBuilder {
         var payload: [String: Any] = ["role": message.role.rawValue]
 
         #if !os(watchOS)
-        // Handle tool role messages (tool results)
-        if message.role == .tool {
-            payload["content"] = message.content
-            // Tool messages need tool_call_id from the assistant's tool call
-            if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
-                payload["tool_call_id"] = firstToolCall.id
-            }
-            return payload
-        }
-
-        // Handle assistant messages with tool calls
-        if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-            // Assistant message that made tool calls
-            if !message.content.isEmpty {
+            // Handle tool role messages (tool results)
+            if message.role == .tool {
                 payload["content"] = message.content
-            } else {
-                payload["content"] = "" // Empty content when only tool calls
+                // Tool messages need tool_call_id from the assistant's tool call
+                if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+                    payload["tool_call_id"] = firstToolCall.id
+                }
+                return payload
             }
 
-            // Add tool_calls array
-            let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
-                // Convert AnyCodable arguments to JSON string safely
-                var argumentsDict: [String: Any] = [:]
-                for (key, anyCodable) in toolCall.arguments {
-                    argumentsDict[key] = anyCodable.value
+            // Handle assistant messages with tool calls
+            if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                // Assistant message that made tool calls
+                if !message.content.isEmpty {
+                    payload["content"] = message.content
+                } else {
+                    payload["content"] = "" // Empty content when only tool calls
                 }
 
-                guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
-                      let argumentsString = String(data: argumentsJSON, encoding: .utf8)
-                else {
-                    DiagnosticsLogger.log(
-                        .openAIService,
-                        level: .error,
-                        message: "Failed to encode arguments for tool call",
-                        metadata: ["tool": toolCall.toolName]
-                    )
-                    return nil
-                }
+                // Add tool_calls array
+                let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+                    // Convert AnyCodable arguments to JSON string safely
+                    var argumentsDict: [String: Any] = [:]
+                    for (key, anyCodable) in toolCall.arguments {
+                        argumentsDict[key] = anyCodable.value
+                    }
 
-                return [
-                    "id": toolCall.id,
-                    "type": "function",
-                    "function": [
-                        "name": toolCall.toolName,
-                        "arguments": argumentsString
+                    guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+                          let argumentsString = String(data: argumentsJSON, encoding: .utf8)
+                    else {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .error,
+                            message: "Failed to encode arguments for tool call",
+                            metadata: ["tool": toolCall.toolName]
+                        )
+                        return nil
+                    }
+
+                    return [
+                        "id": toolCall.id,
+                        "type": "function",
+                        "function": [
+                            "name": toolCall.toolName,
+                            "arguments": argumentsString
+                        ]
                     ]
-                ]
-            }
+                }
 
-            if !toolCallsArray.isEmpty {
-                payload["tool_calls"] = toolCallsArray
+                if !toolCallsArray.isEmpty {
+                    payload["tool_calls"] = toolCallsArray
+                }
+                return payload
             }
-            return payload
-        }
         #endif
 
         // Check if message has attachments (multimodal content)

@@ -143,4 +143,5 @@ final class KeychainStorage: Sendable {
         return query
     }
 }
+
 extension KeychainStorage: KeychainStoring {}

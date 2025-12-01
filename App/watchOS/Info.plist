@@ -24,5 +24,9 @@
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.sertacozercan.ayna</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.sertacozercan.ayna.conversation</string>
+	</array>
 </dict>
 </plist>

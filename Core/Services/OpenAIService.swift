@@ -43,7 +43,7 @@ class OpenAIService: ObservableObject {
         didSet {
             // Only persist API key on iOS/macOS, not watchOS (Watch receives via WatchConnectivity)
             #if !os(watchOS)
-            saveAPIKey()
+                saveAPIKey()
             #endif
         }
     }
@@ -52,7 +52,7 @@ class OpenAIService: ObservableObject {
         didSet {
             // Only persist on iOS/macOS
             #if !os(watchOS)
-            AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
+                AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
             #endif
             // Sync with AIKitService if this is an AIKit model
             if modelProviders[selectedModel] == .aikit {
@@ -68,13 +68,13 @@ class OpenAIService: ObservableObject {
     private var currentStreamTask: Task<Void, Never>?
     private var multiModelTask: Task<Void, Never>?
     #if !os(watchOS)
-    private var appleIntelligenceTask: Task<Void, Never>?
+        private var appleIntelligenceTask: Task<Void, Never>?
     #endif
 
     @Published var provider: AIProvider {
         didSet {
             #if !os(watchOS)
-            AppPreferences.storage.set(provider.rawValue, forKey: "aiProvider")
+                AppPreferences.storage.set(provider.rawValue, forKey: "aiProvider")
             #endif
         }
     }
@@ -87,16 +87,16 @@ class OpenAIService: ObservableObject {
 
     // Image generation service
     #if !os(watchOS)
-    private let imageService: OpenAIImageService
+        private let imageService: OpenAIImageService
     #endif
 
     @Published var customModels: [String] {
         didSet {
             #if !os(watchOS)
-            AppPreferences.storage.set(customModels, forKey: "customModels")
-            // iCloud sync disabled for free developer account
-            // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
-            // NSUbiquitousKeyValueStore.default.synchronize()
+                AppPreferences.storage.set(customModels, forKey: "customModels")
+                // iCloud sync disabled for free developer account
+                // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
+                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -104,11 +104,11 @@ class OpenAIService: ObservableObject {
     @Published var modelProviders: [String: AIProvider] {
         didSet {
             #if !os(watchOS)
-            let encodedDict = modelProviders.mapValues { $0.rawValue }
-            AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
-            // iCloud sync disabled for free developer account
-            // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
-            // NSUbiquitousKeyValueStore.default.synchronize()
+                let encodedDict = modelProviders.mapValues { $0.rawValue }
+                AppPreferences.storage.set(encodedDict, forKey: "modelProviders")
+                // iCloud sync disabled for free developer account
+                // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
+                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -116,11 +116,11 @@ class OpenAIService: ObservableObject {
     @Published var modelEndpointTypes: [String: APIEndpointType] {
         didSet {
             #if !os(watchOS)
-            let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
-            AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
-            // iCloud sync disabled for free developer account
-            // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
-            // NSUbiquitousKeyValueStore.default.synchronize()
+                let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
+                AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
+                // iCloud sync disabled for free developer account
+                // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
+                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -128,10 +128,10 @@ class OpenAIService: ObservableObject {
     @Published var modelEndpoints: [String: String] {
         didSet {
             #if !os(watchOS)
-            AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
-            // iCloud sync disabled for free developer account
-            // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
-            // NSUbiquitousKeyValueStore.default.synchronize()
+                AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
+                // iCloud sync disabled for free developer account
+                // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
+                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -139,7 +139,7 @@ class OpenAIService: ObservableObject {
     @Published var modelAPIKeys: [String: String] {
         didSet {
             #if !os(watchOS)
-            persistModelAPIKeys()
+                persistModelAPIKeys()
             #endif
         }
     }
@@ -148,11 +148,17 @@ class OpenAIService: ObservableObject {
     @Published var modelUsesGitHubOAuth: [String: Bool] {
         didSet {
             #if !os(watchOS)
-            let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }
-            AppPreferences.storage.set(dict, forKey: "modelUsesGitHubOAuth")
+                let dict = modelUsesGitHubOAuth.mapValues { $0 as NSNumber }
+                AppPreferences.storage.set(dict, forKey: "modelUsesGitHubOAuth")
             #endif
         }
     }
+
+    // Tavily web search settings (synced from iPhone on watchOS)
+    #if os(watchOS)
+        @Published var tavilyAPIKey: String = ""
+        @Published var tavilyEnabled: Bool = false
+    #endif
 
     // Image generation settings
     @Published var imageSize: String {
@@ -188,7 +194,7 @@ class OpenAIService: ObservableObject {
         if let session = urlSession {
             self.urlSession = session
             #if !os(watchOS)
-            imageService = OpenAIImageService(urlSession: session)
+                imageService = OpenAIImageService(urlSession: session)
             #endif
         } else {
             let config = URLSessionConfiguration.default
@@ -196,7 +202,7 @@ class OpenAIService: ObservableObject {
             config.timeoutIntervalForResource = 300 // 5 minutes
             self.urlSession = URLSession(configuration: config)
             #if !os(watchOS)
-            imageService = OpenAIImageService(urlSession: self.urlSession)
+                imageService = OpenAIImageService(urlSession: self.urlSession)
             #endif
         }
         // Load custom models first
@@ -525,8 +531,8 @@ class OpenAIService: ObservableObject {
         multiModelTask?.cancel()
         multiModelTask = nil
         #if !os(watchOS)
-        appleIntelligenceTask?.cancel()
-        appleIntelligenceTask = nil
+            appleIntelligenceTask?.cancel()
+            appleIntelligenceTask = nil
         #endif
         DiagnosticsLogger.log(
             .openAIService,
@@ -536,48 +542,48 @@ class OpenAIService: ObservableObject {
     }
 
     #if !os(watchOS)
-    /// Generates an image from a text prompt.
-    /// Delegates to OpenAIImageService for the actual network request.
-    func generateImage(
-        prompt: String,
-        model: String? = nil,
-        onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        attempt: Int = 0
-    ) {
-        let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !requestModel.isEmpty else {
-            onError(OpenAIError.missingModel)
-            return
+        /// Generates an image from a text prompt.
+        /// Delegates to OpenAIImageService for the actual network request.
+        func generateImage(
+            prompt: String,
+            model: String? = nil,
+            onComplete: @escaping @Sendable (Data) -> Void,
+            onError: @escaping @Sendable (Error) -> Void,
+            attempt: Int = 0
+        ) {
+            let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !requestModel.isEmpty else {
+                onError(OpenAIError.missingModel)
+                return
+            }
+
+            let effectiveProvider = modelProviders[requestModel] ?? provider
+            let endpointInfo = customEndpoint(for: requestModel)
+
+            let requestConfig = OpenAIImageService.RequestConfig(
+                model: requestModel,
+                apiKey: getAPIKey(for: requestModel),
+                provider: effectiveProvider,
+                customEndpoint: endpointInfo?.endpoint,
+                azureAPIVersion: azureAPIVersion
+            )
+
+            let imageConfig = OpenAIImageService.ImageConfig(
+                size: imageSize,
+                quality: imageQuality,
+                outputFormat: outputFormat,
+                outputCompression: outputCompression
+            )
+
+            imageService.generateImage(
+                prompt: prompt,
+                requestConfig: requestConfig,
+                imageConfig: imageConfig,
+                onComplete: onComplete,
+                onError: onError,
+                attempt: attempt
+            )
         }
-
-        let effectiveProvider = modelProviders[requestModel] ?? provider
-        let endpointInfo = customEndpoint(for: requestModel)
-
-        let requestConfig = OpenAIImageService.RequestConfig(
-            model: requestModel,
-            apiKey: getAPIKey(for: requestModel),
-            provider: effectiveProvider,
-            customEndpoint: endpointInfo?.endpoint,
-            azureAPIVersion: azureAPIVersion
-        )
-
-        let imageConfig = OpenAIImageService.ImageConfig(
-            size: imageSize,
-            quality: imageQuality,
-            outputFormat: outputFormat,
-            outputCompression: outputCompression
-        )
-
-        imageService.generateImage(
-            prompt: prompt,
-            requestConfig: requestConfig,
-            imageConfig: imageConfig,
-            onComplete: onComplete,
-            onError: onError,
-            attempt: attempt
-        )
-    }
     #endif
 
     // MARK: - Helper Methods for sendMessage
@@ -681,28 +687,28 @@ class OpenAIService: ObservableObject {
 
         // Handle Apple Intelligence separately
         #if !os(watchOS)
-        if effectiveProvider == .appleIntelligence {
-            if #available(macOS 26.0, iOS 26.0, *) {
-                handleAppleIntelligenceRequest(
-                    messages: messages,
-                    temperature: temperature,
-                    stream: stream,
-                    conversationId: conversationId,
-                    onChunk: onChunk,
-                    onComplete: onComplete,
-                    onError: onError
-                )
-            } else {
-                onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
+            if effectiveProvider == .appleIntelligence {
+                if #available(macOS 26.0, iOS 26.0, *) {
+                    handleAppleIntelligenceRequest(
+                        messages: messages,
+                        temperature: temperature,
+                        stream: stream,
+                        conversationId: conversationId,
+                        onChunk: onChunk,
+                        onComplete: onComplete,
+                        onError: onError
+                    )
+                } else {
+                    onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
+                }
+                return
             }
-            return
-        }
         #else
-        // Apple Intelligence is not available on watchOS
-        if effectiveProvider == .appleIntelligence {
-            onError(OpenAIError.apiError("Apple Intelligence is not available on Apple Watch"))
-            return
-        }
+            // Apple Intelligence is not available on watchOS
+            if effectiveProvider == .appleIntelligence {
+                onError(OpenAIError.apiError("Apple Intelligence is not available on Apple Watch"))
+                return
+            }
         #endif
 
         // Validate provider settings
@@ -1724,78 +1730,78 @@ class OpenAIService: ObservableObject {
     }
 
     #if !os(watchOS)
-    @available(macOS 26.0, *)
-    private func handleAppleIntelligenceRequest(
-        messages: [Message],
-        temperature: Double?,
-        stream: Bool,
-        conversationId: UUID?,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
-    ) {
-        let service = AppleIntelligenceService.shared
+        @available(macOS 26.0, *)
+        private func handleAppleIntelligenceRequest(
+            messages: [Message],
+            temperature: Double?,
+            stream: Bool,
+            conversationId: UUID?,
+            onChunk: @escaping (String) -> Void,
+            onComplete: @escaping () -> Void,
+            onError: @escaping (Error) -> Void
+        ) {
+            let service = AppleIntelligenceService.shared
 
-        // Check availability
-        guard service.isAvailable else {
-            onError(OpenAIError.apiError(service.availabilityDescription()))
-            return
-        }
-
-        // Extract system instructions (first system message if any)
-        let systemInstructions =
-            messages.first(where: { $0.role == .system })?.content
-                ?? "You are a helpful assistant."
-
-        // Get the last user message as the prompt
-        guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
-            onError(OpenAIError.apiError("No user message found"))
-            return
-        }
-
-        // Use the provided conversation ID or a default
-        let convId = conversationId?.uuidString ?? "default"
-
-        let requestTemp = temperature ?? 0.7
-
-        // Cancel any existing Apple Intelligence task
-        appleIntelligenceTask?.cancel()
-
-        let task = Task {
-            if stream {
-                await service.streamResponse(
-                    conversationId: convId,
-                    prompt: lastUserMessage.content,
-                    systemInstructions: systemInstructions,
-                    temperature: requestTemp,
-                    onChunk: { chunk in
-                        onChunk(chunk)
-                    },
-                    onComplete: {
-                        onComplete()
-                    },
-                    onError: { error in
-                        onError(error)
-                    }
-                )
-            } else {
-                await service.generateResponse(
-                    conversationId: convId,
-                    prompt: lastUserMessage.content,
-                    systemInstructions: systemInstructions,
-                    temperature: requestTemp,
-                    onComplete: { response in
-                        onChunk(response)
-                        onComplete()
-                    },
-                    onError: { error in
-                        onError(error)
-                    }
-                )
+            // Check availability
+            guard service.isAvailable else {
+                onError(OpenAIError.apiError(service.availabilityDescription()))
+                return
             }
+
+            // Extract system instructions (first system message if any)
+            let systemInstructions =
+                messages.first(where: { $0.role == .system })?.content
+                    ?? "You are a helpful assistant."
+
+            // Get the last user message as the prompt
+            guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
+                onError(OpenAIError.apiError("No user message found"))
+                return
+            }
+
+            // Use the provided conversation ID or a default
+            let convId = conversationId?.uuidString ?? "default"
+
+            let requestTemp = temperature ?? 0.7
+
+            // Cancel any existing Apple Intelligence task
+            appleIntelligenceTask?.cancel()
+
+            let task = Task {
+                if stream {
+                    await service.streamResponse(
+                        conversationId: convId,
+                        prompt: lastUserMessage.content,
+                        systemInstructions: systemInstructions,
+                        temperature: requestTemp,
+                        onChunk: { chunk in
+                            onChunk(chunk)
+                        },
+                        onComplete: {
+                            onComplete()
+                        },
+                        onError: { error in
+                            onError(error)
+                        }
+                    )
+                } else {
+                    await service.generateResponse(
+                        conversationId: convId,
+                        prompt: lastUserMessage.content,
+                        systemInstructions: systemInstructions,
+                        temperature: requestTemp,
+                        onComplete: { response in
+                            onChunk(response)
+                            onComplete()
+                        },
+                        onError: { error in
+                            onError(error)
+                        }
+                    )
+                }
+            }
+            appleIntelligenceTask = task
         }
-        appleIntelligenceTask = task
-    }
     #endif
 
     // Retry logic delegated to OpenAIRetryPolicy
@@ -1989,11 +1995,16 @@ extension OpenAIService {
     func getAllAvailableTools() -> [[String: Any]]? {
         var tools: [[String: Any]] = []
 
-        // Add Tavily web search if available (cross-platform, but not on watchOS)
-        #if !os(watchOS)
-        if TavilyService.shared.isAvailable {
-            tools.append(TavilyService.shared.toolDefinition())
-        }
+        // Add Tavily web search if available
+        #if os(watchOS)
+            // On watchOS, use synced settings stored in OpenAIService
+            if tavilyEnabled, !tavilyAPIKey.isEmpty {
+                tools.append(tavilyToolDefinition())
+            }
+        #else
+            if TavilyService.shared.isAvailable {
+                tools.append(TavilyService.shared.toolDefinition())
+            }
         #endif
 
         // Add MCP tools (macOS only)
@@ -2010,9 +2021,9 @@ extension OpenAIService {
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
-        return false
+            return toolName == "web_search"
         #else
-        return toolName == TavilyService.toolName
+            return toolName == TavilyService.toolName
         #endif
     }
 
@@ -2023,16 +2034,148 @@ extension OpenAIService {
     /// - Returns: The tool execution result as a string
     func executeBuiltInTool(name toolName: String, arguments: [String: Any]) async -> String {
         #if os(watchOS)
-        return "Error: Tools are not available on watchOS"
+            switch toolName {
+            case "web_search":
+                return await executeWatchTavilySearch(arguments: arguments)
+            default:
+                return "Error: Unknown built-in tool '\(toolName)'"
+            }
         #else
-        switch toolName {
-        case TavilyService.toolName:
-            await TavilyService.shared.executeToolCall(arguments: arguments)
-        default:
-            "Error: Unknown built-in tool '\(toolName)'"
-        }
+            switch toolName {
+            case TavilyService.toolName:
+                await TavilyService.shared.executeToolCall(arguments: arguments)
+            default:
+                "Error: Unknown built-in tool '\(toolName)'"
+            }
         #endif
     }
+
+    #if os(watchOS)
+        /// Returns the Tavily tool definition for watchOS
+        private func tavilyToolDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_search",
+                    "description": "Search the web for current information. Use for recent events, prices, weather, or time-sensitive topics.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "query": [
+                                "type": "string",
+                                "description": "The search query"
+                            ],
+                            "topic": [
+                                "type": "string",
+                                "enum": ["general", "news", "finance"],
+                                "description": "Topic: news, finance, or general"
+                            ],
+                            "max_results": [
+                                "type": "integer",
+                                "description": "Results to return (1-5). Default 3.",
+                                "minimum": 1,
+                                "maximum": 5
+                            ]
+                        ] as [String: Any],
+                        "required": ["query"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        /// Executes a Tavily web search on watchOS using the synced API key
+        private func executeWatchTavilySearch(arguments: [String: Any]) async -> String {
+            guard !tavilyAPIKey.isEmpty else {
+                return "Error: Web search not configured. Please configure on iPhone."
+            }
+
+            guard let query = arguments["query"] as? String else {
+                return "Error: Missing 'query' parameter for web search"
+            }
+
+            let topic = (arguments["topic"] as? String) ?? "general"
+            let maxResults = min(max((arguments["max_results"] as? Int) ?? 3, 1), 5)
+
+            // Build the Tavily API request
+            let endpoint = "https://api.tavily.com/search"
+            guard let url = URL(string: endpoint) else {
+                return "Error: Invalid search endpoint"
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let body: [String: Any] = [
+                "api_key": tavilyAPIKey,
+                "query": query,
+                "topic": topic,
+                "search_depth": "basic",
+                "max_results": maxResults,
+                "include_answer": true,
+                "include_raw_content": false,
+                "include_images": false
+            ]
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                let (data, response) = try await urlSession.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    return "Error: Invalid response from search"
+                }
+
+                switch httpResponse.statusCode {
+                case 200:
+                    // Parse and format the response
+                    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        return "Error: Failed to parse search results"
+                    }
+                    return formatTavilyResponse(json, maxResults: maxResults)
+                case 401:
+                    return "Error: Invalid API key. Please reconfigure on iPhone."
+                case 429:
+                    return "Error: Rate limit exceeded. Please try again later."
+                default:
+                    return "Error: Search failed (HTTP \(httpResponse.statusCode))"
+                }
+            } catch {
+                return "Error searching the web: \(error.localizedDescription)"
+            }
+        }
+
+        /// Formats the Tavily API response for the model
+        private func formatTavilyResponse(_ json: [String: Any], maxResults: Int) -> String {
+            var output = ""
+
+            // Add AI-generated answer if available
+            if let answer = json["answer"] as? String, !answer.isEmpty {
+                output += "**Answer:** \(answer)\n\n"
+            }
+
+            // Add search results
+            if let results = json["results"] as? [[String: Any]], !results.isEmpty {
+                output += "**Sources:**\n"
+                for (index, result) in results.prefix(maxResults).enumerated() {
+                    let title = result["title"] as? String ?? "Untitled"
+                    let url = result["url"] as? String ?? ""
+                    var content = result["content"] as? String ?? ""
+
+                    // Truncate long content
+                    if content.count > 150 {
+                        content = String(content.prefix(150)) + "..."
+                    }
+
+                    output += "\(index + 1). [\(title)](\(url))\n   \(content)\n\n"
+                }
+            } else {
+                output = "No results found."
+            }
+
+            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    #endif
 }
 
 // Keychain Helper

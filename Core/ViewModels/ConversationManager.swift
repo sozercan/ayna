@@ -8,13 +8,13 @@
 import CloudKit
 import Combine
 #if !os(watchOS)
-import CoreSpotlight
+    import CoreSpotlight
 #endif
 import Foundation
 import OSLog
 import SwiftUI
 #if !os(watchOS)
-import UniformTypeIdentifiers
+    import UniformTypeIdentifiers
 #endif
 
 @MainActor
@@ -71,7 +71,7 @@ final class ConversationManager: ObservableObject {
 
             await persistenceCoordinator.enqueueSave(conversation)
             #if !os(watchOS)
-            indexConversation(conversation)
+                indexConversation(conversation)
             #endif
         }
     }
@@ -88,7 +88,7 @@ final class ConversationManager: ObservableObject {
             do {
                 try await persistenceCoordinator.saveImmediately(conversation)
                 #if !os(watchOS)
-                indexConversation(conversation)
+                    indexConversation(conversation)
                 #endif
             } catch {
                 logManager(
@@ -159,7 +159,7 @@ final class ConversationManager: ObservableObject {
 
             // Index all conversations for Spotlight
             #if !os(watchOS)
-            indexAllConversations()
+                indexAllConversations()
             #endif
         } catch {
             logManager(
@@ -222,7 +222,7 @@ final class ConversationManager: ObservableObject {
              }
              */
             #if !os(watchOS)
-            deindexConversation(id: conversation.id)
+                deindexConversation(id: conversation.id)
             #endif
         }
     }
@@ -453,96 +453,96 @@ final class ConversationManager: ObservableObject {
     // MARK: - Spotlight Indexing
 
     #if !os(watchOS)
-    private nonisolated static func createSearchableItem(for conversation: Conversation)
-        -> CSSearchableItem
-    {
-        let attributeSet = CSSearchableItemAttributeSet(contentType: .aynaConversation)
-        attributeSet.title = conversation.title
-        attributeSet.displayName = conversation.title
-        attributeSet.contentDescription = conversation.messages.last?.content
-        attributeSet.creator = "Ayna"
-        attributeSet.kind = "Conversation"
-        attributeSet.containerTitle = "Ayna Conversations"
-        attributeSet.authorNames = ["Ayna"]
-        attributeSet.metadataModificationDate = Date()
+        private nonisolated static func createSearchableItem(for conversation: Conversation)
+            -> CSSearchableItem
+        {
+            let attributeSet = CSSearchableItemAttributeSet(contentType: .aynaConversation)
+            attributeSet.title = conversation.title
+            attributeSet.displayName = conversation.title
+            attributeSet.contentDescription = conversation.messages.last?.content
+            attributeSet.creator = "Ayna"
+            attributeSet.kind = "Conversation"
+            attributeSet.containerTitle = "Ayna Conversations"
+            attributeSet.authorNames = ["Ayna"]
+            attributeSet.metadataModificationDate = Date()
 
-        var keywords = ["Ayna", "Chat", "Conversation"]
-        keywords.append(contentsOf: conversation.title.components(separatedBy: .whitespacesAndNewlines))
-        attributeSet.keywords = keywords
+            var keywords = ["Ayna", "Chat", "Conversation"]
+            keywords.append(contentsOf: conversation.title.components(separatedBy: .whitespacesAndNewlines))
+            attributeSet.keywords = keywords
 
-        // Index full content
-        let allContent = conversation.messages.map(\.content).joined(separator: "\n")
-        attributeSet.textContent = allContent
-        attributeSet.contentModificationDate = conversation.updatedAt
+            // Index full content
+            let allContent = conversation.messages.map(\.content).joined(separator: "\n")
+            attributeSet.textContent = allContent
+            attributeSet.contentModificationDate = conversation.updatedAt
 
-        return CSSearchableItem(
-            uniqueIdentifier: conversation.id.uuidString,
-            domainIdentifier: "com.sertacozercan.ayna.conversation",
-            attributeSet: attributeSet
-        )
-    }
-
-    private func indexConversation(_ conversation: Conversation) {
-        Task.detached(priority: .utility) {
-            let item = ConversationManager.createSearchableItem(for: conversation)
-
-            do {
-                try await CSSearchableIndex.default().indexSearchableItems([item])
-            } catch {
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .error,
-                    message: "❌ Spotlight indexing error",
-                    metadata: ["error": error.localizedDescription]
-                )
-            }
+            return CSSearchableItem(
+                uniqueIdentifier: conversation.id.uuidString,
+                domainIdentifier: "com.sertacozercan.ayna.conversation",
+                attributeSet: attributeSet
+            )
         }
-    }
 
-    private func indexAllConversations() {
-        let conversationsToIndex = conversations
+        private func indexConversation(_ conversation: Conversation) {
+            Task.detached(priority: .utility) {
+                let item = ConversationManager.createSearchableItem(for: conversation)
 
-        Task.detached(priority: .utility) {
-            do {
-                // Clear existing index first to ensure clean state
-                try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
-                    "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
-                ])
-
-                // Proceed with indexing
-                let items = conversationsToIndex.map { ConversationManager.createSearchableItem(for: $0) }
-                try await CSSearchableIndex.default().indexSearchableItems(items)
-
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .info,
-                    message: "✅ Spotlight batch indexing complete",
-                    metadata: ["count": "\(items.count)"]
-                )
-            } catch {
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .error,
-                    message: "❌ Spotlight batch indexing error",
-                    metadata: ["error": error.localizedDescription]
-                )
-            }
-        }
-    }
-
-    private func deindexConversation(id: UUID) {
-        CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [id.uuidString]) { error in
-            if let error {
-                Task { @MainActor in
-                    self.logManager(
-                        "❌ Spotlight deletion error",
+                do {
+                    try await CSSearchableIndex.default().indexSearchableItems([item])
+                } catch {
+                    DiagnosticsLogger.log(
+                        .conversationManager,
                         level: .error,
+                        message: "❌ Spotlight indexing error",
                         metadata: ["error": error.localizedDescription]
                     )
                 }
             }
         }
-    }
+
+        private func indexAllConversations() {
+            let conversationsToIndex = conversations
+
+            Task.detached(priority: .utility) {
+                do {
+                    // Clear existing index first to ensure clean state
+                    try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
+                        "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
+                    ])
+
+                    // Proceed with indexing
+                    let items = conversationsToIndex.map { ConversationManager.createSearchableItem(for: $0) }
+                    try await CSSearchableIndex.default().indexSearchableItems(items)
+
+                    DiagnosticsLogger.log(
+                        .conversationManager,
+                        level: .info,
+                        message: "✅ Spotlight batch indexing complete",
+                        metadata: ["count": "\(items.count)"]
+                    )
+                } catch {
+                    DiagnosticsLogger.log(
+                        .conversationManager,
+                        level: .error,
+                        message: "❌ Spotlight batch indexing error",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
+            }
+        }
+
+        private func deindexConversation(id: UUID) {
+            CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [id.uuidString]) { error in
+                if let error {
+                    Task { @MainActor in
+                        self.logManager(
+                            "❌ Spotlight deletion error",
+                            level: .error,
+                            metadata: ["error": error.localizedDescription]
+                        )
+                    }
+                }
+            }
+        }
     #endif
 
     // MARK: - Search and Filter
@@ -553,49 +553,49 @@ final class ConversationManager: ObservableObject {
         guard !query.isEmpty else { return conversations }
 
         #if os(watchOS)
-        // watchOS doesn't have CoreSpotlight, use manual search
-        return conversations.filter { conversation in
-            conversation.title.localizedCaseInsensitiveContains(query)
-                || conversation.messages.contains { message in
-                    message.content.localizedCaseInsensitiveContains(query)
-                }
-        }
-        #else
-        // Use Core Spotlight for high-performance search
-        let escapedQuery = query.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let queryString = "textContent == \"*\(escapedQuery)*\"c"
-
-        return await withCheckedContinuation { continuation in
-            let searchQuery = CSSearchQuery(queryString: queryString, attributes: [])
-            var foundIds: [String] = []
-
-            searchQuery.foundItemsHandler = { items in
-                foundIds.append(contentsOf: items.map(\.uniqueIdentifier))
-            }
-
-            searchQuery.completionHandler = { error in
-                if let error {
-                    DiagnosticsLogger.log(.conversationManager, level: .error, message: "Spotlight search failed: \(error.localizedDescription)")
-                    // Fallback to manual search if Spotlight fails
-                    let manualResults = conversations.filter { conversation in
-                        conversation.title.localizedCaseInsensitiveContains(query)
-                            || conversation.messages.contains { message in
-                                message.content.localizedCaseInsensitiveContains(query)
-                            }
+            // watchOS doesn't have CoreSpotlight, use manual search
+            return conversations.filter { conversation in
+                conversation.title.localizedCaseInsensitiveContains(query)
+                    || conversation.messages.contains { message in
+                        message.content.localizedCaseInsensitiveContains(query)
                     }
-                    continuation.resume(returning: manualResults)
-                    return
+            }
+        #else
+            // Use Core Spotlight for high-performance search
+            let escapedQuery = query.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let queryString = "textContent == \"*\(escapedQuery)*\"c"
+
+            return await withCheckedContinuation { continuation in
+                let searchQuery = CSSearchQuery(queryString: queryString, attributes: [])
+                var foundIds: [String] = []
+
+                searchQuery.foundItemsHandler = { items in
+                    foundIds.append(contentsOf: items.map(\.uniqueIdentifier))
                 }
 
-                let ids = Set(foundIds.compactMap { UUID(uuidString: $0) })
-                // Filter the provided conversations list to ensure we only return what's currently loaded/valid
-                let results = conversations.filter { ids.contains($0.id) }
-                continuation.resume(returning: results)
-            }
+                searchQuery.completionHandler = { error in
+                    if let error {
+                        DiagnosticsLogger.log(.conversationManager, level: .error, message: "Spotlight search failed: \(error.localizedDescription)")
+                        // Fallback to manual search if Spotlight fails
+                        let manualResults = conversations.filter { conversation in
+                            conversation.title.localizedCaseInsensitiveContains(query)
+                                || conversation.messages.contains { message in
+                                    message.content.localizedCaseInsensitiveContains(query)
+                                }
+                        }
+                        continuation.resume(returning: manualResults)
+                        return
+                    }
 
-            searchQuery.start()
-        }
+                    let ids = Set(foundIds.compactMap { UUID(uuidString: $0) })
+                    // Filter the provided conversations list to ensure we only return what's currently loaded/valid
+                    let results = conversations.filter { ids.contains($0.id) }
+                    continuation.resume(returning: results)
+                }
+
+                searchQuery.start()
+            }
         #endif
     }
 

@@ -20,10 +20,10 @@ struct IOSSettingsView: View {
     @State private var selectedModelForEditing: String?
 
     private var toolsSummary: String {
-        if tavilyService.isEnabled && tavilyService.isConfigured {
-            return "1 enabled"
+        if tavilyService.isEnabled, tavilyService.isConfigured {
+            "1 enabled"
         } else {
-            return "None"
+            "None"
         }
     }
 
@@ -693,7 +693,6 @@ struct IOSToolsSettingsView: View {
                     }
                 }
             }
-
         }
         .navigationTitle("Tools")
         .navigationBarTitleDisplayMode(.inline)

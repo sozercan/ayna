@@ -167,7 +167,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
     private var codeVerifier: String?
     private var authState: String?
     #if !os(watchOS)
-    private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding?
+        private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding?
     #endif
 
     // Keychain Keys
@@ -490,59 +490,59 @@ class GitHubOAuthService: NSObject, ObservableObject {
     // MARK: - Authorization Code Flow (Web) with PKCE
 
     #if !os(watchOS)
-    func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
-        presentationContextProvider = contextProvider
-        isAuthenticating = true
-        authError = nil
+        func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
+            presentationContextProvider = contextProvider
+            isAuthenticating = true
+            authError = nil
 
-        // 1. Generate PKCE code verifier and challenge
-        let verifier = generateCodeVerifier()
-        codeVerifier = verifier
-        let challenge = generateCodeChallenge(verifier: verifier)
+            // 1. Generate PKCE code verifier and challenge
+            let verifier = generateCodeVerifier()
+            codeVerifier = verifier
+            let challenge = generateCodeChallenge(verifier: verifier)
 
-        // 2. Generate state for CSRF protection
-        let state = UUID().uuidString
-        authState = state
+            // 2. Generate state for CSRF protection
+            let state = UUID().uuidString
+            authState = state
 
-        DiagnosticsLogger.log(
-            .app,
-            level: .debug,
-            message: "🔐 Starting GitHub Web Flow with PKCE",
-            metadata: ["challengeLength": "\(challenge.count)", "stateLength": "\(state.count)"]
-        )
+            DiagnosticsLogger.log(
+                .app,
+                level: .debug,
+                message: "🔐 Starting GitHub Web Flow with PKCE",
+                metadata: ["challengeLength": "\(challenge.count)", "stateLength": "\(state.count)"]
+            )
 
-        // 3. Construct authorization URL
-        var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "scope", value: scope),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "code_challenge", value: challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
-        ]
+            // 3. Construct authorization URL
+            var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
+            components.queryItems = [
+                URLQueryItem(name: "client_id", value: clientId),
+                URLQueryItem(name: "scope", value: scope),
+                URLQueryItem(name: "state", value: state),
+                URLQueryItem(name: "code_challenge", value: challenge),
+                URLQueryItem(name: "code_challenge_method", value: "S256")
+            ]
 
-        guard let url = components.url else {
-            authError = "Failed to build auth URL"
-            isAuthenticating = false
-            return
+            guard let url = components.url else {
+                authError = "Failed to build auth URL"
+                isAuthenticating = false
+                return
+            }
+
+            // 4. Create and start ASWebAuthenticationSession
+            let session = createWebAuthSession(url: url, callbackScheme: callbackScheme) { [weak self] callbackURL, error in
+                self?.handleWebAuthResult(callbackURL: callbackURL, error: error)
+            }
+
+            // Store session to prevent deallocation
+            webAuthSession = session
+            session.presentationContextProvider = contextProvider
+            session.prefersEphemeralWebBrowserSession = false // Allow SSO
+
+            if !session.start() {
+                authError = "Failed to start authentication session"
+                isAuthenticating = false
+                clearPKCEState()
+            }
         }
-
-        // 4. Create and start ASWebAuthenticationSession
-        let session = createWebAuthSession(url: url, callbackScheme: callbackScheme) { [weak self] callbackURL, error in
-            self?.handleWebAuthResult(callbackURL: callbackURL, error: error)
-        }
-
-        // Store session to prevent deallocation
-        webAuthSession = session
-        session.presentationContextProvider = contextProvider
-        session.prefersEphemeralWebBrowserSession = false // Allow SSO
-
-        if !session.start() {
-            authError = "Failed to start authentication session"
-            isAuthenticating = false
-            clearPKCEState()
-        }
-    }
     #endif
 
     // MARK: - PKCE Helpers
@@ -938,75 +938,75 @@ struct GitHubModel: Codable, Identifiable {
 #endif
 
 #if !os(watchOS)
-class DefaultPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        #if os(macOS)
-            return NSApp.windows.first ?? ASPresentationAnchor()
-        #elseif os(iOS)
-            return UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first { $0.isKeyWindow } ?? ASPresentationAnchor()
-        #endif
+    class DefaultPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+        func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
+            #if os(macOS)
+                return NSApp.windows.first ?? ASPresentationAnchor()
+            #elseif os(iOS)
+                return UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows)
+                    .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+            #endif
+        }
     }
-}
 #endif
 
 // MARK: - Rate Limit Warning Banner
 
 #if !os(watchOS)
-/// Warning banner shown when GitHub Models rate limit is low or exhausted
-struct RateLimitWarningBanner: View {
-    let rateLimitInfo: GitHubRateLimitInfo?
-    let retryAfterDate: Date?
+    /// Warning banner shown when GitHub Models rate limit is low or exhausted
+    struct RateLimitWarningBanner: View {
+        let rateLimitInfo: GitHubRateLimitInfo?
+        let retryAfterDate: Date?
 
-    var body: some View {
-        if let retryAfter = retryAfterDate, retryAfter > Date() {
-            // Actively rate-limited
-            warningBanner(
-                icon: "exclamationmark.triangle.fill",
-                message: "Rate limited. Retry \(formatRetryAfter(retryAfter)).",
-                color: .red
-            )
-        } else if let info = rateLimitInfo, info.isExhausted {
-            // Exhausted
-            warningBanner(
-                icon: "xmark.circle.fill",
-                message: "Rate limit reached. Resets \(info.formattedReset).",
-                color: .red
-            )
-        } else if let info = rateLimitInfo, info.isLow {
-            // Low
-            warningBanner(
-                icon: "exclamationmark.circle.fill",
-                message: "\(info.remaining)/\(info.limit) requests remaining. Resets \(info.formattedReset).",
-                color: .orange
-            )
+        var body: some View {
+            if let retryAfter = retryAfterDate, retryAfter > Date() {
+                // Actively rate-limited
+                warningBanner(
+                    icon: "exclamationmark.triangle.fill",
+                    message: "Rate limited. Retry \(formatRetryAfter(retryAfter)).",
+                    color: .red
+                )
+            } else if let info = rateLimitInfo, info.isExhausted {
+                // Exhausted
+                warningBanner(
+                    icon: "xmark.circle.fill",
+                    message: "Rate limit reached. Resets \(info.formattedReset).",
+                    color: .red
+                )
+            } else if let info = rateLimitInfo, info.isLow {
+                // Low
+                warningBanner(
+                    icon: "exclamationmark.circle.fill",
+                    message: "\(info.remaining)/\(info.limit) requests remaining. Resets \(info.formattedReset).",
+                    color: .orange
+                )
+            }
+        }
+
+        @ViewBuilder
+        private func warningBanner(icon: String, message: String, color: Color) -> some View {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .accessibilityIdentifier(TestIdentifiers.RateLimit.warningIcon)
+                Text(message)
+                    .font(.caption)
+                    .accessibilityIdentifier(TestIdentifiers.RateLimit.warningMessage)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(color.opacity(0.1))
+            .cornerRadius(8)
+            .accessibilityIdentifier(TestIdentifiers.RateLimit.warningBanner)
+        }
+
+        private func formatRetryAfter(_ date: Date) -> String {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return formatter.localizedString(for: date, relativeTo: Date())
         }
     }
-
-    @ViewBuilder
-    private func warningBanner(icon: String, message: String, color: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .accessibilityIdentifier(TestIdentifiers.RateLimit.warningIcon)
-            Text(message)
-                .font(.caption)
-                .accessibilityIdentifier(TestIdentifiers.RateLimit.warningMessage)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.1))
-        .cornerRadius(8)
-        .accessibilityIdentifier(TestIdentifiers.RateLimit.warningBanner)
-    }
-
-    private func formatRetryAfter(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
 #endif
