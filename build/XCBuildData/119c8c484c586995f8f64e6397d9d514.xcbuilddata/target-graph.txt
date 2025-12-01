@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Ayna-watchOS Watch App' in project 'Ayna' (no dependencies)
