@@ -18,9 +18,11 @@
     @MainActor
     final class WatchChatViewModel: ObservableObject {
         @Published var isLoading = false
+        @Published var isStreaming = false // True once first chunk received
         @Published var errorMessage: String?
         @Published var streamingContent = ""
         @Published var currentToolName: String?
+        @Published var failedMessage: String?
 
         private let conversationStore: WatchConversationStore
         private let connectivityService: WatchConnectivityService
@@ -28,6 +30,11 @@
         private var currentConversationId: UUID?
         private var toolCallDepth = 0
         private let maxToolCallDepth = 5
+
+        // Streaming throttle for performance
+        private var lastUIUpdateTime: Date = .distantPast
+        private let uiUpdateInterval: TimeInterval = 0.1 // 100ms throttle
+        private var pendingContent = ""
 
         init(
             conversationStore: WatchConversationStore = .shared,
@@ -46,6 +53,8 @@
             streamingContent = ""
             currentToolName = nil
             toolCallDepth = 0
+            failedMessage = nil
+            pendingContent = ""
         }
 
         /// Play haptic feedback
@@ -65,10 +74,14 @@
 
             // Clear any previous error
             errorMessage = nil
+            failedMessage = nil
             isLoading = true
+            isStreaming = false
             streamingContent = ""
+            pendingContent = ""
             currentToolName = nil
             toolCallDepth = 0
+            lastUIUpdateTime = .distantPast
 
             // Play haptic for message sent
             playHaptic(.click)
@@ -97,6 +110,7 @@
             // Get updated conversation with messages
             guard let updatedConversation = conversationStore.conversation(for: conversationId) else {
                 isLoading = false
+                isStreaming = false
                 errorMessage = "Failed to update conversation"
                 playHaptic(.failure)
                 return
@@ -122,6 +136,7 @@
                     model = fallback
                 } else {
                     isLoading = false
+                    isStreaming = false
                     errorMessage = "No compatible models available. Please add a model on iPhone."
                     playHaptic(.failure)
                     return
@@ -131,6 +146,7 @@
             // Check if the model is configured (has API key or doesn't need one like Apple Intelligence)
             guard openAIService.isModelConfigured(model) else {
                 isLoading = false
+                isStreaming = false
                 errorMessage = "API key not configured. Please configure on iPhone."
                 playHaptic(.failure)
                 return
@@ -167,11 +183,25 @@
                 onChunk: { [weak self] chunk in
                     Task { @MainActor in
                         guard let self else { return }
-                        self.streamingContent += chunk
-                        self.conversationStore.updateLastMessage(
-                            in: conversationId,
-                            content: self.streamingContent
-                        )
+
+                        // Mark as streaming once we receive the first chunk
+                        if !self.isStreaming {
+                            self.isStreaming = true
+                        }
+
+                        self.pendingContent += chunk
+
+                        // Throttle UI updates for better performance on Watch
+                        let now = Date()
+                        if now.timeIntervalSince(self.lastUIUpdateTime) >= self.uiUpdateInterval {
+                            self.streamingContent = self.pendingContent
+                            self.conversationStore.updateLastMessage(
+                                in: conversationId,
+                                content: self.streamingContent
+                            )
+                            self.lastUIUpdateTime = now
+                        }
+
                         // Clear tool indicator when we start receiving content
                         if self.currentToolName != nil {
                             self.currentToolName = nil
@@ -193,7 +223,17 @@
                             return
                         }
 
+                        // Flush any remaining pending content
+                        if !self.pendingContent.isEmpty {
+                            self.streamingContent = self.pendingContent
+                            self.conversationStore.updateLastMessage(
+                                in: conversationId,
+                                content: self.streamingContent
+                            )
+                        }
+
                         self.isLoading = false
+                        self.isStreaming = false
                         self.toolCallDepth = 0
 
                         // Play success haptic
@@ -227,18 +267,27 @@
                     Task { @MainActor in
                         guard let self else { return }
                         self.isLoading = false
+                        self.isStreaming = false
                         self.currentToolName = nil
                         self.toolCallDepth = 0
                         self.errorMessage = error.localizedDescription
 
+                        // Store the failed message for retry
+                        self.failedMessage = userContent
+
                         // Play failure haptic
                         self.playHaptic(.failure)
 
-                        // Remove the empty assistant message
+                        // Remove the empty assistant message and the user message
                         if var conv = self.conversationStore.conversation(for: conversationId),
                            !conv.messages.isEmpty
                         {
+                            // Remove assistant placeholder
                             conv.messages.removeLast()
+                            // Remove user message (will be re-added on retry)
+                            if !conv.messages.isEmpty {
+                                conv.messages.removeLast()
+                            }
                             self.conversationStore.updateConversations(
                                 self.conversationStore.conversations.map { $0.id == conversationId ? conv : $0 }
                             )
@@ -265,6 +314,7 @@
                                 message: "⌚ Max tool call depth reached"
                             )
                             self.isLoading = false
+                            self.isStreaming = false
                             self.currentToolName = nil
                             self.playHaptic(.failure)
                             return
@@ -307,6 +357,7 @@
                                 // Get updated messages
                                 guard let updatedConv = self.conversationStore.conversation(for: conversationId) else {
                                     self.isLoading = false
+                                    self.isStreaming = false
                                     self.currentToolName = nil
                                     return
                                 }
@@ -335,9 +386,24 @@
         func cancelRequest() {
             openAIService.cancelCurrentRequest()
             isLoading = false
+            isStreaming = false
             currentToolName = nil
             toolCallDepth = 0
             playHaptic(.click)
+        }
+
+        /// Retry the last failed message
+        func retryFailedMessage() {
+            guard let message = failedMessage else { return }
+            failedMessage = nil
+            errorMessage = nil
+            sendMessage(message)
+        }
+
+        /// Clear the failed message without retrying
+        func dismissError() {
+            failedMessage = nil
+            errorMessage = nil
         }
 
         /// Create a new conversation

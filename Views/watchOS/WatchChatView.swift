@@ -28,14 +28,14 @@
                         if let conversation = conversationStore.conversation(for: conversationId) {
                             ForEach(conversation.messages) { message in
                                 // Don't show empty assistant messages (placeholder during streaming)
-                                if !message.content.isEmpty || message.role == "user" {
+                                if !message.content.isEmpty || message.role.lowercased() == "user" {
                                     WatchMessageView(message: message)
                                         .id(message.id)
                                 }
                             }
 
-                            // Typing indicator when loading
-                            if viewModel.isLoading {
+                            // Typing indicator only when waiting for response (not during streaming)
+                            if viewModel.isLoading, !viewModel.isStreaming {
                                 if let toolName = viewModel.currentToolName {
                                     toolIndicator(toolName)
                                         .id("tool")
@@ -45,7 +45,7 @@
                                 }
                             }
 
-                            // Error message if any
+                            // Error message with retry if any
                             if let error = viewModel.errorMessage {
                                 errorView(error)
                             }
@@ -64,13 +64,15 @@
                 .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
                     // Scroll to bottom when new message arrives
                     withAnimation {
-                        if viewModel.isLoading {
+                        if viewModel.isLoading, !viewModel.isStreaming {
+                            // Waiting for response - scroll to typing indicator
                             if viewModel.currentToolName != nil {
                                 proxy.scrollTo("tool", anchor: .bottom)
                             } else {
                                 proxy.scrollTo("typing", anchor: .bottom)
                             }
                         } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
+                            // Streaming or idle - scroll to last message
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
@@ -184,14 +186,41 @@
         }
 
         private func errorView(_ message: String) -> some View {
-            Text(message)
-                .font(.system(size: 11))
-                .foregroundColor(.red)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.red.opacity(0.2))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: .infinity, alignment: .center)
+            VStack(spacing: 8) {
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+
+                if viewModel.failedMessage != nil {
+                    HStack(spacing: 12) {
+                        Button {
+                            viewModel.retryFailedMessage()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Retry")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+
+                        Button {
+                            viewModel.dismissError()
+                        } label: {
+                            Text("Dismiss")
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(Color.red.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 

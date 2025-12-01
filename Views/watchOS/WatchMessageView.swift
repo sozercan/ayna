@@ -16,7 +16,7 @@
         var showTimestamp: Bool = false
 
         private var isUser: Bool {
-            message.role == "user"
+            message.role.lowercased() == "user"
         }
 
         var body: some View {
