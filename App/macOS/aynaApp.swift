@@ -9,6 +9,9 @@ import AppKit
 import OSLog
 import SwiftUI
 
+/// Activity type for Handoff from Apple Watch
+private let handoffActivityType = "com.sertacozercan.ayna.conversation"
+
 @MainActor
 private var uiTestWindowObserver: NSObjectProtocol?
 
@@ -68,6 +71,9 @@ struct aynaApp: App {
                         }
                     }
                 }
+                .onContinueUserActivity(handoffActivityType) { activity in
+                    handleHandoff(activity)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
@@ -104,6 +110,39 @@ struct aynaApp: App {
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
+        }
+    }
+
+    @MainActor
+    private func handleHandoff(_ activity: NSUserActivity) {
+        guard let userInfo = activity.userInfo,
+              let conversationIdString = userInfo["conversationId"] as? String,
+              let conversationId = UUID(uuidString: conversationIdString)
+        else {
+            DiagnosticsLogger.log(
+                .app,
+                level: .error,
+                message: "❌ Failed to parse Handoff activity"
+            )
+            return
+        }
+
+        // Check if the conversation exists
+        if conversationManager.conversations.contains(where: { $0.id == conversationId }) {
+            conversationManager.selectedConversationId = conversationId
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "✅ Handoff: Opened conversation from Watch",
+                metadata: ["conversationId": conversationIdString]
+            )
+        } else {
+            DiagnosticsLogger.log(
+                .app,
+                level: .default,
+                message: "⚠️ Handoff: Conversation not found",
+                metadata: ["conversationId": conversationIdString]
+            )
         }
     }
 }

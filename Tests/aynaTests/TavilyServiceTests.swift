@@ -83,26 +83,26 @@ final class TavilyServiceTests: XCTestCase {
                 headerFields: nil
             )!
             let body = Data("""
-                {
-                    "query": "test query",
-                    "answer": "This is the AI-generated answer.",
-                    "results": [
-                        {
-                            "title": "Result 1",
-                            "url": "https://example.com/1",
-                            "content": "Content for result 1",
-                            "score": 0.95
-                        },
-                        {
-                            "title": "Result 2",
-                            "url": "https://example.com/2",
-                            "content": "Content for result 2",
-                            "score": 0.85
-                        }
-                    ],
-                    "response_time": 1.23
-                }
-                """.utf8)
+            {
+                "query": "test query",
+                "answer": "This is the AI-generated answer.",
+                "results": [
+                    {
+                        "title": "Result 1",
+                        "url": "https://example.com/1",
+                        "content": "Content for result 1",
+                        "score": 0.95
+                    },
+                    {
+                        "title": "Result 2",
+                        "url": "https://example.com/2",
+                        "content": "Content for result 2",
+                        "score": 0.85
+                    }
+                ],
+                "response_time": 1.23
+            }
+            """.utf8)
             return (response, body)
         }
 
@@ -149,8 +149,8 @@ final class TavilyServiceTests: XCTestCase {
 
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = Data("""
-                {"query": "test", "results": [], "response_time": 0.5}
-                """.utf8)
+            {"query": "test", "results": [], "response_time": 0.5}
+            """.utf8)
             return (response, body)
         }
 
@@ -205,8 +205,8 @@ final class TavilyServiceTests: XCTestCase {
 
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = Data("""
-                {"query": "test", "results": [], "response_time": 0.5}
-                """.utf8)
+            {"query": "test", "results": [], "response_time": 0.5}
+            """.utf8)
             return (response, body)
         }
 
@@ -300,8 +300,8 @@ final class TavilyServiceTests: XCTestCase {
                 headerFields: nil
             )!
             let body = Data("""
-                {"detail": {"error": "Invalid query parameter"}}
-                """.utf8)
+            {"detail": {"error": "Invalid query parameter"}}
+            """.utf8)
             return (response, body)
         }
 
@@ -352,20 +352,20 @@ final class TavilyServiceTests: XCTestCase {
                 headerFields: nil
             )!
             let body = Data("""
-                {
-                    "query": "weather",
-                    "answer": "The weather is sunny.",
-                    "results": [
-                        {
-                            "title": "Weather Report",
-                            "url": "https://weather.com",
-                            "content": "Today's forecast shows clear skies with temperatures around 72°F.",
-                            "score": 0.9
-                        }
-                    ],
-                    "response_time": 0.8
-                }
-                """.utf8)
+            {
+                "query": "weather",
+                "answer": "The weather is sunny.",
+                "results": [
+                    {
+                        "title": "Weather Report",
+                        "url": "https://weather.com",
+                        "content": "Today's forecast shows clear skies with temperatures around 72°F.",
+                        "score": 0.9
+                    }
+                ],
+                "response_time": 0.8
+            }
+            """.utf8)
             return (response, body)
         }
 
@@ -417,8 +417,8 @@ final class TavilyServiceTests: XCTestCase {
 
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             let body = Data("""
-                {"query": "test", "results": [], "response_time": 0.5}
-                """.utf8)
+            {"query": "test", "results": [], "response_time": 0.5}
+            """.utf8)
             return (response, body)
         }
 

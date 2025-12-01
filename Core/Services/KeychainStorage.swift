@@ -35,6 +35,12 @@ final class KeychainStorage: Sendable {
     static let shared = KeychainStorage()
 
     private let serviceIdentifier = "com.sertacozercan.ayna"
+    // Note: Shared keychain access groups require a paid developer account.
+    // For free accounts, each app uses its own keychain and syncs via WatchConnectivity.
+    // Uncomment below if using a paid account with App Groups capability:
+    // #if os(iOS) || os(watchOS)
+    // private let accessGroup = "group.com.sertacozercan.ayna"
+    // #endif
     private init() {}
 
     private func log(
@@ -122,13 +128,19 @@ final class KeychainStorage: Sendable {
     }
 
     private func baseQuery(for key: String) -> [String: Any] {
-        [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key
             // iCloud sync disabled for free developer account
             // kSecAttrSynchronizable as String: kCFBooleanTrue!
         ]
+        // Note: Access group for shared keychain requires paid developer account.
+        // Uncomment below if using App Groups:
+        // #if os(iOS) || os(watchOS)
+        // query[kSecAttrAccessGroup as String] = accessGroup
+        // #endif
+        return query
     }
 }
 

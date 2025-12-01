@@ -22,6 +22,7 @@ enum DiagnosticsCategory: String, CaseIterable, Codable {
     case contentView = "ContentView"
     case attachmentStorage = "AttachmentStorage"
     case cloudKit = "CloudKitService"
+    case watchConnectivity = "WatchConnectivity"
 }
 
 enum BreadcrumbLevel: String, Codable {

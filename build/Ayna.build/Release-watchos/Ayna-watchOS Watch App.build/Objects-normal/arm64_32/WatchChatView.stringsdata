@@ -1,0 +1,24 @@
+{
+  "source": "/Users/sozercan/projects/ayna/Views/watchOS/WatchChatView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Message",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 96
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 84
+        }
+      }
+    ]
+  },
+  "version": 1
+}

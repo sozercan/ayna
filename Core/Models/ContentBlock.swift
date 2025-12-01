@@ -18,7 +18,9 @@ struct ContentBlock: Identifiable {
         case unorderedList([AttributedString])
         case orderedList(start: Int, items: [AttributedString])
         case blockquote(AttributedString)
-        case table(MarkdownTable)
+        #if !os(watchOS)
+            case table(MarkdownTable)
+        #endif
         case divider
         case code(String, String)
         case tool(String, String)

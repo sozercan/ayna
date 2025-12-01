@@ -111,7 +111,7 @@ enum OpenAIStreamParser {
               let delta = firstChoice["delta"] as? [String: Any]
         else {
             // Log unparseable lines for debugging
-            if !jsonString.isEmpty && jsonString != "[DONE]" {
+            if !jsonString.isEmpty, jsonString != "[DONE]" {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .debug,

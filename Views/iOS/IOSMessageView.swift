@@ -169,7 +169,8 @@ struct IOSMessageView: View {
                 // Show typing indicator for empty assistant messages (waiting for response)
                 // Don't show if the message has tool calls (it's waiting for tool execution)
                 if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
-                   message.toolCalls == nil || message.toolCalls?.isEmpty == true {
+                   message.toolCalls == nil || message.toolCalls?.isEmpty == true
+                {
                     IOSTypingIndicatorView()
                 } else if contentBlocks.isEmpty {
                     if !message.content.isEmpty {

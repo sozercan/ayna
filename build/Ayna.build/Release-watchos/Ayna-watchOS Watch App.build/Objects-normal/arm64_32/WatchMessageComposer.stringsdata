@@ -1,0 +1,40 @@
+{
+  "source": "/Users/sozercan/projects/ayna/Views/watchOS/WatchMessageComposer.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "New Message",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 60
+        }
+      },
+      {
+        "comment": "",
+        "key": "Message",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 64
+        }
+      },
+      {
+        "comment": "",
+        "key": "Quick Replies",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 109
+        }
+      }
+    ]
+  },
+  "version": 1
+}
