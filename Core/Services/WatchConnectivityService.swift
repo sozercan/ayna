@@ -92,12 +92,14 @@ private enum WatchMessageKeys {
     static let conversation = "conversation"
     static let newMessage = "newMessage"
     static let conversationId = "conversationId"
+    static let title = "title"
 
     // Message types
     static let typeNewMessage = "newMessage"
     static let typeNewConversation = "newConversation"
     static let typeRequestSync = "requestSync"
     static let typeSyncResponse = "syncResponse"
+    static let typeTitleUpdate = "titleUpdate"
 }
 
 // MARK: - iOS Side (Companion App)
@@ -297,6 +299,22 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             metadata: ["conversationId": watchConversation.id.uuidString, "title": watchConversation.title]
         )
     }
+
+    /// Handle title update from Watch
+    private func handleTitleUpdate(conversationId: UUID, newTitle: String) {
+        guard let conversationManager else { return }
+
+        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversationManager.conversations[index].title = newTitle
+
+            DiagnosticsLogger.log(
+                .watchConnectivity,
+                level: .info,
+                message: "📱 Updated conversation title from Watch",
+                metadata: ["conversationId": conversationId.uuidString, "title": newTitle]
+            )
+        }
+    }
 }
 
 extension WatchConnectivityService: WCSessionDelegate {
@@ -457,6 +475,16 @@ extension WatchConnectivityService: WCSessionDelegate {
             if let conversations = conversationManager?.conversations {
                 syncConversationsToWatch(conversations)
             }
+
+        case WatchMessageKeys.typeTitleUpdate:
+            // Handle title update from Watch
+            guard let conversationIdString = message[WatchMessageKeys.conversationId] as? String,
+                  let conversationId = UUID(uuidString: conversationIdString),
+                  let newTitle = message[WatchMessageKeys.title] as? String
+            else {
+                return
+            }
+            handleTitleUpdate(conversationId: conversationId, newTitle: newTitle)
 
         default:
             DiagnosticsLogger.log(
@@ -626,6 +654,38 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                 metadata: ["error": error.localizedDescription]
             )
         }
+    }
+
+    /// Send a title update to iPhone
+    func sendTitleUpdate(conversationId: UUID, newTitle: String) {
+        guard let session else { return }
+
+        let message: [String: Any] = [
+            WatchMessageKeys.type: WatchMessageKeys.typeTitleUpdate,
+            WatchMessageKeys.conversationId: conversationId.uuidString,
+            WatchMessageKeys.title: newTitle
+        ]
+
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil) { error in
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .error,
+                    message: "❌ Failed to send title update to iPhone",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
+        } else {
+            // Use transferUserInfo for reliable delivery when not reachable
+            session.transferUserInfo(message)
+        }
+
+        DiagnosticsLogger.log(
+            .watchConnectivity,
+            level: .info,
+            message: "⌚→📱 Sent title update to iPhone",
+            metadata: ["conversationId": conversationId.uuidString, "title": newTitle]
+        )
     }
 
     /// Process received application context from iPhone

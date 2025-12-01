@@ -25,17 +25,9 @@ struct WatchConversationListView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink {
-                    WatchModelSelectionView()
-                } label: {
-                    Image(systemName: "cpu")
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    let newId = viewModel.createNewConversation()
-                    conversationStore.selectedConversationId = newId
+                NavigationLink {
+                    WatchNewChatView(viewModel: viewModel)
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -59,9 +51,10 @@ struct WatchConversationListView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             } else {
-                Button("New Chat") {
-                    let newId = viewModel.createNewConversation()
-                    conversationStore.selectedConversationId = newId
+                NavigationLink {
+                    WatchNewChatView(viewModel: viewModel)
+                } label: {
+                    Text("New Chat")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -74,6 +67,13 @@ struct WatchConversationListView: View {
             ForEach(conversationStore.conversations) { conversation in
                 NavigationLink(value: conversation.id) {
                     ConversationRowView(conversation: conversation)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        conversationStore.deleteConversation(conversation.id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
             }
         }

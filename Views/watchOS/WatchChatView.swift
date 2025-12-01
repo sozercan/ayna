@@ -19,49 +19,63 @@ struct WatchChatView: View {
     @State private var messageText = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Messages list
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        if let conversation = conversationStore.conversation(for: conversationId) {
-                            ForEach(conversation.messages) { message in
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if let conversation = conversationStore.conversation(for: conversationId) {
+                        ForEach(conversation.messages) { message in
+                            // Don't show empty assistant messages (placeholder during streaming)
+                            if !message.content.isEmpty || message.role == "user" {
                                 WatchMessageView(message: message)
                                     .id(message.id)
                             }
+                        }
 
-                            // Typing indicator when loading
-                            if viewModel.isLoading {
-                                typingIndicator
-                                    .id("typing")
-                            }
+                        // Typing indicator when loading
+                        if viewModel.isLoading {
+                            typingIndicator
+                                .id("typing")
+                        }
 
-                            // Error message if any
-                            if let error = viewModel.errorMessage {
-                                errorView(error)
-                            }
+                        // Error message if any
+                        if let error = viewModel.errorMessage {
+                            errorView(error)
                         }
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 8)
+                    
+                    // Spacer to separate messages from composer
+                    Spacer()
+                        .frame(height: 20)
+                    
+                    // Composer at bottom of scroll content
+                    composerBar
+                        .id("composer")
                 }
-                .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
-                    // Scroll to bottom when new message arrives
-                    withAnimation {
-                        if viewModel.isLoading {
-                            proxy.scrollTo("typing", anchor: .bottom)
-                        } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
+                .padding(.horizontal, 4)
+            }
+            .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
+                // Scroll to bottom when new message arrives
+                withAnimation {
+                    if viewModel.isLoading {
+                        proxy.scrollTo("typing", anchor: .bottom)
+                    } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
+                        proxy.scrollTo(lastId, anchor: .bottom)
                     }
                 }
             }
-
-            // Bottom composer bar (iMessage style)
-            composerBar
+            .defaultScrollAnchor(.bottom)
         }
         .navigationTitle(conversationTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    WatchModelSelectionView()
+                } label: {
+                    Image(systemName: "cpu")
+                }
+            }
+        }
         .onAppear {
             viewModel.setConversation(conversationId)
         }
@@ -71,9 +85,9 @@ struct WatchChatView: View {
         conversationStore.conversation(for: conversationId)?.title ?? "Chat"
     }
 
-    /// iMessage-style bottom composer bar with inline TextField
+    /// iMessage-style composer bar
     private var composerBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if viewModel.isLoading {
                 // Stop button when generating
                 Button {
@@ -83,32 +97,26 @@ struct WatchChatView: View {
                         Image(systemName: "stop.fill")
                         Text("Stop")
                     }
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 4)
                     .background(Color.red)
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             } else {
-                // Inline text field - tapping triggers dictation automatically on watchOS
-                TextField("Message", text: $messageText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.gray.opacity(0.3))
-                    .clipShape(Capsule())
+                // Text field - tapping triggers dictation on watchOS
+                TextField("Ask anything", text: $messageText)
+                    .font(.system(size: 13))
+                    .frame(height: 28)
                     .submitLabel(.send)
                     .onSubmit {
                         sendMessage()
                     }
             }
         }
-        .padding(.horizontal, 8)
         .padding(.top, 4)
-        .padding(.bottom, 4)
     }
 
     private func sendMessage() {

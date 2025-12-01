@@ -24,8 +24,28 @@ final class WatchConversationStore: ObservableObject {
 
     /// Update conversations from WatchConnectivity sync
     func updateConversations(_ newConversations: [WatchConversation]) {
-        // Merge with existing, preserving any local changes
-        var updatedConversations = newConversations
+        // Merge with existing, preserving locally generated titles
+        var updatedConversations: [WatchConversation] = []
+        
+        for newConv in newConversations {
+            if let existingConv = conversations.first(where: { $0.id == newConv.id }) {
+                // Preserve local title if iPhone still has "New Chat" but we generated one
+                var mergedConv = newConv
+                if newConv.title == "New Chat" && existingConv.title != "New Chat" {
+                    mergedConv.title = existingConv.title
+                }
+                updatedConversations.append(mergedConv)
+            } else {
+                updatedConversations.append(newConv)
+            }
+        }
+        
+        // Add any local-only conversations (not yet synced to iPhone)
+        for localConv in conversations {
+            if !updatedConversations.contains(where: { $0.id == localConv.id }) {
+                updatedConversations.append(localConv)
+            }
+        }
 
         // Sort by most recent
         updatedConversations.sort { $0.updatedAt > $1.updatedAt }
@@ -86,6 +106,31 @@ final class WatchConversationStore: ObservableObject {
             return preview.count < lastMessage.content.count ? "\(preview)..." : String(preview)
         }
         return "No messages"
+    }
+
+    /// Delete a conversation
+    func deleteConversation(_ conversationId: UUID) {
+        conversations.removeAll { $0.id == conversationId }
+        if selectedConversationId == conversationId {
+            selectedConversationId = nil
+        }
+        
+        DiagnosticsLogger.log(
+            .watchConnectivity,
+            level: .info,
+            message: "⌚ Deleted conversation locally",
+            metadata: ["conversationId": conversationId.uuidString]
+        )
+    }
+
+    /// Rename a conversation
+    func renameConversation(_ conversationId: UUID, newTitle: String) {
+        if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversations[index].title = newTitle
+            
+            // Sync title update to iPhone
+            WatchConnectivityService.shared.sendTitleUpdate(conversationId: conversationId, newTitle: newTitle)
+        }
     }
 }
 

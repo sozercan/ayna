@@ -1931,12 +1931,14 @@ extension OpenAIService {
     var usableModels: [String] {
         customModels.filter { model in
             #if os(iOS) || os(watchOS)
+                // AIKit requires local Podman runtime, not available on iOS/watchOS
                 if modelProviders[model] == .aikit {
                     return false
                 }
             #endif
             #if os(watchOS)
-                // Apple Intelligence is not available on watchOS
+                // Apple Intelligence requires on-device processing which isn't available on watchOS
+                // The watch app makes API calls directly, not via iPhone relay
                 if modelProviders[model] == .appleIntelligence {
                     return false
                 }

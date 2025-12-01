@@ -35,8 +35,6 @@
 		C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
 		C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
-7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
-1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
@@ -57,18 +55,6 @@
 		C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
 		C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
-348246282A314913BC20394F /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
-880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
-		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
-		D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
-		D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
-		D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
-		D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C813064F88B81B4CA3 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
-		D0A1B2CA13064F88B81B4CA3 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
-		D0A1B2CC13064F88B81B4CA3 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
-		D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
 		C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */; };
 		C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */; };
@@ -127,7 +113,6 @@
 		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
 		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
 		C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */; };
-		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
 		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
 		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
 		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
@@ -210,8 +195,6 @@
 		C81393B42ED3DEB800F5E7F9 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C81393B62ED3DEB800F5E7F9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
-		A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseGroup.swift; sourceTree = "<group>"; };
-8E15F436B8A64DED94529830 /* TavilyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyModels.swift; sourceTree = "<group>"; };
 		C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
 		C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
@@ -221,12 +204,6 @@
 		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
-0725D9936B654575806A8555 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
-		D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEndpointResolver.swift; sourceTree = "<group>"; };
-		D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRetryPolicy.swift; sourceTree = "<group>"; };
-		D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIImageService.swift; sourceTree = "<group>"; };
-		D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIStreamParser.swift; sourceTree = "<group>"; };
-		D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRequestBuilder.swift; sourceTree = "<group>"; };
 		C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 		C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
@@ -244,7 +221,6 @@
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
 		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
-		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };

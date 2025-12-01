@@ -45,7 +45,7 @@ final class WatchChatViewModel: ObservableObject {
     /// Send a message in the current conversation
     func sendMessage(_ content: String) {
         guard let conversationId = currentConversationId,
-              var conversation = conversationStore.conversation(for: conversationId)
+              let conversation = conversationStore.conversation(for: conversationId)
         else {
             errorMessage = "No conversation selected"
             return
@@ -55,6 +55,10 @@ final class WatchChatViewModel: ObservableObject {
         errorMessage = nil
         isLoading = true
         streamingContent = ""
+        
+        // Check if this is the first user message (for title generation later)
+        let isFirstMessage = conversation.messages.isEmpty
+        let userContent = content // Capture for closure
 
         // Create user message
         let userMessage = WatchMessage(
@@ -83,10 +87,27 @@ final class WatchChatViewModel: ObservableObject {
         // Convert to Message array for API
         let messagesForAPI = updatedConversation.messages.dropLast().map { $0.toMessage() }
 
-        // Get model from settings or conversation
-        let model = connectivityService.selectedModel.isEmpty
+        // Get model from settings or conversation, but validate it's usable on watchOS
+        var model = connectivityService.selectedModel.isEmpty
             ? updatedConversation.model
             : connectivityService.selectedModel
+        
+        // Check if the selected model is usable on watchOS
+        let provider = openAIService.modelProviders[model]
+        if provider == .aikit || provider == .appleIntelligence {
+            // Fall back to first usable model
+            let usableModels = connectivityService.availableModels.filter { m in
+                let p = openAIService.modelProviders[m]
+                return p != .aikit && p != .appleIntelligence
+            }
+            if let fallback = usableModels.first {
+                model = fallback
+            } else {
+                isLoading = false
+                errorMessage = "No compatible models available. Please add a model on iPhone."
+                return
+            }
+        }
 
         // Check if the model is configured (has API key or doesn't need one like Apple Intelligence)
         guard openAIService.isModelConfigured(model) else {
@@ -122,6 +143,14 @@ final class WatchChatViewModel: ObservableObject {
                         from: Message(role: .assistant, content: self.streamingContent)
                     )
                     self.connectivityService.sendMessage(finalMessage, conversationId: conversationId)
+                    
+                    // Generate title if this was the first message
+                    if isFirstMessage,
+                       let conv = self.conversationStore.conversation(for: conversationId),
+                       conv.title == "New Chat" {
+                        self.generateTitle(for: conversationId, firstMessage: userContent)
+                    }
+                    
                     self.streamingContent = ""
 
                     DiagnosticsLogger.log(
@@ -170,13 +199,70 @@ final class WatchChatViewModel: ObservableObject {
 
     /// Create a new conversation
     func createNewConversation() -> UUID {
-        let model = connectivityService.selectedModel.isEmpty
-            ? (connectivityService.availableModels.first ?? "gpt-4")
-            : connectivityService.selectedModel
+        // Filter to only models usable on watchOS (exclude AIKit and Apple Intelligence)
+        let usableModels = connectivityService.availableModels.filter { model in
+            let provider = openAIService.modelProviders[model]
+            return provider != .aikit && provider != .appleIntelligence
+        }
+        
+        // Use selected model if it's usable, otherwise pick first usable model
+        let selectedModel = connectivityService.selectedModel
+        let selectedProvider = openAIService.modelProviders[selectedModel]
+        let isSelectedUsable = selectedProvider != .aikit && selectedProvider != .appleIntelligence
+        
+        let model: String
+        if !selectedModel.isEmpty && isSelectedUsable {
+            model = selectedModel
+        } else {
+            model = usableModels.first ?? "gpt-4"
+        }
 
         let conversation = conversationStore.createConversation(model: model)
         currentConversationId = conversation.id
         return conversation.id
+    }
+
+    /// Generate a title for the conversation using AI
+    private func generateTitle(for conversationId: UUID, firstMessage: String) {
+        guard let conversation = conversationStore.conversation(for: conversationId) else { return }
+        
+        let titlePrompt = "Generate a very short title (3-5 words maximum) for a conversation that starts with: \"\(firstMessage.prefix(200))\". Only respond with the title, nothing else."
+        
+        let titleMessage = Message(role: .user, content: titlePrompt)
+        var generatedTitle = ""
+        
+        openAIService.sendMessage(
+            messages: [titleMessage],
+            model: conversation.model,
+            stream: false,
+            onChunk: { chunk in
+                generatedTitle += chunk
+            },
+            onComplete: { [weak self] in
+                Task { @MainActor in
+                    let cleanTitle = generatedTitle
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: "\"", with: "")
+                        .replacingOccurrences(of: "\n", with: " ")
+                    
+                    if !cleanTitle.isEmpty {
+                        self?.conversationStore.renameConversation(conversationId, newTitle: cleanTitle)
+                    } else {
+                        // Fallback to simple title
+                        let fallback = String(firstMessage.prefix(30)) + (firstMessage.count > 30 ? "..." : "")
+                        self?.conversationStore.renameConversation(conversationId, newTitle: fallback)
+                    }
+                }
+            },
+            onError: { [weak self] _ in
+                Task { @MainActor in
+                    // Fallback to simple title on error
+                    let fallback = String(firstMessage.prefix(30)) + (firstMessage.count > 30 ? "..." : "")
+                    self?.conversationStore.renameConversation(conversationId, newTitle: fallback)
+                }
+            },
+            onReasoning: nil
+        )
     }
 }
 
