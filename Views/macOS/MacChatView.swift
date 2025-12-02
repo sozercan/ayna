@@ -116,6 +116,11 @@ struct MacChatView: View {
                 return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
 
+            // Always show assistant messages that have citations (from web search)
+            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
+                return true
+            }
+
             // Show if: has content, has image data, or is generating image
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
@@ -1454,6 +1459,12 @@ struct MacChatView: View {
                     batchUpdateTask?.cancel()
                     pendingChunks.removeAll()
 
+                    logChat(
+                        "❌ Stream error",
+                        level: .error,
+                        metadata: ["error": error.localizedDescription]
+                    )
+
                     // Update the empty assistant message with error content
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
@@ -1564,12 +1575,20 @@ struct MacChatView: View {
                             )
 
                             // Route to appropriate tool handler
-                            let result: String = if openAIService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily)
-                                await openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+                            let result: String
+                            var citations: [CitationReference]?
+
+                            if openAIService.isBuiltInTool(toolName) {
+                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                let (toolResult, toolCitations) = await openAIService.executeBuiltInToolWithCitations(
+                                    name: toolName,
+                                    arguments: argumentsWrapper.value
+                                )
+                                result = toolResult
+                                citations = toolCitations
                             } else {
                                 // MCP tool
-                                try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+                                result = try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
                             }
 
                             logChat(
@@ -1578,25 +1597,31 @@ struct MacChatView: View {
                                 metadata: ["resultLength": "\(result.count)"]
                             )
 
+                            // For web_search, skip creating a visible tool message
+                            let isWebSearch = toolName == "web_search"
+
                             // Create a tool message with the result
                             await MainActor.run {
                                 let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
                                     result[pair.key] = AnyCodable(pair.value)
                                 }
 
-                                var toolMessage = Message(
-                                    role: .tool,
-                                    content: result
-                                )
-                                toolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
+                                if !isWebSearch {
+                                    // For non-web-search tools, create the tool message as before
+                                    var toolMessage = Message(
+                                        role: .tool,
+                                        content: result
                                     )
-                                ]
-                                conversationManager.addMessage(to: conversation, message: toolMessage)
+                                    toolMessage.toolCalls = [
+                                        MCPToolCall(
+                                            id: toolCallId,
+                                            toolName: toolName,
+                                            arguments: anyCodableArgs,
+                                            result: result
+                                        )
+                                    ]
+                                    conversationManager.addMessage(to: conversation, message: toolMessage)
+                                }
 
                                 // Get updated conversation with tool result
                                 guard
@@ -1621,7 +1646,11 @@ struct MacChatView: View {
 
                                 // Continue conversation with tool result
                                 // Add a new empty assistant message for the model's response
-                                let continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                                // For web_search, attach citations to the new assistant message
+                                var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                                if isWebSearch, let citations {
+                                    continuationAssistantMessage.citations = citations
+                                }
                                 conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
 
                                 // Get the conversation again with the new assistant message
@@ -1633,12 +1662,36 @@ struct MacChatView: View {
                                     return
                                 }
 
+                                // Build messages for API - exclude the continuation assistant message
+                                // The continuation message is just a placeholder in our conversation for where
+                                // we'll store the response; we don't send it to the API
+                                var continuationMessages = Array(convWithAssistant.messages.dropLast())
+
+                                // For web_search, inject a synthetic tool message for the API only (not stored)
+                                if isWebSearch {
+                                    var syntheticToolMessage = Message(role: .tool, content: result)
+                                    syntheticToolMessage.toolCalls = [
+                                        MCPToolCall(
+                                            id: toolCallId,
+                                            toolName: toolName,
+                                            arguments: anyCodableArgs,
+                                            result: result
+                                        )
+                                    ]
+                                    // Append the tool message at the end (after the assistant with tool_calls)
+                                    continuationMessages.append(syntheticToolMessage)
+                                }
+
                                 // Prepend system prompt for continued conversation
-                                var continuationMessages = convWithAssistant.messages
                                 if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
                                     let sysMessage = Message(role: .system, content: sysPrompt)
                                     continuationMessages.insert(sysMessage, at: 0)
                                 }
+                                
+                                // Clear tool name since tool execution is complete
+                                // The continuation is now a regular API call
+                                currentToolName = nil
+                                
                                 sendMessageWithToolSupport(
                                     messages: continuationMessages,
                                     model: model,

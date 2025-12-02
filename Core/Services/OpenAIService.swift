@@ -2050,6 +2050,30 @@ extension OpenAIService {
         #endif
     }
 
+    /// Executes a built-in tool call and returns both the result and citations (if any).
+    /// - Parameters:
+    ///   - toolName: The name of the tool to execute
+    ///   - arguments: The arguments passed to the tool
+    /// - Returns: Tuple of (result string, optional citations for inline display)
+    func executeBuiltInToolWithCitations(
+        name toolName: String,
+        arguments: [String: Any]
+    ) async -> (String, [CitationReference]?) {
+        #if os(watchOS)
+            // watchOS doesn't support citations yet
+            let result = await executeBuiltInTool(name: toolName, arguments: arguments)
+            return (result, nil)
+        #else
+            switch toolName {
+            case TavilyService.toolName:
+                let (result, citations) = await TavilyService.shared.executeToolCallWithCitations(arguments: arguments)
+                return (result, citations.isEmpty ? nil : citations)
+            default:
+                return ("Error: Unknown built-in tool '\(toolName)'", nil)
+            }
+        #endif
+    }
+
     #if os(watchOS)
         /// Returns the Tavily tool definition for watchOS
         private func tavilyToolDefinition() -> [String: Any] {

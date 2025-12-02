@@ -130,7 +130,93 @@ enum OpenAIRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
-        let messagePayloads: [[String: Any]] = messages.map { buildMessagePayload(from: $0) }
+        // Build a set of valid tool_call_ids that have matching tool responses
+        // First, collect all tool messages and their tool_call_ids
+        var toolResponseIds = Set<String>()
+        for message in messages {
+            if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
+                toolResponseIds.insert(toolCallId)
+            }
+        }
+        
+        // Now filter messages:
+        // 1. Keep all non-tool, non-assistant messages
+        // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
+        // 3. For tool messages, only keep if preceding assistant has the matching tool_call
+        var filteredMessages: [Message] = []
+        for (index, message) in messages.enumerated() {
+            if message.role == .tool {
+                // Get the tool_call_id from this tool message
+                guard let toolCallId = message.toolCalls?.first?.id else {
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "⚠️ Skipping tool message without tool_call_id",
+                        metadata: ["index": "\(index)"]
+                    )
+                    continue
+                }
+                
+                // Check if the preceding message is an assistant with matching tool_call
+                if index > 0 {
+                    let prevMessage = messages[index - 1]
+                    if prevMessage.role == .assistant,
+                       let toolCalls = prevMessage.toolCalls,
+                       toolCalls.contains(where: { $0.id == toolCallId }) {
+                        // Valid tool message with matching ID - keep it
+                        filteredMessages.append(message)
+                    } else {
+                        DiagnosticsLogger.log(
+                            .openAIService,
+                            level: .info,
+                            message: "⚠️ Skipping orphaned/mismatched tool message",
+                            metadata: ["index": "\(index)", "toolCallId": toolCallId]
+                        )
+                    }
+                }
+            } else if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                // For assistant messages with tool_calls, filter to only those with matching tool responses
+                let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
+                
+                if validToolCalls.isEmpty {
+                    // No valid tool calls - add assistant without tool_calls
+                    var modifiedMessage = message
+                    modifiedMessage.toolCalls = nil
+                    filteredMessages.append(modifiedMessage)
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "⚠️ Stripped orphaned tool_calls from assistant message",
+                        metadata: [
+                            "index": "\(index)",
+                            "originalToolCallCount": "\(toolCalls.count)"
+                        ]
+                    )
+                } else if validToolCalls.count < toolCalls.count {
+                    // Some tool calls are orphaned - keep only valid ones
+                    var modifiedMessage = message
+                    modifiedMessage.toolCalls = validToolCalls
+                    filteredMessages.append(modifiedMessage)
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "⚠️ Filtered some orphaned tool_calls from assistant",
+                        metadata: [
+                            "index": "\(index)",
+                            "kept": "\(validToolCalls.count)",
+                            "removed": "\(toolCalls.count - validToolCalls.count)"
+                        ]
+                    )
+                } else {
+                    // All tool calls have matching responses - keep as-is
+                    filteredMessages.append(message)
+                }
+            } else {
+                filteredMessages.append(message)
+            }
+        }
+        
+        let messagePayloads: [[String: Any]] = filteredMessages.map { buildMessagePayload(from: $0) }
 
         var body: [String: Any] = [
             "messages": messagePayloads,

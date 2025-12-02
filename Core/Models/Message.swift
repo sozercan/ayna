@@ -7,6 +7,23 @@
 
 import Foundation
 
+// MARK: - Citation Reference
+
+/// Represents a citation source from web search results
+struct CitationReference: Codable, Equatable, Sendable {
+    let number: Int
+    let title: String
+    let url: String
+    let favicon: String?
+
+    init(number: Int, title: String, url: String, favicon: String? = nil) {
+        self.number = number
+        self.title = title
+        self.url = url
+        self.favicon = favicon
+    }
+}
+
 struct Message: Identifiable, Codable, Equatable {
     let id: UUID
     var role: Role
@@ -35,6 +52,9 @@ struct Message: Identifiable, Codable, Equatable {
 
     // Reasoning/thinking support for o1/o3 models
     var reasoning: String?
+
+    // Web search citation support
+    var citations: [CitationReference]?
 
     enum MediaType: String, Codable {
         case image
@@ -78,7 +98,8 @@ struct Message: Identifiable, Codable, Equatable {
             imageData: Data? = nil,
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
-            reasoning: String? = nil
+            reasoning: String? = nil,
+            citations: [CitationReference]? = nil
         ) {
             self.id = id
             self.role = role
@@ -93,6 +114,7 @@ struct Message: Identifiable, Codable, Equatable {
             self.imagePath = imagePath
             self.attachments = attachments
             self.reasoning = reasoning
+            self.citations = citations
         }
     #else
         init(
@@ -110,7 +132,8 @@ struct Message: Identifiable, Codable, Equatable {
             imageData: Data? = nil,
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
-            reasoning: String? = nil
+            reasoning: String? = nil,
+            citations: [CitationReference]? = nil
         ) {
             self.id = id
             self.role = role
@@ -127,6 +150,7 @@ struct Message: Identifiable, Codable, Equatable {
             self.imagePath = imagePath
             self.attachments = attachments
             self.reasoning = reasoning
+            self.citations = citations
         }
     #endif
 
@@ -136,7 +160,7 @@ struct Message: Identifiable, Codable, Equatable {
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, model
             case responseGroupId, isSelectedResponse
-            case mediaType, imageData, imagePath, attachments, reasoning
+            case mediaType, imageData, imagePath, attachments, reasoning, citations
         }
 
         init(from decoder: Decoder) throws {
@@ -156,12 +180,13 @@ struct Message: Identifiable, Codable, Equatable {
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+            citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
         }
     #else
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, toolCalls, model
             case responseGroupId, isSelectedResponse, pendingToolCalls
-            case mediaType, imageData, imagePath, attachments, reasoning
+            case mediaType, imageData, imagePath, attachments, reasoning, citations
         }
 
         init(from decoder: Decoder) throws {
@@ -183,6 +208,7 @@ struct Message: Identifiable, Codable, Equatable {
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+            citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
         }
     #endif
 

@@ -387,6 +387,12 @@ struct MacMessageView: View {
         ForEach(cachedContentBlocks, id: \.id) { block in
             block.view
         }
+
+        // Citation sources footer for web search results
+        if let citations = message.citations, !citations.isEmpty {
+            CitationSourcesFooter(citations: citations)
+                .padding(.top, 8)
+        }
     }
 
     @MainActor @ViewBuilder

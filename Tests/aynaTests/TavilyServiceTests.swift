@@ -620,6 +620,163 @@ final class TavilyServiceTests: XCTestCase {
         XCTAssertFalse(formatted.contains(longContent))
     }
 
+    // MARK: - Citation Reference Tests
+
+    func testToCitationReferencesConvertsResults() {
+        let response = TavilySearchResponse(
+            query: "test",
+            answer: "Answer",
+            images: nil,
+            results: [
+                TavilySearchResult(
+                    title: "First Result",
+                    url: "https://example.com/1",
+                    content: "Content 1",
+                    score: 0.95,
+                    rawContent: nil,
+                    favicon: "https://example.com/favicon.ico"
+                ),
+                TavilySearchResult(
+                    title: "Second Result",
+                    url: "https://example.com/2",
+                    content: "Content 2",
+                    score: 0.85,
+                    rawContent: nil,
+                    favicon: nil
+                )
+            ],
+            responseTime: 1.0,
+            requestId: nil
+        )
+
+        let citations = response.toCitationReferences()
+
+        XCTAssertEqual(citations.count, 2)
+        XCTAssertEqual(citations[0].number, 1)
+        XCTAssertEqual(citations[0].title, "First Result")
+        XCTAssertEqual(citations[0].url, "https://example.com/1")
+        XCTAssertEqual(citations[0].favicon, "https://example.com/favicon.ico")
+        XCTAssertEqual(citations[1].number, 2)
+        XCTAssertEqual(citations[1].title, "Second Result")
+        XCTAssertEqual(citations[1].url, "https://example.com/2")
+        XCTAssertNil(citations[1].favicon)
+    }
+
+    func testToCitationReferencesRespectsMaxResults() {
+        let response = TavilySearchResponse(
+            query: "test",
+            answer: nil,
+            images: nil,
+            results: [
+                TavilySearchResult(title: "R1", url: "https://1.com", content: "C1", score: 0.9, rawContent: nil, favicon: nil),
+                TavilySearchResult(title: "R2", url: "https://2.com", content: "C2", score: 0.8, rawContent: nil, favicon: nil),
+                TavilySearchResult(title: "R3", url: "https://3.com", content: "C3", score: 0.7, rawContent: nil, favicon: nil),
+                TavilySearchResult(title: "R4", url: "https://4.com", content: "C4", score: 0.6, rawContent: nil, favicon: nil),
+                TavilySearchResult(title: "R5", url: "https://5.com", content: "C5", score: 0.5, rawContent: nil, favicon: nil)
+            ],
+            responseTime: 1.0,
+            requestId: nil
+        )
+
+        let citations = response.toCitationReferences(maxResults: 3)
+
+        XCTAssertEqual(citations.count, 3)
+        XCTAssertEqual(citations[0].number, 1)
+        XCTAssertEqual(citations[1].number, 2)
+        XCTAssertEqual(citations[2].number, 3)
+    }
+
+    func testToCitationReferencesReturnsEmptyArrayForNoResults() {
+        let response = TavilySearchResponse(
+            query: "test",
+            answer: nil,
+            images: nil,
+            results: [],
+            responseTime: 0.5,
+            requestId: nil
+        )
+
+        let citations = response.toCitationReferences()
+
+        XCTAssertTrue(citations.isEmpty)
+    }
+
+    func testExecuteToolCallWithCitationsReturnsFormattedResultAndCitations() async {
+        let service = makeService()
+
+        TavilyMockURLProtocol.requestHandler = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.tavily.com/search")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let body = Data("""
+            {
+                "query": "swift programming",
+                "answer": "Swift is a programming language.",
+                "results": [
+                    {
+                        "title": "Swift.org",
+                        "url": "https://swift.org",
+                        "content": "The Swift Programming Language",
+                        "score": 0.95,
+                        "favicon": "https://swift.org/favicon.ico"
+                    },
+                    {
+                        "title": "Apple Developer",
+                        "url": "https://developer.apple.com/swift",
+                        "content": "Swift Documentation",
+                        "score": 0.90,
+                        "favicon": null
+                    }
+                ],
+                "response_time": 0.8
+            }
+            """.utf8)
+            return (response, body)
+        }
+
+        let (result, citations) = await service.executeToolCallWithCitations(arguments: ["query": "swift programming"])
+
+        // Verify formatted result
+        XCTAssertTrue(result.contains("**Answer:**"))
+        XCTAssertTrue(result.contains("Swift is a programming language."))
+        XCTAssertTrue(result.contains("**Sources:**"))
+
+        // Verify citations
+        XCTAssertEqual(citations.count, 2)
+        XCTAssertEqual(citations[0].number, 1)
+        XCTAssertEqual(citations[0].title, "Swift.org")
+        XCTAssertEqual(citations[0].url, "https://swift.org")
+        XCTAssertEqual(citations[0].favicon, "https://swift.org/favicon.ico")
+        XCTAssertEqual(citations[1].number, 2)
+        XCTAssertEqual(citations[1].title, "Apple Developer")
+        XCTAssertNil(citations[1].favicon)
+    }
+
+    func testExecuteToolCallWithCitationsReturnsEmptyCitationsOnMissingQuery() async {
+        let service = makeService()
+
+        let (result, citations) = await service.executeToolCallWithCitations(arguments: [:])
+
+        XCTAssertEqual(result, "Error: Missing 'query' parameter for web search")
+        XCTAssertTrue(citations.isEmpty)
+    }
+
+    func testExecuteToolCallWithCitationsReturnsEmptyCitationsOnError() async {
+        let service = makeService()
+
+        TavilyMockURLProtocol.requestHandler = { _ in
+            throw URLError(.timedOut)
+        }
+
+        let (result, citations) = await service.executeToolCallWithCitations(arguments: ["query": "test"])
+
+        XCTAssertTrue(result.hasPrefix("Error searching the web:"))
+        XCTAssertTrue(citations.isEmpty)
+    }
+
     // MARK: - API Key Persistence Tests
 
     func testAPIKeyIsSavedToKeychain() throws {

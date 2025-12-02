@@ -125,7 +125,7 @@ final class TavilyService: ObservableObject {
             case 200:
                 let decoder = JSONDecoder()
                 do {
-                    let searchResponse = try decoder.decode(TavilySearchResponse.self, from: data)
+                                let searchResponse = try decoder.decode(TavilySearchResponse.self, from: data)
                     log(.info, "✅ Web search completed", metadata: [
                         "results": "\(searchResponse.results.count)",
                         "responseTime": String(format: "%.2fs", searchResponse.responseTime)
@@ -173,8 +173,16 @@ final class TavilyService: ObservableObject {
     /// - Parameter arguments: Tool call arguments from the model
     /// - Returns: Formatted search results string
     func executeToolCall(arguments: [String: Any]) async -> String {
+        let (result, _) = await executeToolCallWithCitations(arguments: arguments)
+        return result
+    }
+
+    /// Executes a web search tool call and returns both formatted results and citations
+    /// - Parameter arguments: Tool call arguments from the model
+    /// - Returns: Tuple of (formatted search results string, citations for inline display)
+    func executeToolCallWithCitations(arguments: [String: Any]) async -> (String, [CitationReference]) {
         guard let query = arguments["query"] as? String else {
-            return "Error: Missing 'query' parameter for web search"
+            return ("Error: Missing 'query' parameter for web search", [])
         }
 
         let topic: TavilyTopic = if let topicString = arguments["topic"] as? String,
@@ -203,10 +211,12 @@ final class TavilyService: ObservableObject {
                 maxResults: maxResults,
                 includeAnswer: true
             )
-            return response.formattedForModel(maxResults: maxResults)
+            let formattedResult = response.formattedForModel(maxResults: maxResults)
+            let citations = response.toCitationReferences(maxResults: maxResults)
+            return (formattedResult, citations)
         } catch {
             log(.error, "❌ Tool call failed", metadata: ["error": error.localizedDescription])
-            return "Error searching the web: \(error.localizedDescription)"
+            return ("Error searching the web: \(error.localizedDescription)", [])
         }
     }
 

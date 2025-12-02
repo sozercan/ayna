@@ -312,29 +312,26 @@ struct WebSearchToolRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "globe")
-                .font(.title2)
-                .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? .blue : .secondary)
-                .frame(width: 32, height: 32)
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Web Search")
                     .font(.headline)
 
-                if tavilyService.isEnabled {
-                    if tavilyService.isConfigured {
-                        Text("Powered by Tavily")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("API key required")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                } else {
-                    Text("Disabled")
+                HStack(spacing: 4) {
+                    Text(statusDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if tavilyService.isEnabled && tavilyService.isConfigured {
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text("1 tool")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
                 }
             }
 
@@ -347,6 +344,26 @@ struct WebSearchToolRow: View {
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var statusColor: Color {
+        if !tavilyService.isEnabled {
+            return .gray
+        } else if tavilyService.isConfigured {
+            return .green
+        } else {
+            return .orange
+        }
+    }
+
+    private var statusDescription: String {
+        if !tavilyService.isEnabled {
+            return "Disabled"
+        } else if tavilyService.isConfigured {
+            return "Configured"
+        } else {
+            return "API key required"
+        }
     }
 }
 

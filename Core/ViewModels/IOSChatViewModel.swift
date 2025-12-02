@@ -418,7 +418,7 @@ final class IOSChatViewModel: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     // Log first chunk received
-                    if chunk.count > 0 {
+                    if !chunk.isEmpty {
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .debug,
@@ -600,13 +600,16 @@ final class IOSChatViewModel: ObservableObject {
                             message: "⚙️ Executing tool: \(toolName)"
                         )
 
-                        // Execute built-in tool (Tavily web search)
-                        let result = await self.openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+                        // Execute built-in tool with citations (Tavily web search)
+                        let (result, citations) = await self.openAIService.executeBuiltInToolWithCitations(
+                            name: toolName,
+                            arguments: argumentsWrapper.value
+                        )
 
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
-                            message: "✅ Tool result received (\(result.count) chars)"
+                            message: "✅ Tool result received (\(result.count) chars, \(citations?.count ?? 0) citations)"
                         )
 
                         await MainActor.run {
@@ -614,22 +617,28 @@ final class IOSChatViewModel: ObservableObject {
                                 result[pair.key] = AnyCodable(pair.value)
                             }
 
-                            var toolMessage = Message(role: .tool, content: result)
-                            toolMessage.toolCalls = [
-                                MCPToolCall(
-                                    id: toolCallId,
-                                    toolName: toolName,
-                                    arguments: anyCodableArgs,
-                                    result: result
-                                )
-                            ]
-                            guard let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
-                                self.isGenerating = false
-                                self.currentToolName = nil
-                                self.toolCallDepth = 0
-                                return
+                            // For web_search, skip creating a tool message and attach citations to assistant
+                            let isWebSearch = toolName == "web_search"
+
+                            if !isWebSearch {
+                                // For non-web-search tools, create the tool message as before
+                                var toolMessage = Message(role: .tool, content: result)
+                                toolMessage.toolCalls = [
+                                    MCPToolCall(
+                                        id: toolCallId,
+                                        toolName: toolName,
+                                        arguments: anyCodableArgs,
+                                        result: result
+                                    )
+                                ]
+                                guard let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                    self.isGenerating = false
+                                    self.currentToolName = nil
+                                    self.toolCallDepth = 0
+                                    return
+                                }
+                                self.conversationManager.addMessage(to: conv, message: toolMessage)
                             }
-                            self.conversationManager.addMessage(to: conv, message: toolMessage)
 
                             // Continue conversation with tool result
                             guard let updatedConv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
@@ -640,7 +649,11 @@ final class IOSChatViewModel: ObservableObject {
                             }
 
                             // Add a new empty assistant message for the model's response
-                            let continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                            // For web_search, attach citations to this message
+                            var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
+                            if isWebSearch, let citations {
+                                continuationAssistantMessage.citations = citations
+                            }
                             self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
 
                             // Get conversation again with new assistant message
@@ -651,11 +664,32 @@ final class IOSChatViewModel: ObservableObject {
                                 return
                             }
 
-                            var continuationMessages = convWithAssistant.messages
+                            // Build messages for API - exclude the continuation assistant message
+                            // The continuation message is just a placeholder for where we'll store the response
+                            var continuationMessages = Array(convWithAssistant.messages.dropLast())
+                            if isWebSearch {
+                                // Append a synthetic tool message for the API only
+                                var syntheticToolMessage = Message(role: .tool, content: result)
+                                syntheticToolMessage.toolCalls = [
+                                    MCPToolCall(
+                                        id: toolCallId,
+                                        toolName: toolName,
+                                        arguments: anyCodableArgs,
+                                        result: result
+                                    )
+                                ]
+                                // Append the tool message at the end (after the assistant with tool_calls)
+                                continuationMessages.append(syntheticToolMessage)
+                            }
+
                             if let sysPrompt = self.conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
                                 let sysMessage = Message(role: .system, content: sysPrompt)
                                 continuationMessages.insert(sysMessage, at: 0)
                             }
+
+                            // Clear tool name since tool execution is complete
+                            // The continuation is now a regular API call
+                            self.currentToolName = nil
 
                             self.sendMessageWithToolSupport(
                                 messages: continuationMessages,

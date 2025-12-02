@@ -966,32 +966,46 @@ struct MacNewChatView: View {
                             )
 
                             // Route to appropriate tool handler
-                            let result: String = if openAIService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily)
-                                await openAIService.executeBuiltInTool(name: toolName, arguments: argumentsWrapper.value)
+                            let result: String
+                            var citations: [CitationReference]?
+
+                            if openAIService.isBuiltInTool(toolName) {
+                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                let (toolResult, toolCitations) = await openAIService.executeBuiltInToolWithCitations(
+                                    name: toolName,
+                                    arguments: argumentsWrapper.value
+                                )
+                                result = toolResult
+                                citations = toolCitations
                             } else {
                                 // MCP tool
-                                try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
+                                result = try await mcpManager.executeTool(name: toolName, arguments: argumentsWrapper.value)
                             }
+
+                            // For web_search, skip creating a visible tool message
+                            let isWebSearch = toolName == "web_search"
 
                             await MainActor.run {
                                 let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
                                     result[pair.key] = AnyCodable(pair.value)
                                 }
 
-                                var toolMessage = Message(
-                                    role: .tool,
-                                    content: result
-                                )
-                                toolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
+                                if !isWebSearch {
+                                    // For non-web-search tools, create the tool message as before
+                                    var toolMessage = Message(
+                                        role: .tool,
+                                        content: result
                                     )
-                                ]
-                                conversationManager.addMessage(to: conversation, message: toolMessage)
+                                    toolMessage.toolCalls = [
+                                        MCPToolCall(
+                                            id: toolCallId,
+                                            toolName: toolName,
+                                            arguments: anyCodableArgs,
+                                            result: result
+                                        )
+                                    ]
+                                    conversationManager.addMessage(to: conversation, message: toolMessage)
+                                }
 
                                 guard let updatedConversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
                                     currentToolName = nil
@@ -1000,8 +1014,20 @@ struct MacNewChatView: View {
                                     return
                                 }
 
-                                let newAssistantMessage = Message(role: .assistant, content: "", model: model)
-                                conversationManager.addMessage(to: conversation, message: newAssistantMessage)
+                                // For web_search, attach citations to the new assistant message
+                                var newAssistantMessage = Message(role: .assistant, content: "", model: model)
+                                if isWebSearch, let citations {
+                                    newAssistantMessage.citations = citations
+                                }
+                                conversationManager.addMessage(to: updatedConversation, message: newAssistantMessage)
+
+                                // Re-fetch conversation AFTER adding the new assistant message
+                                guard let convWithAssistant = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                    currentToolName = nil
+                                    isGenerating = false
+                                    selectedConversationId = conversationId
+                                    return
+                                }
 
                                 currentToolName = "Analyzing \(toolName) results"
 
@@ -1014,9 +1040,31 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
+                                // Build messages for API - exclude the continuation assistant message
+                                // The continuation message is just a placeholder for where we'll store the response
+                                var messagesForAPI = Array(convWithAssistant.messages.dropLast())
+                                if isWebSearch {
+                                    // Append a synthetic tool message for the API only (not stored)
+                                    var syntheticToolMessage = Message(role: .tool, content: result)
+                                    syntheticToolMessage.toolCalls = [
+                                        MCPToolCall(
+                                            id: toolCallId,
+                                            toolName: toolName,
+                                            arguments: anyCodableArgs,
+                                            result: result
+                                        )
+                                    ]
+                                    // Append the tool message at the end (after the assistant with tool_calls)
+                                    messagesForAPI.append(syntheticToolMessage)
+                                }
+
+                                // Clear tool name since tool execution is complete
+                                // The continuation is now a regular API call
+                                currentToolName = nil
+
                                 sendMessageWithToolSupport(
                                     conversation: conversation,
-                                    messages: updatedConversation.messages,
+                                    messages: messagesForAPI,
                                     model: model,
                                     temperature: temperature,
                                     tools: toolsWrapper.value

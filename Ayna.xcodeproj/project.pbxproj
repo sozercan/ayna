@@ -76,9 +76,11 @@
 		C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */; };
 		C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */; };
 		C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */; };
+		CITATION0VIEW13064F88B81B01 /* CitationSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */; };
 		C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */; };
 		C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */; };
 		C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */; };
+		IOSCITATION013064F88B81B01 /* IOSCitationSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOSCITATION013064F88B81B00 /* IOSCitationSourcesView.swift */; };
 		C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */; };
 		C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */; };
 		C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */; };
@@ -128,6 +130,7 @@
 		GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
 		GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
 		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
+		CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -254,6 +257,9 @@
 		D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRequestBuilder.swift; sourceTree = "<group>"; };
 		GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubOAuthService.swift; sourceTree = "<group>"; };
 		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
+		CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationReferenceTests.swift; sourceTree = "<group>"; };
+		CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationSourcesView.swift; sourceTree = "<group>"; };
+		IOSCITATION013064F88B81B00 /* IOSCitationSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCitationSourcesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -475,6 +481,7 @@
 				C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */,
 				C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */,
 				TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */,
+				CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */,
 				C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */,
 			);
 			path = aynaTests;
@@ -505,6 +512,7 @@
 				C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */,
 				C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */,
 				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
+				IOSCITATION013064F88B81B00 /* IOSCitationSourcesView.swift */,
 				A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */,
 				C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */,
 				C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */,
@@ -522,6 +530,7 @@
 				C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */,
 				C81394262ED3DEC900F5E7F9 /* MacContentView.swift */,
 				C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */,
+				CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */,
 				A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */,
 				C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */,
 				C81394292ED3DEC900F5E7F9 /* MacSidebarView.swift */,
@@ -802,6 +811,7 @@
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
 				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
 				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
+				CITATION0VIEW13064F88B81B01 /* CitationSourcesView.swift in Sources */,
 				A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,
 				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
 				7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */,
@@ -853,6 +863,7 @@
 				C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */,
 				C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */,
 				TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */,
+				CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -893,6 +904,7 @@
 				C82E6B8F2EDBD7640055158F /* WatchConversationStore.swift in Sources */,
 				C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */,
 				C81394442ED3DEC900F5E7F9 /* IOSMessageView.swift in Sources */,
+				IOSCITATION013064F88B81B01 /* IOSCitationSourcesView.swift in Sources */,
 				A1B2C3DA13064F88B81B4CA2 /* IOSMultiModelResponseView.swift in Sources */,
 				C81394452ED3DEC900F5E7F9 /* IOSSettingsView.swift in Sources */,
 				C81394462ED3DEC900F5E7F9 /* IOSSidebarView.swift in Sources */,

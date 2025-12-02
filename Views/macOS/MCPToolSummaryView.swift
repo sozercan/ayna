@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
+    @ObservedObject private var tavilyService = TavilyService.shared
     @State private var isToolSectionExpanded = false
 
     @MainActor var body: some View {
@@ -17,9 +18,23 @@ struct MCPToolSummaryView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if isToolSectionExpanded {
                     HStack(spacing: 8) {
-                        Label("MCP Tools", systemImage: "wrench.and.screwdriver")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isToolSectionExpanded = false
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Label("Tools", systemImage: "wrench.and.screwdriver")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse tools")
 
                         Spacer()
 
@@ -28,35 +43,28 @@ struct MCPToolSummaryView: View {
                                 .font(.caption2)
                         }
                         .routeSettings(to: .mcp)
-
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isToolSectionExpanded = false
-                            }
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Collapse MCP tools")
                     }
 
-                    if toolStatusChipModels.isEmpty {
-                        Text("Waiting for MCP servers…")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(toolStatusChipModels) { chip in
-                                    Button {
-                                        toggleServer(chip.id)
-                                    } label: {
-                                        ToolStatusChip(model: chip)
-                                    }
-                                    .buttonStyle(.plain)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            // Web Search chip - always show if configured
+                            if tavilyService.isConfigured {
+                                Button {
+                                    tavilyService.isEnabled.toggle()
+                                } label: {
+                                    WebSearchChip(isEnabled: tavilyService.isEnabled, isConfigured: tavilyService.isConfigured)
                                 }
+                                .buttonStyle(.plain)
+                            }
+
+                            // MCP Server chips
+                            ForEach(toolStatusChipModels) { chip in
+                                Button {
+                                    toggleServer(chip.id)
+                                } label: {
+                                    ToolStatusChip(model: chip)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -67,17 +75,23 @@ struct MCPToolSummaryView: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
+                            Label("Tools", systemImage: "wrench.and.screwdriver")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("•")
+                                .foregroundStyle(.tertiary)
                             Text(toolSummaryText)
                                 .font(.caption2)
                                 .foregroundStyle(toolSummaryColor)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.up")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Expand MCP tools")
+                    .accessibilityLabel("Expand tools")
                 }
             }
             .padding(.horizontal, 24)
@@ -92,7 +106,7 @@ struct MCPToolSummaryView: View {
     }
 
     private var shouldShowToolSummary: Bool {
-        !mcpManager.serverConfigs.isEmpty
+        !mcpManager.serverConfigs.isEmpty || tavilyService.isConfigured
     }
 
     private var toolStatusChipModels: [ToolStatusChipModel] {
@@ -121,25 +135,41 @@ struct MCPToolSummaryView: View {
     }
 
     private var readyToolCount: Int {
-        toolStatusChipModels
+        var count = toolStatusChipModels
             .filter { $0.state?.isConnected ?? false }
             .reduce(0) { $0 + $1.toolsCount }
+
+        // Add web search tool if configured
+        if tavilyService.isEnabled && tavilyService.isConfigured {
+            count += 1
+        }
+
+        return count
     }
 
     private var toolSummaryText: String {
         guard shouldShowToolSummary else { return "" }
 
-        if enabledServerCount == 0 {
-            return "All MCP servers are disabled."
+        // Check if only web search is available (no MCP servers)
+        if mcpManager.serverConfigs.isEmpty {
+            if tavilyService.isEnabled && tavilyService.isConfigured {
+                return "Web Search ready • 1 tool"
+            } else if tavilyService.isEnabled {
+                return "Web Search needs API key"
+            }
+            return ""
         }
 
-        if connectedServerCount == 0 {
+        if enabledServerCount == 0 && !tavilyService.isEnabled {
+            return "All tools are disabled."
+        }
+
+        if connectedServerCount == 0 && enabledServerCount > 0 {
             return
                 "Waiting for \(enabledServerCount) enabled server\(enabledServerCount == 1 ? "" : "s") to connect…"
         }
 
-        var summary =
-            "\(connectedServerCount) connected • \(readyToolCount) tool\(readyToolCount == 1 ? "" : "s") ready"
+        var summary = "\(readyToolCount) tool\(readyToolCount == 1 ? "" : "s") ready"
         if toolStatusChipModels.contains(where: { $0.state?.isError ?? false }) {
             summary += " • Issues detected"
         }
@@ -151,10 +181,19 @@ struct MCPToolSummaryView: View {
             return .orange
         }
 
-        if connectedServerCount == 0 {
-            return enabledServerCount == 0 ? .secondary : .orange
+        if tavilyService.isEnabled && !tavilyService.isConfigured {
+            return .orange
         }
-        return .green
+
+        if connectedServerCount == 0 && enabledServerCount > 0 {
+            return .orange
+        }
+
+        if readyToolCount > 0 {
+            return .green
+        }
+
+        return .secondary
     }
 
     private func statusDescription(isEnabled: Bool, state: MCPServerStatus.State?) -> String {
@@ -197,6 +236,61 @@ struct MCPToolSummaryView: View {
         case .none:
             return .secondary
         }
+    }
+}
+
+/// Chip for Web Search tool status
+@MainActor
+struct WebSearchChip: View {
+    let isEnabled: Bool
+    let isConfigured: Bool
+
+    var statusColor: Color {
+        if !isEnabled {
+            return .gray
+        }
+        return isConfigured ? .green : .orange
+    }
+
+    var statusText: String {
+        if !isEnabled {
+            return "Disabled"
+        }
+        return isConfigured ? "Configured" : "API key required"
+    }
+
+    @MainActor var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Web Search")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+
+                HStack(spacing: 6) {
+                    Text(statusText)
+                        .font(.caption2)
+                        .foregroundStyle(statusColor)
+
+                    if isEnabled && isConfigured {
+                        Text("1 tool")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(statusColor.opacity(0.25), lineWidth: 1)
+        )
     }
 }
 

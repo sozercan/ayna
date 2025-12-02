@@ -159,4 +159,30 @@ extension TavilySearchResponse {
 
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Converts search results to CitationReference array for inline display
+    /// - Parameter maxResults: Maximum number of citations to include (default 5)
+    /// - Returns: Array of CitationReference with numbered citations
+    func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
+        let topResults = Array(results.prefix(maxResults))
+        return topResults.enumerated().map { index, result in
+            // Use Tavily's favicon if available, otherwise generate from domain using Google's service
+            let faviconURL: String?
+            if let existingFavicon = result.favicon, !existingFavicon.isEmpty {
+                faviconURL = existingFavicon
+            } else if let url = URL(string: result.url), let host = url.host {
+                // Use Google's favicon service which is reliable and fast
+                faviconURL = "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+            } else {
+                faviconURL = nil
+            }
+            
+            return CitationReference(
+                number: index + 1,
+                title: result.title,
+                url: result.url,
+                favicon: faviconURL
+            )
+        }
+    }
 }

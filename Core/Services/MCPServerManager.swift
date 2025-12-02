@@ -179,16 +179,8 @@ class MCPServerManager: ObservableObject {
     }
 
     private func defaultServerConfigs() -> [MCPServerConfig] {
-        // Use npx directly with full path
-        [
-            MCPServerConfig(
-                name: "wassette",
-                command: "wassette",
-                args: ["serve", "--stdio"],
-                env: ["BRAVE_SEARCH_API_KEY": ""],
-                enabled: false
-            )
-        ]
+        // No default servers - users add their own
+        []
     }
 
     // MARK: - Connection Management
