@@ -159,4 +159,19 @@ extension TavilySearchResponse {
 
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Converts search results to CitationReference array for inline display
+    /// - Parameter maxResults: Maximum number of citations to include (default 5)
+    /// - Returns: Array of CitationReference with numbered citations
+    func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
+        let topResults = Array(results.prefix(maxResults))
+        return topResults.enumerated().map { index, result in
+            CitationReference(
+                number: index + 1,
+                title: result.title,
+                url: result.url,
+                favicon: result.favicon
+            )
+        }
+    }
 }

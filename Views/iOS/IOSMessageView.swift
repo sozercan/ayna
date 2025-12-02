@@ -182,6 +182,12 @@ struct IOSMessageView: View {
                         IOSContentBlockView(block: block)
                     }
                 }
+
+                // Citation sources footer for web search results
+                if let citations = message.citations, !citations.isEmpty {
+                    IOSCitationSourcesFooter(citations: citations)
+                        .padding(.top, 4)
+                }
             }
             .padding(.leading, message.role == .user ? 12 : 18)
             .padding(.trailing, message.role == .user ? 18 : 12)
