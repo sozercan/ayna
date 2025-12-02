@@ -130,10 +130,6 @@ final class TavilyService: ObservableObject {
                         "results": "\(searchResponse.results.count)",
                         "responseTime": String(format: "%.2fs", searchResponse.responseTime)
                     ])
-                    // Debug: Log favicon URLs
-                    for (idx, result) in searchResponse.results.enumerated() {
-                        log(.info, "🔗 Result \(idx + 1): favicon=\(result.favicon ?? "nil")")
-                    }
                     return searchResponse
                 } catch {
                     // Log the raw response for debugging

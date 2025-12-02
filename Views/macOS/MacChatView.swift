@@ -1348,13 +1348,6 @@ struct MacChatView: View {
             conversationId: conversation.id,
             onChunk: { chunk in
                 Task { @MainActor in
-                    // Log chunk received
-                    logChat(
-                        "📥 CITATION DEBUG: onChunk received",
-                        level: .debug,
-                        metadata: ["chunkLength": "\(chunk.count)"]
-                    )
-                    
                     // Batch chunks for better performance during streaming
                     pendingChunks.append(chunk)
 
@@ -1389,17 +1382,6 @@ struct MacChatView: View {
                             conversationManager.conversations[index].messages[
                                 conversationManager.conversations[index].messages.count - 1
                             ] = lastMessage!
-                            logChat(
-                                "📝 CITATION DEBUG: Updated message content",
-                                level: .debug,
-                                metadata: ["newContentLength": "\(lastMessage?.content.count ?? 0)"]
-                            )
-                        } else {
-                            logChat(
-                                "⚠️ CITATION DEBUG: lastMessage is not assistant",
-                                level: .info,
-                                metadata: ["role": lastMessage?.role.rawValue ?? "nil"]
-                            )
                         }
 
                         // Only update UI state if we're currently viewing this conversation
@@ -1414,8 +1396,6 @@ struct MacChatView: View {
             },
             onComplete: {
                 Task { @MainActor in
-                    logChat("📥 CITATION DEBUG: onComplete called", level: .info)
-                    
                     // Flush any pending chunks immediately
                     batchUpdateTask?.cancel()
                     if !pendingChunks.isEmpty {
@@ -1439,12 +1419,6 @@ struct MacChatView: View {
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        let finalContent = conversationManager.conversations[index].messages.last?.content ?? ""
-                        logChat(
-                            "📥 CITATION DEBUG: Saving conversation",
-                            level: .info,
-                            metadata: ["finalContentLength": "\(finalContent.count)"]
-                        )
                         conversationManager.save(conversationManager.conversations[index])
                     }
 
@@ -1486,7 +1460,7 @@ struct MacChatView: View {
                     pendingChunks.removeAll()
 
                     logChat(
-                        "❌ CITATION DEBUG: onError called",
+                        "❌ Stream error",
                         level: .error,
                         metadata: ["error": error.localizedDescription]
                     )
@@ -1589,19 +1563,6 @@ struct MacChatView: View {
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
                         conversationManager.save(conversationManager.conversations[index])
-                        
-                        // DEBUG: Verify toolCalls were set
-                        let verifyMsg = conversationManager.conversations[index].messages.last
-                        let hasToolCalls = verifyMsg?.toolCalls != nil && !(verifyMsg?.toolCalls?.isEmpty ?? true)
-                        logChat(
-                            "📋 CITATION DEBUG: After setting toolCalls",
-                            level: .info,
-                            metadata: [
-                                "hasToolCalls": "\(hasToolCalls)",
-                                "toolCallCount": "\(verifyMsg?.toolCalls?.count ?? 0)",
-                                "toolCallId": toolCallId
-                            ]
-                        )
                     }
 
                     // Execute the tool asynchronously
@@ -1698,7 +1659,6 @@ struct MacChatView: View {
                                         $0.id == conversation.id
                                     })
                                 else {
-                                    logChat("❌ CITATION DEBUG: convWithAssistant not found", level: .error)
                                     return
                                 }
 
@@ -1706,21 +1666,6 @@ struct MacChatView: View {
                                 // The continuation message is just a placeholder in our conversation for where
                                 // we'll store the response; we don't send it to the API
                                 var continuationMessages = Array(convWithAssistant.messages.dropLast())
-
-                                // DEBUG: Check if assistant message has toolCalls
-                                for (idx, msg) in continuationMessages.enumerated() {
-                                    let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
-                                    logChat(
-                                        "📋 CITATION DEBUG: Message \(idx)",
-                                        level: .info,
-                                        metadata: [
-                                            "role": msg.role.rawValue,
-                                            "hasToolCalls": "\(hasToolCalls)",
-                                            "toolCallCount": "\(msg.toolCalls?.count ?? 0)",
-                                            "contentLength": "\(msg.content.count)"
-                                        ]
-                                    )
-                                }
 
                                 // For web_search, inject a synthetic tool message for the API only (not stored)
                                 if isWebSearch {
@@ -1735,27 +1680,7 @@ struct MacChatView: View {
                                     ]
                                     // Append the tool message at the end (after the assistant with tool_calls)
                                     continuationMessages.append(syntheticToolMessage)
-                                    
-                                    logChat(
-                                        "📋 CITATION DEBUG: Added synthetic tool message",
-                                        level: .info,
-                                        metadata: [
-                                            "toolCallId": toolCallId,
-                                            "toolName": toolName
-                                        ]
-                                    )
                                 }
-
-                                // Log the messages being sent to API for debugging
-                                logChat(
-                                    "📤 CITATION DEBUG: Sending continuation to API",
-                                    level: .info,
-                                    metadata: [
-                                        "messageCount": "\(continuationMessages.count)",
-                                        "isWebSearch": "\(isWebSearch)",
-                                        "messageRoles": continuationMessages.map { $0.role.rawValue }.joined(separator: ", ")
-                                    ]
-                                )
 
                                 // Prepend system prompt for continued conversation
                                 if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
@@ -1766,8 +1691,6 @@ struct MacChatView: View {
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
                                 currentToolName = nil
-                                
-                                logChat("📤 CITATION DEBUG: Calling sendMessageWithToolSupport for continuation", level: .info)
                                 
                                 sendMessageWithToolSupport(
                                     messages: continuationMessages,

@@ -130,22 +130,6 @@ enum OpenAIRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
-        // DEBUG: Log incoming messages
-        DiagnosticsLogger.log(
-            .openAIService,
-            level: .info,
-            message: "📋 buildChatCompletionsBody: Incoming messages",
-            metadata: ["count": "\(messages.count)"]
-        )
-        for (idx, msg) in messages.enumerated() {
-            let toolCallIds = msg.toolCalls?.map { $0.id }.joined(separator: ", ") ?? "none"
-            DiagnosticsLogger.log(
-                .openAIService,
-                level: .info,
-                message: "📋 Message \(idx): role=\(msg.role.rawValue), toolCallIds=\(toolCallIds), contentLen=\(msg.content.count)"
-            )
-        }
-        
         // Build a set of valid tool_call_ids that have matching tool responses
         // First, collect all tool messages and their tool_call_ids
         var toolResponseIds = Set<String>()
@@ -154,13 +138,6 @@ enum OpenAIRequestBuilder {
                 toolResponseIds.insert(toolCallId)
             }
         }
-        
-        DiagnosticsLogger.log(
-            .openAIService,
-            level: .info,
-            message: "📋 Tool response IDs collected",
-            metadata: ["ids": toolResponseIds.joined(separator: ", ")]
-        )
         
         // Now filter messages:
         // 1. Keep all non-tool, non-assistant messages
