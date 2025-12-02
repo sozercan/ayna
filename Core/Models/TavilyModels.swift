@@ -166,11 +166,22 @@ extension TavilySearchResponse {
     func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
         let topResults = Array(results.prefix(maxResults))
         return topResults.enumerated().map { index, result in
-            CitationReference(
+            // Use Tavily's favicon if available, otherwise generate from domain using Google's service
+            let faviconURL: String?
+            if let existingFavicon = result.favicon, !existingFavicon.isEmpty {
+                faviconURL = existingFavicon
+            } else if let url = URL(string: result.url), let host = url.host {
+                // Use Google's favicon service which is reliable and fast
+                faviconURL = "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+            } else {
+                faviconURL = nil
+            }
+            
+            return CitationReference(
                 number: index + 1,
                 title: result.title,
                 url: result.url,
-                favicon: result.favicon
+                favicon: faviconURL
             )
         }
     }

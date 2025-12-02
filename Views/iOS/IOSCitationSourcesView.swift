@@ -88,17 +88,17 @@ struct IOSCitationSourcesFooter: View {
                 }
             }) {
                 HStack(spacing: 8) {
-                    // Favicon row (collapsed state)
+                    // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
-                        HStack(spacing: -4) {
+                        HStack(spacing: 6) {
                             ForEach(citations.prefix(4), id: \.number) { citation in
-                                IOSCitationBadgeView(citation: citation, size: 20)
+                                IOSCitationBadgeView(citation: citation, size: 22)
                             }
                             if citations.count > 4 {
                                 Text("+\(citations.count - 4)")
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(.secondary)
-                                    .padding(.leading, 4)
+                                    .padding(.leading, 2)
                             }
                         }
                     }

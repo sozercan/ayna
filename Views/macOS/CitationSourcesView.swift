@@ -97,17 +97,17 @@ struct CitationSourcesFooter: View {
                 }
             }) {
                 HStack(spacing: 8) {
-                    // Favicon row (collapsed state)
+                    // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
-                        HStack(spacing: -4) {
+                        HStack(spacing: 6) {
                             ForEach(citations.prefix(5), id: \.number) { citation in
-                                CitationBadgeView(citation: citation, size: 18)
+                                CitationBadgeView(citation: citation, size: 20)
                             }
                             if citations.count > 5 {
                                 Text("+\(citations.count - 5)")
                                     .font(.system(size: 10, weight: .medium))
                                     .foregroundColor(.white.opacity(0.7))
-                                    .padding(.leading, 4)
+                                    .padding(.leading, 2)
                             }
                         }
                     }
