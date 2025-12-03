@@ -53,11 +53,11 @@ struct MacSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search Box
-            HStack(spacing: 8) {
+            // Search Box - iMessage style
+            HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 14))
+                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 13, weight: .medium))
 
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
@@ -73,19 +73,21 @@ struct MacSidebarView: View {
                         performSearch()
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                             .font(.system(size: 12))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(6)
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.5))
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
             .onChange(of: conversationManager.conversations) { _ in
                 if !searchText.isEmpty {
                     performSearch()
@@ -110,36 +112,45 @@ struct MacSidebarView: View {
                 List(selection: $selectedConversations) {
                     ForEach(timelineSections) { section in
                         Section {
-                            ForEach(section.conversations) { conversation in
-                                ConversationRow(conversation: conversation)
-                                    .tag(conversation.id)
-                                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                                    .contextMenu {
-                                        if selectedConversations.count > 1 {
-                                            Button(
-                                                role: .destructive,
-                                                action: {
-                                                    deleteConversations(with: selectedConversations)
-                                                }
-                                            ) {
-                                                Label(
-                                                    "Delete \(selectedConversations.count) Conversations",
-                                                    systemImage: "trash"
-                                                )
-                                            }
-                                            .accessibilityIdentifier("contextMenu.delete")
-                                        } else {
-                                            Button(
-                                                role: .destructive,
-                                                action: {
-                                                    deleteConversation(with: conversation.id)
-                                                }
-                                            ) {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                            .accessibilityIdentifier("contextMenu.delete")
-                                        }
+                            ForEach(Array(section.conversations.enumerated()), id: \.element.id) { index, conversation in
+                                VStack(spacing: 0) {
+                                    ConversationRow(conversation: conversation)
+                                    
+                                    // Add divider between conversations (not after the last one in section)
+                                    if index < section.conversations.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 64) // Align with text, past the avatar (44 + 12 + 8)
                                     }
+                                }
+                                .tag(conversation.id)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                                .listRowSeparator(.hidden)
+                                .contextMenu {
+                                    if selectedConversations.count > 1 {
+                                        Button(
+                                            role: .destructive,
+                                            action: {
+                                                deleteConversations(with: selectedConversations)
+                                            }
+                                        ) {
+                                            Label(
+                                                "Delete \(selectedConversations.count) Conversations",
+                                                systemImage: "trash"
+                                            )
+                                        }
+                                        .accessibilityIdentifier("contextMenu.delete")
+                                    } else {
+                                        Button(
+                                            role: .destructive,
+                                            action: {
+                                                deleteConversation(with: conversation.id)
+                                            }
+                                        ) {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        .accessibilityIdentifier("contextMenu.delete")
+                                    }
+                                }
                             }
                         } header: {
                             Text(section.title)
@@ -209,32 +220,69 @@ struct MacSidebarView: View {
 struct ConversationRow: View {
     let conversation: Conversation
 
+    private var lastMessagePreview: String {
+        conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
+    }
+
+    private var timeString: String {
+        let formatter = DateFormatter()
+        if Calendar.current.isDateInToday(conversation.updatedAt) {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateStyle = .short
+            formatter.timeStyle = .none
+        }
+        return formatter.string(from: conversation.updatedAt)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "message")
+        HStack(spacing: 12) {
+            // Avatar - iMessage style gray gradient circle with first initial
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(nsColor: .systemGray),
+                            Color(nsColor: .systemGray.withAlphaComponent(0.7)),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 44, height: 44)
+                .overlay {
+                    if let firstChar = conversation.title.first {
+                        Text(String(firstChar).uppercased())
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(.white)
+                    } else {
+                        Image(systemName: "bubble.left.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Title row with timestamp
+                HStack {
+                    Text(conversation.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(timeString)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                // Message preview
+                Text(lastMessagePreview)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
-
-                Text(conversation.title)
-                    .font(.system(size: 13, weight: .regular))
-                    .lineLimit(1)
-
-                Spacer()
-            }
-
-            HStack(spacing: 4) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                Text(conversation.model)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                Spacer()
+                    .lineLimit(2)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
         .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
         .contentShape(Rectangle())
     }
