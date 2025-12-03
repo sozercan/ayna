@@ -1319,7 +1319,7 @@ class OpenAIService: ObservableObject {
                     // Batching buffers
                     var contentBuffer = ""
                     var reasoningBuffer = ""
-                    var lastUpdateTime = Date()
+                    var lastUpdateTime = CFAbsoluteTimeGetCurrent()
                     var totalBytesReceived = 0
 
                     for try await byte in bytes {
@@ -1374,7 +1374,7 @@ class OpenAIService: ObservableObject {
 
                                 // Check if we should dispatch batch
                                 if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
+                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
                                     if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
                                         let contentToSend = contentBuffer
                                         let reasoningToSend = reasoningBuffer
@@ -1384,7 +1384,7 @@ class OpenAIService: ObservableObject {
                                         }
                                         contentBuffer = ""
                                         reasoningBuffer = ""
-                                        lastUpdateTime = Date()
+                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
                                     }
                                 }
                             }
