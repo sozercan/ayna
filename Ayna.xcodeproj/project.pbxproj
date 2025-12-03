@@ -129,6 +129,8 @@
 		D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
 		GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
 		GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GITHUB0AUTH13064F88B81B00 /* GitHubOAuthService.swift */; };
+		STREAMING0BUF13064F88B8101 /* StreamingChunkBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */; };
+		STREAMING0BUF13064F88B8102 /* StreamingChunkBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */; };
 		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
 		CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */; };
 /* End PBXBuildFile section */
@@ -216,6 +218,7 @@
 		C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsNavigator.swift; sourceTree = "<group>"; };
 		C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestIdentifiers.swift; sourceTree = "<group>"; };
 		C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
+		STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingChunkBuffer.swift; sourceTree = "<group>"; };
 		C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
 		C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
 		C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
@@ -444,6 +447,7 @@
 				C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */,
 				C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */,
 				C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */,
+				STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -777,6 +781,7 @@
 				A1B2C3D613064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81394032ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81394042ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
+				STREAMING0BUF13064F88B8101 /* StreamingChunkBuffer.swift in Sources */,
 				C81394052ED3DEB800F5E7F9 /* MCPService.swift in Sources */,
 				C81394062ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
 				C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
@@ -879,6 +884,7 @@
 				A1B2C3D513064F88B81B4CA3 /* ResponseGroup.swift in Sources */,
 				C81393E22ED3DEB800F5E7F9 /* TestIdentifiers.swift in Sources */,
 				C81393E32ED3DEB800F5E7F9 /* UITestEnvironment.swift in Sources */,
+				STREAMING0BUF13064F88B8102 /* StreamingChunkBuffer.swift in Sources */,
 				C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
 				C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
 				C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,

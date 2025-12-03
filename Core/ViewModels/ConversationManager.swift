@@ -26,7 +26,6 @@ final class ConversationManager: ObservableObject {
 
     private let store: EncryptedConversationStore
     private let persistenceCoordinator: ConversationPersistenceCoordinator
-    private var saveTasks: [UUID: Task<Void, Never>] = [:]
     var loadingTask: Task<Void, Never>?
     private var isLoaded = false
     private let saveDebounceDuration: Duration
@@ -59,10 +58,6 @@ final class ConversationManager: ObservableObject {
     // MARK: - Persistence
 
     func save(_ conversation: Conversation) {
-        // Cancel any existing local task (for backwards compatibility)
-        saveTasks[conversation.id]?.cancel()
-        saveTasks.removeValue(forKey: conversation.id)
-
         // Delegate to the actor for thread-safe, debounced persistence
         Task {
             if !isLoaded {
@@ -76,10 +71,8 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    func saveImmediately(_ conversation: Conversation) {
-        saveTasks[conversation.id]?.cancel()
-        saveTasks.removeValue(forKey: conversation.id)
-
+    @discardableResult
+    func saveImmediately(_ conversation: Conversation) -> Task<Void, Never> {
         Task {
             if !isLoaded {
                 _ = await loadingTask?.value
@@ -183,8 +176,6 @@ final class ConversationManager: ObservableObject {
 
     func clearAllConversations() {
         conversations.removeAll()
-        saveTasks.values.forEach { $0.cancel() }
-        saveTasks.removeAll()
         Task {
             // Cancel all pending saves in the coordinator
             await persistenceCoordinator.cancelAllPendingSaves()
@@ -211,8 +202,6 @@ final class ConversationManager: ObservableObject {
 
     func deleteConversation(_ conversation: Conversation) {
         conversations.removeAll { $0.id == conversation.id }
-        saveTasks[conversation.id]?.cancel()
-        saveTasks.removeValue(forKey: conversation.id)
         Task {
             try? await store.delete(conversation.id)
             // iCloud sync disabled for free developer account
@@ -280,6 +269,66 @@ final class ConversationManager: ObservableObject {
             conversations[convIndex].updatedAt = Date()
             save(conversations[convIndex])
         }
+    }
+
+    // MARK: - Safe ID-Based Access
+
+    /// Safely get a conversation by ID. Returns nil if not found.
+    func conversation(byId id: UUID) -> Conversation? {
+        conversations.first { $0.id == id }
+    }
+
+    /// Safely update a message by IDs. Returns true if update succeeded.
+    @discardableResult
+    func updateMessage(
+        conversationId: UUID,
+        messageId: UUID,
+        update: (inout Message) -> Void
+    ) -> Bool {
+        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
+        else {
+            return false
+        }
+        var message = conversations[convIndex].messages[msgIndex]
+        update(&message)
+        conversations[convIndex].messages[msgIndex] = message
+        conversations[convIndex].updatedAt = Date()
+        return true
+    }
+
+    /// Safely append content to a message. Returns true if update succeeded.
+    @discardableResult
+    func appendToMessage(
+        conversationId: UUID,
+        messageId: UUID,
+        chunk: String
+    ) -> Bool {
+        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
+        else {
+            return false
+        }
+        conversations[convIndex].messages[msgIndex].content += chunk
+        return true
+    }
+
+    /// Safely update a response group status by IDs. Returns true if update succeeded.
+    @discardableResult
+    func updateResponseGroupStatus(
+        conversationId: UUID,
+        responseGroupId: UUID,
+        messageId: UUID,
+        status: ResponseGroupStatus
+    ) -> Bool {
+        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+              var group = conversations[convIndex].getResponseGroup(responseGroupId)
+        else {
+            return false
+        }
+        group.updateStatus(for: messageId, status: status)
+        conversations[convIndex].updateResponseGroup(group)
+        return true
     }
 
     func clearMessages(in conversation: Conversation) {

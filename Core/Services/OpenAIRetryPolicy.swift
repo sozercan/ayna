@@ -6,6 +6,190 @@
 //
 
 import Foundation
+#if !os(watchOS)
+    import os
+#endif
+
+// MARK: - Circuit Breaker
+
+#if !os(watchOS)
+    /// Thread-safe circuit breaker that prevents hammering failing endpoints.
+    /// States: Closed (normal) → Open (failing fast) → Half-Open (testing recovery)
+    final class CircuitBreaker: @unchecked Sendable {
+        enum State: Sendable {
+            case closed
+            case open(until: Date)
+            case halfOpen
+        }
+
+        struct Config: Sendable {
+            /// Number of consecutive failures before opening the circuit
+            let failureThreshold: Int
+            /// How long the circuit stays open before allowing a test request
+            let openDuration: TimeInterval
+            /// Number of successes needed in half-open state to close
+            let successThreshold: Int
+
+            static let `default` = Config(
+                failureThreshold: 3,
+                openDuration: 30.0,
+                successThreshold: 2
+            )
+        }
+
+        private let lock = NSLock()
+        private var _state: State = .closed
+        private var consecutiveFailures = 0
+        private var consecutiveSuccesses = 0
+        private let config: Config
+
+        init(config: Config = .default) {
+            self.config = config
+        }
+
+        /// Current state of the circuit breaker
+        var state: State {
+            lock.lock()
+            defer { lock.unlock() }
+
+            // Auto-transition from open to half-open if timeout expired
+            if case let .open(until) = _state, Date() >= until {
+                _state = .halfOpen
+                consecutiveSuccesses = 0
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .info,
+                    message: "⚡ Circuit breaker transitioning to half-open"
+                )
+            }
+            return _state
+        }
+
+        /// Check if requests should be allowed through
+        var shouldAllowRequest: Bool {
+            switch state {
+            case .closed, .halfOpen:
+                return true
+            case .open:
+                return false
+            }
+        }
+
+        /// Record a successful request
+        func recordSuccess() {
+            lock.lock()
+            defer { lock.unlock() }
+
+            consecutiveFailures = 0
+
+            switch _state {
+            case .halfOpen:
+                consecutiveSuccesses += 1
+                if consecutiveSuccesses >= config.successThreshold {
+                    _state = .closed
+                    consecutiveSuccesses = 0
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .info,
+                        message: "✅ Circuit breaker closed after recovery"
+                    )
+                }
+            case .closed, .open:
+                break
+            }
+        }
+
+        /// Record a failed request
+        func recordFailure() {
+            lock.lock()
+            defer { lock.unlock() }
+
+            consecutiveFailures += 1
+            consecutiveSuccesses = 0
+
+            switch _state {
+            case .closed:
+                if consecutiveFailures >= config.failureThreshold {
+                    let openUntil = Date().addingTimeInterval(config.openDuration)
+                    _state = .open(until: openUntil)
+                    DiagnosticsLogger.log(
+                        .openAIService,
+                        level: .error,
+                        message: "🔴 Circuit breaker opened after \(consecutiveFailures) failures",
+                        metadata: ["reopensAt": openUntil.description]
+                    )
+                }
+            case .halfOpen:
+                // Failed during test - reopen the circuit
+                let openUntil = Date().addingTimeInterval(config.openDuration)
+                _state = .open(until: openUntil)
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "🔴 Circuit breaker reopened after half-open failure"
+                )
+            case .open:
+                break
+            }
+        }
+
+        /// Reset the circuit breaker to closed state (for testing or manual override)
+        func reset() {
+            lock.lock()
+            defer { lock.unlock() }
+            _state = .closed
+            consecutiveFailures = 0
+            consecutiveSuccesses = 0
+        }
+
+        /// Time remaining until circuit transitions from open to half-open
+        var timeUntilHalfOpen: TimeInterval? {
+            lock.lock()
+            defer { lock.unlock() }
+            if case let .open(until) = _state {
+                return max(0, until.timeIntervalSinceNow)
+            }
+            return nil
+        }
+    }
+
+    // MARK: - Circuit Breaker Registry
+
+    /// Manages circuit breakers per endpoint/provider to isolate failures
+    final class CircuitBreakerRegistry: @unchecked Sendable {
+        static let shared = CircuitBreakerRegistry()
+
+        private let lock = NSLock()
+        private var breakers: [String: CircuitBreaker] = [:]
+        private let defaultConfig: CircuitBreaker.Config
+
+        init(config: CircuitBreaker.Config = .default) {
+            defaultConfig = config
+        }
+
+        /// Get or create a circuit breaker for a specific endpoint
+        func breaker(for endpoint: String) -> CircuitBreaker {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let existing = breakers[endpoint] {
+                return existing
+            }
+
+            let newBreaker = CircuitBreaker(config: defaultConfig)
+            breakers[endpoint] = newBreaker
+            return newBreaker
+        }
+
+        /// Reset all circuit breakers (for testing)
+        func resetAll() {
+            lock.lock()
+            defer { lock.unlock() }
+            breakers.values.forEach { $0.reset() }
+            breakers.removeAll()
+        }
+    }
+#endif
 
 /// Stateless helper that determines retry behavior for API requests.
 /// Implements exponential backoff with jitter for transient failures.

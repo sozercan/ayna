@@ -659,7 +659,8 @@ final class TavilyServiceTests: XCTestCase {
         XCTAssertEqual(citations[1].number, 2)
         XCTAssertEqual(citations[1].title, "Second Result")
         XCTAssertEqual(citations[1].url, "https://example.com/2")
-        XCTAssertNil(citations[1].favicon)
+        // When no favicon is provided, Google's favicon service URL is generated
+        XCTAssertEqual(citations[1].favicon, "https://www.google.com/s2/favicons?domain=example.com&sz=64")
     }
 
     func testToCitationReferencesRespectsMaxResults() {
@@ -752,7 +753,8 @@ final class TavilyServiceTests: XCTestCase {
         XCTAssertEqual(citations[0].favicon, "https://swift.org/favicon.ico")
         XCTAssertEqual(citations[1].number, 2)
         XCTAssertEqual(citations[1].title, "Apple Developer")
-        XCTAssertNil(citations[1].favicon)
+        // When no favicon is provided, Google's favicon service URL is generated
+        XCTAssertEqual(citations[1].favicon, "https://www.google.com/s2/favicons?domain=developer.apple.com&sz=64")
     }
 
     func testExecuteToolCallWithCitationsReturnsEmptyCitationsOnMissingQuery() async {

@@ -119,10 +119,10 @@ final class ConversationManagerTests: XCTestCase {
         }
 
         // Save immediately
-        manager.saveImmediately(manager.conversations.first!)
+        let saveTask = manager.saveImmediately(manager.conversations.first!)
 
-        // Wait a bit for the async save task to complete via the actor
-        try await Task.sleep(for: .milliseconds(200))
+        // Wait for the save task to complete
+        _ = await saveTask.value
 
         // Create a new manager to load from disk using the SAME keychain and keyIdentifier
         let newManager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)

@@ -503,11 +503,16 @@ final class IOSChatViewModel: ObservableObject {
                     self.errorMessage = error.localizedDescription
 
                     // Update the specific assistant message with error content so it persists
-                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       let msgIndex = self.conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessageId })
-                    {
-                        self.conversationManager.conversations[convIndex].messages[msgIndex].content =
-                            "⚠️ Error: \(error.localizedDescription)"
+                    // Use safe ID-based update instead of index-based access
+                    let errorContent = "⚠️ Error: \(error.localizedDescription)"
+                    let success = self.conversationManager.updateMessage(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId
+                    ) { message in
+                        message.content = errorContent
+                    }
+
+                    if success {
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
@@ -572,9 +577,9 @@ final class IOSChatViewModel: ObservableObject {
 
                     self.toolCallDepth += 1
 
-                    // Store tool call in the last assistant message
-                    if let index = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       var lastMessage = self.conversationManager.conversations[index].messages.last,
+                    // Store tool call in the last assistant message using safe ID-based access
+                    if let conv = self.conversationManager.conversation(byId: conversationId),
+                       let lastMessage = conv.messages.last,
                        lastMessage.role == .assistant
                     {
                         let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
@@ -585,11 +590,15 @@ final class IOSChatViewModel: ObservableObject {
                             toolName: toolName,
                             arguments: anyCodableArgs
                         )
-                        lastMessage.toolCalls = [toolCall]
-                        self.conversationManager.conversations[index].messages[
-                            self.conversationManager.conversations[index].messages.count - 1
-                        ] = lastMessage
-                        self.conversationManager.save(self.conversationManager.conversations[index])
+                        self.conversationManager.updateMessage(
+                            conversationId: conversationId,
+                            messageId: lastMessage.id
+                        ) { message in
+                            message.toolCalls = [toolCall]
+                        }
+                        if let updatedConv = self.conversationManager.conversation(byId: conversationId) {
+                            self.conversationManager.save(updatedConv)
+                        }
                     }
 
                     // Execute the tool
@@ -631,7 +640,7 @@ final class IOSChatViewModel: ObservableObject {
                                         result: result
                                     )
                                 ]
-                                guard let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                                guard let conv = self.conversationManager.conversation(byId: conversationId) else {
                                     self.isGenerating = false
                                     self.currentToolName = nil
                                     self.toolCallDepth = 0
@@ -641,7 +650,7 @@ final class IOSChatViewModel: ObservableObject {
                             }
 
                             // Continue conversation with tool result
-                            guard let updatedConv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                            guard let updatedConv = self.conversationManager.conversation(byId: conversationId) else {
                                 self.isGenerating = false
                                 self.currentToolName = nil
                                 self.toolCallDepth = 0
@@ -657,7 +666,7 @@ final class IOSChatViewModel: ObservableObject {
                             self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
 
                             // Get conversation again with new assistant message
-                            guard let convWithAssistant = self.conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                            guard let convWithAssistant = self.conversationManager.conversation(byId: conversationId) else {
                                 self.isGenerating = false
                                 self.currentToolName = nil
                                 self.toolCallDepth = 0
@@ -936,27 +945,21 @@ final class IOSChatViewModel: ObservableObject {
             return
         }
 
-        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) else {
+        // Use safe ID-based append instead of index-based access
+        let success = conversationManager.appendToMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            chunk: chunk
+        )
+
+        if !success {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,
-                message: "❌ Conversation not found during multi-model streaming",
-                metadata: ["conversationId": conversationId.uuidString]
+                message: "❌ Failed to append chunk - conversation or message not found",
+                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
             )
-            return
         }
-
-        guard let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }) else {
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .error,
-                message: "❌ Message not found during multi-model streaming",
-                metadata: ["messageId": messageId.uuidString]
-            )
-            return
-        }
-
-        conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
     }
 
     private func handleMultiModelCompletion(
@@ -967,12 +970,22 @@ final class IOSChatViewModel: ObservableObject {
     ) {
         guard let messageId = messageIds[model] else { return }
 
-        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-              var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-        else { return }
+        // Use safe ID-based update instead of index-based access
+        let success = conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .completed
+        )
 
-        group.updateStatus(for: messageId, status: .completed)
-        conversationManager.conversations[convIndex].updateResponseGroup(group)
+        if !success {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to update response group - conversation not found",
+                metadata: ["conversationId": conversationId.uuidString]
+            )
+        }
     }
 
     private func handleMultiModelError(
@@ -984,12 +997,22 @@ final class IOSChatViewModel: ObservableObject {
     ) {
         guard let messageId = messageIds[model] else { return }
 
-        guard let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-              var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-        else { return }
+        // Use safe ID-based update instead of index-based access
+        let success = conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .failed
+        )
 
-        group.updateStatus(for: messageId, status: .failed)
-        conversationManager.conversations[convIndex].updateResponseGroup(group)
+        if !success {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to update response group status - conversation not found",
+                metadata: ["conversationId": conversationId.uuidString]
+            )
+        }
 
         DiagnosticsLogger.log(
             .chatView,
@@ -1061,12 +1084,20 @@ final class IOSChatViewModel: ObservableObject {
     }
 
     private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
-        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let msgIndex = conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
-        {
-            var updatedMessage = conversationManager.conversations[convIndex].messages[msgIndex]
-            updatedMessage.content += chunk
-            conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
+        // Use safe ID-based append instead of index-based access
+        let success = conversationManager.appendToMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            chunk: chunk
+        )
+
+        if !success {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to update assistant message - not found",
+                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
+            )
         }
     }
 }
