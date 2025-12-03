@@ -4,7 +4,12 @@ import SwiftUI
 /// Converts markdown text into renderable content blocks tailored for the chat UI.
 enum MarkdownRenderer {
     // Cache for parsed content blocks to improve performance
-    private nonisolated(unsafe) static let cache = NSCache<NSString, ContentBlockWrapper>()
+    // Configured with limits to prevent unbounded memory growth
+    private nonisolated(unsafe) static let cache: NSCache<NSString, ContentBlockWrapper> = {
+        let cache = NSCache<NSString, ContentBlockWrapper>()
+        cache.countLimit = 100 // Maximum 100 cached markdown parses
+        return cache
+    }()
 
     private class ContentBlockWrapper {
         let blocks: [ContentBlock]

@@ -520,10 +520,10 @@ struct MacMessageView: View {
         // Cancel any pending debounce task
         parseDebounceTask?.cancel()
 
-        // Check if enough time has passed since last parse (200ms minimum during streaming)
+        // Check if enough time has passed since last parse (400ms minimum during streaming)
         let now = Date()
         let timeSinceLastParse = now.timeIntervalSince(lastParseTime)
-        let minInterval: TimeInterval = 0.2 // 200ms minimum between parses
+        let minInterval: TimeInterval = 0.4 // 400ms minimum between parses
 
         if timeSinceLastParse >= minInterval {
             // Enough time has passed, parse immediately
