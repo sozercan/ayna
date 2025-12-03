@@ -57,6 +57,7 @@ struct MacChatView: View {
     // Multi-model support (unified selection - 1 model = single, 2+ = multi)
     @State private var selectedModels: Set<String> = []
     @State private var showModelSelector = false
+    @State private var isToolSectionExpanded = false
 
     // Performance optimizations
     @State private var scrollDebounceTask: Task<Void, Never>?
@@ -124,6 +125,11 @@ struct MacChatView: View {
             // Show if: has content, has image data, or is generating image
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
+                // Always show assistant messages in a response group (multi-model mode)
+                // They need to remain visible even after generation to show failed/empty states
+                if message.responseGroupId != nil {
+                    return true
+                }
                 // Only show empty assistant message if it's the last message and we're generating
                 return message.id == currentConversation.messages.last?.id && isGenerating
             }
@@ -311,6 +317,15 @@ struct MacChatView: View {
                     .onChange(of: isGenerating) { _, _ in
                         updateVisibleMessages()
                     }
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            if isToolSectionExpanded {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isToolSectionExpanded = false
+                                }
+                            }
+                        }
+                    )
                 }
 
                 // Rate Limit Warning Banner (GitHub Models only)
@@ -360,7 +375,7 @@ struct MacChatView: View {
 
                 // Input Area
                 VStack(spacing: 8) {
-                    MCPToolSummaryView()
+                    MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
                     // Attached files preview
                     if !attachedFiles.isEmpty {
@@ -565,7 +580,8 @@ struct MacChatView: View {
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                     .padding(.horizontal, 24)
                 }
-                .padding(.vertical, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
                 .background(.ultraThinMaterial)
             }
         }

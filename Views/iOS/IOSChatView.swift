@@ -61,6 +61,11 @@ struct IOSChatView: View {
 
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+                // Always show assistant messages in a response group (multi-model mode)
+                // They need to remain visible even after generation to show failed/empty states
+                if message.responseGroupId != nil {
+                    return true
+                }
                 // Only show empty assistant message if it's the last message and we're generating
                 return message.id == conversation.messages.last?.id && viewModel.isGenerating
             }

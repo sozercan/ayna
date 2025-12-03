@@ -627,6 +627,7 @@ class OpenAIService: ObservableObject {
         stream: Bool = true,
         tools: [[String: Any]]? = nil,
         conversationId: UUID? = nil,
+        isMultiModelRequest: Bool = false,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
@@ -816,7 +817,7 @@ class OpenAIService: ObservableObject {
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
-            streamResponse(request: request, callbacks: callbacks)
+            streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest)
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
@@ -900,6 +901,7 @@ class OpenAIService: ObservableObject {
                                     stream: true,
                                     tools: nil, // Tools disabled in multi-model mode - deferred
                                     conversationId: nil,
+                                    isMultiModelRequest: true,
                                     onChunk: { chunk in
                                         onChunk(model, chunk)
                                     },
@@ -1203,12 +1205,14 @@ class OpenAIService: ObservableObject {
     private func streamResponse(
         request: URLRequest,
         callbacks: StreamCallbacks,
-        attempt: Int = 0
+        attempt: Int = 0,
+        isMultiModelRequest: Bool = false
     ) {
         let session = urlSession
 
         // Cancel any existing stream task before starting a new one
-        if currentStreamTask != nil {
+        // Skip cancellation for multi-model requests to allow parallel streaming
+        if currentStreamTask != nil && !isMultiModelRequest {
             DiagnosticsLogger.log(
                 .openAIService,
                 level: .info,
@@ -1448,7 +1452,8 @@ class OpenAIService: ObservableObject {
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
                     request: request,
-                    callbacks: callbacks
+                    callbacks: callbacks,
+                    isMultiModelRequest: isMultiModelRequest
                 )
             }
         }
@@ -1548,7 +1553,8 @@ class OpenAIService: ObservableObject {
         attempt: Int,
         hasReceivedData: Bool,
         request: URLRequest,
-        callbacks: StreamCallbacks
+        callbacks: StreamCallbacks,
+        isMultiModelRequest: Bool = false
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
             // Get retry-after date for GitHub Models rate limits
@@ -1570,7 +1576,8 @@ class OpenAIService: ObservableObject {
                 streamResponse(
                     request: request,
                     callbacks: callbacks,
-                    attempt: attempt + 1
+                    attempt: attempt + 1,
+                    isMultiModelRequest: isMultiModelRequest
                 )
             }
         } else {

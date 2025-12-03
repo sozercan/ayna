@@ -11,67 +11,75 @@ import SwiftUI
 struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
     @ObservedObject private var tavilyService = TavilyService.shared
-    @State private var isToolSectionExpanded = false
+    @Binding var isExpanded: Bool
 
     @MainActor var body: some View {
         if shouldShowToolSummary {
-            VStack(alignment: .leading, spacing: 8) {
-                if isToolSectionExpanded {
-                    HStack(spacing: 8) {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isToolSectionExpanded = false
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Label("Tools", systemImage: "wrench.and.screwdriver")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Collapse tools")
-
-                        Spacer()
-
-                        SettingsLink {
-                            Label("Manage", systemImage: "slider.horizontal.3")
-                                .font(.caption2)
-                        }
-                        .routeSettings(to: .mcp)
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 4) {
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            // Web Search chip - always show if configured
-                            if tavilyService.isConfigured {
-                                Button {
-                                    tavilyService.isEnabled.toggle()
-                                } label: {
-                                    WebSearchChip(isEnabled: tavilyService.isEnabled, isConfigured: tavilyService.isConfigured)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isExpanded = false
                                 }
-                                .buttonStyle(.plain)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Collapse tools")
 
-                            // MCP Server chips
-                            ForEach(toolStatusChipModels) { chip in
-                                Button {
-                                    toggleServer(chip.id)
-                                } label: {
-                                    ToolStatusChip(model: chip)
-                                }
-                                .buttonStyle(.plain)
+                            Spacer()
+
+                            SettingsLink {
+                                Label("Manage", systemImage: "slider.horizontal.3")
+                                    .font(.caption2)
                             }
+                            .routeSettings(to: .mcp)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                // Web Search chip - always show if configured
+                                if tavilyService.isConfigured {
+                                    Button {
+                                        tavilyService.isEnabled.toggle()
+                                    } label: {
+                                        WebSearchChip(isEnabled: tavilyService.isEnabled, isConfigured: tavilyService.isConfigured)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                // MCP Server chips
+                                ForEach(toolStatusChipModels) { chip in
+                                    Button {
+                                        toggleServer(chip.id)
+                                    } label: {
+                                        ToolStatusChip(model: chip)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isExpanded = false
                         }
                     }
                 } else if !toolSummaryText.isEmpty {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            isToolSectionExpanded = true
+                            isExpanded = true
                         }
                     } label: {
                         HStack(spacing: 8) {

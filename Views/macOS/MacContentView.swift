@@ -95,6 +95,7 @@ struct MacNewChatView: View {
     @State private var currentToolName: String?
     @State private var showModelSelector = false
     @State private var selectedModels: Set<String> = []
+    @State private var isToolSectionExpanded = false
 
     // Cached font for text height calculation (computed property to avoid lazy initialization issues)
     private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -119,6 +120,11 @@ struct MacNewChatView: View {
             }
 
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+                // Always show assistant messages in a response group (multi-model mode)
+                // They need to remain visible even after generation to show failed/empty states
+                if message.responseGroupId != nil {
+                    return true
+                }
                 return message.id == conversation.messages.last?.id && isGenerating
             }
             return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
@@ -212,6 +218,15 @@ struct MacNewChatView: View {
                         .onAppear {
                             isComposerFocused = true
                         }
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                if isToolSectionExpanded {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isToolSectionExpanded = false
+                                    }
+                                }
+                            }
+                        )
                     }
 
                     if let toolName = currentToolName {
@@ -235,7 +250,7 @@ struct MacNewChatView: View {
 
                     // Input Area
                     VStack(spacing: 8) {
-                        MCPToolSummaryView()
+                        MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
                         // Attached files preview
                         if !attachedFiles.isEmpty {
@@ -440,7 +455,8 @@ struct MacNewChatView: View {
                         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                         .padding(.horizontal, 24)
                     }
-                    .padding(.vertical, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
                     .background(.ultraThinMaterial)
                 }
             }
