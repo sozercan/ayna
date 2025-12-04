@@ -17,14 +17,14 @@ struct MCPSettingsView: View {
         VStack(spacing: 0) {
             // Header with stats
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text("MCP Servers")
-                        .font(.title2)
+                        .font(Typography.title2)
                         .fontWeight(.semibold)
 
                     Text("\(mcpManager.getConnectedServerCount()) connected • \(mcpManager.availableTools.count) tools available")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Spacer()
@@ -50,19 +50,19 @@ struct MCPSettingsView: View {
 
             // Server List
             if mcpManager.serverConfigs.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: Spacing.md) {
                     Spacer()
 
                     Image(systemName: "server.rack")
                         .font(.system(size: 48))
-                        .foregroundStyle(.secondary.opacity(0.5))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.5))
 
                     Text("No MCP Servers")
-                        .font(.headline)
+                        .font(Typography.headline)
 
                     Text("Add an MCP server to enable tools like search and file access")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
 
                     Button("Add Your First Server") {
@@ -77,7 +77,7 @@ struct MCPSettingsView: View {
                 .padding()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: Spacing.md) {
                         ForEach(mcpManager.serverConfigs) { config in
                             ServerConfigRow(
                                 config: config,
@@ -167,15 +167,15 @@ struct ServerConfigRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text(config.name)
-                    .font(.headline)
+                    .font(Typography.headline)
 
                 Text(statusDescription)
-                    .font(.caption2)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
+                    .font(Typography.micro)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xxxs)
                     .background(statusColor.opacity(0.15))
                     .foregroundStyle(statusColor)
                     .clipShape(Capsule())
@@ -185,11 +185,11 @@ struct ServerConfigRow: View {
                 // Tool count badge
                 if !tools.isEmpty {
                     Text("\(tools.count) tools")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .font(Typography.caption)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
                         .background(Color.blue.opacity(0.1))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Theme.accent)
                         .clipShape(Capsule())
                 }
 
@@ -225,7 +225,7 @@ struct ServerConfigRow: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .menuStyle(.borderlessButton)
             }
@@ -234,86 +234,86 @@ struct ServerConfigRow: View {
             HStack {
                 Text(config.command)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
 
                 if !config.args.isEmpty {
                     Text(config.args.joined(separator: " "))
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
 
             if let lastUpdatedText {
                 Text("Updated \(lastUpdatedText)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.micro)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             // Error message
             if let errorMessage = status?.lastError, !errorMessage.isEmpty {
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: Spacing.xs) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .font(.caption)
+                        .foregroundStyle(Theme.statusError)
+                        .font(Typography.caption)
 
                     Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.statusError)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(8)
+                .padding(Spacing.sm)
                 .background(Color.red.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
             }
 
             // Tools list (expandable)
             if showingTools, !tools.isEmpty {
                 Divider()
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Available Tools")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
 
                     ForEach(tools) { tool in
-                        HStack(spacing: 6) {
+                        HStack(spacing: Spacing.xs) {
                             Image(systemName: "wrench.and.screwdriver.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.blue)
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.accent)
 
                             Text(tool.name)
-                                .font(.caption)
+                                .font(Typography.caption)
 
                             Spacer()
                         }
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, Spacing.xxs)
             }
         }
         .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
     }
 
     private var statusColor: Color {
         switch status?.state {
         case .connected:
-            .green
+            Theme.statusConnected
         case .connecting:
-            .orange
+            Theme.statusConnecting
         case .reconnecting:
             .yellow
         case .error:
-            .red
+            Theme.statusError
         case .disabled:
-            .gray
+            Theme.statusDisconnected
         case .idle:
             .secondary
         case .none:
-            config.enabled ? .secondary : .gray
+            config.enabled ? .secondary : Theme.statusDisconnected
         }
     }
 
@@ -388,7 +388,7 @@ struct ServerConfigSheet: View {
             // Header
             HStack {
                 Text(config == nil ? "Add MCP Server" : "Edit MCP Server")
-                    .font(.title2)
+                    .font(Typography.title2)
                     .fontWeight(.semibold)
 
                 Spacer()

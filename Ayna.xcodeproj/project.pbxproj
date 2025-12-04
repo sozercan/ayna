@@ -388,7 +388,6 @@
 		06000001 = {
 			isa = PBXGroup;
 			children = (
-				06000004 /* Views */,
 				06000003 /* Products */,
 				C81393A82ED3DE9900F5E7F9 /* App */,
 				C81393CE2ED3DEB800F5E7F9 /* Core */,
@@ -412,13 +411,6 @@
 				C855C1062EE15D700073EB99 /* Ayna-watchOSTests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		06000004 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Views;
 			sourceTree = "<group>";
 		};
 		C81393A22ED3DE9900F5E7F9 /* iOS */ = {

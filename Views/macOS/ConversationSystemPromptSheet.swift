@@ -40,9 +40,9 @@ struct ConversationSystemPromptSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("System Prompt")
-                .font(.headline)
+                .font(Typography.headline)
 
             Picker("Mode", selection: $selectedMode) {
                 ForEach(SystemPromptModeSelection.allCases, id: \.self) { mode in
@@ -53,48 +53,48 @@ struct ConversationSystemPromptSheet: View {
             .accessibilityIdentifier("chat.systemPromptMode.picker")
 
             if selectedMode == .inheritGlobal {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Current Global Prompt:")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
 
                     let globalPrompt = AppPreferences.globalSystemPrompt
                     if globalPrompt.isEmpty {
                         Text("(No global prompt set)")
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.textTertiary)
                             .italic()
                     } else {
                         Text(globalPrompt)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .padding(8)
+                            .font(Typography.body)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(Spacing.sm)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
                     }
                 }
             } else if selectedMode == .custom {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Custom Prompt:")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
 
                     TextEditor(text: $customPrompt)
-                        .font(.body)
+                        .font(Typography.body)
                         .frame(minHeight: 100, maxHeight: 200)
                         .scrollContentBackground(.hidden)
-                        .padding(8)
+                        .padding(Spacing.sm)
                         .background(Color(nsColor: .textBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                                .stroke(Theme.separator, lineWidth: Spacing.Border.standard)
                         )
                         .accessibilityIdentifier("chat.systemPrompt.customEditor")
                 }
             } else {
                 Text("No system prompt will be used for this conversation.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .italic()
             }
 
@@ -115,7 +115,7 @@ struct ConversationSystemPromptSheet: View {
                 .buttonStyle(.borderedProminent)
             }
         }
-        .padding(20)
+        .padding(Spacing.xl)
         .frame(width: 450, height: 350)
     }
 

@@ -66,8 +66,8 @@ struct IOSSettingsView: View {
                             Text("Tools")
                             Spacer()
                             Text(toolsSummary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.subheadline)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .accessibilityIdentifier("settings.tools.link")
@@ -83,17 +83,17 @@ struct IOSSettingsView: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(model)
-                                        .font(.headline)
+                                        .font(Typography.headline)
                                     if let provider = openAIService.modelProviders[model] {
                                         Text(provider.displayName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(Typography.caption)
+                                            .foregroundStyle(Theme.textSecondary)
                                     }
                                 }
                                 Spacer()
                                 if model == openAIService.selectedModel {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(Theme.accent)
                                 }
                             }
                         }
@@ -293,7 +293,7 @@ struct IOSModelEditView: View {
                         .autocorrectionDisabled()
                 } else {
                     Text(modelName)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Picker("Provider", selection: $provider) {
@@ -324,13 +324,13 @@ struct IOSModelEditView: View {
                     Section {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.statusConnected)
                             if let user = githubOAuth.currentUser {
                                 Text("Signed in as @\(user.login)")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("Signed in with GitHub")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                         Button("Sign Out", role: .destructive) {
@@ -357,18 +357,18 @@ struct IOSModelEditView: View {
                             HStack {
                                 ProgressView()
                                 Text("Completing sign in...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                                 Spacer()
                                 Button("Cancel", role: .destructive) {
                                     githubOAuth.cancelAuthentication()
                                 }
-                                .font(.caption)
+                                .font(Typography.caption)
                             }
                         }
 
                         if let error = githubOAuth.authError {
-                            Text(error).foregroundStyle(.red).font(.caption)
+                            Text(error).foregroundStyle(Theme.statusError).font(Typography.caption)
                         }
                     } header: {
                         Text("Sign In")
@@ -389,18 +389,18 @@ struct IOSModelEditView: View {
                             }
                         }
                         Text("\(githubOAuth.availableModels.count) models available")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     } else if let error = githubOAuth.modelsError {
                         TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        HStack(spacing: 4) {
+                        HStack(spacing: Spacing.xxs) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Theme.statusConnecting)
                             Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         Button("Retry") {
                             Task { await githubOAuth.fetchModels() }
@@ -415,8 +415,8 @@ struct IOSModelEditView: View {
                             }
                         } else {
                             Text("Sign in to see available models")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                 } header: {
@@ -532,7 +532,7 @@ struct IOSGitHubAccountView: View {
     var body: some View {
         if githubOAuth.isAuthenticated {
             // Signed in state
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.md) {
                 // Avatar
                 if let avatarUrl = githubOAuth.currentUser?.avatarUrl,
                    let url = URL(string: avatarUrl)
@@ -543,28 +543,27 @@ struct IOSGitHubAccountView: View {
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
                         Image(systemName: "person.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Typography.IconSize.heroLarge / 2))
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     .frame(width: 40, height: 40)
                     .clipShape(Circle())
                 } else {
                     Image(systemName: "person.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: Typography.IconSize.heroLarge / 2))
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     if let user = githubOAuth.currentUser {
                         Text(user.name ?? user.login)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                            .font(Typography.subheadline)
                         Text("@\(user.login)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     } else {
                         Text("Signed in")
-                            .font(.subheadline)
+                            .font(Typography.subheadline)
                     }
                 }
 
@@ -585,20 +584,20 @@ struct IOSGitHubAccountView: View {
             }
         } else if githubOAuth.isAuthenticating {
             // Authenticating state
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.sm) {
                 ProgressView()
                 Text("Signing in...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Button("Cancel", role: .cancel) {
                     githubOAuth.cancelAuthentication()
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
             }
         } else {
             // Signed out state
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 Button {
                     githubOAuth.startWebFlow()
                 } label: {
@@ -610,8 +609,8 @@ struct IOSGitHubAccountView: View {
 
                 if let error = githubOAuth.authError {
                     Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.statusError)
                 }
             }
         }
@@ -630,28 +629,28 @@ struct IOSToolsSettingsView: View {
             Section {
                 HStack {
                     Image(systemName: "globe")
-                        .font(.title2)
-                        .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? .blue : .secondary)
+                        .font(Typography.title2)
+                        .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? Theme.accent : Theme.textSecondary)
                         .frame(width: 32)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Spacing.xxxs) {
                         Text("Web Search")
-                            .font(.headline)
+                            .font(Typography.headline)
 
                         if tavilyService.isEnabled {
                             if tavilyService.isConfigured {
                                 Text("Powered by Tavily")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("API key required")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.statusConnecting)
                             }
                         } else {
                             Text("Disabled")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
 
@@ -678,16 +677,16 @@ struct IOSToolsSettingsView: View {
 
                         if tavilyService.isConfigured {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.statusConnected)
                         }
                     }
                 } header: {
                     Text("Web Search Configuration")
                 } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
                         if !tavilyService.isConfigured {
                             Text("Enter your Tavily API key to enable web search.")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Theme.statusConnecting)
                         }
                         Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
                     }
@@ -717,7 +716,7 @@ struct IOSWebSearchSettingsSection: View {
 
                     if tavilyService.isConfigured {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.statusConnected)
                     }
                 }
             }
@@ -725,10 +724,10 @@ struct IOSWebSearchSettingsSection: View {
             Text("Web Search")
         } footer: {
             if tavilyService.isEnabled {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     if !tavilyService.isConfigured {
                         Text("Enter your Tavily API key to enable web search.")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.statusConnecting)
                     }
                     Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
                 }

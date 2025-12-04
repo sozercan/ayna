@@ -24,7 +24,7 @@ struct IOSCitationBadgeView: View {
             ZStack {
                 // Background circle
                 Circle()
-                    .fill(Color.primary.opacity(0.1))
+                    .fill(Theme.textPrimary.opacity(0.1))
                     .frame(width: size, height: size)
 
                 // Favicon or fallback number
@@ -35,7 +35,7 @@ struct IOSCitationBadgeView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: size - 4, height: size - 4)
+                                .frame(width: size - Spacing.xxs, height: size - Spacing.xxs)
                                 .clipShape(Circle())
                         case .failure, .empty:
                             fallbackNumberView
@@ -49,7 +49,7 @@ struct IOSCitationBadgeView: View {
             }
             .overlay(
                 Circle()
-                    .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                    .stroke(Theme.textPrimary.opacity(0.2), lineWidth: Spacing.Border.standard)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -59,7 +59,7 @@ struct IOSCitationBadgeView: View {
     private var fallbackNumberView: some View {
         Text("\(citation.number)")
             .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
-            .foregroundColor(.primary)
+            .foregroundColor(Theme.textPrimary)
     }
 
     private func openURL() {
@@ -76,58 +76,58 @@ struct IOSCitationSourcesFooter: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             // Header button
             Button(action: {
                 // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
 
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                withAnimation(Motion.springSnappy) {
                     isExpanded.toggle()
                 }
             }) {
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Spacing.xs) {
                             ForEach(citations.prefix(4), id: \.number) { citation in
                                 IOSCitationBadgeView(citation: citation, size: 22)
                             }
                             if citations.count > 4 {
                                 Text("+\(citations.count - 4)")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                    .padding(.leading, 2)
+                                    .font(Typography.footnote)
+                                    .foregroundColor(Theme.textSecondary)
+                                    .padding(.leading, Spacing.xxxs)
                             }
                         }
                     }
 
                     Text("Sources")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .font(Typography.captionBold)
+                        .foregroundColor(Theme.textSecondary)
 
                     Spacer()
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: Typography.Size.sm, weight: .semibold))
+                        .foregroundColor(Theme.textSecondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.05))
-                .cornerRadius(8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Theme.textPrimary.opacity(0.05))
+                .cornerRadius(Spacing.CornerRadius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
             // Expanded source list
             if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(citations, id: \.number) { citation in
                         IOSCitationSourceRow(citation: citation)
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, Spacing.xxxs)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -142,21 +142,21 @@ struct IOSCitationSourceRow: View {
 
     var body: some View {
         Button(action: openURL) {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.lg) {
                 // Favicon
                 IOSCitationBadgeView(citation: citation, size: 24)
 
                 // Title and domain
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
+                        .font(Typography.captionBold)
+                        .foregroundColor(Theme.textPrimary)
                         .lineLimit(1)
 
                     if let domain = extractDomain(from: citation.url) {
                         Text(domain)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .font(Typography.footnote)
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
 
@@ -164,13 +164,13 @@ struct IOSCitationSourceRow: View {
 
                 // External link icon
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: Typography.Size.sm, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.03))
-            .cornerRadius(8)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .background(Theme.textPrimary.opacity(0.03))
+            .cornerRadius(Spacing.CornerRadius.md)
         }
         .buttonStyle(PlainButtonStyle())
         .accessibilityLabel("Open \(citation.title)")
@@ -200,7 +200,7 @@ struct IOSInlineCitationBadgesView: View {
     let citations: [CitationReference]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xxs) {
             ForEach(citations, id: \.number) { citation in
                 IOSCitationBadgeView(citation: citation, size: 22)
             }

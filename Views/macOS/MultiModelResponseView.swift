@@ -57,35 +57,35 @@ struct MultiModelResponseView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             // Header
             HStack {
                 Image(systemName: "square.stack.3d.up")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Text("Multi-Model Responses")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.captionBold)
+                    .foregroundStyle(Theme.textSecondary)
 
                 Spacer()
 
                 if !isSelectionMade {
                     Text("Select a response to continue")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.statusConnecting)
                 } else {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Spacing.xxs) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.statusConnected)
                         Text("Response selected")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.green)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.statusConnected)
                     }
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.contentPadding)
 
             // Response Grid
-            LazyVGrid(columns: columns, spacing: 16) {
+            LazyVGrid(columns: columns, spacing: Spacing.lg) {
                 ForEach(responses) { response in
                     MultiModelResponseCard(
                         message: response,
@@ -102,15 +102,15 @@ struct MultiModelResponseView: View {
                     )
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.contentPadding)
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.secondary.opacity(0.05))
-                .strokeBorder(Color.secondary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl)
+                .fill(Theme.textSecondary.opacity(0.05))
+                .strokeBorder(Theme.border, lineWidth: Spacing.Border.standard)
         )
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.contentPadding)
     }
 }
 
@@ -161,15 +161,15 @@ struct MultiModelResponseCard: View {
 
     private var borderColor: Color {
         if isSelected {
-            Color.green
+            Theme.statusConnected
         } else if isHovered, !isSelectionMade {
-            Color.accentColor
+            Theme.accent
         } else if isDefaultCandidate {
-            Color.secondary.opacity(0.4)
+            Theme.textSecondary.opacity(0.4)
         } else if hasFailed {
-            Color.red.opacity(0.5)
+            Theme.statusError.opacity(0.5)
         } else {
-            Color.secondary.opacity(0.2)
+            Theme.border
         }
     }
 
@@ -181,20 +181,20 @@ struct MultiModelResponseCard: View {
     }
 
     private var headerBackgroundColor: Color {
-        isSelected ? Color.green.opacity(0.1) : Color.secondary.opacity(0.08)
+        isSelected ? Theme.statusConnected.opacity(0.1) : Theme.textSecondary.opacity(0.08)
     }
 
     private var shadowColor: Color {
-        isSelected ? Color.green.opacity(0.2) : Color.black.opacity(0.1)
+        isSelected ? Theme.statusConnected.opacity(0.2) : Theme.shadow
     }
 
     var body: some View {
         cardContent
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .background(Theme.backgroundSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl))
             .overlay(cardBorder)
             .opacity(cardOpacity)
-            .shadow(color: shadowColor, radius: 8, x: 0, y: 4)
+            .shadow(color: shadowColor, radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetY)
             .onHover { hovering in
                 isHovered = hovering
             }
@@ -225,23 +225,23 @@ struct MultiModelResponseCard: View {
 
     @ViewBuilder
     private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .strokeBorder(borderColor, lineWidth: isSelected ? 2 : 1)
+        RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
+            .strokeBorder(borderColor, lineWidth: isSelected ? Spacing.Border.thick : Spacing.Border.standard)
     }
 
     @ViewBuilder
     private var headerView: some View {
         HStack {
             Text(modelName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.green : Color.primary)
+                .font(Typography.captionBold)
+                .foregroundStyle(isSelected ? Theme.statusConnected : Theme.textPrimary)
 
             Spacer()
 
             headerStatusIcon
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(headerBackgroundColor)
     }
 
@@ -252,19 +252,19 @@ struct MultiModelResponseCard: View {
                 .scaleEffect(0.6)
         } else if hasFailed {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Color.red)
-                .font(.system(size: 12))
+                .foregroundStyle(Theme.statusError)
+                .font(.system(size: Typography.IconSize.xs))
         } else if isSelected {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.green)
-                .font(.system(size: 14))
+                .foregroundStyle(Theme.statusConnected)
+                .font(.system(size: Typography.IconSize.sm))
         } else if isDefaultCandidate {
             Text("Default")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.1))
+                .font(Typography.micro)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxxs)
+                .background(Theme.textSecondary.opacity(0.1))
                 .clipShape(Capsule())
         }
     }
@@ -272,10 +272,10 @@ struct MultiModelResponseCard: View {
     @ViewBuilder
     private var contentScrollView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 if message.content.isEmpty, isStreaming {
                     TypingIndicatorView()
-                        .padding(.vertical, 8)
+                        .padding(.vertical, Spacing.sm)
                 } else if hasFailed {
                     failedContentView
                 } else {
@@ -284,7 +284,7 @@ struct MultiModelResponseCard: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 120, maxHeight: 300)
@@ -292,13 +292,13 @@ struct MultiModelResponseCard: View {
 
     @ViewBuilder
     private var failedContentView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
-                .foregroundStyle(Color.red)
+                .font(.system(size: Typography.IconSize.xl))
+                .foregroundStyle(Theme.statusError)
             Text("Failed to get response")
-                .font(.system(size: 13))
-                .foregroundStyle(Color.secondary)
+                .font(Typography.captionBold)
+                .foregroundStyle(Theme.textSecondary)
             if let onRetry {
                 Button("Retry") {
                     onRetry()
@@ -308,24 +308,24 @@ struct MultiModelResponseCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, Spacing.xxl)
     }
 
     @ViewBuilder
     private var pendingToolCallsView: some View {
         if let pendingCalls = message.pendingToolCalls, !pendingCalls.isEmpty {
             Divider()
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.orange)
+                    .font(.system(size: Typography.Size.sm))
+                    .foregroundStyle(Theme.statusConnecting)
                 Text("\(pendingCalls.count) tool call\(pendingCalls.count > 1 ? "s" : "") pending")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.orange)
+                    .font(.system(size: Typography.Size.sm))
+                    .foregroundStyle(Theme.statusConnecting)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.orange.opacity(0.08))
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(Theme.statusConnecting.opacity(0.08))
         }
     }
 
@@ -340,12 +340,12 @@ struct MultiModelResponseCard: View {
                     Image(systemName: "checkmark.circle")
                     Text("Select this response")
                 }
-                .font(.system(size: 12, weight: .medium))
+                .font(Typography.buttonSmall)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, Spacing.sm)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(isHovered ? Color.accentColor : Color.secondary)
+            .foregroundStyle(isHovered ? Theme.accent : Theme.textSecondary)
         }
     }
 }
@@ -359,7 +359,7 @@ struct MultiModelSelector: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             toggleButton
             if isExpanded {
                 modelList
@@ -370,7 +370,7 @@ struct MultiModelSelector: View {
 
     private var toggleButton: some View {
         Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(Motion.springSnappy) {
                 isExpanded.toggle()
             }
         }) {
@@ -383,44 +383,44 @@ struct MultiModelSelector: View {
         HStack {
             Image(systemName: "square.stack.3d.up")
             Text("Multi-Model")
-                .font(.system(size: 12, weight: .medium))
+                .font(Typography.buttonSmall)
 
             if !selectedModels.isEmpty {
                 Text("(\(selectedModels.count))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             Spacer()
 
             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: Typography.Size.xs, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(selectedModels.isEmpty ? Color.secondary.opacity(0.1) : Color.accentColor.opacity(0.15))
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+                .fill(selectedModels.isEmpty ? Theme.textSecondary.opacity(0.1) : Theme.accent.opacity(0.15))
         )
     }
 
     private var modelList: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
             Text("Select up to \(maxSelection) models:")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+                .font(Typography.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, Spacing.xxs)
 
             ForEach(availableModels, id: \.self) { model in
                 modelRow(for: model)
             }
         }
-        .padding(8)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.05))
-                .strokeBorder(Color.secondary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+                .fill(Theme.textSecondary.opacity(0.05))
+                .strokeBorder(Theme.border, lineWidth: Spacing.Border.standard)
         )
     }
 
@@ -433,19 +433,19 @@ struct MultiModelSelector: View {
         }) {
             HStack {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
 
                 Text(model)
-                    .font(.system(size: 12))
+                    .font(Typography.caption)
                     .lineLimit(1)
 
                 Spacer()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+                RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                    .fill(isSelected ? Theme.accent.opacity(0.1) : Color.clear)
             )
         }
         .buttonStyle(.plain)

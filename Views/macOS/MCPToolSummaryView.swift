@@ -15,22 +15,22 @@ struct MCPToolSummaryView: View {
 
     @MainActor var body: some View {
         if shouldShowToolSummary {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 if isExpanded {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        HStack(spacing: Spacing.sm) {
                             Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
+                                withAnimation(Motion.easeStandard) {
                                     isExpanded = false
                                 }
                             } label: {
-                                HStack(spacing: 6) {
+                                HStack(spacing: Spacing.xs) {
                                     Label("Tools", systemImage: "wrench.and.screwdriver")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Theme.textSecondary)
                                     Image(systemName: "chevron.down")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
+                                        .font(.system(size: Typography.Size.xs))
+                                        .foregroundStyle(Theme.textTertiary)
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -41,13 +41,13 @@ struct MCPToolSummaryView: View {
 
                             SettingsLink {
                                 Label("Manage", systemImage: "slider.horizontal.3")
-                                    .font(.caption2)
+                                    .font(.system(size: Typography.Size.xs))
                             }
                             .routeSettings(to: .mcp)
                         }
 
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Spacing.sm) {
                                 // Web Search chip - always show if configured
                                 if tavilyService.isConfigured {
                                     Button {
@@ -72,29 +72,29 @@ struct MCPToolSummaryView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Motion.easeStandard) {
                             isExpanded = false
                         }
                     }
                 } else if !toolSummaryText.isEmpty {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Motion.easeStandard) {
                             isExpanded = true
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Spacing.sm) {
                             Label("Tools", systemImage: "wrench.and.screwdriver")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                             Text("•")
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Theme.textTertiary)
                             Text(toolSummaryText)
-                                .font(.caption2)
+                                .font(.system(size: Typography.Size.xs))
                                 .foregroundStyle(toolSummaryColor)
-                            Spacer(minLength: 4)
+                            Spacer(minLength: Spacing.xxs)
                             Image(systemName: "chevron.up")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .font(.system(size: Typography.Size.xs))
+                                .foregroundStyle(Theme.textTertiary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -102,7 +102,7 @@ struct MCPToolSummaryView: View {
                     .accessibilityLabel("Expand tools")
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Spacing.contentPadding)
         }
     }
 
@@ -226,23 +226,23 @@ struct MCPToolSummaryView: View {
     }
 
     private func statusColor(isEnabled: Bool, state: MCPServerStatus.State?) -> Color {
-        guard isEnabled else { return .gray }
+        guard isEnabled else { return Theme.statusDisconnected }
 
         switch state {
         case .connected:
-            return .green
+            return Theme.statusConnected
         case .connecting:
-            return .orange
+            return Theme.statusConnecting
         case .reconnecting:
             return .yellow
         case .error:
-            return .red
+            return Theme.statusError
         case .idle:
-            return .secondary
+            return Theme.textSecondary
         case .disabled:
-            return .gray
+            return Theme.statusDisconnected
         case .none:
-            return .secondary
+            return Theme.textSecondary
         }
     }
 }
@@ -255,9 +255,9 @@ struct WebSearchChip: View {
 
     var statusColor: Color {
         if !isEnabled {
-            return .gray
+            return Theme.statusDisconnected
         }
-        return isConfigured ? .green : .orange
+        return isConfigured ? Theme.statusConnected : Theme.statusConnecting
     }
 
     var statusText: String {
@@ -268,36 +268,36 @@ struct WebSearchChip: View {
     }
 
     @MainActor var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.lg) {
             Circle()
                 .fill(statusColor)
-                .frame(width: 8, height: 8)
+                .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text("Web Search")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .fontWeight(.semibold)
 
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     Text(statusText)
-                        .font(.caption2)
+                        .font(.system(size: Typography.Size.xs))
                         .foregroundStyle(statusColor)
 
                     if isEnabled, isConfigured {
                         Text("1 tool")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Typography.Size.xs))
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(statusColor.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                .stroke(statusColor.opacity(0.25), lineWidth: Spacing.Border.standard)
         )
     }
 }
@@ -319,43 +319,43 @@ struct ToolStatusChip: View {
     let model: ToolStatusChipModel
 
     @MainActor var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.lg) {
             Circle()
                 .fill(model.statusColor)
-                .frame(width: 8, height: 8)
+                .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text(model.name)
-                    .font(.caption)
+                    .font(Typography.caption)
                     .fontWeight(.semibold)
 
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     Text(model.statusText)
-                        .font(.caption2)
+                        .font(.system(size: Typography.Size.xs))
                         .foregroundStyle(model.statusColor)
 
                     if model.toolsCount > 0 {
                         Text("\(model.toolsCount) tool\(model.toolsCount == 1 ? "" : "s")")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Typography.Size.xs))
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
 
             if let error = model.lastError, !error.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .font(.system(size: Typography.Size.xs))
+                    .foregroundStyle(Theme.statusConnecting)
                     .help(error)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(model.statusColor.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                .stroke(model.statusColor.opacity(0.25), lineWidth: Spacing.Border.standard)
         )
     }
 }

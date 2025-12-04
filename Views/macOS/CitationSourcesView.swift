@@ -37,7 +37,7 @@ struct CitationBadgeView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: size - 4, height: size - 4)
+                                .frame(width: size - Spacing.xxs, height: size - Spacing.xxs)
                                 .clipShape(Circle())
                         case .failure, .empty:
                             fallbackNumberView
@@ -51,13 +51,13 @@ struct CitationBadgeView: View {
             }
             .overlay(
                 Circle()
-                    .stroke(Color.white.opacity(isHovered ? 0.4 : 0.2), lineWidth: 1)
+                    .stroke(Color.white.opacity(isHovered ? 0.4 : 0.2), lineWidth: Spacing.Border.standard)
             )
             .scaleEffect(isHovered ? 1.1 : 1.0)
         }
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(Motion.easeQuick) {
                 isHovered = hovering
             }
         }
@@ -89,54 +89,54 @@ struct CitationSourcesFooter: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             // Header button
             Button(action: {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                withAnimation(Motion.springSnappy) {
                     isExpanded.toggle()
                 }
             }) {
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Spacing.xs) {
                             ForEach(citations.prefix(5), id: \.number) { citation in
                                 CitationBadgeView(citation: citation, size: 20)
                             }
                             if citations.count > 5 {
                                 Text("+\(citations.count - 5)")
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(Typography.micro)
                                     .foregroundColor(.white.opacity(0.7))
-                                    .padding(.leading, 2)
+                                    .padding(.leading, Spacing.xxxs)
                             }
                         }
                     }
 
                     Text("Sources")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(Typography.buttonSmall)
                         .foregroundColor(.white.opacity(0.8))
 
                     Spacer()
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Typography.Size.xs, weight: .semibold))
                         .foregroundColor(.white.opacity(0.6))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
                 .background(Color.white.opacity(0.08))
-                .cornerRadius(8)
+                .cornerRadius(Spacing.CornerRadius.md)
             }
             .buttonStyle(PlainButtonStyle())
 
             // Expanded source list
             if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(citations, id: \.number) { citation in
                         CitationSourceRow(citation: citation)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.xxs)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -152,20 +152,20 @@ struct CitationSourceRow: View {
 
     var body: some View {
         Button(action: openURL) {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.lg) {
                 // Favicon
                 CitationBadgeView(citation: citation, size: 22)
 
                 // Title and domain
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(Typography.buttonSmall)
                         .foregroundColor(.white)
                         .lineLimit(1)
 
                     if let domain = extractDomain(from: citation.url) {
                         Text(domain)
-                            .font(.system(size: 10))
+                            .font(Typography.micro)
                             .foregroundColor(.white.opacity(0.6))
                     }
                 }
@@ -174,17 +174,17 @@ struct CitationSourceRow: View {
 
                 // External link icon
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: Typography.Size.xs, weight: .medium))
                     .foregroundColor(.white.opacity(0.5))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.xs)
             .background(Color.white.opacity(isHovered ? 0.12 : 0.05))
-            .cornerRadius(6)
+            .cornerRadius(Spacing.CornerRadius.sm)
         }
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.1)) {
+            withAnimation(.easeInOut(duration: Motion.Duration.instant)) {
                 isHovered = hovering
             }
         }
@@ -216,7 +216,7 @@ struct InlineCitationBadgesView: View {
     let citations: [CitationReference]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xxs) {
             ForEach(citations, id: \.number) { citation in
                 CitationBadgeView(citation: citation, size: 20)
             }

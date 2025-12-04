@@ -62,21 +62,21 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Default System Prompt")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
 
                     TextEditor(text: $globalSystemPrompt)
-                        .font(.body)
+                        .font(Typography.body)
                         .frame(minHeight: 80, maxHeight: 120)
                         .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .padding(Spacing.sm)
+                        .background(Theme.background)
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                                .stroke(Theme.separator, lineWidth: Spacing.Border.standard)
                         )
                         .accessibilityIdentifier("settings.globalSystemPrompt.editor")
                         .onChange(of: globalSystemPrompt) { _, newValue in
@@ -120,7 +120,7 @@ struct GeneralSettingsView: View {
                     ), in: 0 ... 100, step: 10)
                         .frame(width: 150)
                     Text("\(openAIService.outputCompression)%")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .frame(width: 45, alignment: .trailing)
                 }
                 .help("Image compression level (100 = no compression)")
@@ -128,7 +128,7 @@ struct GeneralSettingsView: View {
                 Text("Image Generation")
             } footer: {
                 Text("These settings apply when using image generation models")
-                    .font(.caption)
+                    .font(Typography.caption)
             }
 
             Section {
@@ -157,27 +157,27 @@ struct WebSearchSettingsSection: View {
                 .accessibilityIdentifier("settings.webSearch.enableToggle")
 
             if tavilyService.isEnabled {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack {
                         Text("Tavily API Key")
-                            .font(.subheadline)
+                            .font(Typography.subheadline)
                         Spacer()
                         if tavilyService.isConfigured {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.caption)
+                                .foregroundStyle(Theme.statusConnected)
+                                .font(Typography.caption)
                         } else {
                             Text("Required")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.statusConnecting)
+                                .padding(.horizontal, Spacing.xs)
+                                .padding(.vertical, Spacing.xxxs)
                                 .background(Color.orange.opacity(0.1))
-                                .cornerRadius(4)
+                                .cornerRadius(Spacing.CornerRadius.xs)
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         if showAPIKey {
                             TextField("tvly-...", text: $tavilyService.apiKey)
                                 .textFieldStyle(.roundedBorder)
@@ -192,31 +192,31 @@ struct WebSearchSettingsSection: View {
                             showAPIKey.toggle()
                         }) {
                             Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: Typography.Size.sm))
+                                .foregroundStyle(Theme.textSecondary)
                                 .frame(width: 32, height: 32)
                                 .background(Color.secondary.opacity(0.1))
-                                .cornerRadius(6)
+                                .cornerRadius(Spacing.CornerRadius.sm)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.webSearch.apiKey.toggleVisibility")
                     }
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: Spacing.xxs) {
                         Text("Get your API key at")
-                            .font(.caption)
+                            .font(Typography.caption)
                             .foregroundStyle(.tertiary)
                         Link("tavily.com", destination: URL(string: "https://tavily.com")!)
-                            .font(.caption)
+                            .font(Typography.caption)
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, Spacing.xxs)
             }
         } header: {
             Text("Web Search")
         } footer: {
             Text("When enabled, models can search the web for current information using Tavily. This allows answering questions about recent events, current prices, and other time-sensitive topics.")
-                .font(.caption)
+                .font(Typography.caption)
         }
     }
 }
@@ -232,15 +232,15 @@ struct ToolsSettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Header
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text("Tools")
-                            .font(.title2)
+                            .font(Typography.title2)
                             .fontWeight(.semibold)
 
                         let toolCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0) + mcpManager.availableTools.count
                         Text("\(toolCount) tools available")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
 
                     Spacer()
@@ -260,13 +260,13 @@ struct ToolsSettingsView: View {
 
                 // Tools list
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
                         // Built-in Tools Section
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: Spacing.md) {
                             Text("Built-in Tools")
-                                .font(.subheadline)
+                                .font(Typography.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
 
                             WebSearchToolRow()
                         }
@@ -276,18 +276,18 @@ struct ToolsSettingsView: View {
                             .padding(.horizontal)
 
                         // MCP Tools Section
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: Spacing.md) {
                             HStack {
                                 Text("MCP Servers")
-                                    .font(.subheadline)
+                                    .font(Typography.subheadline)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
 
                                 Spacer()
 
                                 Text("\(mcpManager.getConnectedServerCount()) connected")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
 
                             MCPServersList()
@@ -316,21 +316,21 @@ struct WebSearchToolRow: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text("Web Search")
-                    .font(.headline)
+                    .font(Typography.headline)
 
-                HStack(spacing: 4) {
+                HStack(spacing: Spacing.xxs) {
                     Text(statusDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
 
                     if tavilyService.isEnabled, tavilyService.isConfigured {
                         Text("•")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                         Text("1 tool")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.accent)
                     }
                 }
             }
@@ -342,17 +342,17 @@ struct WebSearchToolRow: View {
                 .accessibilityIdentifier("settings.tools.webSearch.toggle")
         }
         .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
     }
 
     private var statusColor: Color {
         if !tavilyService.isEnabled {
-            .gray
+            Theme.statusDisconnected
         } else if tavilyService.isConfigured {
-            .green
+            Theme.statusConnected
         } else {
-            .orange
+            Theme.statusConnecting
         }
     }
 
@@ -374,16 +374,16 @@ struct MCPServersList: View {
     @State private var editingServer: MCPServerConfig?
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.md) {
             if mcpManager.serverConfigs.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: Spacing.sm) {
                     Image(systemName: "server.rack")
-                        .font(.title)
-                        .foregroundStyle(.secondary.opacity(0.5))
+                        .font(Typography.title1)
+                        .foregroundStyle(Theme.textSecondary.opacity(0.5))
 
                     Text("No MCP Servers")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Button("Add Server") {
                         showingAddServer = true
@@ -486,21 +486,21 @@ struct MCPServerRow: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text(config.name)
-                    .font(.headline)
+                    .font(Typography.headline)
 
-                HStack(spacing: 4) {
+                HStack(spacing: Spacing.xxs) {
                     Text(statusDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
 
                     if !tools.isEmpty {
                         Text("•")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                         Text("\(tools.count) tools")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.accent)
                     }
                 }
             }
@@ -522,22 +522,22 @@ struct MCPServerRow: View {
                 Button("Delete", role: .destructive) { onDelete() }
             } label: {
                 Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .menuStyle(.borderlessButton)
         }
         .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
     }
 
     private var statusColor: Color {
         switch status?.state {
-        case .connected: .green
-        case .connecting, .reconnecting: .orange
-        case .error: .red
-        case .disabled: .gray
-        default: config.enabled ? .secondary : .gray
+        case .connected: Theme.statusConnected
+        case .connecting, .reconnecting: Theme.statusConnecting
+        case .error: Theme.statusError
+        case .disabled: Theme.statusDisconnected
+        default: config.enabled ? .secondary : Theme.statusDisconnected
         }
     }
 
@@ -571,7 +571,7 @@ struct ToolConfigurationPanel: View {
             // Header
             HStack {
                 Text("Configuration")
-                    .font(.title2)
+                    .font(Typography.title2)
                     .fontWeight(.semibold)
                 Spacer()
             }
@@ -580,34 +580,34 @@ struct ToolConfigurationPanel: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
                     // Web Search Configuration
                     if tavilyService.isEnabled {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: Spacing.md) {
                             Text("Web Search")
-                                .font(.headline)
+                                .font(Typography.headline)
 
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
                                 HStack {
                                     Text("Tavily API Key")
-                                        .font(.subheadline)
+                                        .font(Typography.subheadline)
                                     Spacer()
                                     if tavilyService.isConfigured {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
-                                            .font(.caption)
+                                            .foregroundStyle(Theme.statusConnected)
+                                            .font(Typography.caption)
                                     } else {
                                         Text("Required")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
+                                            .font(Typography.micro)
+                                            .foregroundStyle(Theme.statusConnecting)
+                                            .padding(.horizontal, Spacing.xs)
+                                            .padding(.vertical, Spacing.xxxs)
                                             .background(Color.orange.opacity(0.1))
-                                            .cornerRadius(4)
+                                            .cornerRadius(Spacing.CornerRadius.xs)
                                     }
                                 }
 
-                                HStack(spacing: 8) {
+                                HStack(spacing: Spacing.sm) {
                                     if showAPIKey {
                                         TextField("tvly-...", text: $tavilyService.apiKey)
                                             .textFieldStyle(.roundedBorder)
@@ -620,46 +620,46 @@ struct ToolConfigurationPanel: View {
 
                                     Button(action: { showAPIKey.toggle() }) {
                                         Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: Typography.Size.sm))
+                                            .foregroundStyle(Theme.textSecondary)
                                             .frame(width: 32, height: 32)
                                             .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(6)
+                                            .cornerRadius(Spacing.CornerRadius.sm)
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
                                 }
 
-                                HStack(spacing: 4) {
+                                HStack(spacing: Spacing.xxs) {
                                     Text("Get your API key at")
-                                        .font(.caption)
+                                        .font(Typography.caption)
                                         .foregroundStyle(.tertiary)
                                     Link("tavily.com", destination: URL(string: "https://tavily.com")!)
-                                        .font(.caption)
+                                        .font(Typography.caption)
                                 }
                             }
                             .padding()
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .background(Theme.backgroundSecondary)
+                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
                         }
                     }
 
                     // Info text
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("About Tools")
-                            .font(.headline)
+                            .font(Typography.headline)
 
                         Text("Tools extend the capabilities of AI models by allowing them to access external data and services. When enabled, models can automatically use these tools to provide more accurate and up-to-date responses.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
 
                         Text("• **Web Search**: Search the web for current information\n• **MCP Servers**: Connect to external services via the Model Context Protocol")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     .padding()
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .background(Theme.backgroundSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
                 }
                 .padding()
             }
@@ -691,14 +691,14 @@ struct APISettingsView: View {
             // Left panel - Model Management
             VStack(alignment: .leading, spacing: 0) {
                 // Header
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text("Models")
-                                .font(.headline)
+                                .font(Typography.headline)
                             Text("Add and manage your AI models")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
 
                         Spacer()
@@ -706,7 +706,7 @@ struct APISettingsView: View {
                         Button(action: createNewModel) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 20))
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(Theme.accent)
                         }
                         .buttonStyle(.plain)
                         .help("Add new model")
@@ -719,39 +719,39 @@ struct APISettingsView: View {
                 // Model list
                 ScrollView {
                     if openAIService.customModels.isEmpty {
-                        VStack(spacing: 12) {
+                        VStack(spacing: Spacing.md) {
                             Image(systemName: "cpu")
                                 .font(.system(size: 32))
                                 .foregroundStyle(.tertiary)
                             Text("No models added")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
                     } else {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             ForEach(openAIService.customModels, id: \.self) { model in
                                 HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                         Text(model)
-                                            .font(.system(size: 13))
+                                            .font(Typography.modelName)
                                         if let provider = openAIService.modelProviders[model] {
                                             Text(provider.displayName)
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.secondary)
+                                                .font(.system(size: Typography.Size.xs))
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                     }
 
                                     Spacer()
 
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: Spacing.sm) {
                                         Button(action: {
                                             openAIService.selectedModel = model
                                         }) {
                                             Image(systemName: model == openAIService.selectedModel ? "star.fill" : "star")
-                                                .foregroundStyle(model == openAIService.selectedModel ? .yellow : .secondary)
-                                                .font(.system(size: 12))
+                                                .foregroundStyle(model == openAIService.selectedModel ? .yellow : Theme.textSecondary)
+                                                .font(.system(size: Typography.Size.caption))
                                         }
                                         .buttonStyle(.plain)
                                         .help(model == openAIService.selectedModel ? "Default model" : "Set as default")
@@ -760,18 +760,18 @@ struct APISettingsView: View {
                                             removeModel(model)
                                         }) {
                                             Image(systemName: "trash")
-                                                .foregroundStyle(.red)
-                                                .font(.system(size: 12))
+                                                .foregroundStyle(Theme.statusError)
+                                                .font(.system(size: Typography.Size.caption))
                                         }
                                         .buttonStyle(.plain)
                                         .help("Remove model")
                                     }
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.sm)
                                 .background(
                                     selectedModelName == model ? Color.blue.opacity(0.1) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 6)
+                                    in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -780,31 +780,31 @@ struct APISettingsView: View {
                                 }
                             }
                         }
-                        .padding(8)
+                        .padding(Spacing.sm)
                     }
                 }
             }
             .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Theme.backgroundSecondary)
 
             // Right panel - API Configuration
             VStack(spacing: 0) {
                 // Provider Selection - Fixed at top
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
                     // Header
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Model Configuration")
-                            .font(.title2)
+                            .font(Typography.title2)
                             .fontWeight(.semibold)
                         Text("Configure AI provider settings and add models")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
                     }
 
                     // Provider Selection
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
                         Label("AI Provider", systemImage: "cloud.fill")
-                            .font(.headline)
+                            .font(Typography.headline)
                             .foregroundStyle(.primary)
 
                         Picker("", selection: $openAIService.provider) {
@@ -819,20 +819,20 @@ struct APISettingsView: View {
                         }
                     }
                 }
-                .padding(20)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .padding(Spacing.xl)
+                .background(Theme.background)
 
                 Divider()
-                    .padding(.bottom, 16)
+                    .padding(.bottom, Spacing.lg)
 
                 // Scrollable configuration area
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: Spacing.contentPadding) {
                         // API Endpoint Type Selection (not applicable for Apple Intelligence, AIKit, or GitHub Models)
                         if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit, openAIService.provider != .githubModels {
-                            VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: Spacing.md) {
                                 Label("API Endpoint", systemImage: "arrow.left.arrow.right")
-                                    .font(.headline)
+                                    .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
                                 Picker("", selection: Binding(
@@ -858,34 +858,34 @@ struct APISettingsView: View {
                                 .pickerStyle(.segmented)
 
                                 Text("Choose which API endpoint to use for this model")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                             .padding(.horizontal)
                         }
 
                         if openAIService.provider == .openai {
                             // OpenAI Configuration
-                            VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("OpenAI Configuration", systemImage: "key.fill")
-                                    .font(.headline)
+                                    .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
-                                VStack(alignment: .leading, spacing: 16) {
+                                VStack(alignment: .leading, spacing: Spacing.lg) {
                                     // Model Name
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("Model Name")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
                                             Spacer()
                                             Text("Required")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
+                                                .font(Typography.micro)
+                                                .foregroundStyle(Theme.textSecondary)
+                                                .padding(.horizontal, Spacing.xs)
+                                                .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
+                                                .cornerRadius(Spacing.CornerRadius.xs)
                                         }
                                         TextField("gpt-4o, gpt-4o-mini, o1", text: $tempModelName)
                                             .textFieldStyle(.roundedBorder)
@@ -893,24 +893,24 @@ struct APISettingsView: View {
                                                 validationStatus = .notChecked
                                             }
                                         Text("The model identifier from OpenAI")
-                                            .font(.caption)
+                                            .font(Typography.caption)
                                             .foregroundStyle(.tertiary)
                                     }
 
                                     // Endpoint URL
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("Endpoint URL")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
                                             Spacer()
                                             Text("Required")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
+                                                .font(Typography.micro)
+                                                .foregroundStyle(Theme.textSecondary)
+                                                .padding(.horizontal, Spacing.xs)
+                                                .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
+                                                .cornerRadius(Spacing.CornerRadius.xs)
                                         }
                                         TextField(
                                             "https://api.openai.com or http://localhost:8000", text: $tempEndpoint
@@ -921,26 +921,26 @@ struct APISettingsView: View {
                                         }
                                         Text(
                                             "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name.")
-                                            .font(.caption)
+                                            .font(Typography.caption)
                                             .foregroundStyle(.tertiary)
                                     }
 
                                     // API Key
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("API Key")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
                                             Spacer()
                                             Text("Optional")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
+                                                .font(Typography.micro)
+                                                .foregroundStyle(Theme.textSecondary)
+                                                .padding(.horizontal, Spacing.xs)
+                                                .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(4)
+                                                .cornerRadius(Spacing.CornerRadius.xs)
                                         }
-                                        HStack(spacing: 8) {
+                                        HStack(spacing: Spacing.sm) {
                                             if showAPIKey {
                                                 TextField("sk-proj-...", text: $tempAPIKey)
                                                     .textFieldStyle(.roundedBorder)
@@ -953,11 +953,11 @@ struct APISettingsView: View {
                                                 showAPIKey.toggle()
                                             }) {
                                                 Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                                    .font(.system(size: 14))
-                                                    .foregroundStyle(.secondary)
+                                                    .font(.system(size: Typography.Size.sm))
+                                                    .foregroundStyle(Theme.textSecondary)
                                                     .frame(width: 32, height: 32)
                                                     .background(Color.secondary.opacity(0.1))
-                                                    .cornerRadius(6)
+                                                    .cornerRadius(Spacing.CornerRadius.sm)
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -965,16 +965,16 @@ struct APISettingsView: View {
                                             validationStatus = .notChecked
                                         }
                                         Text("Your OpenAI API key (stored securely)")
-                                            .font(.caption)
+                                            .font(Typography.caption)
                                             .foregroundStyle(.tertiary)
                                     }
                                 }
-                                .padding(16)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(8)
+                                .padding(Spacing.lg)
+                                .background(Theme.backgroundSecondary)
+                                .cornerRadius(Spacing.CornerRadius.md)
 
                                 // Action Buttons
-                                HStack(spacing: 12) {
+                                HStack(spacing: Spacing.md) {
                                     Button {
                                         Task {
                                             await validateConfiguration()
@@ -1081,88 +1081,88 @@ struct APISettingsView: View {
                             .padding(.horizontal)
                         } else if openAIService.provider == .appleIntelligence {
                             // Apple Intelligence Configuration
-                            VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Apple Intelligence Configuration", systemImage: "apple.logo")
-                                    .font(.headline)
+                                    .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
-                                VStack(alignment: .leading, spacing: 16) {
+                                VStack(alignment: .leading, spacing: Spacing.lg) {
                                     if #available(macOS 26.0, *) {
                                         let service = AppleIntelligenceService.shared
 
                                         // Availability Status
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: Spacing.xs) {
                                             Text("Availability")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
 
-                                            HStack(spacing: 8) {
+                                            HStack(spacing: Spacing.sm) {
                                                 Image(systemName: service.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                                    .foregroundStyle(service.isAvailable ? .green : .orange)
+                                                    .foregroundStyle(service.isAvailable ? Theme.statusConnected : Theme.statusConnecting)
                                                 Text(service.availabilityDescription())
-                                                    .font(.subheadline)
+                                                    .font(Typography.subheadline)
                                             }
-                                            .padding(12)
+                                            .padding(Spacing.md)
                                             .frame(maxWidth: .infinity, alignment: .leading)
-                                            .background(Color(nsColor: .controlBackgroundColor))
-                                            .cornerRadius(6)
+                                            .background(Theme.backgroundSecondary)
+                                            .cornerRadius(Spacing.CornerRadius.sm)
 
                                             if !service.isAvailable {
                                                 Text("Apple Intelligence must be enabled in System Settings → Apple Intelligence & Siri")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
+                                                    .font(Typography.caption)
+                                                    .foregroundStyle(Theme.textSecondary)
                                             }
                                         }
 
                                         // Model Name
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: Spacing.xs) {
                                             HStack {
                                                 Text("Model Name")
-                                                    .font(.subheadline)
+                                                    .font(Typography.subheadline)
                                                     .fontWeight(.medium)
                                                 Spacer()
                                                 Text("Optional")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.secondary)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
+                                                    .font(Typography.micro)
+                                                    .foregroundStyle(Theme.textSecondary)
+                                                    .padding(.horizontal, Spacing.xs)
+                                                    .padding(.vertical, Spacing.xxxs)
                                                     .background(Color.secondary.opacity(0.1))
-                                                    .cornerRadius(4)
+                                                    .cornerRadius(Spacing.CornerRadius.xs)
                                             }
                                             TextField("apple-intelligence", text: $tempModelName)
                                                 .textFieldStyle(.roundedBorder)
                                             Text("A friendly name for this model (e.g., 'apple-intelligence', 'on-device')")
-                                                .font(.caption)
+                                                .font(Typography.caption)
                                                 .foregroundStyle(.tertiary)
                                         }
                                     } else {
                                         // macOS 26+ required message
-                                        VStack(spacing: 12) {
+                                        VStack(spacing: Spacing.md) {
                                             Image(systemName: "exclamationmark.triangle.fill")
                                                 .font(.system(size: 48))
-                                                .foregroundStyle(.orange)
+                                                .foregroundStyle(Theme.statusConnecting)
 
                                             Text("macOS 26.0 or later required")
-                                                .font(.headline)
+                                                .font(Typography.headline)
 
                                             Text("Apple Intelligence requires macOS Sequoia 26.0 or later with Apple Intelligence support.")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.subheadline)
+                                                .foregroundStyle(Theme.textSecondary)
                                                 .multilineTextAlignment(.center)
                                         }
                                         .frame(maxWidth: .infinity)
-                                        .padding(24)
+                                        .padding(Spacing.contentPadding)
                                         .background(Color.orange.opacity(0.1))
-                                        .cornerRadius(8)
+                                        .cornerRadius(Spacing.CornerRadius.md)
                                     }
                                 }
-                                .padding(16)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(8)
+                                .padding(Spacing.lg)
+                                .background(Theme.backgroundSecondary)
+                                .cornerRadius(Spacing.CornerRadius.md)
 
                                 // Action Buttons
                                 if #available(macOS 26.0, *) {
-                                    HStack(spacing: 12) {
+                                    HStack(spacing: Spacing.md) {
                                         Button {
                                             let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
@@ -1210,71 +1210,71 @@ struct APISettingsView: View {
 
                         // Status Section
                         if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit, openAIService.provider != .githubModels {
-                            VStack(alignment: .leading, spacing: 16) {
+                            VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Validation Status", systemImage: "checkmark.seal.fill")
-                                    .font(.headline)
+                                    .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
-                                HStack(spacing: 12) {
+                                HStack(spacing: Spacing.md) {
                                     switch validationStatus {
                                     case .notChecked:
                                         Image(systemName: "circle.dotted")
                                             .font(.system(size: 24))
-                                            .foregroundStyle(.secondary)
-                                        VStack(alignment: .leading, spacing: 2) {
+                                            .foregroundStyle(Theme.textSecondary)
+                                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                             Text("Not Validated")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
                                             Text("Click 'Validate' to test your configuration")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.caption)
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                     case .checking:
                                         ProgressView()
                                             .scaleEffect(1.2)
                                             .frame(width: 24, height: 24)
-                                        VStack(alignment: .leading, spacing: 2) {
+                                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                             Text("Validating...")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
                                             Text("Testing connection to API")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.caption)
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                     case .valid:
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.system(size: 24))
-                                            .foregroundStyle(.green)
-                                        VStack(alignment: .leading, spacing: 2) {
+                                            .foregroundStyle(Theme.statusConnected)
+                                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                             Text("Configuration Valid")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(Theme.statusConnected)
                                             Text("Ready to add model")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.caption)
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                     case let .invalid(message):
                                         Image(systemName: "xmark.circle.fill")
                                             .font(.system(size: 24))
-                                            .foregroundStyle(.red)
-                                        VStack(alignment: .leading, spacing: 2) {
+                                            .foregroundStyle(Theme.statusError)
+                                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                             Text("Configuration Invalid")
-                                                .font(.subheadline)
+                                                .font(Typography.subheadline)
                                                 .fontWeight(.medium)
-                                                .foregroundStyle(.red)
+                                                .foregroundStyle(Theme.statusError)
                                             Text(message)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.caption)
+                                                .foregroundStyle(Theme.textSecondary)
                                                 .lineLimit(2)
                                         }
                                     }
                                     Spacer()
                                 }
-                                .padding(16)
+                                .padding(Spacing.lg)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(8)
+                                .background(Theme.backgroundSecondary)
+                                .cornerRadius(Spacing.CornerRadius.md)
                             }
                             .padding(.horizontal)
                             .padding(.bottom)
@@ -1552,35 +1552,35 @@ struct GitHubModelsConfigurationView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             Label("GitHub Models Configuration", systemImage: "mark.fill")
-                .font(.headline)
+                .font(Typography.headline)
                 .foregroundStyle(.primary)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 // Info section
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Theme.accent)
                     Text("Access AI models through GitHub Models using your GitHub account")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 // Show OAuth status if signed in
                 if githubOAuth.isAuthenticated {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        HStack(spacing: Spacing.sm) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.statusConnected)
                             if let user = githubOAuth.currentUser {
                                 Text("Signed in as @\(user.login)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("Signed in with GitHub")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
 
                             Spacer()
@@ -1596,19 +1596,19 @@ struct GitHubModelsConfigurationView: View {
                                 githubOAuth.signOut()
                             }
                             .buttonStyle(.link)
-                            .font(.caption)
+                            .font(Typography.caption)
                         }
                     }
-                    .padding(8)
+                    .padding(Spacing.sm)
                     .background(Color.green.opacity(0.1))
-                    .cornerRadius(6)
+                    .cornerRadius(Spacing.CornerRadius.sm)
                 } else {
                     // Sign In Button
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         Button {
                             githubOAuth.startWebFlow()
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: Spacing.xs) {
                                 Image(systemName: "person.badge.key.fill")
                                 Text("Sign in with GitHub")
                             }
@@ -1618,63 +1618,63 @@ struct GitHubModelsConfigurationView: View {
                         .disabled(githubOAuth.isAuthenticating)
 
                         if githubOAuth.isAuthenticating {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Spacing.sm) {
                                 ProgressView()
                                     .scaleEffect(0.8)
                                 Text("Completing sign in...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                                 Spacer()
                                 Button("Cancel") {
                                     githubOAuth.cancelAuthentication()
                                 }
                                 .buttonStyle(.link)
-                                .font(.caption)
+                                .font(Typography.caption)
                             }
-                            .padding(8)
+                            .padding(Spacing.sm)
                             .background(Color.blue.opacity(0.1))
-                            .cornerRadius(6)
+                            .cornerRadius(Spacing.CornerRadius.sm)
                         }
 
                         if let error = githubOAuth.authError {
-                            HStack(spacing: 4) {
+                            HStack(spacing: Spacing.xxs) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Theme.statusError)
                                 Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.statusError)
                             }
                         }
                     }
                 }
 
                 // Model Selection
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
                         Text("Model")
-                            .font(.subheadline)
+                            .font(Typography.subheadline)
                             .fontWeight(.medium)
                         Spacer()
                         if githubOAuth.isLoadingModels {
                             ProgressView().controlSize(.small)
-                            Text("Loading...").font(.caption2).foregroundStyle(.secondary)
+                            Text("Loading...").font(Typography.micro).foregroundStyle(Theme.textSecondary)
                         } else if !githubOAuth.availableModels.isEmpty {
                             Button {
                                 Task { await githubOAuth.fetchModels() }
                             } label: {
                                 Image(systemName: "arrow.clockwise")
-                                    .font(.caption)
+                                    .font(Typography.caption)
                             }
                             .buttonStyle(.plain)
                             .help("Refresh models list")
                         }
                         Text("Required")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
                             .background(Color.secondary.opacity(0.1))
-                            .cornerRadius(4)
+                            .cornerRadius(Spacing.CornerRadius.xs)
                     }
 
                     // Model Picker or fallback text field
@@ -1688,28 +1688,28 @@ struct GitHubModelsConfigurationView: View {
                         .labelsHidden()
 
                         Text("\(githubOAuth.availableModels.count) models available")
-                            .font(.caption)
+                            .font(Typography.caption)
                             .foregroundStyle(.tertiary)
                     } else if let error = githubOAuth.modelsError {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             TextField("openai/gpt-4o", text: $tempModelName)
                                 .textFieldStyle(.roundedBorder)
-                            HStack(spacing: 4) {
+                            HStack(spacing: Spacing.xxs) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                    .font(.caption)
+                                    .foregroundStyle(Theme.statusConnecting)
+                                    .font(Typography.caption)
                                 Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                             Button("Retry") {
                                 Task { await githubOAuth.fetchModels() }
                             }
                             .buttonStyle(.link)
-                            .font(.caption)
+                            .font(Typography.caption)
                         }
                     } else {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             TextField("openai/gpt-4o", text: $tempModelName)
                                 .textFieldStyle(.roundedBorder)
                             if githubOAuth.isAuthenticated {
@@ -1717,46 +1717,46 @@ struct GitHubModelsConfigurationView: View {
                                     Task { await githubOAuth.fetchModels() }
                                 }
                                 .buttonStyle(.link)
-                                .font(.caption)
+                                .font(Typography.caption)
                             } else {
                                 Text("Sign in to see available models")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }
 
                     Text("Model ID in format: publisher/model_name")
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.tertiary)
                 }
 
                 // Validation Status
                 if isValidating {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         ProgressView()
                             .controlSize(.small)
                         Text("Validating...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 } else {
                     switch validationStatus {
                     case .valid:
-                        HStack(spacing: 8) {
+                        HStack(spacing: Spacing.sm) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.statusConnected)
                             Text("Configuration valid")
-                                .font(.caption)
-                                .foregroundStyle(.green)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.statusConnected)
                         }
                     case let .invalid(message):
-                        HStack(spacing: 8) {
+                        HStack(spacing: Spacing.sm) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Theme.statusError)
                             Text(message)
-                                .font(.caption)
-                                .foregroundStyle(.red)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.statusError)
                                 .lineLimit(2)
                         }
                     default:
@@ -1764,12 +1764,12 @@ struct GitHubModelsConfigurationView: View {
                     }
                 }
             }
-            .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .padding(Spacing.lg)
+            .background(Theme.backgroundSecondary)
+            .cornerRadius(Spacing.CornerRadius.md)
 
             // Action Buttons
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.md) {
                 Button {
                     Task {
                         await validateConfiguration()
@@ -1963,25 +1963,25 @@ struct AIKitConfigurationView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             Label("AIKit Configuration", systemImage: "shippingbox.fill")
-                .font(.headline)
+                .font(Typography.headline)
                 .foregroundStyle(.primary)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
                 // Info section
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Theme.accent)
                     Text("AIKit runs AI models locally using containers")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 // Model Selection
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Select Model")
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .fontWeight(.medium)
 
                     Picker("", selection: $aikitService.selectedModelId) {
@@ -1997,41 +1997,41 @@ struct AIKitConfigurationView: View {
                     }
 
                     if let model = aikitService.selectedModel {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text("Image: \(model.imageURL)")
-                                .font(.caption)
+                                .font(Typography.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 }
 
                 // Container Status
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Container Status")
-                        .font(.subheadline)
+                        .font(Typography.subheadline)
                         .fontWeight(.medium)
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         Circle()
                             .fill(statusColor)
                             .frame(width: 8, height: 8)
                         Text(aikitService.statusMessage.isEmpty ? aikitService.containerStatus.rawValue : aikitService.statusMessage)
-                            .font(.caption)
+                            .font(Typography.caption)
                     }
-                    .padding(8)
+                    .padding(Spacing.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(6)
+                    .background(Theme.backgroundSecondary)
+                    .cornerRadius(Spacing.CornerRadius.sm)
 
                     if let error = errorMessage {
                         Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.statusError)
                     }
                 }
 
                 // Container Management Buttons
-                VStack(spacing: 8) {
+                VStack(spacing: Spacing.sm) {
                     if aikitService.containerStatus == .running {
                         Button(action: stopContainer) {
                             HStack {
@@ -2045,7 +2045,7 @@ struct AIKitConfigurationView: View {
                         }
                         .disabled(isRunning)
                         .controlSize(.large)
-                        .tint(.red)
+                        .tint(Theme.statusError)
                     } else {
                         Button(action: pullAndRunModel) {
                             HStack {
@@ -2062,13 +2062,13 @@ struct AIKitConfigurationView: View {
                     }
 
                     Text(aikitService.containerStatus == .running ? "Container is running on http://localhost:8080" : "This will pull the model image and run it on http://localhost:8080")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
-            .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+            .padding(Spacing.lg)
+            .background(Theme.backgroundSecondary)
+            .cornerRadius(Spacing.CornerRadius.md)
 
             // Add Model Button
             Button {
@@ -2103,15 +2103,15 @@ struct AIKitConfigurationView: View {
     private var statusColor: Color {
         switch aikitService.containerStatus {
         case .notPulled, .stopped:
-            .gray
+            Theme.statusDisconnected
         case .pulling, .starting, .stopping:
-            .orange
+            Theme.statusConnecting
         case .pulled:
             .yellow
         case .running:
-            .green
+            Theme.statusConnected
         case .error, .notSupported:
-            .red
+            Theme.statusError
         }
     }
 

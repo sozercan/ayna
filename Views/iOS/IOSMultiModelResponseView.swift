@@ -41,23 +41,23 @@ struct IOSMultiModelResponseView: View {
             selectButtonSection
             selectionStatusBar
         }
-        .background(Color(uiColor: .secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl))
         .padding(.horizontal)
         .accessibilityIdentifier("multimodel.response.group")
     }
 
     private var headerTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.sm) {
                 ForEach(Array(responses.enumerated()), id: \.offset) { index, response in
                     headerTab(index: index, response: response)
                 }
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.vertical, Spacing.sm)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.background)
     }
 
     private func headerTab(index: Int, response: Message) -> some View {
@@ -80,33 +80,33 @@ struct IOSMultiModelResponseView: View {
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isResponseSelected ? .green : (isCurrentTab ? Color.accentColor : .primary))
+        .foregroundStyle(isResponseSelected ? Theme.statusConnected : (isCurrentTab ? Theme.accent : Theme.textPrimary))
     }
 
     private func headerTabLabel(modelName: String, status: ResponseGroupStatus?, isSelected: Bool, isCurrentTab: Bool, isDefaultCandidate: Bool) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xxs) {
             statusIcon(status: status, isSelected: isSelected)
             Text(modelName)
-                .font(.system(size: 12, weight: isCurrentTab ? .semibold : .regular))
+                .font(.system(size: Typography.Size.caption, weight: isCurrentTab ? .semibold : .regular))
                 .lineLimit(1)
             if isDefaultCandidate {
                 Text("Default")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(Typography.micro)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.8)))
+                    .padding(.horizontal, Spacing.xxs)
+                    .padding(.vertical, Spacing.xxxs)
+                    .background(Capsule().fill(Theme.statusConnecting.opacity(0.8)))
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
         .background(
             Capsule()
-                .fill(isCurrentTab ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+                .fill(isCurrentTab ? Theme.accent.opacity(0.2) : Theme.textSecondary.opacity(0.1))
         )
         .overlay(
             Capsule()
-                .strokeBorder(isSelected ? Color.green : (isCurrentTab ? Color.accentColor : (isDefaultCandidate ? Color.orange.opacity(0.5) : Color.clear)), lineWidth: 1.5)
+                .strokeBorder(isSelected ? Theme.statusConnected : (isCurrentTab ? Theme.accent : (isDefaultCandidate ? Theme.statusConnecting.opacity(0.5) : Color.clear)), lineWidth: Spacing.Border.emphasized)
         )
     }
 
@@ -117,12 +117,12 @@ struct IOSMultiModelResponseView: View {
                 .scaleEffect(0.6)
         } else if status == .failed {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(.red)
+                .font(.system(size: Typography.Size.xs))
+                .foregroundStyle(Theme.statusError)
         } else if isSelected {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(.green)
+                .font(.system(size: Typography.Size.xs))
+                .foregroundStyle(Theme.statusConnected)
         }
     }
 
@@ -163,12 +163,12 @@ struct IOSMultiModelResponseView: View {
                     Image(systemName: "checkmark.circle.fill")
                     Text("Use this response")
                 }
-                .font(.system(size: 15, weight: .semibold))
+                .font(Typography.subheadline)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, Spacing.md)
             }
             .foregroundStyle(.white)
-            .background(Color.accentColor)
+            .background(Theme.accent)
         }
     }
 
@@ -190,16 +190,16 @@ struct IOSMultiModelResponseView: View {
         if isSelectionMade {
             HStack {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.statusConnected)
                 if let selectedEntry = responseGroup?.selectedEntry {
                     Text("Selected: \(selectedEntry.modelName)")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Typography.captionBold)
                 }
                 Spacer()
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(Color.green.opacity(0.1))
+            .padding(.vertical, Spacing.sm)
+            .background(Theme.statusConnected.opacity(0.1))
         }
     }
 }
@@ -241,8 +241,8 @@ struct IOSMultiModelResponseCard: View {
         VStack(alignment: .leading, spacing: 0) {
             responseContent
         }
-        .background(Color(uiColor: .systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Theme.background)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl))
         .overlay(cardBorder)
         .opacity(isSelectionMade && !isSelected ? 0.6 : 1.0)
         .padding(.horizontal)
@@ -260,13 +260,13 @@ struct IOSMultiModelResponseCard: View {
     }
 
     private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .strokeBorder(isSelected ? Color.green : Color.secondary.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+        RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
+            .strokeBorder(isSelected ? Theme.statusConnected : Theme.border, lineWidth: isSelected ? Spacing.Border.thick : Spacing.Border.standard)
     }
 
     private var responseContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 contentBody
                 pendingToolCallsIndicator
             }
@@ -279,7 +279,7 @@ struct IOSMultiModelResponseCard: View {
     private var contentBody: some View {
         if message.content.isEmpty, isStreaming {
             IOSTypingIndicatorView()
-                .padding(.vertical, 16)
+                .padding(.vertical, Spacing.lg)
         } else if hasFailed {
             failedStateView
         } else {
@@ -290,13 +290,13 @@ struct IOSMultiModelResponseCard: View {
     }
 
     private var failedStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.md) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 32))
-                .foregroundStyle(.red)
+                .font(.system(size: Typography.IconSize.heroLarge / 2))
+                .foregroundStyle(Theme.statusError)
             Text("Failed to get response")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
+                .font(Typography.bodySecondary)
+                .foregroundStyle(Theme.textSecondary)
             if let onRetry {
                 Button("Retry") {
                     onRetry()
@@ -305,22 +305,22 @@ struct IOSMultiModelResponseCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
+        .padding(.vertical, Spacing.xxxl)
     }
 
     @ViewBuilder
     private var pendingToolCallsIndicator: some View {
         if let pendingCalls = message.pendingToolCalls, !pendingCalls.isEmpty {
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                    .font(.system(size: Typography.Size.caption))
+                    .foregroundStyle(Theme.statusConnecting)
                 Text("\(pendingCalls.count) tool call\(pendingCalls.count > 1 ? "s" : "") pending")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                    .font(Typography.caption)
+                    .foregroundStyle(Theme.statusConnecting)
             }
-            .padding(8)
-            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            .padding(Spacing.sm)
+            .background(Theme.statusConnecting.opacity(0.1), in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         }
     }
 }
@@ -356,12 +356,12 @@ struct IOSMultiModelSelector: View {
         } label: {
             HStack {
                 Text(model)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
 
                 Spacer()
 
                 Image(systemName: isModelSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isModelSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isModelSelected ? Theme.accent : Theme.textSecondary)
             }
         }
         .disabled(isDisabled)
