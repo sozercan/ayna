@@ -74,8 +74,6 @@
 #
 # safe-outputs:
 #   create-pull-request:
-#     title-prefix: "[Test Fix]"
-#     labels: ["test-fix", "automated"]
 #     draft: true
 #   jobs:
 #     validate-macos-14:
@@ -602,8 +600,9 @@
 #    git checkout -b fix/test-<short-description>
 #    git add -A
 #    git commit -m "fix: <description of the fix>"
-#    git push origin fix/test-<short-description>
 #    ```
+#
+#    **IMPORTANT: Do NOT run `git push`. The `create-pull-request` safe output will handle pushing for you.**
 #
 # 2. **Create a Pull Request** using `create-pull-request` safe output with:
 #    - **Title**: `[Test Fix] <brief description>`
@@ -674,11 +673,12 @@
 #
 # 3. **Create a branch and commit your changes**:
 #    ```bash
-#    git checkout -b fix/test-<brief-description>
+#    git checkout -b fix/test-<short-description>
 #    git add -A
 #    git commit -m "fix: <description of the fix>"
-#    git push origin fix/test-<brief-description>
 #    ```
+#
+#    **Do NOT run `git push` - the `create-pull-request` safe output handles this.**
 #
 # 4. **Use `create-pull-request`**:
 #    - Explanation of the fix you implemented
@@ -712,8 +712,7 @@
 # Before you finish, verify:
 # - [ ] Did you run bash commands to EDIT actual source files?
 # - [ ] Did you run `git add` and `git commit`?
-# - [ ] Did you run `git push`?
-# - [ ] Are you using `create-pull-request`?
+# - [ ] Are you using `create-pull-request`? (Do NOT run `git push` - the safe output handles it)
 #
 # If any answer is NO, go back and complete those steps.
 # ```
@@ -1004,7 +1003,7 @@ jobs:
           cat > /tmp/gh-aw/safeoutputs/tools.json << 'EOF'
           [
             {
-              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[Test Fix]\". Labels [test-fix automated] will be automatically added. PRs will be created as drafts.",
+              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. PRs will be created as drafts.",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
@@ -2448,8 +2447,9 @@ jobs:
              git checkout -b fix/test-<short-description>
              git add -A
              git commit -m "fix: <description of the fix>"
-             git push origin fix/test-<short-description>
              ```
+             
+             **IMPORTANT: Do NOT run `git push`. The `create-pull-request` safe output will handle pushing for you.**
           
           2. **Create a Pull Request** using `create-pull-request` safe output with:
              - **Title**: `[Test Fix] <brief description>`
@@ -2520,11 +2520,12 @@ jobs:
           
           3. **Create a branch and commit your changes**:
              ```bash
-             git checkout -b fix/test-<brief-description>
+             git checkout -b fix/test-<short-description>
              git add -A
              git commit -m "fix: <description of the fix>"
-             git push origin fix/test-<brief-description>
              ```
+             
+             **Do NOT run `git push` - the `create-pull-request` safe output handles this.**
           
           4. **Use `create-pull-request`**:
              - Explanation of the fix you implemented
@@ -2558,8 +2559,7 @@ jobs:
           Before you finish, verify:
           - [ ] Did you run bash commands to EDIT actual source files?
           - [ ] Did you run `git add` and `git commit`?
-          - [ ] Did you run `git push`?
-          - [ ] Are you using `create-pull-request`?
+          - [ ] Are you using `create-pull-request`? (Do NOT run `git push` - the safe output handles it)
           
           If any answer is NO, go back and complete those steps.
           
@@ -6226,8 +6226,6 @@ jobs:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
           GH_AW_WORKFLOW_ID: "agent"
           GH_AW_BASE_BRANCH: ${{ github.ref_name }}
-          GH_AW_PR_TITLE_PREFIX: "[Test Fix]"
-          GH_AW_PR_LABELS: "test-fix,automated"
           GH_AW_PR_DRAFT: "true"
           GH_AW_PR_IF_NO_CHANGES: "warn"
           GH_AW_MAX_PATCH_SIZE: 1024

@@ -45,8 +45,6 @@ engine:
 
 safe-outputs:
   create-pull-request:
-    title-prefix: "[Test Fix]"
-    labels: ["test-fix", "automated"]
     draft: true
   jobs:
     validate-macos-14:
@@ -542,8 +540,9 @@ Call validate-macos-26 with: test_target: "aynaTests"
    git checkout -b fix/test-<short-description>
    git add -A
    git commit -m "fix: <description of the fix>"
-   git push origin fix/test-<short-description>
    ```
+   
+   **IMPORTANT: Do NOT run `git push`. The `create-pull-request` safe output will handle pushing for you.**
 
 2. **Create a Pull Request** using `create-pull-request` safe output with:
    - **Title**: `[Test Fix] <brief description>`
@@ -614,11 +613,12 @@ You must:
 
 3. **Create a branch and commit your changes**:
    ```bash
-   git checkout -b fix/test-<brief-description>
+   git checkout -b fix/test-<short-description>
    git add -A
    git commit -m "fix: <description of the fix>"
-   git push origin fix/test-<brief-description>
    ```
+   
+   **Do NOT run `git push` - the `create-pull-request` safe output handles this.**
 
 4. **Use `create-pull-request`**:
    - Explanation of the fix you implemented
@@ -652,7 +652,6 @@ You must:
 Before you finish, verify:
 - [ ] Did you run bash commands to EDIT actual source files?
 - [ ] Did you run `git add` and `git commit`?
-- [ ] Did you run `git push`?
-- [ ] Are you using `create-pull-request`?
+- [ ] Are you using `create-pull-request`? (Do NOT run `git push` - the safe output handles it)
 
 If any answer is NO, go back and complete those steps.
