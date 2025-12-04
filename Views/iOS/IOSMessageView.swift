@@ -22,6 +22,7 @@ struct IOSMessageView: View {
     @State private var decodedImage: UIImage?
     @State private var parseDebounceTask: Task<Void, Never>?
     @State private var lastParseTime: Date = .distantPast
+    @State private var hasAppeared = false
 
     init(
         message: Message,
@@ -199,14 +200,21 @@ struct IOSMessageView: View {
             )
             .foregroundStyle(message.role == .user ? Theme.userBubbleText : Theme.assistantBubbleText)
             .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: message.role == .user ? .trailing : .leading)
+            // Message bubble physics: subtle spring animation on appear
+            .scaleEffect(hasAppeared ? 1.0 : 0.92)
+            .opacity(hasAppeared ? 1.0 : 0.0)
+            .onAppear {
+                withAnimation(Motion.springStandard) {
+                    hasAppeared = true
+                }
+            }
             .contextMenu {
                 // Copy button - available for all messages with content
                 if !message.content.isEmpty {
                     Button {
                         UIPasteboard.general.string = message.content
-                        // Success haptic for copy
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
+                        // Use centralized haptic engine
+                        HapticEngine.notification(.success)
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
@@ -220,9 +228,8 @@ struct IOSMessageView: View {
                 // Retry button - only for assistant messages
                 if message.role == .assistant, let onRetry {
                     Button {
-                        // Medium haptic for retry
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
+                        // Use centralized haptic engine
+                        HapticEngine.impact(.medium)
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
@@ -241,9 +248,8 @@ struct IOSMessageView: View {
                 {
                     Button {
                         UIPasteboard.general.image = image
-                        // Success haptic for copy image
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
+                        // Use centralized haptic engine
+                        HapticEngine.notification(.success)
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
@@ -497,25 +503,42 @@ struct IOSContentBlockView: View {
     }
 }
 
-// Typing indicator for text responses (iOS version)
+// Typing indicator for text responses (iOS version) - iMessage style wave
 struct IOSTypingIndicatorView: View {
     @State private var animatingDot = 0
 
-    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
             ForEach(0 ..< 3, id: \.self) { index in
                 Circle()
-                    .fill(Theme.textSecondary.opacity(0.5))
+                    .fill(Theme.textSecondary.opacity(0.6))
                     .frame(width: 8, height: 8)
-                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
-                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+                    // Wave animation: Y offset for iMessage feel
+                    .offset(y: offsetForDot(at: index))
+                    .animation(.easeInOut(duration: 0.3), value: animatingDot)
             }
         }
         .padding(.vertical, Spacing.xxs)
         .onReceive(timer) { _ in
-            animatingDot = (animatingDot + 1) % 3
+            animatingDot = (animatingDot + 1) % 6
         }
+    }
+
+    /// Calculate Y offset for wave effect
+    private func offsetForDot(at index: Int) -> CGFloat {
+        let activeIndex: Int
+        switch animatingDot {
+        case 0, 5:
+            activeIndex = 0
+        case 1, 4:
+            activeIndex = 1
+        case 2, 3:
+            activeIndex = 2
+        default:
+            activeIndex = -1
+        }
+        return index == activeIndex ? -4 : 0
     }
 }

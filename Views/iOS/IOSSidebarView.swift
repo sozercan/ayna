@@ -372,15 +372,22 @@ struct ConversationRow: View {
         return formatter.string(from: conversation.updatedAt)
     }
 
+    /// Generate a consistent color based on conversation ID for unique avatars
+    private var avatarColor: Color {
+        let hash = conversation.id.hashValue
+        let hue = Double(abs(hash) % 360) / 360.0
+        return Color(hue: hue, saturation: 0.4, brightness: 0.65)
+    }
+
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Avatar - iMessage style gray gradient
+            // Avatar - unique color per conversation based on ID hash
             Circle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(uiColor: UIColor.systemGray),
-                            Color(uiColor: UIColor.systemGray2),
+                            avatarColor,
+                            avatarColor.opacity(0.7)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -390,7 +397,7 @@ struct ConversationRow: View {
                 .overlay {
                     if let firstChar = conversation.title.first {
                         Text(String(firstChar).uppercased())
-                            .font(.system(size: Typography.Size.title3, weight: .medium))
+                            .font(Typography.title3)
                             .foregroundStyle(.white)
                     } else {
                         Image(systemName: "bubble.left.fill")

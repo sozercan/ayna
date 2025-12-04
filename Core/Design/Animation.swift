@@ -243,25 +243,49 @@ extension View {
 
 // MARK: - Typing Dots Animation
 
-/// Animated typing dots component
+/// Animated typing dots component - iMessage style wave animation
+/// Dots rise and fall sequentially for a natural "thinking" effect
 public struct TypingDotsView: View {
     @State private var animatingDot = 0
-    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    private let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     public init() {}
 
     public var body: some View {
         HStack(spacing: Spacing.xs) {
-            ForEach(0..<3, id: \.self) { index in
+            ForEach(0 ..< 3, id: \.self) { index in
                 Circle()
-                    .fill(Theme.textSecondary.opacity(0.5))
+                    .fill(Theme.textSecondary.opacity(0.6))
                     .frame(width: 8, height: 8)
-                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
-                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+                    // Wave animation: Y offset instead of scale for iMessage feel
+                    .offset(y: offsetForDot(at: index))
+                    .animation(
+                        .easeInOut(duration: 0.3),
+                        value: animatingDot
+                    )
             }
         }
         .onReceive(timer) { _ in
-            animatingDot = (animatingDot + 1) % 3
+            animatingDot = (animatingDot + 1) % 6
         }
+    }
+
+    /// Calculate Y offset for wave effect
+    /// Each dot rises when it's "active" in the wave sequence
+    private func offsetForDot(at index: Int) -> CGFloat {
+        // Wave pattern: dot rises when animatingDot matches its turn
+        // Sequence: 0,1,2,2,1,0 creates smooth wave
+        let activeIndex: Int
+        switch animatingDot {
+        case 0, 5:
+            activeIndex = 0
+        case 1, 4:
+            activeIndex = 1
+        case 2, 3:
+            activeIndex = 2
+        default:
+            activeIndex = -1
+        }
+        return index == activeIndex ? -4 : 0
     }
 }

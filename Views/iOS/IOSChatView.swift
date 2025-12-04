@@ -20,6 +20,10 @@ struct IOSChatView: View {
     @State private var showModelSelector = false
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
+    /// Scroll-to-bottom button visibility
+    @State private var showScrollToBottom = false
+    @State private var isNearBottom = true
+
     /// Get the conversation from the environment's conversation manager
     private var conversation: Conversation? {
         conversationManager.conversations.first { $0.id == conversationId }
@@ -93,45 +97,65 @@ struct IOSChatView: View {
         VStack(spacing: 0) {
             if let conversation {
                 ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 12) {
-                            ForEach(displayableItems) { item in
-                                switch item {
-                                case let .message(message):
-                                    IOSMessageView(
-                                        message: message,
-                                        onRetry: message.role == .assistant ? {
-                                            viewModel.retryMessage(beforeMessage: message)
-                                        } : nil
-                                    )
-                                    .id(message.id)
-                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
-                                case let .responseGroup(groupId, responses):
-                                    IOSMultiModelResponseView(
-                                        responseGroupId: groupId,
-                                        responses: responses,
-                                        conversation: conversation,
-                                        onSelectResponse: { messageId in
-                                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                                            generator.impactOccurred()
-                                            conversationManager.selectResponse(
-                                                in: conversation,
-                                                groupId: groupId,
-                                                messageId: messageId
-                                            )
-                                        },
-                                        onRetry: { message in
-                                            viewModel.retryMessage(beforeMessage: message)
-                                        },
-                                        defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
-                                    )
-                                    .id(item.id)
+                    ZStack(alignment: .bottom) {
+                        ScrollView(.vertical, showsIndicators: true) {
+                            LazyVStack(spacing: 12) {
+                                ForEach(displayableItems) { item in
+                                    switch item {
+                                    case let .message(message):
+                                        IOSMessageView(
+                                            message: message,
+                                            onRetry: message.role == .assistant ? {
+                                                viewModel.retryMessage(beforeMessage: message)
+                                            } : nil
+                                        )
+                                        .id(message.id)
+                                        .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                                    case let .responseGroup(groupId, responses):
+                                        IOSMultiModelResponseView(
+                                            responseGroupId: groupId,
+                                            responses: responses,
+                                            conversation: conversation,
+                                            onSelectResponse: { messageId in
+                                                // Use centralized haptic engine
+                                                HapticEngine.selection()
+                                                conversationManager.selectResponse(
+                                                    in: conversation,
+                                                    groupId: groupId,
+                                                    messageId: messageId
+                                                )
+                                            },
+                                            onRetry: { message in
+                                                viewModel.retryMessage(beforeMessage: message)
+                                            },
+                                            defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
+                                        )
+                                        .id(item.id)
+                                    }
                                 }
+
+                                // Anchor for scroll position detection
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("bottom")
+                                    .onAppear { isNearBottom = true; showScrollToBottom = false }
+                                    .onDisappear { isNearBottom = false; showScrollToBottom = true }
+                            }
+                            .padding()
+                        }
+                        .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
+
+                        // Scroll-to-bottom floating button
+                        ScrollToBottomButton(
+                            isVisible: showScrollToBottom && !viewModel.isGenerating,
+                            unreadCount: 0
+                        ) {
+                            withAnimation(Motion.springStandard) {
+                                proxy.scrollTo("bottom", anchor: .bottom)
                             }
                         }
-                        .padding()
+                        .padding(.bottom, Spacing.md)
                     }
-                    .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .onChange(of: conversation.messages.count) { _ in
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
@@ -358,8 +382,8 @@ struct IOSChatView: View {
     }
 
     private func toggleModelSelection(_ model: String, for conversation: Conversation) {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        // Use centralized haptic engine
+        HapticEngine.selection()
 
         if viewModel.selectedModels.contains(model) {
             viewModel.selectedModels.remove(model)

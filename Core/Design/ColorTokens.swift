@@ -6,6 +6,11 @@
 //  Cross-platform color definitions that adapt to light/dark mode
 //  and respect platform idioms (macOS vs iOS vs watchOS).
 //
+//  Dark Mode Guidelines:
+//  - Never use pure black (#000) on OLED - minimum Color(white: 0.05)
+//  - Elevated surfaces get LIGHTER in dark mode (Apple's elevation model)
+//  - All text must pass WCAG AA contrast (4.5:1 minimum)
+//
 
 import SwiftUI
 
@@ -17,20 +22,21 @@ public enum Theme {
 
     // MARK: - Message Bubbles
 
-    /// User message bubble background
+    /// User message bubble background - modern solid blue (not gradient)
     public static var userBubble: Color {
-        Color.accentColor
+        // Modern iMessage-style vibrant blue
+        Color(red: 0.0, green: 0.48, blue: 1.0)
     }
 
-    /// User message bubble gradient (for platforms that support rich bubbles)
+    /// User message bubble gradient (subtle, modern - less aggressive than before)
     public static var userBubbleGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 0.09, green: 0.45, blue: 1.0),
-                Color(red: 0.01, green: 0.35, blue: 0.95)
+                Color(red: 0.0, green: 0.48, blue: 1.0),
+                Color(red: 0.0, green: 0.44, blue: 0.96)
             ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
@@ -39,27 +45,28 @@ public enum Theme {
         #if os(macOS)
         Color(nsColor: .controlBackgroundColor).opacity(0.8)
         #elseif os(watchOS)
-        Color(white: 0.2)
+        // Avoid pure black - use elevated dark gray for OLED friendliness
+        Color(white: 0.18)
         #else
         Color(uiColor: .systemGray5)
         #endif
     }
 
-    /// Assistant message bubble gradient (macOS)
+    /// Assistant message bubble gradient (macOS) - softer, more neutral
     public static var assistantBubbleGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 0.35, green: 0.36, blue: 0.38),
-                Color(red: 0.23, green: 0.24, blue: 0.26)
+                Color(red: 0.28, green: 0.28, blue: 0.30),
+                Color(red: 0.22, green: 0.22, blue: 0.24)
             ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
-    /// Tool/MCP result bubble background
+    /// Tool/MCP result bubble background - softer amber instead of harsh orange
     public static var toolBubble: Color {
-        .orange
+        Color(red: 0.95, green: 0.6, blue: 0.2)
     }
 
     /// Text color for user bubbles (always white for contrast)
@@ -118,24 +125,25 @@ public enum Theme {
         #if os(macOS)
         Color(nsColor: .windowBackgroundColor)
         #elseif os(watchOS)
-        .black
+        // Never pure black on OLED - use very dark gray
+        Color(white: 0.05)
         #else
         Color(uiColor: .systemBackground)
         #endif
     }
 
-    /// Secondary/grouped background
+    /// Secondary/grouped background - elevated surfaces are LIGHTER in dark mode
     public static var backgroundSecondary: Color {
         #if os(macOS)
         Color(nsColor: .controlBackgroundColor)
         #elseif os(watchOS)
-        Color(white: 0.1)
+        Color(white: 0.10)
         #else
         Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
-    /// Tertiary/elevated background
+    /// Tertiary/elevated background - highest elevation = lightest in dark mode
     public static var backgroundTertiary: Color {
         #if os(macOS)
         Color(nsColor: .underPageBackgroundColor)
@@ -143,6 +151,17 @@ public enum Theme {
         Color(white: 0.15)
         #else
         Color(uiColor: .tertiarySystemBackground)
+        #endif
+    }
+
+    /// Elevated surface background (cards, popovers) - follows Apple's elevation model
+    public static var backgroundElevated: Color {
+        #if os(macOS)
+        Color(nsColor: .controlBackgroundColor)
+        #elseif os(watchOS)
+        Color(white: 0.12)
+        #else
+        Color(uiColor: .secondarySystemBackground)
         #endif
     }
 

@@ -1227,25 +1227,42 @@ struct SyntaxHighlightedCodeView: View {
     }
 }
 
-// Typing indicator for text responses
+// Typing indicator for text responses - iMessage style wave animation
 struct TypingIndicatorView: View {
     @State private var animatingDot = 0
 
-    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
-            ForEach(0 ..< 3) { index in
+            ForEach(0 ..< 3, id: \.self) { index in
                 Circle()
-                    .fill(Theme.textSecondary.opacity(0.5))
+                    .fill(Theme.textSecondary.opacity(0.6))
                     .frame(width: 8, height: 8)
-                    .scaleEffect(animatingDot == index ? 1.2 : 0.8)
-                    .animation(.easeInOut(duration: 0.4), value: animatingDot)
+                    // Wave animation: Y offset for iMessage feel
+                    .offset(y: offsetForDot(at: index))
+                    .animation(.easeInOut(duration: 0.3), value: animatingDot)
             }
         }
         .padding(.vertical, Spacing.sm)
         .onReceive(timer) { _ in
-            animatingDot = (animatingDot + 1) % 3
+            animatingDot = (animatingDot + 1) % 6
         }
+    }
+
+    /// Calculate Y offset for wave effect
+    private func offsetForDot(at index: Int) -> CGFloat {
+        let activeIndex: Int
+        switch animatingDot {
+        case 0, 5:
+            activeIndex = 0
+        case 1, 4:
+            activeIndex = 1
+        case 2, 3:
+            activeIndex = 2
+        default:
+            activeIndex = -1
+        }
+        return index == activeIndex ? -4 : 0
     }
 }

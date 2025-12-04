@@ -316,6 +316,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         isGenerating = true
         errorMessage = nil
 
+        // Play message sent sound
+        SoundEngine.messageSent()
+
         DiagnosticsLogger.log(
             .chatView,
             level: .info,
@@ -458,6 +461,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                     // If a tool call was requested, keep generating until tool execution completes
                     if self.currentToolName == nil {
                         self.isGenerating = false
+
+                        // Play message received sound
+                        SoundEngine.messageReceived()
+
                         if let finalConversation = self.conversationManager.conversations.first(where: { $0.id == conversationId }) {
                             self.conversationManager.save(finalConversation)
                         }
@@ -498,6 +505,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                     )
 
                     self.isGenerating = false
+
+                    // Play error sound
+                    SoundEngine.error()
+
                     self.currentToolName = nil
                     self.toolCallDepth = 0
                     self.errorMessage = error.localizedDescription

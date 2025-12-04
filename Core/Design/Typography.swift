@@ -4,7 +4,8 @@
 //
 //  Design System: Typography Scale
 //  Consistent type styles across platforms with semantic naming.
-//  Uses SF Pro as the system font with platform-appropriate sizing.
+//  Uses Dynamic Type for accessibility compliance on iOS/watchOS.
+//  Respects user's text size preferences automatically.
 //
 
 import SwiftUI
@@ -12,15 +13,16 @@ import SwiftUI
 // MARK: - Typography
 
 /// Centralized typography definitions for the Ayna design system.
-/// Provides semantic text styles that adapt to each platform.
+/// All fonts use Dynamic Type (Text Styles) for accessibility.
+/// Fonts scale automatically based on user's accessibility settings.
 public enum Typography {
 
-    // MARK: - Type Scale (in points)
+    // MARK: - Legacy Size Reference (for non-font uses like icons, spacing calculations)
 
-    /// Base type scale following a modular scale (1.2 ratio)
-    /// watchOS uses smaller sizes, iOS/macOS use standard sizes
+    /// Reference sizes for calculations that need fixed values (icons, spacing).
+    /// DO NOT use these for Font - use the semantic Font properties instead.
     public enum Size {
-        /// Extra small: 9pt (macOS/iOS), 8pt (watchOS)
+        /// Extra small reference: 9pt (macOS/iOS), 8pt (watchOS)
         public static var xs: CGFloat {
             #if os(watchOS)
             8
@@ -29,7 +31,7 @@ public enum Typography {
             #endif
         }
 
-        /// Small: 11pt (macOS/iOS), 10pt (watchOS)
+        /// Small reference: 11pt (macOS/iOS), 10pt (watchOS)
         public static var sm: CGFloat {
             #if os(watchOS)
             10
@@ -38,7 +40,7 @@ public enum Typography {
             #endif
         }
 
-        /// Caption: 12pt (macOS/iOS), 11pt (watchOS)
+        /// Caption reference: 12pt (macOS/iOS), 11pt (watchOS)
         public static var caption: CGFloat {
             #if os(watchOS)
             11
@@ -47,7 +49,7 @@ public enum Typography {
             #endif
         }
 
-        /// Body: 14pt (macOS/iOS), 13pt (watchOS)
+        /// Body reference: 14pt (macOS/iOS), 13pt (watchOS)
         public static var body: CGFloat {
             #if os(watchOS)
             13
@@ -56,7 +58,7 @@ public enum Typography {
             #endif
         }
 
-        /// Standard text: 15pt (macOS/iOS), 14pt (watchOS)
+        /// Standard reference: 15pt (macOS/iOS), 14pt (watchOS)
         public static var standard: CGFloat {
             #if os(watchOS)
             14
@@ -65,7 +67,7 @@ public enum Typography {
             #endif
         }
 
-        /// Subheadline: 16pt (macOS/iOS), 15pt (watchOS)
+        /// Subheadline reference: 16pt (macOS/iOS), 15pt (watchOS)
         public static var subheadline: CGFloat {
             #if os(watchOS)
             15
@@ -74,7 +76,7 @@ public enum Typography {
             #endif
         }
 
-        /// Headline: 18pt (macOS/iOS), 16pt (watchOS)
+        /// Headline reference: 18pt (macOS/iOS), 16pt (watchOS)
         public static var headline: CGFloat {
             #if os(watchOS)
             16
@@ -83,7 +85,7 @@ public enum Typography {
             #endif
         }
 
-        /// Title 3: 20pt (macOS/iOS), 18pt (watchOS)
+        /// Title 3 reference: 20pt (macOS/iOS), 18pt (watchOS)
         public static var title3: CGFloat {
             #if os(watchOS)
             18
@@ -92,7 +94,7 @@ public enum Typography {
             #endif
         }
 
-        /// Title 2: 22pt (macOS/iOS), 20pt (watchOS)
+        /// Title 2 reference: 22pt (macOS/iOS), 20pt (watchOS)
         public static var title2: CGFloat {
             #if os(watchOS)
             20
@@ -101,7 +103,7 @@ public enum Typography {
             #endif
         }
 
-        /// Title 1: 28pt (macOS/iOS), 24pt (watchOS)
+        /// Title 1 reference: 28pt (macOS/iOS), 24pt (watchOS)
         public static var title1: CGFloat {
             #if os(watchOS)
             24
@@ -110,7 +112,7 @@ public enum Typography {
             #endif
         }
 
-        /// Large Title: 34pt (macOS/iOS), 28pt (watchOS)
+        /// Large Title reference: 34pt (macOS/iOS), 28pt (watchOS)
         public static var largeTitle: CGFloat {
             #if os(watchOS)
             28
@@ -119,7 +121,7 @@ public enum Typography {
             #endif
         }
 
-        /// Hero: 48pt (macOS/iOS), not used on watchOS
+        /// Hero reference: 48pt (macOS/iOS), 32pt (watchOS)
         public static var hero: CGFloat {
             #if os(watchOS)
             32
@@ -129,108 +131,109 @@ public enum Typography {
         }
     }
 
-    // MARK: - Semantic Text Styles
+    // MARK: - Semantic Text Styles (Dynamic Type)
+    // These fonts automatically scale with user's accessibility settings
 
-    /// Large title for hero sections
+    /// Large title for hero sections - scales with Dynamic Type
     public static var largeTitle: Font {
-        .system(size: Size.largeTitle, weight: .bold)
+        .largeTitle.weight(.bold)
     }
 
-    /// Primary title
+    /// Primary title - scales with Dynamic Type
     public static var title1: Font {
-        .system(size: Size.title1, weight: .bold)
+        .title.weight(.bold)
     }
 
-    /// Secondary title
+    /// Secondary title - scales with Dynamic Type
     public static var title2: Font {
-        .system(size: Size.title2, weight: .semibold)
+        .title2.weight(.semibold)
     }
 
-    /// Tertiary title
+    /// Tertiary title - scales with Dynamic Type
     public static var title3: Font {
-        .system(size: Size.title3, weight: .semibold)
+        .title3.weight(.semibold)
     }
 
-    /// Section headline
+    /// Section headline - scales with Dynamic Type
     public static var headline: Font {
-        .system(size: Size.headline, weight: .semibold)
+        .headline
     }
 
-    /// Subheadline / emphasized body
+    /// Subheadline / emphasized body - scales with Dynamic Type
     public static var subheadline: Font {
-        .system(size: Size.subheadline, weight: .medium)
+        .subheadline.weight(.medium)
     }
 
-    /// Standard body text (used in message bubbles)
+    /// Standard body text (used in message bubbles) - scales with Dynamic Type
     public static var body: Font {
-        .system(size: Size.standard)
+        .body
     }
 
-    /// Secondary body text
+    /// Secondary body text (slightly smaller) - scales with Dynamic Type
     public static var bodySecondary: Font {
-        .system(size: Size.body)
+        .callout
     }
 
-    /// Caption text
+    /// Caption text - scales with Dynamic Type
     public static var caption: Font {
-        .system(size: Size.caption)
+        .caption
     }
 
-    /// Caption with emphasis
+    /// Caption with emphasis - scales with Dynamic Type
     public static var captionBold: Font {
-        .system(size: Size.caption, weight: .semibold)
+        .caption.weight(.semibold)
     }
 
-    /// Small auxiliary text
+    /// Small auxiliary text - scales with Dynamic Type
     public static var footnote: Font {
-        .system(size: Size.sm)
+        .footnote
     }
 
-    /// Extra small text (timestamps, badges)
+    /// Extra small text (timestamps, badges) - scales with Dynamic Type
     public static var micro: Font {
-        .system(size: Size.xs)
+        .caption2
     }
 
-    // MARK: - Special Styles
+    // MARK: - Special Styles (Dynamic Type with design variants)
 
-    /// Code/monospaced text
+    /// Code/monospaced text - scales with Dynamic Type
     public static var code: Font {
-        .system(size: Size.caption, design: .monospaced)
+        .system(.caption, design: .monospaced)
     }
 
-    /// Code block text (slightly larger)
+    /// Code block text (slightly larger) - scales with Dynamic Type
     public static var codeBlock: Font {
-        .system(size: Size.body, design: .monospaced)
+        .system(.callout, design: .monospaced)
     }
 
-    /// Rounded style for friendly elements (buttons, badges)
+    /// Rounded style for friendly elements (buttons, badges) - scales with Dynamic Type
     public static var rounded: Font {
-        .system(size: Size.body, weight: .medium, design: .rounded)
+        .system(.callout, design: .rounded, weight: .medium)
     }
 
-    /// Rounded caption
+    /// Rounded caption - scales with Dynamic Type
     public static var roundedCaption: Font {
-        .system(size: Size.caption, weight: .medium, design: .rounded)
+        .system(.caption, design: .rounded, weight: .medium)
     }
 
-    /// Model/provider name display
+    /// Model/provider name display - scales with Dynamic Type
     public static var modelName: Font {
-        .system(size: Size.caption, weight: .medium)
+        .caption.weight(.medium)
     }
 
-    /// Timestamp display
+    /// Timestamp display - scales with Dynamic Type
     public static var timestamp: Font {
-        .system(size: Size.sm, weight: .medium)
+        .caption2.weight(.medium)
     }
 
-    /// Button text
+    /// Button text - scales with Dynamic Type
     public static var button: Font {
-        .system(size: Size.body, weight: .semibold)
+        .body.weight(.semibold)
     }
 
-    /// Small button text
+    /// Small button text - scales with Dynamic Type
     public static var buttonSmall: Font {
-        .system(size: Size.caption, weight: .medium)
+        .caption.weight(.medium)
     }
 
     // MARK: - Line Spacing
@@ -248,27 +251,27 @@ public enum Typography {
 // MARK: - View Modifiers
 
 extension View {
-    /// Applies the standard body text style
+    /// Applies the standard body text style with Dynamic Type support
     public func bodyText() -> some View {
         self
             .font(Typography.body)
             .lineSpacing(Typography.bodyLineSpacing)
     }
 
-    /// Applies the caption text style
+    /// Applies the caption text style with Dynamic Type support
     public func captionText() -> some View {
         self
             .font(Typography.caption)
             .foregroundStyle(Theme.textSecondary)
     }
 
-    /// Applies the headline text style
+    /// Applies the headline text style with Dynamic Type support
     public func headlineText() -> some View {
         self
             .font(Typography.headline)
     }
 
-    /// Applies the code text style
+    /// Applies the code text style with Dynamic Type support
     public func codeText() -> some View {
         self
             .font(Typography.code)
@@ -278,7 +281,8 @@ extension View {
 // MARK: - Icon Sizes
 
 extension Typography {
-    /// Consistent icon sizes that pair well with text
+    /// Consistent icon sizes that pair well with text.
+    /// Note: Icons use fixed sizes as SF Symbols scale independently via symbolRenderingMode.
     public enum IconSize {
         /// Inline with caption text: 12pt
         public static let xs: CGFloat = 12

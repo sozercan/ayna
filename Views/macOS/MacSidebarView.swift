@@ -83,7 +83,7 @@ struct MacSidebarView: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
-                    .fill(Theme.backgroundSecondary.opacity(0.5))
+                    .fill(.regularMaterial)
             )
             .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.md)
@@ -101,6 +101,7 @@ struct MacSidebarView: View {
                     Image(systemName: searchText.isEmpty ? "message" : "magnifyingglass")
                         .font(.system(size: Typography.IconSize.hero))
                         .foregroundStyle(Theme.textTertiary)
+                        .symbolEffect(.pulse, options: .repeating.speed(0.5))
 
                     Text(searchText.isEmpty ? "No conversations yet" : "No results found")
                         .font(Typography.bodySecondary)
@@ -174,6 +175,8 @@ struct MacSidebarView: View {
                 .onDeleteCommand(perform: handleDeleteCommand)
             }
         }
+        // Apply translucent material background - wallpaper bleeds through
+        .background(.regularMaterial)
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()
@@ -236,15 +239,22 @@ struct ConversationRow: View {
         return formatter.string(from: conversation.updatedAt)
     }
 
+    /// Generate a consistent color based on conversation ID for unique avatars
+    private var avatarColor: Color {
+        let hash = conversation.id.hashValue
+        let hue = Double(abs(hash) % 360) / 360.0
+        return Color(hue: hue, saturation: 0.4, brightness: 0.65)
+    }
+
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Avatar - iMessage style gray gradient circle with first initial
+            // Avatar - unique color per conversation based on ID hash
             Circle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(nsColor: .systemGray),
-                            Color(nsColor: .systemGray.withAlphaComponent(0.7)),
+                            avatarColor,
+                            avatarColor.opacity(0.7)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -254,7 +264,7 @@ struct ConversationRow: View {
                 .overlay {
                     if let firstChar = conversation.title.first {
                         Text(String(firstChar).uppercased())
-                            .font(.system(size: Typography.Size.headline, weight: .medium))
+                            .font(Typography.headline)
                             .foregroundStyle(.white)
                     } else {
                         Image(systemName: "bubble.left.fill")
@@ -267,7 +277,7 @@ struct ConversationRow: View {
                 // Title row with timestamp
                 HStack {
                     Text(conversation.title)
-                        .font(.system(size: Typography.Size.body, weight: .semibold))
+                        .font(Typography.body.weight(.semibold))
                         .lineLimit(1)
                     Spacer()
                     Text(timeString)
@@ -277,7 +287,7 @@ struct ConversationRow: View {
 
                 // Message preview
                 Text(lastMessagePreview)
-                    .font(Typography.modelName)
+                    .font(Typography.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }

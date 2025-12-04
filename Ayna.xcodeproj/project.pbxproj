@@ -107,6 +107,14 @@
 		C82E6BA42EDBE0020055158F /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */; };
 		C82E6BA62EDC290D0055158F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
 		C855BF482EE143310073EB99 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */; };
+		C855C16C2EE208910073EB99 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16B2EE208910073EB99 /* SoundEngine.swift */; };
+		C855C16D2EE208910073EB99 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16A2EE208910073EB99 /* HapticEngine.swift */; };
+		C855C16E2EE208910073EB99 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16B2EE208910073EB99 /* SoundEngine.swift */; };
+		C855C16F2EE208910073EB99 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16A2EE208910073EB99 /* HapticEngine.swift */; };
+		C855C1702EE208910073EB99 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16B2EE208910073EB99 /* SoundEngine.swift */; };
+		C855C1712EE208910073EB99 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16A2EE208910073EB99 /* HapticEngine.swift */; };
+		C855C1732EE208A40073EB99 /* ScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */; };
+		C855C1752EE20A040073EB99 /* MacScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
@@ -278,6 +286,10 @@
 		C855BF2E2EE13C910073EB99 /* Ayna-iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C855BF3D2EE13CB50073EB99 /* Ayna-watchOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-watchOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C855C1062EE15D700073EB99 /* Ayna-watchOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-watchOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C855C16A2EE208910073EB99 /* HapticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticEngine.swift; sourceTree = "<group>"; };
+		C855C16B2EE208910073EB99 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEngine.swift; sourceTree = "<group>"; };
+		C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollToBottomButton.swift; sourceTree = "<group>"; };
+		C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -491,6 +503,8 @@
 		C81393CB2ED3DEB800F5E7F9 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				C855C16A2EE208910073EB99 /* HapticEngine.swift */,
+				C855C16B2EE208910073EB99 /* SoundEngine.swift */,
 				C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */,
 				C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */,
 				C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */,
@@ -573,6 +587,7 @@
 		C81394222ED3DEC900F5E7F9 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
+				C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */,
 				C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */,
 				C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */,
 				C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */,
@@ -588,6 +603,7 @@
 		C813942C2ED3DEC900F5E7F9 /* macOS */ = {
 			isa = PBXGroup;
 			children = (
+				C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */,
 				C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */,
 				C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */,
 				C81394252ED3DEC900F5E7F9 /* MacChatView.swift */,
@@ -962,6 +978,7 @@
 				C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
 				D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */,
 				D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */,
+				C855C1752EE20A040073EB99 /* MacScrollToBottomButton.swift in Sources */,
 				D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */,
 				D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */,
 				D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */,
@@ -985,6 +1002,8 @@
 				C81394322ED3DEC900F5E7F9 /* MacChatView.swift in Sources */,
 				C813945A2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift in Sources */,
 				C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */,
+				C855C1702EE208910073EB99 /* SoundEngine.swift in Sources */,
+				C855C1712EE208910073EB99 /* HapticEngine.swift in Sources */,
 				C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */,
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
 				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
@@ -1006,6 +1025,8 @@
 				C82E6BA12EDBD7C50055158F /* GitHubOAuthService.swift in Sources */,
 				C82E6BA22EDBDFF30055158F /* EphemeralKeychainStorage.swift in Sources */,
 				C82E6B9B2EDBD7AA0055158F /* KeychainStorage.swift in Sources */,
+				C855C16E2EE208910073EB99 /* SoundEngine.swift in Sources */,
+				C855C16F2EE208910073EB99 /* HapticEngine.swift in Sources */,
 				C82E6BA32EDBDFF90055158F /* AppPreferences.swift in Sources */,
 				C82E6B902EDBD7640055158F /* WatchChatViewModel.swift in Sources */,
 				C82E6B962EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */,
@@ -1095,9 +1116,12 @@
 				D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */,
 				C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
 				GITHUB0AUTH13064F88B81B02 /* GitHubOAuthService.swift in Sources */,
+				C855C1732EE208A40073EB99 /* ScrollToBottomButton.swift in Sources */,
 				B0F01CAC13064F88B81B4CA3 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
 				C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,
+				C855C16C2EE208910073EB99 /* SoundEngine.swift in Sources */,
+				C855C16D2EE208910073EB99 /* HapticEngine.swift in Sources */,
 				C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,
 				C81393F12ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */,
 				C81393F22ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */,

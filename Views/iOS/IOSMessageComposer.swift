@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 /// A reusable message composer component for iOS chat views.
 /// Handles text input, file attachments, sending messages, and generation cancellation.
+/// Uses spring animations for smooth height transitions as text expands.
 struct IOSMessageComposer: View {
     @Binding var messageText: String
     @Binding var isGenerating: Bool
@@ -49,13 +50,29 @@ struct IOSMessageComposer: View {
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            // Error message display
+            // Error message display - inline banner style (Apple native)
             if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(Theme.statusError)
-                    .font(Typography.caption)
-                    .padding(.horizontal)
-                    .accessibilityIdentifier("\(identifierPrefix).errorMessage")
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.statusError)
+                    Text(errorMessage)
+                        .foregroundStyle(Theme.statusError)
+                        .font(Typography.caption)
+                    Spacer()
+                    Button {
+                        self.errorMessage = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Theme.statusError.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+                .padding(.horizontal)
+                .accessibilityIdentifier("\(identifierPrefix).errorMessage")
             }
 
             // Attached files display
@@ -71,28 +88,28 @@ struct IOSMessageComposer: View {
                 .accessibilityIdentifier("\(identifierPrefix).attachmentsList")
             }
 
-            // Input bar
+            // Input bar with material background
             HStack(alignment: .bottom, spacing: Spacing.md) {
-                // Attachment button
+                // Attachment button - meets 44pt touch target
                 if showAttachmentButton {
                     Button(action: onAttachmentRequested) {
                         Image(systemName: "plus")
                             .font(.system(size: Typography.IconSize.lg, weight: .medium))
                             .foregroundStyle(Theme.textSecondary)
-                            .padding(Spacing.sm)
-                            .background(Theme.backgroundSecondary)
-                            .clipShape(Circle())
                     }
-                    .padding(.bottom, 5)
+                    .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
+                    .background(Theme.backgroundSecondary)
+                    .clipShape(Circle())
                     .accessibilityIdentifier("\(identifierPrefix).attachButton")
                 }
 
-                // Text field container
+                // Text field container with smooth height animation
                 HStack(alignment: .bottom) {
                     TextField("Ask anything", text: $messageText, axis: .vertical)
                         .lineLimit(1 ... 5)
+                        .font(Typography.body)
                         .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
+                        .padding(.vertical, Spacing.sm + 2)
                         .accessibilityIdentifier("\(identifierPrefix).textEditor")
                         .onSubmit {
                             if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isGenerating {
@@ -103,22 +120,26 @@ struct IOSMessageComposer: View {
                 }
                 .background(Theme.backgroundSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill))
+                // Smooth spring animation when height changes from multiline text
+                .animation(Motion.springSnappy, value: messageText.contains("\n") || messageText.count > 40)
 
-                // Send/Stop button
+                // Send/Stop button - meets 44pt touch target
                 if !messageText.isEmpty || isGenerating {
                     Button(action: handleSendOrCancel) {
                         Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                            .font(.system(size: 30))
+                            .font(.system(size: 32))
                             .foregroundStyle(isGenerating ? Theme.statusError : Theme.accent)
+                            .symbolEffect(.pulse, options: .repeating, value: isGenerating)
                     }
-                    .padding(.bottom, Spacing.xxxs)
+                    .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
                     .accessibilityIdentifier("\(identifierPrefix).sendButton")
                 }
             }
             .padding(.horizontal)
         }
         .padding(.vertical, Spacing.sm)
-        .background(.bar)
+        // Material background for blur effect - content scrolls underneath
+        .background(.regularMaterial)
     }
 
     @ViewBuilder
@@ -146,9 +167,8 @@ struct IOSMessageComposer: View {
 
     private func handleSendOrCancel() {
         if isGenerating {
-            // Light haptic for cancel
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
+            // Use centralized haptic engine
+            HapticEngine.cancelButtonTap()
 
             DiagnosticsLogger.log(
                 .chatView,
@@ -157,9 +177,8 @@ struct IOSMessageComposer: View {
             )
             onCancel()
         } else {
-            // Medium haptic for send
-            let generator = UIImpactFeedbackGenerator(style: .medium)
-            generator.impactOccurred()
+            // Use centralized haptic engine
+            HapticEngine.sendButtonTap()
 
             DiagnosticsLogger.log(
                 .chatView,

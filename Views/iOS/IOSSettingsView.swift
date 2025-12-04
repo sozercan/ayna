@@ -36,6 +36,12 @@ struct IOSSettingsView: View {
                     Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                         .accessibilityIdentifier(TestIdentifiers.Settings.autoGenerateTitleToggle)
 
+                    Toggle("Sound Effects", isOn: Binding(
+                        get: { SoundEngine.shared.isEnabled },
+                        set: { SoundEngine.shared.isEnabled = $0 }
+                    ))
+                    .accessibilityIdentifier("settings.soundEffects.toggle")
+
                     NavigationLink("System Prompt") {
                         IOSSystemPromptSettingsView()
                     }
