@@ -9,6 +9,10 @@
 
 import SwiftUI
 
+#if os(watchOS)
+import WatchKit
+#endif
+
 // MARK: - HapticEngine
 
 /// Centralized haptic feedback engine for the Ayna design system.
@@ -197,9 +201,3 @@ public enum HapticEngine {
         notification(.warning)
     }
 }
-
-// MARK: - watchOS Support
-
-#if os(watchOS)
-import WatchKit
-#endif
