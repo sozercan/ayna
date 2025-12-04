@@ -480,7 +480,7 @@ Based on your analysis, implement fixes:
 2. **Call the appropriate validation job(s)** for each failed platform:
    - Set `test_target` to the appropriate target:
      - `aynaTests` for unit test failures
-     - `aynaUITests` for UI test failures  
+     - `aynaUITests` for UI test failures
      - `both` if both types of tests failed
    - Set `failed_tests` to the specific test names that failed (comma-separated), or leave empty to run all tests in the target
 
@@ -498,11 +498,11 @@ Based on your analysis, implement fixes:
 5. **Example for multi-platform failure**:
    ```
    # If tests failed on macOS 14 and macOS 26:
-   
+
    Call validate-macos-14 with:
    - test_target: "aynaTests"
    - failed_tests: "MessageTests/testMessageParsing"
-   
+
    Call validate-macos-26 with:
    - test_target: "aynaTests"
    - failed_tests: "MessageTests/testMessageParsing"
