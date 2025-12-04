@@ -85,10 +85,9 @@
 #         contents: read
 #       inputs:
 #         test_target:
-#           description: "Which test target to run (aynaTests or aynaUITests)"
+#           description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
 #           required: true
-#           type: choice
-#           options: ["aynaTests", "aynaUITests", "both"]
+#           type: string
 #         failed_tests:
 #           description: "Comma-separated list of specific failed test names to re-run (optional)"
 #           required: false
@@ -185,10 +184,9 @@
 #         contents: read
 #       inputs:
 #         test_target:
-#           description: "Which test target to run (aynaTests or aynaUITests)"
+#           description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
 #           required: true
-#           type: choice
-#           options: ["aynaTests", "aynaUITests", "both"]
+#           type: string
 #         failed_tests:
 #           description: "Comma-separated list of specific failed test names to re-run (optional)"
 #           required: false
@@ -285,10 +283,9 @@
 #         contents: read
 #       inputs:
 #         test_target:
-#           description: "Which test target to run (aynaTests or aynaUITests)"
+#           description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
 #           required: true
-#           type: choice
-#           options: ["aynaTests", "aynaUITests", "both"]
+#           type: string
 #         failed_tests:
 #           description: "Comma-separated list of specific failed test names to re-run (optional)"
 #           required: false
@@ -1524,7 +1521,7 @@ jobs:
         run: |
           mkdir -p /tmp/gh-aw/safeoutputs
           cat > /tmp/gh-aw/safeoutputs/config.json << 'EOF'
-          {"add_comment":{"max":3,"target":"*"},"create_issue":{"max":1},"create_pull_request":{},"missing_tool":{"max":0},"noop":{"max":1},"validate-macos-14":{"description":"Build and test the proposed fix on macOS 14 with Xcode 16.2","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run (aynaTests or aynaUITests)","options":["aynaTests","aynaUITests","both"],"required":true,"type":"choice"}},"output":"Validation completed on macOS 14"},"validate-macos-15":{"description":"Build and test the proposed fix on macOS 15 with Xcode 16.4","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run (aynaTests or aynaUITests)","options":["aynaTests","aynaUITests","both"],"required":true,"type":"choice"}},"output":"Validation completed on macOS 15"},"validate-macos-26":{"description":"Build and test the proposed fix on macOS 26 with Xcode 26.0","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run (aynaTests or aynaUITests)","options":["aynaTests","aynaUITests","both"],"required":true,"type":"choice"}},"output":"Validation completed on macOS 26"}}
+          {"add_comment":{"max":3,"target":"*"},"create_issue":{"max":1},"create_pull_request":{},"missing_tool":{"max":0},"noop":{"max":1},"validate-macos-14":{"description":"Build and test the proposed fix on macOS 14 with Xcode 16.2","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 14"},"validate-macos-15":{"description":"Build and test the proposed fix on macOS 15 with Xcode 16.4","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 15"},"validate-macos-26":{"description":"Build and test the proposed fix on macOS 26 with Xcode 26.0","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 26"}}
           EOF
           cat > /tmp/gh-aw/safeoutputs/tools.json << 'EOF'
           [

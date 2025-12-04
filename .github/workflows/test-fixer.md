@@ -60,10 +60,9 @@ safe-outputs:
         contents: read
       inputs:
         test_target:
-          description: "Which test target to run (aynaTests or aynaUITests)"
+          description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
           required: true
-          type: choice
-          options: ["aynaTests", "aynaUITests", "both"]
+          type: string
         failed_tests:
           description: "Comma-separated list of specific failed test names to re-run (optional)"
           required: false
@@ -160,10 +159,9 @@ safe-outputs:
         contents: read
       inputs:
         test_target:
-          description: "Which test target to run (aynaTests or aynaUITests)"
+          description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
           required: true
-          type: choice
-          options: ["aynaTests", "aynaUITests", "both"]
+          type: string
         failed_tests:
           description: "Comma-separated list of specific failed test names to re-run (optional)"
           required: false
@@ -260,10 +258,9 @@ safe-outputs:
         contents: read
       inputs:
         test_target:
-          description: "Which test target to run (aynaTests or aynaUITests)"
+          description: "Which test target to run. Valid values: aynaTests, aynaUITests, both"
           required: true
-          type: choice
-          options: ["aynaTests", "aynaUITests", "both"]
+          type: string
         failed_tests:
           description: "Comma-separated list of specific failed test names to re-run (optional)"
           required: false
