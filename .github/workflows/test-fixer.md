@@ -51,6 +51,306 @@ safe-outputs:
     title-prefix: "[Test Fix]"
     labels: ["test-fix", "automated"]
     draft: true
+  jobs:
+    validate-macos-14:
+      description: "Build and test the proposed fix on macOS 14 with Xcode 16.2"
+      runs-on: macos-14
+      output: "Validation completed on macOS 14"
+      permissions:
+        contents: read
+      inputs:
+        test_target:
+          description: "Which test target to run (aynaTests or aynaUITests)"
+          required: true
+          type: choice
+          options: ["aynaTests", "aynaUITests", "both"]
+        failed_tests:
+          description: "Comma-separated list of specific failed test names to re-run (optional)"
+          required: false
+          type: string
+      steps:
+        - name: Checkout with agent changes
+          uses: actions/checkout@v5
+          with:
+            ref: ${{ github.head_ref || github.ref }}
+
+        - name: Select Xcode 16.2
+          run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+        - name: Show Xcode version
+          run: xcodebuild -version
+
+        - name: Build project
+          run: |
+            set -o pipefail
+            echo "=== Building macOS target (macOS 14 / Xcode 16.2) ===" | tee -a $GITHUB_STEP_SUMMARY
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              build 2>&1 | tee build.log | tail -100
+            echo "✅ Build succeeded on macOS 14" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run unit tests
+          if: inputs.test_target == 'aynaTests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running unit tests (macOS 14) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaTests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaTests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              $TEST_ARGS \
+              test 2>&1 | tee test.log | tail -100
+            echo "✅ Unit tests passed on macOS 14" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run UI tests
+          if: inputs.test_target == 'aynaUITests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running UI tests (macOS 14) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaUITests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaUITests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="-" \
+              CODE_SIGNING_REQUIRED=YES \
+              CODE_SIGNING_ALLOWED=YES \
+              $TEST_ARGS \
+              test 2>&1 | tee uitest.log | tail -100
+            echo "✅ UI tests passed on macOS 14" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Summary
+          if: always()
+          run: |
+            echo "=== macOS 14 Validation Summary ===" | tee -a $GITHUB_STEP_SUMMARY
+            if [ -f build.log ]; then tail -20 build.log | tee -a $GITHUB_STEP_SUMMARY; fi
+            if [ -f test.log ]; then tail -20 test.log | tee -a $GITHUB_STEP_SUMMARY; fi
+
+    validate-macos-15:
+      description: "Build and test the proposed fix on macOS 15 with Xcode 16.4"
+      runs-on: macos-15
+      output: "Validation completed on macOS 15"
+      permissions:
+        contents: read
+      inputs:
+        test_target:
+          description: "Which test target to run (aynaTests or aynaUITests)"
+          required: true
+          type: choice
+          options: ["aynaTests", "aynaUITests", "both"]
+        failed_tests:
+          description: "Comma-separated list of specific failed test names to re-run (optional)"
+          required: false
+          type: string
+      steps:
+        - name: Checkout with agent changes
+          uses: actions/checkout@v5
+          with:
+            ref: ${{ github.head_ref || github.ref }}
+
+        - name: Select Xcode 16.4
+          run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+        - name: Show Xcode version
+          run: xcodebuild -version
+
+        - name: Build project
+          run: |
+            set -o pipefail
+            echo "=== Building macOS target (macOS 15 / Xcode 16.4) ===" | tee -a $GITHUB_STEP_SUMMARY
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              build 2>&1 | tee build.log | tail -100
+            echo "✅ Build succeeded on macOS 15" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run unit tests
+          if: inputs.test_target == 'aynaTests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running unit tests (macOS 15) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaTests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaTests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              $TEST_ARGS \
+              test 2>&1 | tee test.log | tail -100
+            echo "✅ Unit tests passed on macOS 15" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run UI tests
+          if: inputs.test_target == 'aynaUITests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running UI tests (macOS 15) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaUITests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaUITests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="-" \
+              CODE_SIGNING_REQUIRED=YES \
+              CODE_SIGNING_ALLOWED=YES \
+              $TEST_ARGS \
+              test 2>&1 | tee uitest.log | tail -100
+            echo "✅ UI tests passed on macOS 15" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Summary
+          if: always()
+          run: |
+            echo "=== macOS 15 Validation Summary ===" | tee -a $GITHUB_STEP_SUMMARY
+            if [ -f build.log ]; then tail -20 build.log | tee -a $GITHUB_STEP_SUMMARY; fi
+            if [ -f test.log ]; then tail -20 test.log | tee -a $GITHUB_STEP_SUMMARY; fi
+
+    validate-macos-26:
+      description: "Build and test the proposed fix on macOS 26 with Xcode 26.0"
+      runs-on: macos-26
+      output: "Validation completed on macOS 26"
+      permissions:
+        contents: read
+      inputs:
+        test_target:
+          description: "Which test target to run (aynaTests or aynaUITests)"
+          required: true
+          type: choice
+          options: ["aynaTests", "aynaUITests", "both"]
+        failed_tests:
+          description: "Comma-separated list of specific failed test names to re-run (optional)"
+          required: false
+          type: string
+      steps:
+        - name: Checkout with agent changes
+          uses: actions/checkout@v5
+          with:
+            ref: ${{ github.head_ref || github.ref }}
+
+        - name: Select Xcode 26.0
+          run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
+
+        - name: Show Xcode version
+          run: xcodebuild -version
+
+        - name: Build project
+          run: |
+            set -o pipefail
+            echo "=== Building macOS target (macOS 26 / Xcode 26.0) ===" | tee -a $GITHUB_STEP_SUMMARY
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              build 2>&1 | tee build.log | tail -100
+            echo "✅ Build succeeded on macOS 26" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run unit tests
+          if: inputs.test_target == 'aynaTests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running unit tests (macOS 26) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaTests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaTests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              $TEST_ARGS \
+              test 2>&1 | tee test.log | tail -100
+            echo "✅ Unit tests passed on macOS 26" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Run UI tests
+          if: inputs.test_target == 'aynaUITests' || inputs.test_target == 'both'
+          run: |
+            set -o pipefail
+            echo "=== Running UI tests (macOS 26) ===" | tee -a $GITHUB_STEP_SUMMARY
+            TEST_ARGS=""
+            if [ -n "${{ inputs.failed_tests }}" ]; then
+              for test in $(echo "${{ inputs.failed_tests }}" | tr ',' ' '); do
+                TEST_ARGS="$TEST_ARGS -only-testing:aynaUITests/$test"
+              done
+            else
+              TEST_ARGS="-only-testing:aynaUITests"
+            fi
+            xcodebuild \
+              -project ayna.xcodeproj \
+              -scheme Ayna \
+              -destination 'platform=macOS' \
+              -derivedDataPath ./build \
+              CODE_SIGN_IDENTITY="-" \
+              CODE_SIGNING_REQUIRED=YES \
+              CODE_SIGNING_ALLOWED=YES \
+              $TEST_ARGS \
+              test 2>&1 | tee uitest.log | tail -100
+            echo "✅ UI tests passed on macOS 26" | tee -a $GITHUB_STEP_SUMMARY
+
+        - name: Summary
+          if: always()
+          run: |
+            echo "=== macOS 26 Validation Summary ===" | tee -a $GITHUB_STEP_SUMMARY
+            if [ -f build.log ]; then tail -20 build.log | tee -a $GITHUB_STEP_SUMMARY; fi
+            if [ -f test.log ]; then tail -20 test.log | tee -a $GITHUB_STEP_SUMMARY; fi
 
 tools:
   web-fetch:
@@ -165,17 +465,50 @@ Based on your analysis, implement fixes:
    - Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards
    - Run linting: `swiftlint --strict && swiftformat .` after changes
 
-### Phase 4: Verification (Important!)
+### Phase 4: Validation on macOS (REQUIRED!)
 
-Before creating a PR, verify your changes locally if possible:
+**You MUST validate your fixes on the affected macOS version(s) before creating a PR.** You have three validation tools available:
 
-```bash
-# For unit tests
-xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing:aynaTests test 2>&1 | tail -50
+| Tool | Runner | Xcode |
+|------|--------|-------|
+| `validate-macos-14` | macOS 14 | Xcode 16.2 |
+| `validate-macos-15` | macOS 15 | Xcode 16.4 |
+| `validate-macos-26` | macOS 26 | Xcode 26.0 |
 
-# Check for build errors
-xcodebuild -scheme Ayna -destination 'platform=macOS' build 2>&1 | grep -i "error:"
-```
+1. **Identify which platform(s) failed** from the original test failure logs
+
+2. **Call the appropriate validation job(s)** for each failed platform:
+   - Set `test_target` to the appropriate target:
+     - `aynaTests` for unit test failures
+     - `aynaUITests` for UI test failures  
+     - `both` if both types of tests failed
+   - Set `failed_tests` to the specific test names that failed (comma-separated), or leave empty to run all tests in the target
+
+3. **Validate on ALL affected platforms**:
+   - If macOS 14 failed → call `validate-macos-14`
+   - If macOS 15 failed → call `validate-macos-15`
+   - If macOS 26 failed → call `validate-macos-26`
+   - If multiple platforms failed → call multiple validation jobs
+
+4. **Check the validation results**:
+   - If ALL validations **pass**: Proceed to create the PR
+   - If ANY validation **fails**: Analyze the new errors, iterate on your fix, and validate again
+   - Maximum 3 validation attempts per platform before creating an issue instead
+
+5. **Example for multi-platform failure**:
+   ```
+   # If tests failed on macOS 14 and macOS 26:
+   
+   Call validate-macos-14 with:
+   - test_target: "aynaTests"
+   - failed_tests: "MessageTests/testMessageParsing"
+   
+   Call validate-macos-26 with:
+   - test_target: "aynaTests"
+   - failed_tests: "MessageTests/testMessageParsing"
+   ```
+
+This ensures your fix works across all affected macOS versions before submitting.
 
 ### Phase 5: Create Pull Request
 
