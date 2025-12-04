@@ -148,7 +148,7 @@ struct MCPToolSummaryView: View {
             .reduce(0) { $0 + $1.toolsCount }
 
         // Add web search tool if configured
-        if tavilyService.isEnabled && tavilyService.isConfigured {
+        if tavilyService.isEnabled, tavilyService.isConfigured {
             count += 1
         }
 
@@ -160,7 +160,7 @@ struct MCPToolSummaryView: View {
 
         // Check if only web search is available (no MCP servers)
         if mcpManager.serverConfigs.isEmpty {
-            if tavilyService.isEnabled && tavilyService.isConfigured {
+            if tavilyService.isEnabled, tavilyService.isConfigured {
                 return "Web Search ready • 1 tool"
             } else if tavilyService.isEnabled {
                 return "Web Search needs API key"
@@ -168,11 +168,11 @@ struct MCPToolSummaryView: View {
             return ""
         }
 
-        if enabledServerCount == 0 && !tavilyService.isEnabled {
+        if enabledServerCount == 0, !tavilyService.isEnabled {
             return "All tools are disabled."
         }
 
-        if connectedServerCount == 0 && enabledServerCount > 0 {
+        if connectedServerCount == 0, enabledServerCount > 0 {
             return
                 "Waiting for \(enabledServerCount) enabled server\(enabledServerCount == 1 ? "" : "s") to connect…"
         }
@@ -189,11 +189,11 @@ struct MCPToolSummaryView: View {
             return .orange
         }
 
-        if tavilyService.isEnabled && !tavilyService.isConfigured {
+        if tavilyService.isEnabled, !tavilyService.isConfigured {
             return .orange
         }
 
-        if connectedServerCount == 0 && enabledServerCount > 0 {
+        if connectedServerCount == 0, enabledServerCount > 0 {
             return .orange
         }
 
@@ -283,7 +283,7 @@ struct WebSearchChip: View {
                         .font(.caption2)
                         .foregroundStyle(statusColor)
 
-                    if isEnabled && isConfigured {
+                    if isEnabled, isConfigured {
                         Text("1 tool")
                             .font(.caption2)
                             .foregroundStyle(.secondary)

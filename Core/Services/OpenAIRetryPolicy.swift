@@ -69,9 +69,9 @@ import Foundation
         var shouldAllowRequest: Bool {
             switch state {
             case .closed, .halfOpen:
-                return true
+                true
             case .open:
-                return false
+                false
             }
         }
 

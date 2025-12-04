@@ -5,6 +5,9 @@
 //  Created on 11/2/25.
 //
 
+// swiftlint:disable file_length
+// OpenAIService aggregates multiple provider workflows until modularization.
+
 import Combine
 import Foundation
 import os
@@ -620,6 +623,7 @@ class OpenAIService: ObservableObject {
         return nil
     }
 
+    // swiftlint:disable:next function_body_length
     func sendMessage(
         messages: [Message],
         model: String? = nil,
@@ -649,7 +653,8 @@ class OpenAIService: ObservableObject {
             ]
         )
 
-        #if !os(iOS) && !os(watchOS)
+        // Mock response for UI tests on macOS and iOS (UITestEnvironment not available on watchOS)
+        #if !os(watchOS)
             if UITestEnvironment.isEnabled {
                 simulateUITestResponse(
                     messages: messages,
@@ -1202,6 +1207,7 @@ class OpenAIService: ObservableObject {
             lowercased.contains("ratelimit")
     }
 
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func streamResponse(
         request: URLRequest,
         callbacks: StreamCallbacks,
@@ -1212,7 +1218,7 @@ class OpenAIService: ObservableObject {
 
         // Cancel any existing stream task before starting a new one
         // Skip cancellation for multi-model requests to allow parallel streaming
-        if currentStreamTask != nil && !isMultiModelRequest {
+        if currentStreamTask != nil, !isMultiModelRequest {
             DiagnosticsLogger.log(
                 .openAIService,
                 level: .info,

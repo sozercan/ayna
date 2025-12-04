@@ -165,8 +165,8 @@
             )
         }
 
-        /// Send message with tool support for recursive tool calling
-        private func sendMessageWithToolSupport(
+        /// Send message with tool support for recursive tool calling.
+        private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
             messages: [Message],
             model: String,
             conversationId: UUID,

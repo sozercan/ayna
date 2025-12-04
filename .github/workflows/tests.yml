@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  unit_tests:
+  macos_unit_tests:
+    name: macOS Unit Tests
     strategy:
       fail-fast: false
       matrix:
@@ -44,7 +45,8 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           test
 
-  ui_tests:
+  macos_ui_tests:
+    name: macOS UI Tests
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +77,166 @@ jobs:
           -destination 'platform=macOS' \
           -derivedDataPath ./build \
           -only-testing:aynaUITests \
+          CODE_SIGN_IDENTITY="-" \
+          CODE_SIGNING_REQUIRED=YES \
+          CODE_SIGNING_ALLOWED=YES \
+          test
+
+  ios_unit_tests:
+    name: iOS Unit Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+            simulator: iPhone 16
+          - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+            simulator: iPhone 16
+          - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
+            simulator: iPhone 17
+    runs-on: ${{ matrix.macos-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Run iOS unit tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme Ayna-iOS \
+          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -derivedDataPath ./build \
+          -only-testing:Ayna-iOSTests \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          test
+
+  ios_ui_tests:
+    name: iOS UI Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+            simulator: iPhone 16
+          - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+            simulator: iPhone 16
+          - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
+            simulator: iPhone 17
+    runs-on: ${{ matrix.macos-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Run iOS UI tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme Ayna-iOS \
+          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -derivedDataPath ./build \
+          -only-testing:Ayna-iOSUITests \
+          CODE_SIGN_IDENTITY="-" \
+          CODE_SIGNING_REQUIRED=YES \
+          CODE_SIGNING_ALLOWED=YES \
+          test
+
+  watchos_unit_tests:
+    name: watchOS Unit Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+            simulator: Apple Watch Ultra 2 (49mm)
+          - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+            simulator: Apple Watch Ultra 2 (49mm)
+          - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
+            simulator: Apple Watch Ultra 3 (49mm)
+    runs-on: ${{ matrix.macos-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Run watchOS unit tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme 'Ayna-watchOS Watch App' \
+          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -derivedDataPath ./build \
+          -only-testing:Ayna-watchOSTests \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          test
+
+  watchos_ui_tests:
+    name: watchOS UI Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macos-version: macos-14
+            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+            simulator: Apple Watch Ultra 2 (49mm)
+          - macos-version: macos-15
+            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+            simulator: Apple Watch Ultra 2 (49mm)
+          - macos-version: macos-26
+            xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
+            simulator: Apple Watch Ultra 3 (49mm)
+    runs-on: ${{ matrix.macos-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s ${{ matrix.xcode-path }}
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Run watchOS UI tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project ayna.xcodeproj \
+          -scheme 'Ayna-watchOS Watch App' \
+          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -derivedDataPath ./build \
+          -only-testing:Ayna-watchOSUITests \
           CODE_SIGN_IDENTITY="-" \
           CODE_SIGNING_REQUIRED=YES \
           CODE_SIGNING_ALLOWED=YES \

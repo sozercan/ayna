@@ -31,6 +31,7 @@
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Watch.newChatButton)
                 }
             }
         }
@@ -60,6 +61,7 @@
                 }
             }
             .padding()
+            .accessibilityIdentifier(TestIdentifiers.Watch.emptyState)
         }
 
         private var conversationList: some View {
@@ -68,6 +70,7 @@
                     NavigationLink(value: conversation.id) {
                         ConversationRowView(conversation: conversation)
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Watch.conversationRow(for: conversation.id))
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             conversationStore.deleteConversation(conversation.id)
@@ -78,6 +81,7 @@
                 }
             }
             .listStyle(.carousel)
+            .accessibilityIdentifier(TestIdentifiers.Watch.conversationList)
             .navigationDestination(for: UUID.self) { conversationId in
                 WatchChatView(conversationId: conversationId, viewModel: viewModel)
             }

@@ -10,64 +10,8 @@ import Foundation
 import os
 import WatchConnectivity
 
-/// Lightweight conversation model for Watch sync (strips heavy data like images and attachments)
-struct WatchConversation: Codable, Identifiable {
-    let id: UUID
-    var title: String
-    var messages: [WatchMessage]
-    var model: String
-    var updatedAt: Date
-    var createdAt: Date
-
-    init(from conversation: Conversation) {
-        id = conversation.id
-        title = conversation.title
-        model = conversation.model
-        updatedAt = conversation.updatedAt
-        createdAt = conversation.createdAt
-        // Only include recent messages and strip attachments
-        messages = conversation.messages.suffix(20).map { WatchMessage(from: $0) }
-    }
-
-    func toConversation() -> Conversation {
-        var conversation = Conversation(
-            id: id,
-            title: title,
-            createdAt: createdAt,
-            model: model
-        )
-        conversation.updatedAt = updatedAt
-        conversation.messages = messages.map { $0.toMessage() }
-        return conversation
-    }
-}
-
-/// Lightweight message model for Watch sync (no images or attachments)
-struct WatchMessage: Codable, Identifiable {
-    let id: UUID
-    var role: String
-    var content: String
-    var timestamp: Date
-    var model: String?
-
-    init(from message: Message) {
-        id = message.id
-        role = message.role.rawValue
-        content = message.content
-        timestamp = message.timestamp
-        model = message.model
-    }
-
-    func toMessage() -> Message {
-        Message(
-            id: id,
-            role: Message.Role(rawValue: role) ?? .assistant,
-            content: content,
-            timestamp: timestamp,
-            model: model
-        )
-    }
-}
+// Note: WatchConversation and WatchMessage are defined in Core/Models/WatchDataModels.swift
+// to be shared across all platforms (macOS, iOS, watchOS).
 
 /// Keys for WatchConnectivity context
 private enum WatchContextKeys {
@@ -702,31 +646,43 @@ private enum WatchMessageKeys {
 
         /// Process received application context from iPhone
         private func processContext(_ context: [String: Any]) {
-            // Update conversations
-            if let conversationsData = context[WatchContextKeys.conversations] as? Data {
-                do {
-                    let watchConversations = try JSONDecoder().decode(
-                        [WatchConversation].self,
-                        from: conversationsData
-                    )
-                    conversationStore?.updateConversations(watchConversations)
+            processConversationsFromContext(context)
+            processModelSettingsFromContext(context)
+            processAPIKeysFromContext(context)
+            processTavilySettingsFromContext(context)
 
-                    DiagnosticsLogger.log(
-                        .watchConnectivity,
-                        level: .info,
-                        message: "⌚ Received \(watchConversations.count) conversations from iPhone"
-                    )
-                } catch {
-                    DiagnosticsLogger.log(
-                        .watchConnectivity,
-                        level: .error,
-                        message: "❌ Failed to decode conversations from iPhone",
-                        metadata: ["error": error.localizedDescription]
-                    )
-                }
+            if let syncTimestamp = context[WatchContextKeys.lastSyncDate] as? TimeInterval {
+                lastSyncDate = Date(timeIntervalSince1970: syncTimestamp)
             }
+        }
 
-            // Update model settings
+        /// Process conversations data from iPhone context
+        private func processConversationsFromContext(_ context: [String: Any]) {
+            guard let conversationsData = context[WatchContextKeys.conversations] as? Data else { return }
+            do {
+                let watchConversations = try JSONDecoder().decode(
+                    [WatchConversation].self,
+                    from: conversationsData
+                )
+                conversationStore?.updateConversations(watchConversations)
+
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .info,
+                    message: "⌚ Received \(watchConversations.count) conversations from iPhone"
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .error,
+                    message: "❌ Failed to decode conversations from iPhone",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
+        }
+
+        /// Process model settings from iPhone context
+        private func processModelSettingsFromContext(_ context: [String: Any]) {
             if let model = context[WatchContextKeys.selectedModel] as? String {
                 selectedModel = model
                 OpenAIService.shared.selectedModel = model
@@ -736,7 +692,6 @@ private enum WatchMessageKeys {
                 availableModels = models
             }
 
-            // Update custom models in OpenAIService
             if let customModels = context[WatchContextKeys.customModels] as? [String] {
                 OpenAIService.shared.customModels = customModels
                 DiagnosticsLogger.log(
@@ -747,7 +702,6 @@ private enum WatchMessageKeys {
                 )
             }
 
-            // Update default provider
             if let providerRaw = context[WatchContextKeys.defaultProvider] as? String,
                let provider = AIProvider(rawValue: providerRaw)
             {
@@ -760,7 +714,12 @@ private enum WatchMessageKeys {
                 )
             }
 
-            // Update model providers mapping in OpenAIService
+            processModelProviderMappings(context)
+            processModelEndpointSettings(context)
+        }
+
+        /// Process model provider mappings from context
+        private func processModelProviderMappings(_ context: [String: Any]) {
             if let providersDict = context[WatchContextKeys.modelProviders] as? [String: String] {
                 var modelProviders: [String: AIProvider] = [:]
                 for (model, providerRaw) in providersDict {
@@ -769,7 +728,6 @@ private enum WatchMessageKeys {
                     }
                 }
                 OpenAIService.shared.modelProviders = modelProviders
-
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -778,7 +736,19 @@ private enum WatchMessageKeys {
                 )
             }
 
-            // Update model endpoints for Azure OpenAI and other custom endpoints
+            if let modelUsesGitHubOAuth = context[WatchContextKeys.modelUsesGitHubOAuth] as? [String: Bool] {
+                OpenAIService.shared.modelUsesGitHubOAuth = modelUsesGitHubOAuth
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .info,
+                    message: "⌚ Updated GitHub OAuth flags from iPhone",
+                    metadata: ["count": "\(modelUsesGitHubOAuth.count)"]
+                )
+            }
+        }
+
+        /// Process model endpoint settings from context
+        private func processModelEndpointSettings(_ context: [String: Any]) {
             if let modelEndpoints = context[WatchContextKeys.modelEndpoints] as? [String: String] {
                 OpenAIService.shared.modelEndpoints = modelEndpoints
                 DiagnosticsLogger.log(
@@ -789,7 +759,6 @@ private enum WatchMessageKeys {
                 )
             }
 
-            // Update model endpoint types (Chat Completions vs Responses API)
             if let endpointTypesDict = context[WatchContextKeys.modelEndpointTypes] as? [String: String] {
                 var modelEndpointTypes: [String: APIEndpointType] = [:]
                 for (model, typeRaw) in endpointTypesDict {
@@ -805,19 +774,10 @@ private enum WatchMessageKeys {
                     metadata: ["count": "\(modelEndpointTypes.count)"]
                 )
             }
+        }
 
-            // Update GitHub OAuth flags for models
-            if let modelUsesGitHubOAuth = context[WatchContextKeys.modelUsesGitHubOAuth] as? [String: Bool] {
-                OpenAIService.shared.modelUsesGitHubOAuth = modelUsesGitHubOAuth
-                DiagnosticsLogger.log(
-                    .watchConnectivity,
-                    level: .info,
-                    message: "⌚ Updated GitHub OAuth flags from iPhone",
-                    metadata: ["count": "\(modelUsesGitHubOAuth.count)"]
-                )
-            }
-
-            // Update API keys from iPhone (for free dev accounts without shared Keychain)
+        /// Process API keys from iPhone context
+        private func processAPIKeysFromContext(_ context: [String: Any]) {
             if let apiKey = context[WatchContextKeys.apiKey] as? String, !apiKey.isEmpty {
                 OpenAIService.shared.apiKey = apiKey
                 DiagnosticsLogger.log(
@@ -837,7 +797,6 @@ private enum WatchMessageKeys {
                 )
             }
 
-            // Update GitHub access token for GitHub Models
             if let githubToken = context[WatchContextKeys.githubAccessToken] as? String, !githubToken.isEmpty {
                 GitHubOAuthService.shared.setAccessTokenFromWatch(githubToken)
                 DiagnosticsLogger.log(
@@ -846,8 +805,10 @@ private enum WatchMessageKeys {
                     message: "⌚ Received GitHub access token from iPhone"
                 )
             }
+        }
 
-            // Update Tavily web search settings (stored in OpenAIService for watchOS)
+        /// Process Tavily web search settings from iPhone context
+        private func processTavilySettingsFromContext(_ context: [String: Any]) {
             if let tavilyKey = context[WatchContextKeys.tavilyAPIKey] as? String, !tavilyKey.isEmpty {
                 OpenAIService.shared.tavilyAPIKey = tavilyKey
                 DiagnosticsLogger.log(
@@ -864,10 +825,6 @@ private enum WatchMessageKeys {
                     message: "⌚ Updated Tavily enabled state from iPhone",
                     metadata: ["enabled": "\(tavilyEnabled)"]
                 )
-            }
-
-            if let syncTimestamp = context[WatchContextKeys.lastSyncDate] as? TimeInterval {
-                lastSyncDate = Date(timeIntervalSince1970: syncTimestamp)
             }
         }
     }
