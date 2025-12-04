@@ -20,7 +20,7 @@
 
         var body: some View {
             NavigationStack {
-                VStack(spacing: 12) {
+                VStack(spacing: Spacing.md) {
                     // Text field with dictation
                     TextField("Message", text: $messageText)
                         .focused($isTextFieldFocused)
@@ -31,14 +31,14 @@
                         }
 
                     // Quick action buttons
-                    HStack(spacing: 16) {
+                    HStack(spacing: Spacing.lg) {
                         // Cancel button
                         Button {
                             onCancel()
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 28))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                         }
                         .buttonStyle(.plain)
 
@@ -50,7 +50,7 @@
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 36))
-                                .foregroundColor(messageText.isEmpty ? .secondary : .blue)
+                                .foregroundColor(messageText.isEmpty ? Theme.textSecondary : Theme.accent)
                         }
                         .buttonStyle(.plain)
                         .disabled(messageText.isEmpty)
@@ -102,7 +102,7 @@
                         onSelect(reply)
                     } label: {
                         Text(reply)
-                            .font(.system(size: 14))
+                            .font(Typography.bodySecondary)
                     }
                 }
             }

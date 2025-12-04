@@ -89,27 +89,27 @@ struct IOSSidebarView: View {
 
     @ViewBuilder
     private var emptyStateView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: Spacing.xxl) {
             Spacer()
 
             if openAIService.usableModels.isEmpty {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 70))
-                    .foregroundStyle(.blue.gradient)
+                    .font(.system(size: Typography.IconSize.heroLarge + 10))
+                    .foregroundStyle(Theme.accent.opacity(0.9))
             } else {
                 Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 70))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Typography.IconSize.heroLarge + 10))
+                    .foregroundStyle(Theme.textSecondary)
             }
 
-            VStack(spacing: 8) {
+            VStack(spacing: Spacing.sm) {
                 Text(openAIService.usableModels.isEmpty ? "Welcome to Ayna" : "No Conversations Yet")
-                    .font(.title2)
+                    .font(Typography.title2)
                     .fontWeight(.semibold)
 
                 Text(openAIService.usableModels.isEmpty ? "Please add an AI model to get started" : "Start a new conversation to get started")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.bodySecondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
@@ -120,9 +120,9 @@ struct IOSSidebarView: View {
                     openAIService.usableModels.isEmpty ? "Add Model" : "New Conversation",
                     systemImage: openAIService.usableModels.isEmpty ? "gearshape.fill" : "plus.circle.fill"
                 )
-                .font(.headline)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .font(Typography.headline)
+                .padding(.horizontal, Spacing.xxl)
+                .padding(.vertical, Spacing.md)
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("sidebar.emptyState.newConversationButton")
@@ -166,9 +166,9 @@ struct IOSSidebarView: View {
                     }
                 } header: {
                     Text(section.title)
-                        .font(.subheadline)
+                        .font(Typography.bodySecondary)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .textCase(nil)
                 }
             }
@@ -233,8 +233,8 @@ struct IOSSidebarView: View {
                     deleteSelected()
                 } label: {
                     Text("Delete")
-                        .font(.headline)
-                        .foregroundStyle(selectedConversations.isEmpty ? .gray : .red)
+                        .font(Typography.headline)
+                        .foregroundStyle(selectedConversations.isEmpty ? Theme.textSecondary : Theme.destructive)
                 }
                 .disabled(selectedConversations.isEmpty)
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.deleteSelectedButton)
@@ -242,12 +242,12 @@ struct IOSSidebarView: View {
                 Spacer()
             }
             .padding()
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.background)
         } else {
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.md) {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(Theme.textSecondary)
                     TextField("Search", text: $searchText)
                         .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
                     if !searchText.isEmpty {
@@ -255,14 +255,14 @@ struct IOSSidebarView: View {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.gray)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                 }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
+                .padding(.vertical, Spacing.md)
+                .padding(.horizontal, Spacing.md)
                 .background {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
                         .fill(.ultraThinMaterial)
                 }
 
@@ -270,7 +270,7 @@ struct IOSSidebarView: View {
                     startNewConversation()
                 }) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: Typography.IconSize.lg, weight: .medium))
                         .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
                         .background {
@@ -281,8 +281,8 @@ struct IOSSidebarView: View {
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
             }
             .padding(.horizontal)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.lg)
         }
     }
 
@@ -373,7 +373,7 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.md) {
             // Avatar - iMessage style gray gradient
             Circle()
                 .fill(
@@ -390,7 +390,7 @@ struct ConversationRow: View {
                 .overlay {
                     if let firstChar = conversation.title.first {
                         Text(String(firstChar).uppercased())
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: Typography.Size.title3, weight: .medium))
                             .foregroundStyle(.white)
                     } else {
                         Image(systemName: "bubble.left.fill")
@@ -398,23 +398,23 @@ struct ConversationRow: View {
                     }
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack {
                     Text(conversation.title)
-                        .font(.headline)
+                        .font(Typography.headline)
                         .lineLimit(1)
                     Spacer()
                     Text(timeString)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.bodySecondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Text(lastMessagePreview)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.bodySecondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
     }
 }

@@ -5,7 +5,9 @@ Thank you for helping improve **ayna**! This document captures the practical ste
 ## Prerequisites
 
 - macOS 14.0 (Sonoma) or newer
-- Xcode 15.0 or newer (Swift 5.9 toolchain)
+- Xcode 16.0 or newer (Swift 5.9+ toolchain)
+- iOS Simulator or device for iOS development
+- watchOS Simulator for watchOS development
 - Clone the repo and open `ayna.xcodeproj`.
 
 ```bash
@@ -17,21 +19,33 @@ open ayna.xcodeproj
 ## Build from Source
 
 1. Open `ayna.xcodeproj` in Xcode.
-2. Select the **Ayna** scheme with the **My Mac** destination.
-3. Run with **Cmd+R** or click the Run button. Xcode will deploy the debug build straight to your Mac.
+2. Select the appropriate scheme and destination:
+   - **Ayna** scheme with **My Mac** for macOS
+   - **Ayna-iOS** scheme with an iOS Simulator for iOS
+   - **Ayna-watchOS** scheme with a watchOS Simulator for watchOS
+3. Run with **Cmd+R** or click the Run button.
 4. Prefer running from Terminal? Use:
 
   ```bash
-  xcodebuild -project ayna.xcodeproj -scheme Ayna -destination 'platform=macOS' build
+  # macOS
+  xcodebuild -scheme Ayna -destination 'platform=macOS' build
+
+  # iOS
+  xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+
+  # watchOS
+  xcodebuild -scheme "Ayna-watchOS Watch App" -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' build
   ```
 
 ## Local Development
 
-1. Select the **Ayna** scheme and the **My Mac** destination in Xcode.
+1. Select the appropriate scheme and destination in Xcode (see Build from Source above).
 2. Build & run with **Cmd+R**.
-3. For manual builds outside Xcode:
+3. **Important**: Code in `Core/` must compile for all platforms (macOS, iOS, watchOS). Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
+4. After modifying shared code, verify builds on multiple platforms:
    ```bash
-   xcodebuild -project ayna.xcodeproj -scheme Ayna -destination 'platform=macOS' build
+   xcodebuild -scheme Ayna -destination 'platform=macOS' build
+   xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
    ```
 
 ## Testing
@@ -81,8 +95,23 @@ Models → ViewModels → Views → Services
 
 **Services**
 - `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection, Apple Intelligence, and AIKit via local OpenAI-compatible endpoint)
-- `MCPServerManager`: Handles Model Context Protocol tools
+- `MCPServerManager`: Handles Model Context Protocol tools (macOS only)
 - `KeychainStorage`: Securely stores API keys
+
+**Design System** (`Core/Design/`)
+- `Theme` (ColorTokens.swift): Semantic color tokens that adapt to light/dark mode and platform
+- `Typography`: Consistent text styles with platform-appropriate sizing
+- `Spacing`: Layout constants using a 4pt grid system
+- `Motion` (Animation.swift): Standardized animation presets and transitions
+
+When building UI, prefer using design tokens over hardcoded values:
+```swift
+// Prefer this:
+Text("Hello").font(Typography.body).foregroundStyle(Theme.textPrimary)
+
+// Over this:
+Text("Hello").font(.system(size: 14)).foregroundColor(.primary)
+```
 
 ### State Management
 - `@StateObject` in App entry point for `ConversationManager`
@@ -119,8 +148,11 @@ Please make sure `xcodebuild test` succeeds locally before pushing to avoid CI n
 ## Pull Request Checklist
 
 - [ ] Tests pass locally (`xcodebuild -scheme Ayna -destination 'platform=macOS' test`).
+- [ ] If modifying `Core/`, verify iOS build: `xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build`
+- [ ] Run linting: `swiftlint --strict && swiftformat .`
 - [ ] New source files include concise comments only where logic is non-obvious.
 - [ ] Security-sensitive code (Keychain, encryption) includes informative logging on error paths.
+- [ ] Use design tokens from `Core/Design/` for colors, typography, spacing, and animations.
 - [ ] Update documentation (this file, `README.md`, `AGENTS.md`, or `SECURITY.md`) when behavior changes.
 
 We appreciate every contribution—thank you for helping keep ayna fast, secure, and reliable!

@@ -54,14 +54,14 @@ struct MacSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Search Box - iMessage style
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.tertiary)
-                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+                    .font(.system(size: Typography.Size.caption, weight: .medium))
 
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(Typography.modelName)
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
                     .onChange(of: searchText) { _ in
                         performSearch()
@@ -73,21 +73,21 @@ struct MacSidebarView: View {
                         performSearch()
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textTertiary)
+                            .font(.system(size: Typography.Size.caption))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.5))
+                RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                    .fill(Theme.backgroundSecondary.opacity(0.5))
             )
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.sm)
             .onChange(of: conversationManager.conversations) { _ in
                 if !searchText.isEmpty {
                     performSearch()
@@ -96,15 +96,15 @@ struct MacSidebarView: View {
 
             // Conversation List
             if filteredConversations.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: Spacing.md) {
                     Spacer()
                     Image(systemName: searchText.isEmpty ? "message" : "magnifyingglass")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: Typography.IconSize.hero))
+                        .foregroundStyle(Theme.textTertiary)
 
                     Text(searchText.isEmpty ? "No conversations yet" : "No results found")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.bodySecondary)
+                        .foregroundStyle(Theme.textSecondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -154,10 +154,11 @@ struct MacSidebarView: View {
                             }
                         } header: {
                             Text(section.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.top, section.id == timelineSections.first?.id ? 0 : 6)
+                                .font(Typography.footnote)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.top, section.id == timelineSections.first?.id ? 0 : Spacing.xs)
                         }
                     }
                 }
@@ -236,7 +237,7 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.md) {
             // Avatar - iMessage style gray gradient circle with first initial
             Circle()
                 .fill(
@@ -249,40 +250,40 @@ struct ConversationRow: View {
                         endPoint: .bottom
                     )
                 )
-                .frame(width: 44, height: 44)
+                .frame(width: Spacing.Component.avatarSize, height: Spacing.Component.avatarSize)
                 .overlay {
                     if let firstChar = conversation.title.first {
                         Text(String(firstChar).uppercased())
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: Typography.Size.headline, weight: .medium))
                             .foregroundStyle(.white)
                     } else {
                         Image(systemName: "bubble.left.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: Typography.IconSize.md))
                             .foregroundStyle(.white)
                     }
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 // Title row with timestamp
                 HStack {
                     Text(conversation.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: Typography.Size.body, weight: .semibold))
                         .lineLimit(1)
                     Spacer()
                     Text(timeString)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(Typography.timestamp)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 // Message preview
                 Text(lastMessagePreview)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.modelName)
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.md)
         .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
         .contentShape(Rectangle())
     }

@@ -10,6 +10,9 @@ import os.log
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Design System Integration
+// Uses Theme, Typography, Spacing, and Motion from Core/Design/
+
 struct IOSMessageView: View {
     let message: Message
     var onRetry: (() -> Void)?
@@ -45,18 +48,17 @@ struct IOSMessageView: View {
 
     private var toolMessageView: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 // Tool name label
                 Text(toolDisplayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.captionBold)
+                    .foregroundStyle(Theme.textSecondary)
 
                 // Tool result content with collapse/expand
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     // Header with expand/collapse button
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Motion.easeStandard) {
                             isToolExpanded.toggle()
                         }
                     } label: {
@@ -64,14 +66,13 @@ struct IOSMessageView: View {
                             // Preview text when collapsed
                             if !isToolExpanded {
                                 Text(toolPreviewText)
-                                    .font(.subheadline)
+                                    .font(Typography.bodySecondary)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
                             }
                             Spacer()
                             Image(systemName: isToolExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption)
-                                .fontWeight(.semibold)
+                                .font(Typography.captionBold)
                         }
                         .contentShape(Rectangle())
                     }
@@ -80,11 +81,11 @@ struct IOSMessageView: View {
                     // Expanded content
                     if isToolExpanded {
                         Divider()
-                            .background(Color.white.opacity(0.3))
+                            .background(Theme.separator)
 
                         if contentBlocks.isEmpty {
                             Text(message.content)
-                                .font(.subheadline)
+                                .font(Typography.bodySecondary)
                         } else {
                             ForEach(contentBlocks) { block in
                                 IOSContentBlockView(block: block)
@@ -92,13 +93,13 @@ struct IOSMessageView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.orange)
-                .foregroundStyle(.white)
-                .cornerRadius(16)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.md - 2)
+                .background(Theme.toolBubble)
+                .foregroundStyle(Theme.userBubbleText)
+                .cornerRadius(Spacing.CornerRadius.xxl)
             }
-            .frame(maxWidth: 320, alignment: .leading)
+            .frame(maxWidth: Spacing.Component.bubbleMaxWidth + 20, alignment: .leading)
 
             Spacer()
         }
@@ -132,19 +133,19 @@ struct IOSMessageView: View {
                 Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 if let attachments = message.attachments, !attachments.isEmpty {
                     ForEach(attachments, id: \.fileName) { attachment in
                         HStack {
                             Image(systemName: "doc.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                             Text(attachment.fileName)
-                                .font(.caption)
+                                .font(Typography.caption)
                                 .lineLimit(1)
                         }
-                        .padding(6)
+                        .padding(Spacing.xs)
                         .background(Color.black.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(Spacing.CornerRadius.sm)
                     }
                 }
 
@@ -153,11 +154,11 @@ struct IOSMessageView: View {
                         Image(uiImage: decodedImage)
                             .resizable()
                             .scaledToFit()
-                            .frame(maxWidth: 280)
-                            .cornerRadius(12)
+                            .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
+                            .cornerRadius(Spacing.CornerRadius.md)
                     } else {
                         ProgressView()
-                            .frame(maxWidth: 280)
+                            .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
                             .task {
                                 decodedImage = await Task.detached(priority: .userInitiated) {
                                     UIImage(data: imageData)
@@ -186,18 +187,18 @@ struct IOSMessageView: View {
                 // Citation sources footer for web search results
                 if let citations = message.citations, !citations.isEmpty {
                     IOSCitationSourcesFooter(citations: citations)
-                        .padding(.top, 4)
+                        .padding(.top, Spacing.xxs)
                 }
             }
-            .padding(.leading, message.role == .user ? 12 : 18)
-            .padding(.trailing, message.role == .user ? 18 : 12)
-            .padding(.vertical, 10)
+            .padding(.leading, message.role == .user ? Spacing.md : Spacing.bubblePaddingH)
+            .padding(.trailing, message.role == .user ? Spacing.bubblePaddingH : Spacing.md)
+            .padding(.vertical, Spacing.md - 2)
             .background(
                 MessageBubbleShape(isFromCurrentUser: message.role == .user)
-                    .fill(message.role == .user ? Color.blue : Color(uiColor: .systemGray5))
+                    .fill(message.role == .user ? Theme.userBubble : Theme.assistantBubble)
             )
-            .foregroundStyle(message.role == .user ? .white : .primary)
-            .frame(maxWidth: 300, alignment: message.role == .user ? .trailing : .leading)
+            .foregroundStyle(message.role == .user ? Theme.userBubbleText : Theme.assistantBubbleText)
+            .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: message.role == .user ? .trailing : .leading)
             .contextMenu {
                 // Copy button - available for all messages with content
                 if !message.content.isEmpty {
@@ -310,8 +311,8 @@ private struct MessageBubbleShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         Path { path in
-            let tailWidth: CGFloat = 6
-            let radius: CGFloat = 18
+            let tailWidth: CGFloat = Spacing.xs
+            let radius: CGFloat = Spacing.CornerRadius.bubble
 
             if isFromCurrentUser {
                 // Right bubble
@@ -448,7 +449,7 @@ struct IOSContentBlockView: View {
         case let .paragraph(text):
             Text(text)
         case let .heading(level, text):
-            Text(text).font(.system(size: CGFloat(24 - level * 2), weight: .bold))
+            Text(text).font(level == 1 ? Typography.title2 : level == 2 ? Typography.title3 : Typography.headline)
         case let .unorderedList(items):
             VStack(alignment: .leading) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -469,16 +470,16 @@ struct IOSContentBlockView: View {
             }
         case let .blockquote(text):
             HStack {
-                Rectangle().fill(Color.gray).frame(width: 4)
-                Text(text).foregroundStyle(.secondary)
+                Rectangle().fill(Theme.textSecondary).frame(width: Spacing.xxs)
+                Text(text).foregroundStyle(Theme.textSecondary)
             }
         case let .code(code, _):
             ScrollView(.horizontal) {
                 Text(code)
-                    .font(.monospaced(.body)())
+                    .font(Typography.codeBlock)
                     .padding()
-                    .background(Color.black.opacity(0.1))
-                    .cornerRadius(8)
+                    .background(Theme.codeBackground)
+                    .cornerRadius(Spacing.CornerRadius.md)
             }
         case .divider:
             Divider()
@@ -486,12 +487,12 @@ struct IOSContentBlockView: View {
             Text("[Table]") // Simplified for now
         case let .tool(name, result):
             VStack(alignment: .leading) {
-                Text("Tool: \(name)").font(.caption).bold()
-                Text(result).font(.caption).foregroundStyle(.secondary)
+                Text("Tool: \(name)").font(Typography.captionBold)
+                Text(result).font(Typography.caption).foregroundStyle(Theme.textSecondary)
             }
-            .padding(8)
-            .background(Color.orange.opacity(0.1))
-            .cornerRadius(8)
+            .padding(Spacing.sm)
+            .background(Theme.toolBubble.opacity(0.1))
+            .cornerRadius(Spacing.CornerRadius.md)
         }
     }
 }
@@ -503,16 +504,16 @@ struct IOSTypingIndicatorView: View {
     let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xs) {
             ForEach(0 ..< 3, id: \.self) { index in
                 Circle()
-                    .fill(Color.secondary.opacity(0.5))
+                    .fill(Theme.textSecondary.opacity(0.5))
                     .frame(width: 8, height: 8)
                     .scaleEffect(animatingDot == index ? 1.2 : 0.8)
                     .animation(.easeInOut(duration: 0.4), value: animatingDot)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xxs)
         .onReceive(timer) { _ in
             animatingDot = (animatingDot + 1) % 3
         }

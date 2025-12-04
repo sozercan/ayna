@@ -7,6 +7,9 @@
 
 import SwiftUI
 
+// MARK: - Design System Integration
+// Uses Theme, Typography, Spacing, and Motion from Core/Design/
+
 @MainActor
 struct MacMessageView: View {
     let message: Message
@@ -58,25 +61,10 @@ struct MacMessageView: View {
         return formatter
     }()
 
-    private let userBubbleGradient = LinearGradient(
-        colors: [
-            Color(red: 0.09, green: 0.45, blue: 1.0),
-            Color(red: 0.01, green: 0.35, blue: 0.95)
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    private let recipientBubbleGradient = LinearGradient(
-        colors: [
-            Color(red: 0.35, green: 0.36, blue: 0.38),
-            Color(red: 0.23, green: 0.24, blue: 0.26)
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    private let toolBubbleColor = Color.orange
+    // Design tokens from Core/Design/
+    private let userBubbleGradient = Theme.userBubbleGradient
+    private let recipientBubbleGradient = Theme.assistantBubbleGradient
+    private let toolBubbleColor = Theme.toolBubble
 
     private var primaryToolCall: MCPToolCall? {
         message.toolCalls?.first
@@ -118,18 +106,18 @@ struct MacMessageView: View {
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 Button(action: {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                    withAnimation(Motion.springSnappy) {
                         isExpanded.toggle()
                     }
                 }) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Spacing.md) {
                         Spacer()
 
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.userBubbleText.opacity(0.7))
                     }
                     .contentShape(Rectangle())
                 }
@@ -137,56 +125,56 @@ struct MacMessageView: View {
 
                 if !isExpanded {
                     Text(previewText)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .font(Typography.bodySecondary)
+                        .foregroundStyle(Theme.userBubbleText.opacity(0.9))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     if let arguments, !arguments.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text("Arguments")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.7))
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.userBubbleText.opacity(0.7))
                             ScrollView(.horizontal, showsIndicators: false) {
                                 Text(arguments)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(.white)
+                                    .font(Typography.code)
+                                    .foregroundStyle(Theme.userBubbleText)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(8)
+                            .padding(Spacing.sm)
                             .background(Color.black.opacity(0.15))
-                            .cornerRadius(8)
+                            .cornerRadius(Spacing.CornerRadius.md)
                         }
                     }
 
                     Divider()
-                        .background(Color.white.opacity(0.3))
+                        .background(Theme.separator)
 
                     if contentBlocks.isEmpty {
                         Text(previewText)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white)
+                            .font(Typography.bodySecondary)
+                            .foregroundStyle(Theme.userBubbleText)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                             ForEach(contentBlocks, id: \.id) { block in
                                 block.view
                             }
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.userBubbleText)
                     }
                 }
             }
-            .padding(14)
+            .padding(Spacing.md)
         }
     }
 
     @MainActor var body: some View {
         messageContent
-            .padding(.horizontal, 24)
-            .padding(.vertical, 6)
+            .padding(.horizontal, Spacing.contentPadding)
+            .padding(.vertical, Spacing.xs)
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering
@@ -234,26 +222,26 @@ struct MacMessageView: View {
         return VStack(alignment: alignment, spacing: 6) {
             if message.role == .assistant, let modelName {
                 Text(modelName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.captionBold)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: Spacing.sm) {
                 if isCurrentUser {
-                    Spacer(minLength: 60)
+                    Spacer(minLength: Spacing.Component.bubbleMinWidth)
                 }
 
                 bubbleContainer(isCurrentUser: isCurrentUser)
 
                 if !isCurrentUser {
-                    Spacer(minLength: 60)
+                    Spacer(minLength: Spacing.Component.bubbleMinWidth)
                 }
             }
 
             Text(timestampText)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(isCurrentUser ? .trailing : .leading, 6)
+                .font(Typography.timestamp)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(isCurrentUser ? .trailing : .leading, Spacing.xs)
         }
     }
 
@@ -262,23 +250,23 @@ struct MacMessageView: View {
         let bubbleStyle = isCurrentUser ? userBubbleGradient : recipientBubbleGradient
 
         return ZStack(alignment: isCurrentUser ? .topLeading : .topTrailing) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 bubbleContent
             }
-            .frame(maxWidth: 480, alignment: .leading)
-            .foregroundColor(.white)
-            .padding(.leading, isCurrentUser ? 18 : 24)
-            .padding(.trailing, isCurrentUser ? 24 : 18)
-            .padding(.vertical, 12)
+            .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
+            .foregroundColor(Theme.userBubbleText)
+            .padding(.leading, isCurrentUser ? Spacing.bubblePaddingH : Spacing.contentPadding)
+            .padding(.trailing, isCurrentUser ? Spacing.contentPadding : Spacing.bubblePaddingH)
+            .padding(.vertical, Spacing.bubblePaddingV)
             .background(
                 MessageBubbleShape(isFromCurrentUser: isCurrentUser)
                     .fill(bubbleStyle)
             )
             .overlay(
                 MessageBubbleShape(isFromCurrentUser: isCurrentUser)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Theme.border, lineWidth: Spacing.Border.standard)
             )
-            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+            .shadow(color: Theme.shadow, radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
             .environment(\.colorScheme, .dark)
             .tint(.white)
             .accessibilityElement(children: .combine)
@@ -288,7 +276,7 @@ struct MacMessageView: View {
             actionControls(for: message.role)
                 .offset(y: -26)
         }
-        .animation(.easeInOut(duration: 0.2), value: isHovered)
+        .animation(Motion.easeStandard, value: isHovered)
     }
 
     @MainActor @ViewBuilder
@@ -352,35 +340,35 @@ struct MacMessageView: View {
 
         if let reasoning = message.reasoning, !reasoning.isEmpty {
             Button(action: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(Motion.springStandard) {
                     showReasoning.toggle()
                 }
             }) {
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typography.caption)
                     Text("Thinking")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.captionBold)
                     Spacer(minLength: 0)
                     Text("\(reasoning.count) chars")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.userBubbleText.opacity(0.7))
                 }
-                .foregroundStyle(.white)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
+                .foregroundStyle(Theme.userBubbleText)
+                .padding(.vertical, Spacing.xs)
+                .padding(.horizontal, Spacing.md)
                 .background(Color.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
 
             if showReasoning {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     ForEach(cachedReasoningBlocks, id: \.id) { block in
                         block.view
                     }
                 }
-                .padding(14)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .padding(Spacing.md)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
             }
         }
 
@@ -398,13 +386,13 @@ struct MacMessageView: View {
     @MainActor @ViewBuilder
     private func actionControls(for role: Message.Role) -> some View {
         if isHovered || UITestEnvironment.isEnabled {
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xs) {
                 Button(action: {
                     copyToClipboard(message.content)
                 }) {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(6)
+                        .font(Typography.caption)
+                        .padding(Spacing.xs)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.action.copy")
@@ -413,7 +401,7 @@ struct MacMessageView: View {
                     Menu {
                         Section {
                             Text("Used \(modelName ?? message.model ?? "Unknown Model")")
-                                .font(.system(size: 12))
+                                .font(Typography.caption)
                         }
 
                         Divider()
@@ -442,29 +430,29 @@ struct MacMessageView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(6)
+                            .font(Typography.caption)
+                            .padding(Spacing.xs)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
                 }
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .foregroundStyle(Theme.userBubbleText)
+            .padding(.horizontal, Spacing.md - 2)
+            .padding(.vertical, Spacing.xs)
             .background(.ultraThinMaterial, in: Capsule())
-            .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
-            .transition(.opacity.combined(with: .scale))
+            .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
+            .transition(Motion.scaleTransition)
         }
     }
 
     @MainActor
     private var toolMessageView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(toolDisplayName)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Typography.captionBold)
+                .foregroundStyle(Theme.textSecondary)
 
             HStack(alignment: .bottom) {
                 ZStack(alignment: .topTrailing) {
@@ -476,20 +464,20 @@ struct MacMessageView: View {
                             fallbackText: message.content
                         )
                     }
-                    .frame(maxWidth: 480, alignment: .leading)
-                    .foregroundColor(.white)
-                    .padding(.leading, 24)
-                    .padding(.trailing, 18)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
+                    .foregroundColor(Theme.userBubbleText)
+                    .padding(.leading, Spacing.contentPadding)
+                    .padding(.trailing, Spacing.bubblePaddingH)
+                    .padding(.vertical, Spacing.bubblePaddingV)
                     .background(
                         MessageBubbleShape(isFromCurrentUser: false)
                             .fill(toolBubbleColor)
                     )
                     .overlay(
                         MessageBubbleShape(isFromCurrentUser: false)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            .stroke(Theme.border, lineWidth: Spacing.Border.standard)
                     )
-                    .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 0, y: 4)
+                    .shadow(color: Theme.toolBubble.opacity(0.3), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
                     .environment(\.colorScheme, .dark)
                     .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
 
@@ -501,9 +489,9 @@ struct MacMessageView: View {
             }
 
             Text(timestampText)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 6)
+                .font(Typography.timestamp)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.leading, Spacing.xs)
         }
     }
 
@@ -603,8 +591,8 @@ private struct MessageBubbleShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         let path = Path { path in
-            let tailWidth: CGFloat = 6
-            let radius: CGFloat = 18
+            let tailWidth: CGFloat = Spacing.xs
+            let radius: CGFloat = Spacing.CornerRadius.bubble
 
             if isFromCurrentUser {
                 // Right bubble
@@ -720,8 +708,8 @@ extension ContentBlock {
         switch type {
         case let .paragraph(text):
             Text(text)
-                .font(.system(size: 15))
-                .lineSpacing(4)
+                .font(Typography.body)
+                .lineSpacing(Typography.bodyLineSpacing)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -729,49 +717,49 @@ extension ContentBlock {
         case let .heading(level, text):
             let font: Font = switch level {
             case 1:
-                .system(size: 22, weight: .bold)
+                Typography.title2
             case 2:
-                .system(size: 20, weight: .semibold)
+                Typography.title3
             case 3:
-                .system(size: 18, weight: .semibold)
+                Typography.headline
             default:
-                .system(size: 16, weight: .semibold)
+                Typography.subheadline
             }
             Text(text)
                 .font(font)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, level == 1 ? 4 : 2)
+                .padding(.top, level == 1 ? Spacing.xxs : Spacing.xxxs)
 
         case let .unorderedList(items):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                         Text("•")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(Typography.subheadline)
                             .accessibilityHidden(true)
                         Text(item)
-                            .font(.system(size: 15))
+                            .font(Typography.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.leading, 2)
+                    .padding(.leading, Spacing.xxxs)
                     .accessibilityLabel("Bullet item \(index + 1)")
                 }
             }
 
         case let .orderedList(start, items):
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 ForEach(Array(items.enumerated()), id: \.offset) { offset, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                         Text(verbatim: "\(start + offset).")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(width: 32, alignment: .trailing)
+                            .font(Typography.bodySecondary.weight(.semibold))
+                            .frame(width: Spacing.xxxl, alignment: .trailing)
                             .accessibilityHidden(true)
                         Text(item)
-                            .font(.system(size: 15))
+                            .font(Typography.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -780,29 +768,29 @@ extension ContentBlock {
             }
 
         case let .blockquote(text):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: Spacing.md) {
                 Rectangle()
-                    .fill(Color.secondary.opacity(0.4))
+                    .fill(Theme.textSecondary.opacity(0.4))
                     .frame(width: 3)
                     .cornerRadius(3)
 
                 Text(text)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(4)
+                    .font(Typography.body.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineSpacing(Typography.bodyLineSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
-            .background(Color.secondary.opacity(0.08))
-            .cornerRadius(10)
+            .padding(Spacing.md)
+            .background(Theme.textSecondary.opacity(0.08))
+            .cornerRadius(Spacing.CornerRadius.lg)
 
         case let .table(table):
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(spacing: 0) {
                     tableRowView(table.headers, alignments: table.alignments, isHeader: true)
-                        .background(Color.secondary.opacity(0.12))
+                        .background(Theme.textSecondary.opacity(0.12))
                     Divider()
                     ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
                         tableRowView(row, alignments: table.alignments, isHeader: false)
@@ -811,14 +799,14 @@ extension ContentBlock {
                         }
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
             }
-            .background(Color.secondary.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(Theme.textSecondary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
 
         case .divider:
             Divider()
-                .overlay(Color.secondary.opacity(0.2))
+                .overlay(Theme.separator)
 
         case let .code(code, language):
             VStack(alignment: .leading, spacing: 0) {
@@ -826,8 +814,8 @@ extension ContentBlock {
                 HStack {
                     if !language.isEmpty {
                         Text(language.lowercased())
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .font(Typography.captionBold)
+                            .foregroundStyle(Theme.textSecondary)
                             .textCase(.lowercase)
                     }
 
@@ -837,93 +825,93 @@ extension ContentBlock {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(code, forType: .string)
                     }) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: Spacing.xxs) {
                             Image(systemName: "doc.on.doc")
                             Text("Copy code")
                         }
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Theme.codeBackground.opacity(0.3))
 
                 Divider()
 
                 // Code content with syntax highlighting
                 ScrollView(.horizontal, showsIndicators: false) {
                     SyntaxHighlightedCodeView(code: code, language: language)
-                        .padding(12)
+                        .padding(Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .background(Theme.codeBackground)
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+                    .stroke(Theme.codeBorder, lineWidth: Spacing.Border.standard)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
 
         case let .tool(name, result):
             VStack(alignment: .leading, spacing: 0) {
                 // Tool header
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "wrench.and.screwdriver.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 24, height: 24)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.userBubbleText)
+                        .frame(width: Spacing.contentPadding, height: Spacing.contentPadding)
                         .background(
                             LinearGradient(
-                                colors: [Color.blue, Color.blue.opacity(0.8)],
+                                colors: [Theme.accent, Theme.accent.opacity(0.8)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Spacing.xxxs) {
                         Text("Tool")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
                             .textCase(.uppercase)
                         Text(name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
+                            .font(Typography.captionBold)
+                            .foregroundStyle(Theme.textPrimary)
                     }
 
                     Spacer()
 
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.green)
+                        .font(Typography.bodySecondary)
+                        .foregroundStyle(Theme.statusConnected)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.blue.opacity(0.08))
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.md - 2)
+                .background(Theme.accent.opacity(0.08))
 
                 Divider()
 
                 // Tool result
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(result)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
+                        .font(Typography.bodySecondary)
+                        .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
-                        .padding(12)
+                        .padding(Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 200)
             }
-            .background(Color.blue.opacity(0.03))
+            .background(Theme.accent.opacity(0.03))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.blue.opacity(0.2), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+                    .stroke(Theme.accent.opacity(0.2), lineWidth: Spacing.Border.emphasized)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .shadow(color: Color.blue.opacity(0.1), radius: 4, x: 0, y: 2)
+            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+            .shadow(color: Theme.accent.opacity(0.1), radius: Spacing.Shadow.radiusSubtle, x: 0, y: Spacing.Shadow.offsetY)
         }
     }
 
@@ -933,17 +921,17 @@ extension ContentBlock {
         alignments: [MarkdownTable.ColumnAlignment],
         isHeader: Bool
     ) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: Spacing.lg) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 let columnAlignment = alignments.indices.contains(index) ? alignments[index] : .leading
                 Text(cell)
-                    .font(.system(size: 13, weight: isHeader ? .semibold : .regular))
+                    .font(isHeader ? Typography.captionBold : Typography.bodySecondary)
                     .textSelection(.enabled)
                     .frame(minWidth: 80, alignment: horizontalAlignment(for: columnAlignment))
             }
         }
-        .padding(.vertical, isHeader ? 10 : 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, isHeader ? Spacing.md - 2 : Spacing.sm)
+        .padding(.horizontal, Spacing.md)
     }
 
     private func horizontalAlignment(for alignment: MarkdownTable.ColumnAlignment) -> Alignment {
@@ -996,34 +984,34 @@ struct ImageGeneratingView: View {
     var body: some View {
         ZStack {
             // Background
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.secondary.opacity(0.08))
-                .strokeBorder(Color.secondary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
+                .fill(Theme.textSecondary.opacity(0.08))
+                .strokeBorder(Theme.border, lineWidth: Spacing.Border.standard)
 
-            VStack(spacing: 16) {
+            VStack(spacing: Spacing.lg) {
                 // Animated Icon
                 ZStack {
                     Circle()
-                        .fill(Color.accentColor.opacity(0.1))
-                        .frame(width: 64, height: 64)
+                        .fill(Theme.accent.opacity(0.1))
+                        .frame(width: Typography.IconSize.heroLarge, height: Typography.IconSize.heroLarge)
                         .scaleEffect(1 + sin(phase) * 0.1)
 
                     if #available(macOS 15.0, *) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 30))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.accent)
                             .symbolEffect(.bounce, options: .repeating)
                     } else {
                         Image(systemName: "sparkles")
                             .font(.system(size: 30))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.accent)
                             .symbolEffect(.variableColor)
                     }
                 }
 
                 Text("Dreaming up your image...")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(Typography.bodySecondary.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
         .frame(width: 320, height: 320)
@@ -1042,7 +1030,7 @@ struct SyntaxHighlightedCodeView: View {
 
     var body: some View {
         Text(AttributedString(highlightedCode()))
-            .font(.system(size: 13, design: .monospaced))
+            .font(Typography.codeBlock)
             .textSelection(.enabled)
     }
 
@@ -1051,7 +1039,7 @@ struct SyntaxHighlightedCodeView: View {
         let fullRange = NSRange(location: 0, length: code.utf16.count)
 
         // Base styling
-        let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let baseFont = NSFont.monospacedSystemFont(ofSize: Typography.Size.body, weight: .regular)
         let baseColor = NSColor.labelColor
         attributedString.addAttribute(.font, value: baseFont, range: fullRange)
         attributedString.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
@@ -1246,16 +1234,16 @@ struct TypingIndicatorView: View {
     let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xs) {
             ForEach(0 ..< 3) { index in
                 Circle()
-                    .fill(Color.secondary.opacity(0.5))
+                    .fill(Theme.textSecondary.opacity(0.5))
                     .frame(width: 8, height: 8)
                     .scaleEffect(animatingDot == index ? 1.2 : 0.8)
                     .animation(.easeInOut(duration: 0.4), value: animatingDot)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.sm)
         .onReceive(timer) { _ in
             animatingDot = (animatingDot + 1) % 3
         }

@@ -1,19 +1,20 @@
 # Ayna
 
-A native macOS ChatGPT client built for speed and simplicity.
+A native macOS, iOS, and watchOS ChatGPT client built for speed and simplicity.
 
 ## Features
 
-- 💬 **Fast & Native**: Streaming chat interface tailored for macOS.
+- 💬 **Fast & Native**: Streaming chat interface tailored for Apple platforms.
 - ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [GitHub Models](https://github.com/marketplace/models), [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
 - 🔀 **Multi-Model Chat**: Compare responses from multiple models simultaneously.
-- 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available on macOS.
-- 🏠 **Local Models**: Run models locally for complete privacy.
-- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
+- 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available (macOS/iOS).
+- 🏠 **Local Models**: Run models locally for complete privacy (macOS).
+- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools (macOS).
 - 🎨 **Image Generation**: Create images using models like `gpt-image-1`.
 - 🗂️ **Organization**: Searchable conversations with auto-generated titles.
 - 🔒 **Secure**: API keys stored in Keychain; conversations encrypted on disk.
 - 📝 **Export**: Save chats as Markdown or PDF.
+- ⌚ **watchOS Companion**: Quick chat access from your Apple Watch.
 
 ## Getting Started
 
@@ -38,7 +39,7 @@ brew install --cask ayna
 
 ### Requirements
 
-- macOS 14.0 (Sonoma) or newer.
+- macOS 14.0 (Sonoma) or newer, iOS 17.0 or newer, or watchOS 10.0 or newer.
 - An API key for OpenAI, Azure OpenAI, Gemini or Claude, or a GitHub account for GitHub Models (optional if using local models).
 
 ## User Guide
@@ -76,8 +77,8 @@ brew install --cask ayna
 ## Privacy
 
 - **No Telemetry**: We don't track your usage.
-- **Local Storage**: Conversations are encrypted and stored only on your Mac if using local models.
-- **Secure Keys**: API keys are stored securely in the macOS Keychain.
+- **Local Storage**: Conversations are encrypted and stored only on your device if using local models.
+- **Secure Keys**: API keys are stored securely in the system Keychain.
 
 ## Contributing
 

@@ -9,6 +9,9 @@
 
     import SwiftUI
 
+    // MARK: - Design System Integration
+    // Uses Theme, Typography, Spacing from Core/Design/
+
     /// Compact message bubble for Watch
     /// iMessage-style with user messages on right (blue) and assistant on left (gray)
     struct WatchMessageView: View {
@@ -20,38 +23,38 @@
         }
 
         var body: some View {
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: Spacing.xxxs) {
                 HStack {
                     if isUser {
-                        Spacer(minLength: 40)
+                        Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
                     }
 
                     // Message content
                     Text(WatchMarkdownRenderer.render(message.content))
-                        .font(.system(size: 15))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .font(Typography.body)
+                        .foregroundColor(Theme.userBubbleText)
+                        .padding(.horizontal, Spacing.bubblePaddingH)
+                        .padding(.vertical, Spacing.bubblePaddingV)
                         .background(bubbleBackground)
                         .clipShape(BubbleShape(isUser: isUser))
 
                     if !isUser {
-                        Spacer(minLength: 40)
+                        Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
                     }
                 }
 
                 // Timestamp (optional, shown for last message)
                 if showTimestamp {
                     Text(formattedTime)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
+                        .font(Typography.micro)
+                        .foregroundColor(Theme.textSecondary)
+                        .padding(.horizontal, Spacing.xxs)
                 }
             }
         }
 
         private var bubbleBackground: Color {
-            isUser ? Color.blue : Color(white: 0.2)
+            isUser ? Theme.userBubble : Theme.assistantBubble
         }
 
         private var formattedTime: String {
@@ -68,7 +71,7 @@
         func path(in rect: CGRect) -> Path {
             let width = rect.width
             let height = rect.height
-            let radius: CGFloat = 16
+            let radius: CGFloat = Spacing.CornerRadius.xxl
 
             var path = Path()
 
@@ -146,29 +149,29 @@
             HStack {
                 if content.isEmpty, isStreaming {
                     // Typing indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: Spacing.xxs) {
                         ForEach(0 ..< 3, id: \.self) { _ in
                             Circle()
-                                .fill(Color.secondary)
-                                .frame(width: 6, height: 6)
+                                .fill(Theme.textSecondary)
+                                .frame(width: Spacing.xs, height: Spacing.xs)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(white: 0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal, Spacing.bubblePaddingH)
+                    .padding(.vertical, Spacing.md - 2)
+                    .background(Theme.assistantBubble)
+                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl))
                 } else {
                     // Content
                     Text(WatchMarkdownRenderer.render(content))
-                        .font(.system(size: 15))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color(white: 0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .font(Typography.body)
+                        .foregroundColor(Theme.userBubbleText)
+                        .padding(.horizontal, Spacing.bubblePaddingH)
+                        .padding(.vertical, Spacing.bubblePaddingV)
+                        .background(Theme.assistantBubble)
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl))
                 }
 
-                Spacer(minLength: 40)
+                Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
             }
         }
     }

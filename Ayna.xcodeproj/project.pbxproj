@@ -314,6 +314,7 @@
 		C855BF4F2EE144630073EB99 /* Ayna-iOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSUITests"; sourceTree = "<group>"; };
 		C855BF542EE1448C0073EB99 /* Ayna-watchOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSUITests"; sourceTree = "<group>"; };
 		C855C1072EE15D700073EB99 /* Ayna-watchOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSTests"; sourceTree = "<group>"; };
+		C855C15D2EE16FC10073EB99 /* Design */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Design; sourceTree = "<group>"; };
 		C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSTests"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -527,6 +528,7 @@
 		C81393CE2ED3DEB800F5E7F9 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				C855C15D2EE16FC10073EB99 /* Design */,
 				C81393B22ED3DEB800F5E7F9 /* Diagnostics */,
 				C81393B72ED3DEB800F5E7F9 /* Models */,
 				C81393C12ED3DEB800F5E7F9 /* Services */,
@@ -635,6 +637,9 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				C855C15D2EE16FC10073EB99 /* Design */,
+			);
 			name = Ayna;
 			productName = Ayna;
 			productReference = 03000001 /* Ayna.app */;
@@ -655,6 +660,7 @@
 			fileSystemSynchronizedGroups = (
 				C82E6B7A2EDBD7090055158F /* watchOS */,
 				C82E6B822EDBD7260055158F /* watchOS */,
+				C855C15D2EE16FC10073EB99 /* Design */,
 			);
 			name = "Ayna-watchOS Watch App";
 			packageProductDependencies = (
@@ -785,6 +791,9 @@
 			);
 			dependencies = (
 				C82E6B6B2EDBD6460055158F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C855C15D2EE16FC10073EB99 /* Design */,
 			);
 			name = "Ayna-iOS";
 			packageProductDependencies = (

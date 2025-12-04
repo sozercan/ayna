@@ -1743,7 +1743,7 @@ class OpenAIService: ObservableObject {
     }
 
     #if !os(watchOS)
-        @available(macOS 26.0, *)
+        @available(macOS 26.0, iOS 26.0, *)
         private func handleAppleIntelligenceRequest(
             messages: [Message],
             temperature: Double?,

@@ -256,8 +256,8 @@ struct MacChatView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 24)
+                        .padding(.horizontal, Spacing.contentPadding)
+                        .padding(.vertical, Spacing.contentPadding)
                     }
                     .defaultScrollAnchor(.bottom)
                     .onChange(of: currentConversation.messages.count) { _, _ in
@@ -334,17 +334,17 @@ struct MacChatView: View {
                         rateLimitInfo: GitHubOAuthService.shared.rateLimitInfo,
                         retryAfterDate: GitHubOAuthService.shared.retryAfterDate
                     )
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, Spacing.contentPadding)
                 }
 
                 // Error Message
                 if let error = errorMessage {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.statusError)
                         Text(error)
-                            .font(.callout)
-                            .foregroundStyle(.red)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.statusError)
                         Spacer()
                         Button("Dismiss") {
                             errorMessage = nil
@@ -352,54 +352,54 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                     }
                     .padding()
-                    .background(Color.red.opacity(0.1))
+                    .background(Theme.statusError.opacity(0.1))
                 }
 
                 // Tool execution status indicator
                 if let toolName = currentToolName {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         ProgressView()
                             .scaleEffect(0.8)
                             .controlSize(.small)
                         Text(
                             toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)..."
                         )
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         Spacer()
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Color.accentColor.opacity(0.1))
+                    .padding(.vertical, Spacing.sm)
+                    .background(Theme.accent.opacity(0.1))
                 }
 
                 // Input Area
-                VStack(spacing: 8) {
+                VStack(spacing: Spacing.sm) {
                     MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
                     // Attached files preview
                     if !attachedFiles.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Spacing.sm) {
                                 ForEach(attachedFiles, id: \.self) { fileURL in
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: Spacing.sm) {
                                         // Show image thumbnail if it's an image file
                                         if let image = NSImage(contentsOf: fileURL) {
                                             Image(nsImage: image)
                                                 .resizable()
                                                 .aspectRatio(contentMode: .fill)
                                                 .frame(width: 48, height: 48)
-                                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
                                         } else {
                                             Image(systemName: "doc.fill")
-                                                .font(.system(size: 20))
-                                                .foregroundStyle(.secondary)
+                                                .font(.system(size: Typography.IconSize.lg))
+                                                .foregroundStyle(Theme.textSecondary)
                                                 .frame(width: 48, height: 48)
                                         }
 
-                                        VStack(alignment: .leading, spacing: 2) {
+                                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                             Text(fileURL.lastPathComponent)
-                                                .font(.caption)
+                                                .font(Typography.caption)
                                                 .lineLimit(1)
                                             if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
                                                 .fileSize
@@ -409,23 +409,23 @@ struct MacChatView: View {
                                                         fromByteCount: Int64(fileSize), countStyle: .file
                                                     )
                                                 )
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.footnote)
+                                                .foregroundStyle(Theme.textSecondary)
                                             }
                                         }
 
                                         Button(action: { removeFile(fileURL) }) {
                                             Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 16))
-                                                .foregroundStyle(.secondary)
+                                                .font(.system(size: Typography.IconSize.md))
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                         .buttonStyle(.plain)
                                     }
-                                    .padding(8)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                                    .padding(Spacing.sm)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
                                 }
                             }
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, Spacing.contentPadding)
                         }
                     }
 
@@ -438,64 +438,64 @@ struct MacChatView: View {
                                 accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
                             )
                             .frame(height: calculateTextHeight())
-                            .font(.system(size: 15))
+                            .font(Typography.body)
                             .scrollContentBackground(.hidden)
                             .padding(.leading, 48) // Padding for attach button
-                            .padding(.trailing, 12)
-                            .padding(.vertical, 12)
+                            .padding(.trailing, Spacing.md)
+                            .padding(.vertical, Spacing.md)
                             .background(.clear)
 
                             // Attach file button inside the text box (left side)
                             Button(action: attachFile) {
                                 Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(Color.secondary.opacity(0.7))
+                                    .font(.system(size: Typography.IconSize.xl))
+                                    .foregroundStyle(Theme.textSecondary.opacity(0.7))
                             }
                             .buttonStyle(.plain)
-                            .padding(.leading, 8)
-                            .padding(.bottom, 8)
+                            .padding(.leading, Spacing.sm)
+                            .padding(.bottom, Spacing.sm)
                         }
 
                         // Model selector with multi-select support (using Popover for persistence)
                         Button(action: { showModelSelector.toggle() }) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: Spacing.xxs) {
                                 Divider()
                                     .frame(height: 24)
-                                    .padding(.leading, 8)
+                                    .padding(.leading, Spacing.sm)
 
                                 if selectedModels.count > 1 {
                                     Image(systemName: "square.stack.3d.up.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.accentColor)
+                                        .font(.system(size: Typography.Size.caption))
+                                        .foregroundStyle(Theme.accent)
                                     Text("\(selectedModels.count) models")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Color.accentColor)
+                                        .font(Typography.modelName)
+                                        .foregroundStyle(Theme.accent)
                                 } else {
                                     Text(composerModelLabel)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.primary)
+                                        .font(Typography.modelName)
+                                        .foregroundStyle(Theme.textPrimary)
                                         .lineLimit(1)
                                 }
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: Typography.Size.xs))
+                                    .foregroundStyle(Theme.textSecondary)
                             }
-                            .padding(.horizontal, 12)
-                            .frame(height: calculateTextHeight() + 24)
+                            .padding(.horizontal, Spacing.md)
+                            .frame(height: calculateTextHeight() + Spacing.xxl)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .fixedSize()
                         .popover(isPresented: $showModelSelector) {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: Spacing.sm) {
                                 Text("Select models")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .font(Typography.captionBold)
+                                    .foregroundStyle(Theme.textSecondary)
                                 Text("1 model = single response, 2+ = compare")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
+                                    .font(Typography.footnote)
+                                    .foregroundStyle(Theme.textTertiary)
                                 Divider()
-                                    .padding(.vertical, 4)
+                                    .padding(.vertical, Spacing.xxs)
 
                                 if openAIService.usableModels.isEmpty {
                                     SettingsLink {
@@ -509,17 +509,17 @@ struct MacChatView: View {
                                         }) {
                                             HStack {
                                                 Image(systemName: selectedModels.contains(model) ? "checkmark.square.fill" : "square")
-                                                    .foregroundStyle(selectedModels.contains(model) ? Color.accentColor : Color.secondary)
-                                                    .font(.system(size: 14))
+                                                    .foregroundStyle(selectedModels.contains(model) ? Theme.accent : Theme.textSecondary)
+                                                    .font(.system(size: Typography.Size.body))
                                                 Text(model)
-                                                    .font(.system(size: 13))
+                                                    .font(Typography.modelName)
                                                 Spacer()
                                             }
-                                            .padding(.vertical, 4)
-                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, Spacing.xxs)
+                                            .padding(.horizontal, Spacing.sm)
                                             .background(
-                                                RoundedRectangle(cornerRadius: 6)
-                                                    .fill(selectedModels.contains(model) ? Color.accentColor.opacity(0.1) : Color.clear)
+                                                RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                                                    .fill(selectedModels.contains(model) ? Theme.selection : Color.clear)
                                             )
                                         }
                                         .buttonStyle(.plain)
@@ -528,7 +528,7 @@ struct MacChatView: View {
 
                                 if selectedModels.count > 1 {
                                     Divider()
-                                        .padding(.vertical, 4)
+                                        .padding(.vertical, Spacing.xxs)
                                     Button(action: {
                                         if let first = selectedModels.first {
                                             selectedModels = [first]
@@ -540,8 +540,8 @@ struct MacChatView: View {
                                             Image(systemName: "xmark.circle")
                                             Text("Clear multi-selection")
                                         }
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.red)
+                                        .font(Typography.footnote)
+                                        .foregroundStyle(Theme.destructive)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -555,33 +555,33 @@ struct MacChatView: View {
                             ZStack {
                                 if isGenerating {
                                     Image(systemName: "stop.circle.fill")
-                                        .font(.system(size: 24))
-                                        .foregroundStyle(Color.accentColor)
+                                        .font(.system(size: Typography.IconSize.xl))
+                                        .foregroundStyle(Theme.accent)
                                         .symbolEffect(.pulse, value: isGenerating)
                                 } else {
                                     Image(systemName: "arrow.up.circle.fill")
-                                        .font(.system(size: 24))
+                                        .font(.system(size: Typography.IconSize.xl))
                                         .foregroundStyle(
-                                            messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor)
+                                            messageText.isEmpty ? Theme.textSecondary.opacity(0.5) : Theme.accent)
                                 }
                             }
                         }
                         .buttonStyle(.plain)
                         .allowsHitTesting(isGenerating || !messageText.isEmpty)
                         .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
-                        .padding(.horizontal, 12)
-                        .frame(height: calculateTextHeight() + 24)
+                        .padding(.horizontal, Spacing.md)
+                        .frame(height: calculateTextHeight() + Spacing.xxl)
                     }
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill + Spacing.CornerRadius.sm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 26)
-                            .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+                        RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill + Spacing.CornerRadius.sm)
+                            .stroke(Theme.border, lineWidth: Spacing.Border.hairline)
                     )
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-                    .padding(.horizontal, 24)
+                    .shadow(color: Theme.shadow.opacity(0.35), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetY)
+                    .padding(.horizontal, Spacing.contentPadding)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, 20)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.composerBottomPadding)
                 .background(.ultraThinMaterial)
             }
         }

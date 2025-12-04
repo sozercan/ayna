@@ -35,7 +35,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme Ayna \
           -destination 'platform=macOS' \
           -derivedDataPath ./build \
@@ -72,7 +72,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme Ayna \
           -destination 'platform=macOS' \
           -derivedDataPath ./build \
@@ -112,7 +112,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
           -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
           -derivedDataPath ./build \
@@ -152,7 +152,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
           -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
           -derivedDataPath ./build \
@@ -192,7 +192,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
           -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
           -derivedDataPath ./build \
@@ -232,7 +232,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild \
-          -project ayna.xcodeproj \
+          -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
           -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
           -derivedDataPath ./build \

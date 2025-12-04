@@ -48,12 +48,12 @@ struct IOSMessageComposer: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Spacing.sm) {
             // Error message display
             if let errorMessage {
                 Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.caption)
+                    .foregroundStyle(Theme.statusError)
+                    .font(Typography.caption)
                     .padding(.horizontal)
                     .accessibilityIdentifier("\(identifierPrefix).errorMessage")
             }
@@ -61,7 +61,7 @@ struct IOSMessageComposer: View {
             // Attached files display
             if !attachedFiles.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         ForEach(attachedFiles, id: \.self) { url in
                             attachmentChip(for: url)
                         }
@@ -72,15 +72,15 @@ struct IOSMessageComposer: View {
             }
 
             // Input bar
-            HStack(alignment: .bottom, spacing: 12) {
+            HStack(alignment: .bottom, spacing: Spacing.md) {
                 // Attachment button
                 if showAttachmentButton {
                     Button(action: onAttachmentRequested) {
                         Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(.gray)
-                            .padding(8)
-                            .background(Color(uiColor: .systemGray5))
+                            .font(.system(size: Typography.IconSize.lg, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(Spacing.sm)
+                            .background(Theme.backgroundSecondary)
                             .clipShape(Circle())
                     }
                     .padding(.bottom, 5)
@@ -91,8 +91,8 @@ struct IOSMessageComposer: View {
                 HStack(alignment: .bottom) {
                     TextField("Ask anything", text: $messageText, axis: .vertical)
                         .lineLimit(1 ... 5)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
                         .accessibilityIdentifier("\(identifierPrefix).textEditor")
                         .onSubmit {
                             if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isGenerating {
@@ -101,46 +101,46 @@ struct IOSMessageComposer: View {
                         }
                         .submitLabel(.send)
                 }
-                .background(Color(uiColor: .systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .background(Theme.backgroundSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill))
 
                 // Send/Stop button
                 if !messageText.isEmpty || isGenerating {
                     Button(action: handleSendOrCancel) {
                         Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
                             .font(.system(size: 30))
-                            .foregroundStyle(isGenerating ? .red : .blue)
+                            .foregroundStyle(isGenerating ? Theme.statusError : Theme.accent)
                     }
-                    .padding(.bottom, 2)
+                    .padding(.bottom, Spacing.xxxs)
                     .accessibilityIdentifier("\(identifierPrefix).sendButton")
                 }
             }
             .padding(.horizontal)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Spacing.sm)
         .background(.bar)
     }
 
     @ViewBuilder
     private func attachmentChip(for url: URL) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Spacing.xxs) {
             Image(systemName: "doc.fill")
-                .font(.caption)
+                .font(Typography.caption)
             Text(url.lastPathComponent)
-                .font(.caption)
+                .font(Typography.caption)
                 .lineLimit(1)
             Button {
                 attachedFiles.removeAll { $0 == url }
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.gray)
+                    .font(Typography.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .accessibilityIdentifier("\(identifierPrefix).attachment.remove.\(url.lastPathComponent)")
         }
-        .padding(6)
-        .background(Color(uiColor: .systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(Spacing.xs)
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         .accessibilityIdentifier("\(identifierPrefix).attachment.\(url.lastPathComponent)")
     }
 
