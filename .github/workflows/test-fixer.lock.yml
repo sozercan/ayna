@@ -68,10 +68,6 @@
 #   create-issue:
 #     title-prefix: "[Test Fix]"
 #     labels: ["test-failure", "automated"]
-#     max: 1
-#   add-comment:
-#     target: "*"
-#     max: 3
 #   create-pull-request:
 #     title-prefix: "[Test Fix]"
 #     labels: ["test-fix", "automated"]
@@ -389,7 +385,6 @@
 # ```mermaid
 # graph LR
 #   activation["activation"]
-#   add_comment["add_comment"]
 #   agent["agent"]
 #   conclusion["conclusion"]
 #   create_issue["create_issue"]
@@ -400,16 +395,11 @@
 #   validate_macos_15["validate_macos_15"]
 #   validate_macos_26["validate_macos_26"]
 #   pre_activation --> activation
-#   agent --> add_comment
-#   create_issue --> add_comment
-#   create_pull_request --> add_comment
-#   detection --> add_comment
 #   activation --> agent
 #   agent --> conclusion
 #   activation --> conclusion
 #   create_issue --> conclusion
 #   create_pull_request --> conclusion
-#   add_comment --> conclusion
 #   agent --> create_issue
 #   detection --> create_issue
 #   agent --> create_pull_request
@@ -528,9 +518,11 @@
 #    - Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards
 #    - Run linting: `swiftlint --strict && swiftformat .` after changes
 #
-# ### Phase 4: Validation on macOS (REQUIRED!)
+# ### Phase 4: Validation on macOS (OPTIONAL - Skip if confident)
 #
-# **You MUST validate your fixes on the affected macOS version(s) before creating a PR.** You have three validation tools available:
+# **CRITICAL: Each validation job can only be called ONCE. Do NOT call them iteratively.**
+#
+# You have three validation tools available:
 #
 # | Tool | Runner | Xcode |
 # |------|--------|-------|
@@ -538,40 +530,27 @@
 # | `validate-macos-15` | macOS 15 | Xcode 16.4 |
 # | `validate-macos-26` | macOS 26 | Xcode 26.0 |
 #
-# 1. **Identify which platform(s) failed** from the original test failure logs
+# **Workflow:**
+# 1. Make ALL your code fixes FIRST
+# 2. Only THEN call validation jobs (once each) to verify
+# 3. If validation fails, create an issue instead of trying again
 #
-# 2. **Call the appropriate validation job(s)** for each failed platform:
-#    - Set `test_target` to the appropriate target:
-#      - `aynaTests` for unit test failures
-#      - `aynaUITests` for UI test failures
-#      - `both` if both types of tests failed
-#    - Set `failed_tests` to the specific test names that failed (comma-separated), or leave empty to run all tests in the target
+# **When to use validation:**
+# - Use validation when you want extra confidence before creating a PR
+# - Skip validation if the fix is straightforward (e.g., simple typo, obvious assertion fix)
+# - The PR will be validated by CI anyway after creation
 #
-# 3. **Validate on ALL affected platforms**:
-#    - If macOS 14 failed → call `validate-macos-14`
-#    - If macOS 15 failed → call `validate-macos-15`
-#    - If macOS 26 failed → call `validate-macos-26`
-#    - If multiple platforms failed → call multiple validation jobs
+# **If you do validate:**
+# - Call each job only ONCE with `test_target` set to `aynaTests`, `aynaUITests`, or `both`
+# - If validation fails, proceed to create the PR anyway (CI will catch issues) OR create an issue
 #
-# 4. **Check the validation results**:
-#    - If ALL validations **pass**: Proceed to create the PR
-#    - If ANY validation **fails**: Analyze the new errors, iterate on your fix, and validate again
-#    - Maximum 3 validation attempts per platform before creating an issue instead
-#
-# 5. **Example for multi-platform failure**:
-#    ```
-#    # If tests failed on macOS 14 and macOS 26:
-#
-#    Call validate-macos-14 with:
-#    - test_target: "aynaTests"
-#    - failed_tests: "MessageTests/testMessageParsing"
-#
-#    Call validate-macos-26 with:
-#    - test_target: "aynaTests"
-#    - failed_tests: "MessageTests/testMessageParsing"
-#    ```
-#
-# This ensures your fix works across all affected macOS versions before submitting.
+# **Example:**
+# ```
+# # After making all fixes, validate once:
+# Call validate-macos-14 with: test_target: "aynaTests"
+# Call validate-macos-15 with: test_target: "aynaTests"
+# Call validate-macos-26 with: test_target: "aynaTests"
+# ```
 #
 # ### Phase 5: Create Pull Request
 #
@@ -605,22 +584,34 @@
 #
 # ## Output Requirements
 #
-# ### If you successfully fix the issue:
-# 1. Create a **draft pull request** with the fix
-# 2. Include a clear explanation of what was broken and how you fixed it
-# 3. Tag the PR with `test-fix` and `automated` labels
+# ### Create ONE consolidated PR to fix ALL test failures:
 #
-# ### If you cannot fix the issue:
-# 1. Create an **issue** documenting:
+# 1. **Analyze ALL failed jobs** from the workflow run across the entire matrix:
+#    - `unit_tests (macos-14, ...)` 
+#    - `unit_tests (macos-15, ...)`
+#    - `unit_tests (macos-26, ...)`
+#    - `ui_tests (macos-14, ...)`
+#    - `ui_tests (macos-15, ...)`
+#    - `ui_tests (macos-26, ...)`
+#
+# 2. **Consolidate all fixes into a SINGLE PR**:
+#    - Create ONE branch like `fix/test-suite-<date>` or `fix/test-<brief-description>`
+#    - Include ALL fixes for ALL platforms in the same PR
+#    - The fix should work across macOS 14, 15, and 26
+#
+# 3. **PR description must include**:
+#    - Summary of all failures found across the matrix
+#    - Root cause analysis for each failure
+#    - Explanation of the consolidated fix
+#    - Link to the failed workflow run
+#
+# ### If you cannot fix ALL issues:
+# 1. Fix what you can in a PR
+# 2. Create an **issue** for remaining unfixable problems with:
 #    - The failure details
-#    - Your investigation findings
+#    - Your investigation findings  
 #    - Why automated fixing wasn't possible
 #    - Suggestions for manual resolution
-# 2. Tag the issue with `test-failure` and `needs-investigation`
-#
-# ### If the failure is a known flaky test:
-# 1. Add a comment to any existing issue about the flaky test
-# 2. Consider adding retry logic or `XCTExpectFailure` as appropriate
 #
 # ## Important Guidelines
 #
@@ -786,615 +777,6 @@ jobs:
               core.setFailed(error instanceof Error ? error.message : String(error));
             });
 
-  add_comment:
-    needs:
-      - agent
-      - create_issue
-      - create_pull_request
-      - detection
-    if: >
-      (((!cancelled()) && (needs.agent.result != 'skipped')) && (contains(needs.agent.outputs.output_types, 'add_comment'))) &&
-      (needs.detection.outputs.success == 'true')
-    runs-on: ubuntu-slim
-    permissions:
-      contents: read
-      discussions: write
-      issues: write
-      pull-requests: write
-    timeout-minutes: 10
-    outputs:
-      comment_id: ${{ steps.add_comment.outputs.comment_id }}
-      comment_url: ${{ steps.add_comment.outputs.comment_url }}
-    steps:
-      - name: Debug agent outputs
-        env:
-          AGENT_OUTPUT: ${{ needs.agent.outputs.output }}
-          AGENT_OUTPUT_TYPES: ${{ needs.agent.outputs.output_types }}
-        run: |
-          echo "Output: $AGENT_OUTPUT"
-          echo "Output types: $AGENT_OUTPUT_TYPES"
-      - name: Download agent output artifact
-        continue-on-error: true
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
-        with:
-          name: agent_output.json
-          path: /tmp/gh-aw/safeoutputs/
-      - name: Setup agent output environment variable
-        run: |
-          mkdir -p /tmp/gh-aw/safeoutputs/
-          find "/tmp/gh-aw/safeoutputs/" -type f -print
-          echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/safeoutputs/agent_output.json" >> "$GITHUB_ENV"
-      - name: Add Issue Comment
-        id: add_comment
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_COMMENT_TARGET: "*"
-          GH_AW_CREATED_ISSUE_URL: ${{ needs.create_issue.outputs.issue_url }}
-          GH_AW_CREATED_ISSUE_NUMBER: ${{ needs.create_issue.outputs.issue_number }}
-          GH_AW_TEMPORARY_ID_MAP: ${{ needs.create_issue.outputs.temporary_id_map }}
-          GH_AW_CREATED_PULL_REQUEST_URL: ${{ needs.create_pull_request.outputs.pull_request_url }}
-          GH_AW_CREATED_PULL_REQUEST_NUMBER: ${{ needs.create_pull_request.outputs.pull_request_number }}
-          GH_AW_WORKFLOW_NAME: "Test Failure Fixer"
-          GH_AW_ENGINE_ID: "copilot"
-          GH_AW_ENGINE_MODEL: "claude-opus-4.5"
-        with:
-          github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require("fs");
-            const MAX_LOG_CONTENT_LENGTH = 10000;
-            function truncateForLogging(content) {
-              if (content.length <= MAX_LOG_CONTENT_LENGTH) {
-                return content;
-              }
-              return content.substring(0, MAX_LOG_CONTENT_LENGTH) + `\n... (truncated, total length: ${content.length})`;
-            }
-            function loadAgentOutput() {
-              const agentOutputFile = process.env.GH_AW_AGENT_OUTPUT;
-              if (!agentOutputFile) {
-                core.info("No GH_AW_AGENT_OUTPUT environment variable found");
-                return { success: false };
-              }
-              let outputContent;
-              try {
-                outputContent = fs.readFileSync(agentOutputFile, "utf8");
-              } catch (error) {
-                const errorMessage = `Error reading agent output file: ${error instanceof Error ? error.message : String(error)}`;
-                core.error(errorMessage);
-                return { success: false, error: errorMessage };
-              }
-              if (outputContent.trim() === "") {
-                core.info("Agent output content is empty");
-                return { success: false };
-              }
-              core.info(`Agent output content length: ${outputContent.length}`);
-              let validatedOutput;
-              try {
-                validatedOutput = JSON.parse(outputContent);
-              } catch (error) {
-                const errorMessage = `Error parsing agent output JSON: ${error instanceof Error ? error.message : String(error)}`;
-                core.error(errorMessage);
-                core.info(`Failed to parse content:\n${truncateForLogging(outputContent)}`);
-                return { success: false, error: errorMessage };
-              }
-              if (!validatedOutput.items || !Array.isArray(validatedOutput.items)) {
-                core.info("No valid items found in agent output");
-                core.info(`Parsed content: ${truncateForLogging(JSON.stringify(validatedOutput))}`);
-                return { success: false };
-              }
-              return { success: true, items: validatedOutput.items };
-            }
-            function getMessages() {
-              const messagesEnv = process.env.GH_AW_SAFE_OUTPUT_MESSAGES;
-              if (!messagesEnv) {
-                return null;
-              }
-              try {
-                const rawMessages = JSON.parse(messagesEnv);
-                return {
-                  footer: rawMessages.footer,
-                  footerInstall: rawMessages.footerInstall,
-                  stagedTitle: rawMessages.stagedTitle,
-                  stagedDescription: rawMessages.stagedDescription,
-                  runStarted: rawMessages.runStarted,
-                  runSuccess: rawMessages.runSuccess,
-                  runFailure: rawMessages.runFailure,
-                  closeOlderDiscussion: rawMessages.closeOlderDiscussion,
-                };
-              } catch (error) {
-                core.warning(`Failed to parse GH_AW_SAFE_OUTPUT_MESSAGES: ${error instanceof Error ? error.message : String(error)}`);
-                return null;
-              }
-            }
-            function renderTemplate(template, context) {
-              return template.replace(/\{(\w+)\}/g, (match, key) => {
-                const value = context[key];
-                return value !== undefined && value !== null ? String(value) : match;
-              });
-            }
-            function toSnakeCase(obj) {
-              const result = {};
-              for (const [key, value] of Object.entries(obj)) {
-                const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
-                result[snakeKey] = value;
-                result[key] = value;
-              }
-              return result;
-            }
-            function getFooterMessage(ctx) {
-              const messages = getMessages();
-              const templateContext = toSnakeCase(ctx);
-              const defaultFooter = "> 🏴‍☠️ Ahoy! This treasure was crafted by [{workflow_name}]({run_url})";
-              let footer = messages?.footer ? renderTemplate(messages.footer, templateContext) : renderTemplate(defaultFooter, templateContext);
-              if (ctx.triggeringNumber) {
-                footer += ` fer issue #{triggering_number} 🗺️`.replace("{triggering_number}", String(ctx.triggeringNumber));
-              }
-              return footer;
-            }
-            function getFooterInstallMessage(ctx) {
-              if (!ctx.workflowSource || !ctx.workflowSourceUrl) {
-                return "";
-              }
-              const messages = getMessages();
-              const templateContext = toSnakeCase(ctx);
-              const defaultInstall =
-                "> 🦜 Arr! To plunder this workflow fer yer own ship, run `gh aw add {workflow_source}`. Chart yer course at [{workflow_source_url}]({workflow_source_url})!";
-              return messages?.footerInstall
-                ? renderTemplate(messages.footerInstall, templateContext)
-                : renderTemplate(defaultInstall, templateContext);
-            }
-            function generateXMLMarker(workflowName, runUrl) {
-              const engineId = process.env.GH_AW_ENGINE_ID || "";
-              const engineVersion = process.env.GH_AW_ENGINE_VERSION || "";
-              const engineModel = process.env.GH_AW_ENGINE_MODEL || "";
-              const trackerId = process.env.GH_AW_TRACKER_ID || "";
-              const parts = [];
-              parts.push(`agentic-workflow: ${workflowName}`);
-              if (trackerId) {
-                parts.push(`tracker-id: ${trackerId}`);
-              }
-              if (engineId) {
-                parts.push(`engine: ${engineId}`);
-              }
-              if (engineVersion) {
-                parts.push(`version: ${engineVersion}`);
-              }
-              if (engineModel) {
-                parts.push(`model: ${engineModel}`);
-              }
-              parts.push(`run: ${runUrl}`);
-              return `<!-- ${parts.join(", ")} -->`;
-            }
-            function generateFooterWithMessages(
-              workflowName,
-              runUrl,
-              workflowSource,
-              workflowSourceURL,
-              triggeringIssueNumber,
-              triggeringPRNumber,
-              triggeringDiscussionNumber
-            ) {
-              let triggeringNumber;
-              if (triggeringIssueNumber) {
-                triggeringNumber = triggeringIssueNumber;
-              } else if (triggeringPRNumber) {
-                triggeringNumber = triggeringPRNumber;
-              } else if (triggeringDiscussionNumber) {
-                triggeringNumber = `discussion #${triggeringDiscussionNumber}`;
-              }
-              const ctx = {
-                workflowName,
-                runUrl,
-                workflowSource,
-                workflowSourceUrl: workflowSourceURL,
-                triggeringNumber,
-              };
-              let footer = "\n\n" + getFooterMessage(ctx);
-              const installMessage = getFooterInstallMessage(ctx);
-              if (installMessage) {
-                footer += "\n>\n" + installMessage;
-              }
-              footer += "\n\n" + generateXMLMarker(workflowName, runUrl);
-              footer += "\n";
-              return footer;
-            }
-            function getTrackerID(format) {
-              const trackerID = process.env.GH_AW_TRACKER_ID || "";
-              if (trackerID) {
-                core.info(`Tracker ID: ${trackerID}`);
-                return format === "markdown" ? `\n\n<!-- tracker-id: ${trackerID} -->` : trackerID;
-              }
-              return "";
-            }
-            function getRepositoryUrl() {
-              const targetRepoSlug = process.env.GH_AW_TARGET_REPO_SLUG;
-              if (targetRepoSlug) {
-                const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
-                return `${githubServer}/${targetRepoSlug}`;
-              } else if (context.payload.repository?.html_url) {
-                return context.payload.repository.html_url;
-              } else {
-                const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
-                return `${githubServer}/${context.repo.owner}/${context.repo.repo}`;
-              }
-            }
-            const crypto = require("crypto");
-            const TEMPORARY_ID_PATTERN = /#(aw_[0-9a-f]{12})/gi;
-            function generateTemporaryId() {
-              return "aw_" + crypto.randomBytes(6).toString("hex");
-            }
-            function isTemporaryId(value) {
-              if (typeof value === "string") {
-                return /^aw_[0-9a-f]{12}$/i.test(value);
-              }
-              return false;
-            }
-            function normalizeTemporaryId(tempId) {
-              return String(tempId).toLowerCase();
-            }
-            function replaceTemporaryIdReferences(text, tempIdMap, currentRepo) {
-              return text.replace(TEMPORARY_ID_PATTERN, (match, tempId) => {
-                const resolved = tempIdMap.get(normalizeTemporaryId(tempId));
-                if (resolved !== undefined) {
-                  if (currentRepo && resolved.repo === currentRepo) {
-                    return `#${resolved.number}`;
-                  }
-                  return `${resolved.repo}#${resolved.number}`;
-                }
-                return match;
-              });
-            }
-            function replaceTemporaryIdReferencesLegacy(text, tempIdMap) {
-              return text.replace(TEMPORARY_ID_PATTERN, (match, tempId) => {
-                const issueNumber = tempIdMap.get(normalizeTemporaryId(tempId));
-                if (issueNumber !== undefined) {
-                  return `#${issueNumber}`;
-                }
-                return match;
-              });
-            }
-            function loadTemporaryIdMap() {
-              const mapJson = process.env.GH_AW_TEMPORARY_ID_MAP;
-              if (!mapJson || mapJson === "{}") {
-                return new Map();
-              }
-              try {
-                const mapObject = JSON.parse(mapJson);
-                const result = new Map();
-                for (const [key, value] of Object.entries(mapObject)) {
-                  const normalizedKey = normalizeTemporaryId(key);
-                  if (typeof value === "number") {
-                    const contextRepo = `${context.repo.owner}/${context.repo.repo}`;
-                    result.set(normalizedKey, { repo: contextRepo, number: value });
-                  } else if (typeof value === "object" && value !== null && "repo" in value && "number" in value) {
-                    result.set(normalizedKey, { repo: String(value.repo), number: Number(value.number) });
-                  }
-                }
-                return result;
-              } catch (error) {
-                if (typeof core !== "undefined") {
-                  core.warning(`Failed to parse temporary ID map: ${error instanceof Error ? error.message : String(error)}`);
-                }
-                return new Map();
-              }
-            }
-            function resolveIssueNumber(value, temporaryIdMap) {
-              if (value === undefined || value === null) {
-                return { resolved: null, wasTemporaryId: false, errorMessage: "Issue number is missing" };
-              }
-              const valueStr = String(value);
-              if (isTemporaryId(valueStr)) {
-                const resolvedPair = temporaryIdMap.get(normalizeTemporaryId(valueStr));
-                if (resolvedPair !== undefined) {
-                  return { resolved: resolvedPair, wasTemporaryId: true, errorMessage: null };
-                }
-                return {
-                  resolved: null,
-                  wasTemporaryId: true,
-                  errorMessage: `Temporary ID '${valueStr}' not found in map. Ensure the issue was created before linking.`,
-                };
-              }
-              const issueNumber = typeof value === "number" ? value : parseInt(valueStr, 10);
-              if (isNaN(issueNumber) || issueNumber <= 0) {
-                return { resolved: null, wasTemporaryId: false, errorMessage: `Invalid issue number: ${value}` };
-              }
-              const contextRepo = typeof context !== "undefined" ? `${context.repo.owner}/${context.repo.repo}` : "";
-              return { resolved: { repo: contextRepo, number: issueNumber }, wasTemporaryId: false, errorMessage: null };
-            }
-            function serializeTemporaryIdMap(tempIdMap) {
-              const obj = Object.fromEntries(tempIdMap);
-              return JSON.stringify(obj);
-            }
-            async function commentOnDiscussion(github, owner, repo, discussionNumber, message, replyToId) {
-              const { repository } = await github.graphql(
-                `
-                query($owner: String!, $repo: String!, $num: Int!) {
-                  repository(owner: $owner, name: $repo) {
-                    discussion(number: $num) { 
-                      id 
-                      url
-                    }
-                  }
-                }`,
-                { owner, repo, num: discussionNumber }
-              );
-              if (!repository || !repository.discussion) {
-                throw new Error(`Discussion #${discussionNumber} not found in ${owner}/${repo}`);
-              }
-              const discussionId = repository.discussion.id;
-              const discussionUrl = repository.discussion.url;
-              let result;
-              if (replyToId) {
-                result = await github.graphql(
-                  `
-                  mutation($dId: ID!, $body: String!, $replyToId: ID!) {
-                    addDiscussionComment(input: { discussionId: $dId, body: $body, replyToId: $replyToId }) {
-                      comment { 
-                        id 
-                        body 
-                        createdAt 
-                        url
-                      }
-                    }
-                  }`,
-                  { dId: discussionId, body: message, replyToId }
-                );
-              } else {
-                result = await github.graphql(
-                  `
-                  mutation($dId: ID!, $body: String!) {
-                    addDiscussionComment(input: { discussionId: $dId, body: $body }) {
-                      comment { 
-                        id 
-                        body 
-                        createdAt 
-                        url
-                      }
-                    }
-                  }`,
-                  { dId: discussionId, body: message }
-                );
-              }
-              const comment = result.addDiscussionComment.comment;
-              return {
-                id: comment.id,
-                html_url: comment.url,
-                discussion_url: discussionUrl,
-              };
-            }
-            async function main() {
-              const isStaged = process.env.GH_AW_SAFE_OUTPUTS_STAGED === "true";
-              const isDiscussionExplicit = process.env.GITHUB_AW_COMMENT_DISCUSSION === "true";
-              const temporaryIdMap = loadTemporaryIdMap();
-              if (temporaryIdMap.size > 0) {
-                core.info(`Loaded temporary ID map with ${temporaryIdMap.size} entries`);
-              }
-              const result = loadAgentOutput();
-              if (!result.success) {
-                return;
-              }
-              const commentItems = result.items.filter( item => item.type === "add_comment");
-              if (commentItems.length === 0) {
-                core.info("No add-comment items found in agent output");
-                return;
-              }
-              core.info(`Found ${commentItems.length} add-comment item(s)`);
-              function getTargetNumber(item) {
-                return item.item_number;
-              }
-              const commentTarget = process.env.GH_AW_COMMENT_TARGET || "triggering";
-              core.info(`Comment target configuration: ${commentTarget}`);
-              const isIssueContext = context.eventName === "issues" || context.eventName === "issue_comment";
-              const isPRContext =
-                context.eventName === "pull_request" ||
-                context.eventName === "pull_request_review" ||
-                context.eventName === "pull_request_review_comment";
-              const isDiscussionContext = context.eventName === "discussion" || context.eventName === "discussion_comment";
-              const isDiscussion = isDiscussionContext || isDiscussionExplicit;
-              if (isStaged) {
-                let summaryContent = "## 🎭 Staged Mode: Add Comments Preview\n\n";
-                summaryContent += "The following comments would be added if staged mode was disabled:\n\n";
-                const createdIssueUrl = process.env.GH_AW_CREATED_ISSUE_URL;
-                const createdIssueNumber = process.env.GH_AW_CREATED_ISSUE_NUMBER;
-                const createdDiscussionUrl = process.env.GH_AW_CREATED_DISCUSSION_URL;
-                const createdDiscussionNumber = process.env.GH_AW_CREATED_DISCUSSION_NUMBER;
-                const createdPullRequestUrl = process.env.GH_AW_CREATED_PULL_REQUEST_URL;
-                const createdPullRequestNumber = process.env.GH_AW_CREATED_PULL_REQUEST_NUMBER;
-                if (createdIssueUrl || createdDiscussionUrl || createdPullRequestUrl) {
-                  summaryContent += "#### Related Items\n\n";
-                  if (createdIssueUrl && createdIssueNumber) {
-                    summaryContent += `- Issue: [#${createdIssueNumber}](${createdIssueUrl})\n`;
-                  }
-                  if (createdDiscussionUrl && createdDiscussionNumber) {
-                    summaryContent += `- Discussion: [#${createdDiscussionNumber}](${createdDiscussionUrl})\n`;
-                  }
-                  if (createdPullRequestUrl && createdPullRequestNumber) {
-                    summaryContent += `- Pull Request: [#${createdPullRequestNumber}](${createdPullRequestUrl})\n`;
-                  }
-                  summaryContent += "\n";
-                }
-                for (let i = 0; i < commentItems.length; i++) {
-                  const item = commentItems[i];
-                  summaryContent += `### Comment ${i + 1}\n`;
-                  const targetNumber = getTargetNumber(item);
-                  if (targetNumber) {
-                    const repoUrl = getRepositoryUrl();
-                    if (isDiscussion) {
-                      const discussionUrl = `${repoUrl}/discussions/${targetNumber}`;
-                      summaryContent += `**Target Discussion:** [#${targetNumber}](${discussionUrl})\n\n`;
-                    } else {
-                      const issueUrl = `${repoUrl}/issues/${targetNumber}`;
-                      summaryContent += `**Target Issue:** [#${targetNumber}](${issueUrl})\n\n`;
-                    }
-                  } else {
-                    if (isDiscussion) {
-                      summaryContent += `**Target:** Current discussion\n\n`;
-                    } else {
-                      summaryContent += `**Target:** Current issue/PR\n\n`;
-                    }
-                  }
-                  summaryContent += `**Body:**\n${item.body || "No content provided"}\n\n`;
-                  summaryContent += "---\n\n";
-                }
-                await core.summary.addRaw(summaryContent).write();
-                core.info("📝 Comment creation preview written to step summary");
-                return;
-              }
-              if (commentTarget === "triggering" && !isIssueContext && !isPRContext && !isDiscussionContext) {
-                core.info('Target is "triggering" but not running in issue, pull request, or discussion context, skipping comment creation');
-                return;
-              }
-              const triggeringIssueNumber =
-                context.payload?.issue?.number && !context.payload?.issue?.pull_request ? context.payload.issue.number : undefined;
-              const triggeringPRNumber =
-                context.payload?.pull_request?.number || (context.payload?.issue?.pull_request ? context.payload.issue.number : undefined);
-              const triggeringDiscussionNumber = context.payload?.discussion?.number;
-              const createdComments = [];
-              for (let i = 0; i < commentItems.length; i++) {
-                const commentItem = commentItems[i];
-                core.info(`Processing add-comment item ${i + 1}/${commentItems.length}: bodyLength=${commentItem.body.length}`);
-                let itemNumber;
-                let commentEndpoint;
-                if (commentTarget === "*") {
-                  const targetNumber = getTargetNumber(commentItem);
-                  if (targetNumber) {
-                    itemNumber = parseInt(targetNumber, 10);
-                    if (isNaN(itemNumber) || itemNumber <= 0) {
-                      core.info(`Invalid target number specified: ${targetNumber}`);
-                      continue;
-                    }
-                    commentEndpoint = isDiscussion ? "discussions" : "issues";
-                  } else {
-                    core.info(`Target is "*" but no number specified in comment item`);
-                    continue;
-                  }
-                } else if (commentTarget && commentTarget !== "triggering") {
-                  itemNumber = parseInt(commentTarget, 10);
-                  if (isNaN(itemNumber) || itemNumber <= 0) {
-                    core.info(`Invalid target number in target configuration: ${commentTarget}`);
-                    continue;
-                  }
-                  commentEndpoint = isDiscussion ? "discussions" : "issues";
-                } else {
-                  if (isIssueContext) {
-                    itemNumber = context.payload.issue?.number || context.payload.pull_request?.number || context.payload.discussion?.number;
-                    if (context.payload.issue) {
-                      commentEndpoint = "issues";
-                    } else {
-                      core.info("Issue context detected but no issue found in payload");
-                      continue;
-                    }
-                  } else if (isPRContext) {
-                    itemNumber = context.payload.pull_request?.number || context.payload.issue?.number || context.payload.discussion?.number;
-                    if (context.payload.pull_request) {
-                      commentEndpoint = "issues"; 
-                    } else {
-                      core.info("Pull request context detected but no pull request found in payload");
-                      continue;
-                    }
-                  } else if (isDiscussionContext) {
-                    itemNumber = context.payload.discussion?.number || context.payload.issue?.number || context.payload.pull_request?.number;
-                    if (context.payload.discussion) {
-                      commentEndpoint = "discussions"; 
-                    } else {
-                      core.info("Discussion context detected but no discussion found in payload");
-                      continue;
-                    }
-                  }
-                }
-                if (!itemNumber) {
-                  core.info("Could not determine issue, pull request, or discussion number");
-                  continue;
-                }
-                let body = replaceTemporaryIdReferences(commentItem.body.trim(), temporaryIdMap);
-                const createdIssueUrl = process.env.GH_AW_CREATED_ISSUE_URL;
-                const createdIssueNumber = process.env.GH_AW_CREATED_ISSUE_NUMBER;
-                const createdDiscussionUrl = process.env.GH_AW_CREATED_DISCUSSION_URL;
-                const createdDiscussionNumber = process.env.GH_AW_CREATED_DISCUSSION_NUMBER;
-                const createdPullRequestUrl = process.env.GH_AW_CREATED_PULL_REQUEST_URL;
-                const createdPullRequestNumber = process.env.GH_AW_CREATED_PULL_REQUEST_NUMBER;
-                let hasReferences = false;
-                let referencesSection = "\n\n#### Related Items\n\n";
-                if (createdIssueUrl && createdIssueNumber) {
-                  referencesSection += `- Issue: [#${createdIssueNumber}](${createdIssueUrl})\n`;
-                  hasReferences = true;
-                }
-                if (createdDiscussionUrl && createdDiscussionNumber) {
-                  referencesSection += `- Discussion: [#${createdDiscussionNumber}](${createdDiscussionUrl})\n`;
-                  hasReferences = true;
-                }
-                if (createdPullRequestUrl && createdPullRequestNumber) {
-                  referencesSection += `- Pull Request: [#${createdPullRequestNumber}](${createdPullRequestUrl})\n`;
-                  hasReferences = true;
-                }
-                if (hasReferences) {
-                  body += referencesSection;
-                }
-                const workflowName = process.env.GH_AW_WORKFLOW_NAME || "Workflow";
-                const workflowSource = process.env.GH_AW_WORKFLOW_SOURCE || "";
-                const workflowSourceURL = process.env.GH_AW_WORKFLOW_SOURCE_URL || "";
-                const runId = context.runId;
-                const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
-                const runUrl = context.payload.repository
-                  ? `${context.payload.repository.html_url}/actions/runs/${runId}`
-                  : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
-                body += getTrackerID("markdown");
-                body += generateFooterWithMessages(
-                  workflowName,
-                  runUrl,
-                  workflowSource,
-                  workflowSourceURL,
-                  triggeringIssueNumber,
-                  triggeringPRNumber,
-                  triggeringDiscussionNumber
-                );
-                try {
-                  let comment;
-                  if (commentEndpoint === "discussions") {
-                    core.info(`Creating comment on discussion #${itemNumber}`);
-                    core.info(`Comment content length: ${body.length}`);
-                    let replyToId;
-                    if (context.eventName === "discussion_comment" && context.payload?.comment?.node_id) {
-                      replyToId = context.payload.comment.node_id;
-                      core.info(`Creating threaded reply to comment ${replyToId}`);
-                    }
-                    comment = await commentOnDiscussion(github, context.repo.owner, context.repo.repo, itemNumber, body, replyToId);
-                    core.info("Created discussion comment #" + comment.id + ": " + comment.html_url);
-                    comment.discussion_url = comment.discussion_url;
-                  } else {
-                    core.info(`Creating comment on ${commentEndpoint} #${itemNumber}`);
-                    core.info(`Comment content length: ${body.length}`);
-                    const { data: restComment } = await github.rest.issues.createComment({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      issue_number: itemNumber,
-                      body: body,
-                    });
-                    comment = restComment;
-                    core.info("Created comment #" + comment.id + ": " + comment.html_url);
-                  }
-                  createdComments.push(comment);
-                  if (i === commentItems.length - 1) {
-                    core.setOutput("comment_id", comment.id);
-                    core.setOutput("comment_url", comment.html_url);
-                  }
-                } catch (error) {
-                  core.error(`✗ Failed to create comment: ${error instanceof Error ? error.message : String(error)}`);
-                  throw error;
-                }
-              }
-              if (createdComments.length > 0) {
-                let summaryContent = "\n\n## GitHub Comments\n";
-                for (const comment of createdComments) {
-                  summaryContent += `- Comment #${comment.id}: [View Comment](${comment.html_url})\n`;
-                }
-                await core.summary.addRaw(summaryContent).write();
-              }
-              core.info(`Successfully created ${createdComments.length} comment(s)`);
-              return createdComments;
-            }
-            await main();
-
   agent:
     needs: activation
     runs-on: ubuntu-latest
@@ -1521,7 +903,7 @@ jobs:
         run: |
           mkdir -p /tmp/gh-aw/safeoutputs
           cat > /tmp/gh-aw/safeoutputs/config.json << 'EOF'
-          {"add_comment":{"max":3,"target":"*"},"create_issue":{"max":1},"create_pull_request":{},"missing_tool":{"max":0},"noop":{"max":1},"validate-macos-14":{"description":"Build and test the proposed fix on macOS 14 with Xcode 16.2","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 14"},"validate-macos-15":{"description":"Build and test the proposed fix on macOS 15 with Xcode 16.4","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 15"},"validate-macos-26":{"description":"Build and test the proposed fix on macOS 26 with Xcode 26.0","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 26"}}
+          {"create_issue":{"max":1},"create_pull_request":{},"missing_tool":{"max":0},"noop":{"max":1},"validate-macos-14":{"description":"Build and test the proposed fix on macOS 14 with Xcode 16.2","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 14"},"validate-macos-15":{"description":"Build and test the proposed fix on macOS 15 with Xcode 16.4","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 15"},"validate-macos-26":{"description":"Build and test the proposed fix on macOS 26 with Xcode 26.0","inputs":{"failed_tests":{"default":null,"description":"Comma-separated list of specific failed test names to re-run (optional)","required":false,"type":"string"},"test_target":{"default":null,"description":"Which test target to run. Valid values: aynaTests, aynaUITests, both","required":true,"type":"string"}},"output":"Validation completed on macOS 26"}}
           EOF
           cat > /tmp/gh-aw/safeoutputs/tools.json << 'EOF'
           [
@@ -1564,28 +946,6 @@ jobs:
                 "type": "object"
               },
               "name": "create_issue"
-            },
-            {
-              "description": "Add a comment to an existing GitHub issue, pull request, or discussion. Use this to provide feedback, answer questions, or add information to an existing conversation. For creating new items, use create_issue, create_discussion, or create_pull_request instead. CONSTRAINTS: Maximum 3 comment(s) can be added. Target: *.",
-              "inputSchema": {
-                "additionalProperties": false,
-                "properties": {
-                  "body": {
-                    "description": "Comment content in Markdown. Provide helpful, relevant information that adds value to the conversation.",
-                    "type": "string"
-                  },
-                  "item_number": {
-                    "description": "The issue, pull request, or discussion number to comment on. Must be a valid existing item in the repository.",
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "body",
-                  "item_number"
-                ],
-                "type": "object"
-              },
-              "name": "add_comment"
             },
             {
               "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[Test Fix]\". Labels [test-fix automated] will be automatically added. PRs will be created as drafts.",
@@ -1667,20 +1027,6 @@ jobs:
           EOF
           cat > /tmp/gh-aw/safeoutputs/validation.json << 'EOF'
           {
-            "add_comment": {
-              "defaultMax": 1,
-              "fields": {
-                "body": {
-                  "required": true,
-                  "type": "string",
-                  "sanitize": true,
-                  "maxLength": 65000
-                },
-                "item_number": {
-                  "issueOrPRNumber": true
-                }
-              }
-            },
             "create_issue": {
               "defaultMax": 1,
               "fields": {
@@ -2996,9 +2342,11 @@ jobs:
              - Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards
              - Run linting: `swiftlint --strict && swiftformat .` after changes
           
-          ### Phase 4: Validation on macOS (REQUIRED!)
+          ### Phase 4: Validation on macOS (OPTIONAL - Skip if confident)
           
-          **You MUST validate your fixes on the affected macOS version(s) before creating a PR.** You have three validation tools available:
+          **CRITICAL: Each validation job can only be called ONCE. Do NOT call them iteratively.**
+          
+          You have three validation tools available:
           
           | Tool | Runner | Xcode |
           |------|--------|-------|
@@ -3006,40 +2354,27 @@ jobs:
           | `validate-macos-15` | macOS 15 | Xcode 16.4 |
           | `validate-macos-26` | macOS 26 | Xcode 26.0 |
           
-          1. **Identify which platform(s) failed** from the original test failure logs
+          **Workflow:**
+          1. Make ALL your code fixes FIRST
+          2. Only THEN call validation jobs (once each) to verify
+          3. If validation fails, create an issue instead of trying again
           
-          2. **Call the appropriate validation job(s)** for each failed platform:
-             - Set `test_target` to the appropriate target:
-               - `aynaTests` for unit test failures
-               - `aynaUITests` for UI test failures
-               - `both` if both types of tests failed
-             - Set `failed_tests` to the specific test names that failed (comma-separated), or leave empty to run all tests in the target
+          **When to use validation:**
+          - Use validation when you want extra confidence before creating a PR
+          - Skip validation if the fix is straightforward (e.g., simple typo, obvious assertion fix)
+          - The PR will be validated by CI anyway after creation
           
-          3. **Validate on ALL affected platforms**:
-             - If macOS 14 failed → call `validate-macos-14`
-             - If macOS 15 failed → call `validate-macos-15`
-             - If macOS 26 failed → call `validate-macos-26`
-             - If multiple platforms failed → call multiple validation jobs
+          **If you do validate:**
+          - Call each job only ONCE with `test_target` set to `aynaTests`, `aynaUITests`, or `both`
+          - If validation fails, proceed to create the PR anyway (CI will catch issues) OR create an issue
           
-          4. **Check the validation results**:
-             - If ALL validations **pass**: Proceed to create the PR
-             - If ANY validation **fails**: Analyze the new errors, iterate on your fix, and validate again
-             - Maximum 3 validation attempts per platform before creating an issue instead
-          
-          5. **Example for multi-platform failure**:
-             ```
-             # If tests failed on macOS 14 and macOS 26:
-          
-             Call validate-macos-14 with:
-             - test_target: "aynaTests"
-             - failed_tests: "MessageTests/testMessageParsing"
-          
-             Call validate-macos-26 with:
-             - test_target: "aynaTests"
-             - failed_tests: "MessageTests/testMessageParsing"
-             ```
-          
-          This ensures your fix works across all affected macOS versions before submitting.
+          **Example:**
+          ```
+          # After making all fixes, validate once:
+          Call validate-macos-14 with: test_target: "aynaTests"
+          Call validate-macos-15 with: test_target: "aynaTests"
+          Call validate-macos-26 with: test_target: "aynaTests"
+          ```
           
           ### Phase 5: Create Pull Request
           
@@ -3073,22 +2408,34 @@ jobs:
           
           ## Output Requirements
           
-          ### If you successfully fix the issue:
-          1. Create a **draft pull request** with the fix
-          2. Include a clear explanation of what was broken and how you fixed it
-          3. Tag the PR with `test-fix` and `automated` labels
+          ### Create ONE consolidated PR to fix ALL test failures:
           
-          ### If you cannot fix the issue:
-          1. Create an **issue** documenting:
+          1. **Analyze ALL failed jobs** from the workflow run across the entire matrix:
+             - `unit_tests (macos-14, ...)` 
+             - `unit_tests (macos-15, ...)`
+             - `unit_tests (macos-26, ...)`
+             - `ui_tests (macos-14, ...)`
+             - `ui_tests (macos-15, ...)`
+             - `ui_tests (macos-26, ...)`
+          
+          2. **Consolidate all fixes into a SINGLE PR**:
+             - Create ONE branch like `fix/test-suite-<date>` or `fix/test-<brief-description>`
+             - Include ALL fixes for ALL platforms in the same PR
+             - The fix should work across macOS 14, 15, and 26
+          
+          3. **PR description must include**:
+             - Summary of all failures found across the matrix
+             - Root cause analysis for each failure
+             - Explanation of the consolidated fix
+             - Link to the failed workflow run
+          
+          ### If you cannot fix ALL issues:
+          1. Fix what you can in a PR
+          2. Create an **issue** for remaining unfixable problems with:
              - The failure details
-             - Your investigation findings
+             - Your investigation findings  
              - Why automated fixing wasn't possible
              - Suggestions for manual resolution
-          2. Tag the issue with `test-failure` and `needs-investigation`
-          
-          ### If the failure is a known flaky test:
-          1. Add a comment to any existing issue about the flaky test
-          2. Consider adding retry logic or `XCTExpectFailure` as appropriate
           
           ## Important Guidelines
           
@@ -6236,8 +5583,7 @@ jobs:
       - activation
       - create_issue
       - create_pull_request
-      - add_comment
-    if: ((always()) && (needs.agent.result != 'skipped')) && (!(needs.add_comment.outputs.comment_id))
+    if: (always()) && (needs.agent.result != 'skipped')
     runs-on: ubuntu-slim
     permissions:
       contents: read

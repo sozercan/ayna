@@ -43,10 +43,6 @@ safe-outputs:
   create-issue:
     title-prefix: "[Test Fix]"
     labels: ["test-failure", "automated"]
-    max: 1
-  add-comment:
-    target: "*"
-    max: 3
   create-pull-request:
     title-prefix: "[Test Fix]"
     labels: ["test-fix", "automated"]
@@ -462,9 +458,11 @@ Based on your analysis, implement fixes:
    - Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards
    - Run linting: `swiftlint --strict && swiftformat .` after changes
 
-### Phase 4: Validation on macOS (REQUIRED!)
+### Phase 4: Validation on macOS (OPTIONAL - Skip if confident)
 
-**You MUST validate your fixes on the affected macOS version(s) before creating a PR.** You have three validation tools available:
+**CRITICAL: Each validation job can only be called ONCE. Do NOT call them iteratively.**
+
+You have three validation tools available:
 
 | Tool | Runner | Xcode |
 |------|--------|-------|
@@ -472,40 +470,27 @@ Based on your analysis, implement fixes:
 | `validate-macos-15` | macOS 15 | Xcode 16.4 |
 | `validate-macos-26` | macOS 26 | Xcode 26.0 |
 
-1. **Identify which platform(s) failed** from the original test failure logs
+**Workflow:**
+1. Make ALL your code fixes FIRST
+2. Only THEN call validation jobs (once each) to verify
+3. If validation fails, create an issue instead of trying again
 
-2. **Call the appropriate validation job(s)** for each failed platform:
-   - Set `test_target` to the appropriate target:
-     - `aynaTests` for unit test failures
-     - `aynaUITests` for UI test failures
-     - `both` if both types of tests failed
-   - Set `failed_tests` to the specific test names that failed (comma-separated), or leave empty to run all tests in the target
+**When to use validation:**
+- Use validation when you want extra confidence before creating a PR
+- Skip validation if the fix is straightforward (e.g., simple typo, obvious assertion fix)
+- The PR will be validated by CI anyway after creation
 
-3. **Validate on ALL affected platforms**:
-   - If macOS 14 failed → call `validate-macos-14`
-   - If macOS 15 failed → call `validate-macos-15`
-   - If macOS 26 failed → call `validate-macos-26`
-   - If multiple platforms failed → call multiple validation jobs
+**If you do validate:**
+- Call each job only ONCE with `test_target` set to `aynaTests`, `aynaUITests`, or `both`
+- If validation fails, proceed to create the PR anyway (CI will catch issues) OR create an issue
 
-4. **Check the validation results**:
-   - If ALL validations **pass**: Proceed to create the PR
-   - If ANY validation **fails**: Analyze the new errors, iterate on your fix, and validate again
-   - Maximum 3 validation attempts per platform before creating an issue instead
-
-5. **Example for multi-platform failure**:
-   ```
-   # If tests failed on macOS 14 and macOS 26:
-
-   Call validate-macos-14 with:
-   - test_target: "aynaTests"
-   - failed_tests: "MessageTests/testMessageParsing"
-
-   Call validate-macos-26 with:
-   - test_target: "aynaTests"
-   - failed_tests: "MessageTests/testMessageParsing"
-   ```
-
-This ensures your fix works across all affected macOS versions before submitting.
+**Example:**
+```
+# After making all fixes, validate once:
+Call validate-macos-14 with: test_target: "aynaTests"
+Call validate-macos-15 with: test_target: "aynaTests"
+Call validate-macos-26 with: test_target: "aynaTests"
+```
 
 ### Phase 5: Create Pull Request
 
@@ -539,22 +524,34 @@ This ensures your fix works across all affected macOS versions before submitting
 
 ## Output Requirements
 
-### If you successfully fix the issue:
-1. Create a **draft pull request** with the fix
-2. Include a clear explanation of what was broken and how you fixed it
-3. Tag the PR with `test-fix` and `automated` labels
+### Create ONE consolidated PR to fix ALL test failures:
 
-### If you cannot fix the issue:
-1. Create an **issue** documenting:
+1. **Analyze ALL failed jobs** from the workflow run across the entire matrix:
+   - `unit_tests (macos-14, ...)` 
+   - `unit_tests (macos-15, ...)`
+   - `unit_tests (macos-26, ...)`
+   - `ui_tests (macos-14, ...)`
+   - `ui_tests (macos-15, ...)`
+   - `ui_tests (macos-26, ...)`
+
+2. **Consolidate all fixes into a SINGLE PR**:
+   - Create ONE branch like `fix/test-suite-<date>` or `fix/test-<brief-description>`
+   - Include ALL fixes for ALL platforms in the same PR
+   - The fix should work across macOS 14, 15, and 26
+
+3. **PR description must include**:
+   - Summary of all failures found across the matrix
+   - Root cause analysis for each failure
+   - Explanation of the consolidated fix
+   - Link to the failed workflow run
+
+### If you cannot fix ALL issues:
+1. Fix what you can in a PR
+2. Create an **issue** for remaining unfixable problems with:
    - The failure details
-   - Your investigation findings
+   - Your investigation findings  
    - Why automated fixing wasn't possible
    - Suggestions for manual resolution
-2. Tag the issue with `test-failure` and `needs-investigation`
-
-### If the failure is a known flaky test:
-1. Add a comment to any existing issue about the flaky test
-2. Consider adding retry logic or `XCTExpectFailure` as appropriate
 
 ## Important Guidelines
 
