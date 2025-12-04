@@ -18,10 +18,11 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     }
 }
 
-/// A shared ViewModel that encapsulates common chat logic for iOS views.
-/// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
-@MainActor
-final class IOSChatViewModel: ObservableObject {
+// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
+// A shared ViewModel that encapsulates common chat logic for iOS views.
+// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
+// swiftlint:disable:next type_body_length
+@MainActor final class IOSChatViewModel: ObservableObject {
     // MARK: - Published State
 
     @Published var messageText = ""
@@ -214,7 +215,7 @@ final class IOSChatViewModel: ObservableObject {
     }
 
     /// Send a message in the current conversation.
-    func sendMessage() {
+    func sendMessage() { // swiftlint:disable:this function_body_length
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         DiagnosticsLogger.log(
@@ -389,8 +390,7 @@ final class IOSChatViewModel: ObservableObject {
     }
 
     // Helper method to send messages with tool call support
-    // swiftlint:disable:next function_body_length
-    private func sendMessageWithToolSupport( // swiftlint:disable:this superfluous_disable_command
+    private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String,
         conversationId: UUID,

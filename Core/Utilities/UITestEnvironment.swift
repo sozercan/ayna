@@ -65,18 +65,29 @@ enum UITestEnvironment {
     @MainActor
     private static func configureOpenAIService() {
         let service = OpenAIService.shared
-        if service.customModels.isEmpty {
-            service.customModels = [defaultModel]
-        } else if !service.customModels.contains(defaultModel) {
+
+        // Always ensure test model exists - add it if not present
+        if !service.customModels.contains(defaultModel) {
             service.customModels.insert(defaultModel, at: 0)
         }
 
         service.modelProviders[defaultModel] = .openai
         service.modelEndpointTypes[defaultModel] = .chatCompletions
-        if service.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            service.selectedModel = defaultModel
-        }
+
+        // Always set selected model to test model for deterministic tests
+        service.selectedModel = defaultModel
         service.apiKey = service.apiKey.isEmpty ? "ui-test-api-key" : service.apiKey
+
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "🧪 Configured OpenAI service for UI tests",
+            metadata: [
+                "customModels": "\(service.customModels)",
+                "selectedModel": service.selectedModel,
+                "usableModels": "\(service.usableModels)"
+            ]
+        )
     }
 
     private static func clearConversationArtifacts() {

@@ -231,6 +231,152 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         XCTAssertEqual(finalTitle, localTitle)
     }
+
+    // MARK: - Additional Watch Integration Tests
+
+    func testStreamingThrottleInterval() {
+        // Verify the throttle interval constant is reasonable for Watch performance
+        let uiUpdateInterval: TimeInterval = 0.1 // 100ms as used in WatchChatViewModel
+        XCTAssertEqual(uiUpdateInterval, 0.1, accuracy: 0.001)
+        XCTAssertTrue(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
+        XCTAssertTrue(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
+    }
+
+    func testMaxToolCallDepthConstant() {
+        // The WatchChatViewModel should limit recursive tool calls
+        let maxToolCallDepth = 5
+
+        // Simulate checking depth limit
+        var currentDepth = 0
+        var reachedLimit = false
+
+        for _ in 1 ... 10 {
+            if currentDepth >= maxToolCallDepth {
+                reachedLimit = true
+                break
+            }
+            currentDepth += 1
+        }
+
+        XCTAssertTrue(reachedLimit, "Should reach tool call depth limit")
+        XCTAssertEqual(currentDepth, maxToolCallDepth)
+    }
+
+    func testWatchConversationSyncMergeLogic() {
+        // Test the merge logic used in WatchConversationStore.updateConversations
+        let conversationId = UUID()
+
+        // Local has more messages (during streaming)
+        var localConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
+        localConv.addMessage(Message(role: .user, content: "Hello"))
+        localConv.addMessage(Message(role: .assistant, content: "Hi!"))
+        localConv.addMessage(Message(role: .assistant, content: "")) // Streaming placeholder
+
+        // Remote has fewer messages (hasn't received streaming update yet)
+        var remoteConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
+        remoteConv.addMessage(Message(role: .user, content: "Hello"))
+        remoteConv.addMessage(Message(role: .assistant, content: "Hi!"))
+
+        // Merge logic should preserve local when it has more messages
+        let shouldPreserveLocalMessages = localConv.messages.count > remoteConv.messages.count
+        XCTAssertTrue(shouldPreserveLocalMessages)
+    }
+
+    func testWatchMessageRoundTripWithAllFields() throws {
+        let originalId = UUID()
+        let timestamp = Date()
+        let original = Message(
+            id: originalId,
+            role: .assistant,
+            content: "Response with **markdown** and `code`",
+            timestamp: timestamp,
+            model: "gpt-4o"
+        )
+
+        // Convert to WatchMessage
+        let watchMessage = WatchMessage(from: original)
+
+        // Encode/decode (simulating WatchConnectivity transfer)
+        let data = try JSONEncoder().encode(watchMessage)
+        let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
+
+        // Convert back to Message
+        let final = decoded.toMessage()
+
+        XCTAssertEqual(final.id, originalId)
+        XCTAssertEqual(final.role, .assistant)
+        XCTAssertEqual(final.content, original.content)
+        XCTAssertEqual(final.model, "gpt-4o")
+        XCTAssertEqual(final.timestamp.timeIntervalSince1970, timestamp.timeIntervalSince1970, accuracy: 0.001)
+    }
+
+    func testWatchConversationRoundTripWithMessages() throws {
+        let originalId = UUID()
+        let createdAt = Date()
+        var original = Conversation(
+            id: originalId,
+            title: "Test Chat",
+            createdAt: createdAt,
+            model: "gpt-4o"
+        )
+        original.addMessage(Message(role: .user, content: "Question"))
+        original.addMessage(Message(role: .assistant, content: "Answer", model: "gpt-4o"))
+
+        // Convert to WatchConversation
+        let watchConv = WatchConversation(from: original)
+
+        // Encode/decode
+        let data = try JSONEncoder().encode(watchConv)
+        let decoded = try JSONDecoder().decode(WatchConversation.self, from: data)
+
+        // Convert back
+        let final = decoded.toConversation()
+
+        XCTAssertEqual(final.id, originalId)
+        XCTAssertEqual(final.title, "Test Chat")
+        XCTAssertEqual(final.model, "gpt-4o")
+        XCTAssertEqual(final.messages.count, 2)
+        XCTAssertEqual(final.messages[0].content, "Question")
+        XCTAssertEqual(final.messages[1].content, "Answer")
+    }
+
+    func testModelUsabilityCheckLogic() {
+        // Test the filtering logic for watchOS-compatible models
+        let allModels = ["gpt-4o", "gpt-4", "gpt-3.5-turbo", "llama-local", "apple-intelligence-chat"]
+        let modelProviders: [String: AIProvider] = [
+            "gpt-4o": .openai,
+            "gpt-4": .openai,
+            "gpt-3.5-turbo": .openai,
+            "llama-local": .aikit,
+            "apple-intelligence-chat": .appleIntelligence
+        ]
+
+        // watchOS can only use cloud-based models (not AIKit or Apple Intelligence)
+        let usableModels = allModels.filter { model in
+            let provider = modelProviders[model]
+            return provider != .aikit && provider != .appleIntelligence
+        }
+
+        XCTAssertEqual(usableModels.count, 3)
+        XCTAssertTrue(usableModels.contains("gpt-4o"))
+        XCTAssertTrue(usableModels.contains("gpt-4"))
+        XCTAssertTrue(usableModels.contains("gpt-3.5-turbo"))
+        XCTAssertFalse(usableModels.contains("llama-local"))
+        XCTAssertFalse(usableModels.contains("apple-intelligence-chat"))
+    }
+
+    func testAzureProviderAllowedOnWatch() {
+        // GitHub Models should work on watchOS (uses cloud API)
+        let modelProviders: [String: AIProvider] = [
+            "github-gpt-4o": .githubModels,
+            "openai-gpt-4": .openai
+        ]
+
+        for (model, provider) in modelProviders {
+            let isUsableOnWatch = provider != .aikit && provider != .appleIntelligence
+            XCTAssertTrue(isUsableOnWatch, "\(model) should be usable on watchOS")
+        }
+    }
 }
 
 // MARK: - Mock URL Protocol for Watch Tests

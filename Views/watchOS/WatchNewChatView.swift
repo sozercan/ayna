@@ -37,6 +37,7 @@
                     } label: {
                         Image(systemName: "cpu")
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Watch.modelSelectorButton)
                 }
             }
         }
@@ -63,6 +64,7 @@
                 .onSubmit {
                     sendFirstMessage()
                 }
+                .accessibilityIdentifier(TestIdentifiers.Watch.newChatComposerTextField)
         }
 
         private func sendFirstMessage() {

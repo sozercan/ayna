@@ -1339,7 +1339,7 @@ struct MacChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func sendMessageWithToolSupport(
         messages: [Message],
         model: String,
@@ -1703,11 +1703,11 @@ struct MacChatView: View {
                                     let sysMessage = Message(role: .system, content: sysPrompt)
                                     continuationMessages.insert(sysMessage, at: 0)
                                 }
-                                
+
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
                                 currentToolName = nil
-                                
+
                                 sendMessageWithToolSupport(
                                     messages: continuationMessages,
                                     model: model,

@@ -81,6 +81,8 @@ struct MacContentView: View {
 }
 
 // View for creating a new conversation - only creates on first message
+// MacNewChatView wraps full new-chat experience (composer, streaming, attachments).
+// swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var openAIService = OpenAIService.shared

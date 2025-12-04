@@ -33,7 +33,7 @@ struct CitationBadgeView: View {
                 if let faviconURL = citation.favicon, let url = URL(string: faviconURL) {
                     AsyncImage(url: url) { phase in
                         switch phase {
-                        case .success(let image):
+                        case let .success(image):
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)

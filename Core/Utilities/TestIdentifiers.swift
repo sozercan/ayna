@@ -72,4 +72,30 @@ enum TestIdentifiers {
         static let warningIcon = "rateLimit.warningIcon"
         static let warningMessage = "rateLimit.warningMessage"
     }
+
+    // MARK: - Watch
+
+    enum Watch {
+        static let conversationList = "watch.conversationList"
+        static let emptyState = "watch.emptyState"
+        static let newChatButton = "watch.newChatButton"
+        static let modelSelectorButton = "watch.modelSelectorButton"
+
+        // Chat view identifiers (flattened to avoid nesting violation)
+        static let chatMessagesList = "watch.chat.messagesList"
+        static let chatComposerTextField = "watch.chat.composerTextField"
+        static let chatStopButton = "watch.chat.stopButton"
+        static let chatTypingIndicator = "watch.chat.typingIndicator"
+
+        static func chatMessageRow(for messageId: UUID) -> String {
+            "watch.chat.message.\(messageId.uuidString)"
+        }
+
+        // New chat view identifiers
+        static let newChatComposerTextField = "watch.newChat.composerTextField"
+
+        static func conversationRow(for conversationId: UUID) -> String {
+            "watch.conversationRow.\(conversationId.uuidString)"
+        }
+    }
 }

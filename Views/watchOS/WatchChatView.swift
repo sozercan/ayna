@@ -31,6 +31,7 @@
                                 if !message.content.isEmpty || message.role.lowercased() == "user" {
                                     WatchMessageView(message: message)
                                         .id(message.id)
+                                        .accessibilityIdentifier(TestIdentifiers.Watch.chatMessageRow(for: message.id))
                                 }
                             }
 
@@ -61,6 +62,7 @@
                     }
                     .padding(.horizontal, 4)
                 }
+                .accessibilityIdentifier(TestIdentifiers.Watch.chatMessagesList)
                 .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
                     // Scroll to bottom when new message arrives
                     withAnimation {
@@ -88,6 +90,7 @@
                     } label: {
                         Image(systemName: "cpu")
                     }
+                    .accessibilityIdentifier(TestIdentifiers.Watch.modelSelectorButton)
                 }
             }
             .onAppear {
@@ -126,6 +129,7 @@
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier(TestIdentifiers.Watch.chatStopButton)
                 } else {
                     // Text field - tapping triggers dictation on watchOS
                     TextField("Ask anything", text: $messageText)
@@ -135,6 +139,7 @@
                         .onSubmit {
                             sendMessage()
                         }
+                        .accessibilityIdentifier(TestIdentifiers.Watch.chatComposerTextField)
                 }
             }
             .padding(.top, 4)
@@ -167,6 +172,7 @@
             .background(Color(white: 0.2))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(TestIdentifiers.Watch.chatTypingIndicator)
         }
 
         private func toolIndicator(_: String) -> some View {

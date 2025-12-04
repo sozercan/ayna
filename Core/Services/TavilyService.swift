@@ -125,7 +125,7 @@ final class TavilyService: ObservableObject {
             case 200:
                 let decoder = JSONDecoder()
                 do {
-                                let searchResponse = try decoder.decode(TavilySearchResponse.self, from: data)
+                    let searchResponse = try decoder.decode(TavilySearchResponse.self, from: data)
                     log(.info, "✅ Web search completed", metadata: [
                         "results": "\(searchResponse.results.count)",
                         "responseTime": String(format: "%.2fs", searchResponse.responseTime)

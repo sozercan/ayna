@@ -115,7 +115,7 @@ struct MacSidebarView: View {
                             ForEach(Array(section.conversations.enumerated()), id: \.element.id) { index, conversation in
                                 VStack(spacing: 0) {
                                     ConversationRow(conversation: conversation)
-                                    
+
                                     // Add divider between conversations (not after the last one in section)
                                     if index < section.conversations.count - 1 {
                                         Divider()

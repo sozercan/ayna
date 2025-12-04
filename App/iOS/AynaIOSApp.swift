@@ -16,15 +16,26 @@ private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 
 @main
 struct AynaIOSApp: App {
-    @StateObject private var conversationManager = ConversationManager()
+    @StateObject private var conversationManager: ConversationManager
     @StateObject private var openAIService = OpenAIService.shared
 
     init() {
-        // Configure attachment loader if AttachmentStorage is available
-        // Note: Ensure Services/AttachmentStorage.swift is added to the iOS target
-        #if canImport(Foundation)
-            // Message.attachmentLoader = { path in AttachmentStorage.shared.load(path: path) }
-        #endif
+        // Register defaults and configure UI test environment if needed
+        AppPreferences.registerDefaults()
+        UITestEnvironment.configureIfNeeded()
+
+        // Configure attachment loader
+        Message.attachmentLoader = { path in
+            AttachmentStorage.shared.load(path: path)
+        }
+
+        // Initialize conversation manager (use test store in UI test mode)
+        let manager: ConversationManager = if UITestEnvironment.isEnabled {
+            UITestEnvironment.makeConversationManager()
+        } else {
+            ConversationManager()
+        }
+        _conversationManager = StateObject(wrappedValue: manager)
     }
 
     var body: some Scene {
@@ -41,8 +52,8 @@ struct AynaIOSApp: App {
                     handleHandoff(activity)
                 }
                 .task {
-                    // Configure WatchConnectivity when WatchConnectivityService is available
-                    // This will be enabled once the file is added to the Xcode project
+                    // Skip WatchConnectivity setup during UI tests
+                    guard !UITestEnvironment.isEnabled else { return }
                     await setupWatchConnectivity()
                 }
         }

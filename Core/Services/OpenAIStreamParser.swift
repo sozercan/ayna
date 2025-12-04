@@ -21,6 +21,13 @@ struct StreamLineResult {
     }
 }
 
+/// Result from tool call completion handling
+struct ToolCallCompletionResult {
+    let buffer: [String: Any]
+    let id: String
+    let content: String?
+}
+
 /// Callbacks for streaming response events
 struct StreamCallbacks {
     let onChunk: @Sendable (String) -> Void
@@ -158,50 +165,24 @@ enum OpenAIStreamParser {
         }
 
         // Handle tool calls
-        if let toolCalls = delta["tool_calls"] as? [[String: Any]],
-           let toolCall = toolCalls.first
-        {
-            if let id = toolCall["id"] as? String {
-                updatedToolCallId = id
-            }
-            if let function = toolCall["function"] as? [String: Any] {
-                if let name = function["name"] as? String {
-                    updatedToolCallBuffer["name"] = name
-                }
-                if let argsChunk = function["arguments"] as? String {
-                    let currentArgs = updatedToolCallBuffer["arguments"] as? String ?? ""
-                    updatedToolCallBuffer["arguments"] = currentArgs + argsChunk
-                }
-            }
-        }
+        (updatedToolCallBuffer, updatedToolCallId) = processToolCallDelta(
+            delta: delta,
+            currentBuffer: updatedToolCallBuffer,
+            currentId: updatedToolCallId
+        )
 
-        // Check if tool call is complete
-        if let finishReason = firstChoice["finish_reason"] as? String,
-           finishReason == "tool_calls",
-           let toolName = updatedToolCallBuffer["name"] as? String,
-           let argsString = updatedToolCallBuffer["arguments"] as? String,
-           let argsData = argsString.data(using: .utf8),
-           let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
-        {
-            let currentToolCallId = updatedToolCallId
-
-            // Notify about tool call request (for proper flow)
-            if let onToolCallRequested {
-                await MainActor.run {
-                    onToolCallRequested(currentToolCallId, toolName, arguments)
-                }
-            }
-            // Legacy support: still execute inline if old callback provided
-            else if let onToolCall {
-                let result = await onToolCall(currentToolCallId, toolName, arguments)
-                let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
-                extractedContent = (extractedContent ?? "") + toolOutput
-            }
-
-            // Clear buffer for next tool call
-            updatedToolCallBuffer = [:]
-            updatedToolCallId = ""
-        }
+        // Check if tool call is complete and execute
+        let toolResult = await handleToolCallCompletion(
+            firstChoice: firstChoice,
+            toolCallBuffer: updatedToolCallBuffer,
+            toolCallId: updatedToolCallId,
+            extractedContent: extractedContent,
+            onToolCall: onToolCall,
+            onToolCallRequested: onToolCallRequested
+        )
+        updatedToolCallBuffer = toolResult.buffer
+        updatedToolCallId = toolResult.id
+        extractedContent = toolResult.content
 
         return StreamLineResult(
             shouldComplete: false,
@@ -210,6 +191,76 @@ enum OpenAIStreamParser {
             content: extractedContent,
             reasoning: extractedReasoning
         )
+    }
+
+    // MARK: - Tool Call Helpers
+
+    /// Process tool call delta from stream chunk
+    private static func processToolCallDelta(
+        delta: [String: Any],
+        currentBuffer: [String: Any],
+        currentId: String
+    ) -> (buffer: [String: Any], id: String) {
+        var buffer = currentBuffer
+        var id = currentId
+
+        guard let toolCalls = delta["tool_calls"] as? [[String: Any]],
+              let toolCall = toolCalls.first
+        else {
+            return (buffer, id)
+        }
+
+        if let newId = toolCall["id"] as? String {
+            id = newId
+        }
+        if let function = toolCall["function"] as? [String: Any] {
+            if let name = function["name"] as? String {
+                buffer["name"] = name
+            }
+            if let argsChunk = function["arguments"] as? String {
+                let currentArgs = buffer["arguments"] as? String ?? ""
+                buffer["arguments"] = currentArgs + argsChunk
+            }
+        }
+        return (buffer, id)
+    }
+
+    /// Handle tool call completion and execution
+    private static func handleToolCallCompletion(
+        firstChoice: [String: Any],
+        toolCallBuffer: [String: Any],
+        toolCallId: String,
+        extractedContent: String?,
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
+    ) async -> ToolCallCompletionResult {
+        guard let finishReason = firstChoice["finish_reason"] as? String,
+              finishReason == "tool_calls",
+              let toolName = toolCallBuffer["name"] as? String,
+              let argsString = toolCallBuffer["arguments"] as? String,
+              let argsData = argsString.data(using: .utf8),
+              let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
+        else {
+            return ToolCallCompletionResult(buffer: toolCallBuffer, id: toolCallId, content: extractedContent)
+        }
+
+        var content = extractedContent
+
+        // Notify about tool call request (for proper flow)
+        if let onToolCallRequested {
+            await MainActor.run {
+                onToolCallRequested(toolCallId, toolName, arguments)
+            }
+        }
+        // Legacy support: still execute inline if old callback provided
+        else if let onToolCall {
+            let result = await onToolCall(toolCallId, toolName, arguments)
+            let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
+            content = (content ?? "") + toolOutput
+        }
+
+        // Clear buffer for next tool call
+        return ToolCallCompletionResult(buffer: [:], id: "", content: content)
     }
 
     // MARK: - Text Extraction

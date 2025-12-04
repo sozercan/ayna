@@ -167,16 +167,15 @@ extension TavilySearchResponse {
         let topResults = Array(results.prefix(maxResults))
         return topResults.enumerated().map { index, result in
             // Use Tavily's favicon if available, otherwise generate from domain using Google's service
-            let faviconURL: String?
-            if let existingFavicon = result.favicon, !existingFavicon.isEmpty {
-                faviconURL = existingFavicon
+            let faviconURL: String? = if let existingFavicon = result.favicon, !existingFavicon.isEmpty {
+                existingFavicon
             } else if let url = URL(string: result.url), let host = url.host {
                 // Use Google's favicon service which is reliable and fast
-                faviconURL = "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+                "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
             } else {
-                faviconURL = nil
+                nil
             }
-            
+
             return CitationReference(
                 number: index + 1,
                 title: result.title,

@@ -25,15 +25,15 @@ final class StreamingChunkBuffer {
         let maxWaitTime: TimeInterval
 
         static let `default` = Config(
-            minDeliveryInterval: 0.05,  // 50ms = ~20 updates/second max
-            maxBufferSize: 100,          // Force delivery if buffer exceeds 100 chars
-            maxWaitTime: 0.2            // Force delivery after 200ms regardless
+            minDeliveryInterval: 0.05, // 50ms = ~20 updates/second max
+            maxBufferSize: 100, // Force delivery if buffer exceeds 100 chars
+            maxWaitTime: 0.2 // Force delivery after 200ms regardless
         )
 
         /// More aggressive throttling for multi-model scenarios
         static let multiModel = Config(
-            minDeliveryInterval: 0.1,   // 100ms = ~10 updates/second max
-            maxBufferSize: 200,         // Larger buffer for multi-model
+            minDeliveryInterval: 0.1, // 100ms = ~10 updates/second max
+            maxBufferSize: 200, // Larger buffer for multi-model
             maxWaitTime: 0.3
         )
     }

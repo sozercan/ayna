@@ -325,7 +325,7 @@ struct WebSearchToolRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    if tavilyService.isEnabled && tavilyService.isConfigured {
+                    if tavilyService.isEnabled, tavilyService.isConfigured {
                         Text("•")
                             .foregroundStyle(.secondary)
                         Text("1 tool")
@@ -348,21 +348,21 @@ struct WebSearchToolRow: View {
 
     private var statusColor: Color {
         if !tavilyService.isEnabled {
-            return .gray
+            .gray
         } else if tavilyService.isConfigured {
-            return .green
+            .green
         } else {
-            return .orange
+            .orange
         }
     }
 
     private var statusDescription: String {
         if !tavilyService.isEnabled {
-            return "Disabled"
+            "Disabled"
         } else if tavilyService.isConfigured {
-            return "Configured"
+            "Configured"
         } else {
-            return "API key required"
+            "API key required"
         }
     }
 }
