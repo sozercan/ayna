@@ -18,28 +18,28 @@
 #   gh aw compile
 # For more information: https://github.com/githubnext/gh-aw/blob/main/.github/aw/github-agentic-workflows.md
 #
-# This workflow monitors unit and UI test failures across macOS 14, 15, and 26,
-# investigates the root cause, and automatically creates draft PRs to fix the issues.
+# This workflow monitors unit and UI test failures and automatically creates draft PRs to fix them.
 # 
 # Flow:
-# 1. Triggered by Test Suite workflow failure or manually/on schedule
-# 2. Runs validation jobs on all platforms to detect current test status
-# 3. Agent analyzes validation results
-# 4. If all tests pass, no action needed
-# 5. If any tests fail, agent creates a single PR to fix all failures
+# 1. Triggered by Test Suite workflow failure, schedule, or manually
+# 2. Agent analyzes test results (from triggering workflow or by running tests)
+# 3. If all tests pass, no action needed
+# 4. If any tests fail, agent creates a single PR to fix all failures
+# 
+# The agent reuses the existing Test Suite workflow - no duplicate test definitions.
 #
 # Original Frontmatter:
 # ```yaml
 # description: |
-#   This workflow monitors unit and UI test failures across macOS 14, 15, and 26,
-#   investigates the root cause, and automatically creates draft PRs to fix the issues.
+#   This workflow monitors unit and UI test failures and automatically creates draft PRs to fix them.
 #
 #   Flow:
-#   1. Triggered by Test Suite workflow failure or manually/on schedule
-#   2. Runs validation jobs on all platforms to detect current test status
-#   3. Agent analyzes validation results
-#   4. If all tests pass, no action needed
-#   5. If any tests fail, agent creates a single PR to fix all failures
+#   1. Triggered by Test Suite workflow failure, schedule, or manually
+#   2. Agent analyzes test results (from triggering workflow or by running tests)
+#   3. If all tests pass, no action needed
+#   4. If any tests fail, agent creates a single PR to fix all failures
+#
+#   The agent reuses the existing Test Suite workflow - no duplicate test definitions.
 #
 # on:
 #   workflow_run:
@@ -50,16 +50,6 @@
 #   schedule:
 #     - cron: '0 6 * * *'  # Daily at 6 AM UTC
 #   workflow_dispatch:
-#     inputs:
-#       test_target:
-#         description: 'Which tests to run (aynaTests, aynaUITests, both)'
-#         required: false
-#         default: 'both'
-#         type: choice
-#         options:
-#           - aynaTests
-#           - aynaUITests
-#           - both
 #
 # timeout-minutes: 60
 #
@@ -72,222 +62,6 @@
 # engine:
 #   id: copilot
 #   model: claude-opus-4.5
-#
-# # Validation jobs run BEFORE the agent to detect failures
-# # Skip these if triggered by workflow_run (Test Suite already ran tests)
-# jobs:
-#   validate-macos-14:
-#     if: github.event.workflow_run.id == ''
-#     runs-on: macos-14
-#     outputs:
-#       result: ${{ steps.test.outcome }}
-#       log: ${{ steps.test.outputs.log }}
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v5
-#
-#       - name: Select Xcode 16.2
-#         run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-#
-#       - name: Build and Test
-#         id: test
-#         continue-on-error: true
-#         run: |
-#           set -o pipefail
-#           TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-#           echo "=== macOS 14 / Xcode 16.2 ===" | tee -a $GITHUB_STEP_SUMMARY
-#
-#           # Build
-#           xcodebuild \
-#             -project ayna.xcodeproj \
-#             -scheme Ayna \
-#             -destination 'platform=macOS' \
-#             -derivedDataPath ./build \
-#             CODE_SIGN_IDENTITY="" \
-#             CODE_SIGNING_REQUIRED=NO \
-#             CODE_SIGNING_ALLOWED=NO \
-#             build 2>&1 | tee build.log
-#
-#           # Run unit tests
-#           if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="" \
-#               CODE_SIGNING_REQUIRED=NO \
-#               CODE_SIGNING_ALLOWED=NO \
-#               -only-testing:aynaTests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#           # Run UI tests
-#           if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="-" \
-#               CODE_SIGNING_REQUIRED=YES \
-#               CODE_SIGNING_ALLOWED=YES \
-#               -only-testing:aynaUITests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#       - name: Upload logs
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: macos-14-logs
-#           path: |
-#             build.log
-#             test.log
-#
-#   validate-macos-15:
-#     if: github.event.workflow_run.id == ''
-#     runs-on: macos-15
-#     outputs:
-#       result: ${{ steps.test.outcome }}
-#       log: ${{ steps.test.outputs.log }}
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v5
-#
-#       - name: Select Xcode 16.4
-#         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-#
-#       - name: Build and Test
-#         id: test
-#         continue-on-error: true
-#         run: |
-#           set -o pipefail
-#           TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-#           echo "=== macOS 15 / Xcode 16.4 ===" | tee -a $GITHUB_STEP_SUMMARY
-#
-#           # Build
-#           xcodebuild \
-#             -project ayna.xcodeproj \
-#             -scheme Ayna \
-#             -destination 'platform=macOS' \
-#             -derivedDataPath ./build \
-#             CODE_SIGN_IDENTITY="" \
-#             CODE_SIGNING_REQUIRED=NO \
-#             CODE_SIGNING_ALLOWED=NO \
-#             build 2>&1 | tee build.log
-#
-#           # Run unit tests
-#           if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="" \
-#               CODE_SIGNING_REQUIRED=NO \
-#               CODE_SIGNING_ALLOWED=NO \
-#               -only-testing:aynaTests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#           # Run UI tests
-#           if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="-" \
-#               CODE_SIGNING_REQUIRED=YES \
-#               CODE_SIGNING_ALLOWED=YES \
-#               -only-testing:aynaUITests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#       - name: Upload logs
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: macos-15-logs
-#           path: |
-#             build.log
-#             test.log
-#
-#   validate-macos-26:
-#     if: github.event.workflow_run.id == ''
-#     runs-on: macos-26
-#     outputs:
-#       result: ${{ steps.test.outcome }}
-#       log: ${{ steps.test.outputs.log }}
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v5
-#
-#       - name: Select Xcode 26.0
-#         run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
-#
-#       - name: Build and Test
-#         id: test
-#         continue-on-error: true
-#         run: |
-#           set -o pipefail
-#           TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-#           echo "=== macOS 26 / Xcode 26.0 ===" | tee -a $GITHUB_STEP_SUMMARY
-#
-#           # Build
-#           xcodebuild \
-#             -project ayna.xcodeproj \
-#             -scheme Ayna \
-#             -destination 'platform=macOS' \
-#             -derivedDataPath ./build \
-#             CODE_SIGN_IDENTITY="" \
-#             CODE_SIGNING_REQUIRED=NO \
-#             CODE_SIGNING_ALLOWED=NO \
-#             build 2>&1 | tee build.log
-#
-#           # Run unit tests
-#           if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="" \
-#               CODE_SIGNING_REQUIRED=NO \
-#               CODE_SIGNING_ALLOWED=NO \
-#               -only-testing:aynaTests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#           # Run UI tests
-#           if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-#             echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-#             xcodebuild \
-#               -project ayna.xcodeproj \
-#               -scheme Ayna \
-#               -destination 'platform=macOS' \
-#               -derivedDataPath ./build \
-#               CODE_SIGN_IDENTITY="-" \
-#               CODE_SIGNING_REQUIRED=YES \
-#               CODE_SIGNING_ALLOWED=YES \
-#               -only-testing:aynaUITests \
-#               test 2>&1 | tee -a test.log
-#           fi
-#
-#       - name: Upload logs
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: macos-26-logs
-#           path: |
-#             build.log
-#             test.log
 #
 # safe-outputs:
 #   create-pull-request:
@@ -302,11 +76,6 @@
 # steps:
 #   - name: Checkout repository
 #     uses: actions/checkout@v5
-#
-#   - name: Download all artifacts
-#     uses: actions/download-artifact@v4
-#     with:
-#       path: ./validation-logs
 # ```
 #
 # Job Dependency Graph:
@@ -318,14 +87,8 @@
 #   create_pull_request["create_pull_request"]
 #   detection["detection"]
 #   pre_activation["pre_activation"]
-#   validate-macos-14["validate-macos-14"]
-#   validate-macos-15["validate-macos-15"]
-#   validate-macos-26["validate-macos-26"]
 #   pre_activation --> activation
 #   activation --> agent
-#   validate-macos-14 --> agent
-#   validate-macos-15 --> agent
-#   validate-macos-26 --> agent
 #   agent --> conclusion
 #   activation --> conclusion
 #   create_pull_request --> conclusion
@@ -333,9 +96,6 @@
 #   activation --> create_pull_request
 #   detection --> create_pull_request
 #   agent --> detection
-#   activation --> validate-macos-14
-#   activation --> validate-macos-15
-#   activation --> validate-macos-26
 # ```
 #
 # Original Prompt:
@@ -347,74 +107,80 @@
 # ## How You Were Triggered
 #
 # **Workflow Run ID (if from Test Suite failure):** `${{ github.event.workflow_run.id }}`
-#
-# ### If triggered by `workflow_run` (Test Suite failure):
-#
-# The Test Suite workflow already ran and failed. Use the GitHub CLI to fetch logs:
-#
-# ```bash
-# # Get the failed workflow run ID
-# FAILED_RUN_ID="${{ github.event.workflow_run.id }}"
-# echo "Analyzing failed run: $FAILED_RUN_ID"
-#
-# # View failed job logs
-# gh run view $FAILED_RUN_ID --log-failed
-#
-# # Get job details
-# gh run view $FAILED_RUN_ID --json jobs,conclusion,headSha
-# ```
-#
-# ### If triggered by `schedule` or `workflow_dispatch`:
-#
-# Validation jobs ran before you. Check their results:
-#
-# | Platform | Xcode | Result |
-# |----------|-------|--------|
-# | macOS 14 | 16.2 | `${{ needs.validate-macos-14.outputs.result }}` |
-# | macOS 15 | 16.4 | `${{ needs.validate-macos-15.outputs.result }}` |
-# | macOS 26 | 26.0 | `${{ needs.validate-macos-26.outputs.result }}` |
-#
-# **Logs are in `./validation-logs/` directory:**
-# - `./validation-logs/macos-14-logs/build.log` and `test.log`
-# - `./validation-logs/macos-15-logs/build.log` and `test.log`
-# - `./validation-logs/macos-26-logs/build.log` and `test.log`
+# **Workflow Run Conclusion:** `${{ github.event.workflow_run.conclusion }}`
 #
 # ## Your Task
 #
-# ### Step 1: Check if action is needed
+# ### Step 1: Get Test Results
 #
-# **For `workflow_run` trigger:**
-# - The Test Suite failed, so action IS needed
-# - Proceed to analyze the failure logs
+# **If triggered by `workflow_run` (Test Suite completed):**
 #
-# **For `schedule`/`workflow_dispatch` trigger:**
+# The Test Suite workflow already ran. Check if it failed:
+#
 # ```bash
-# echo "macOS 14: ${{ needs.validate-macos-14.outputs.result }}"
-# echo "macOS 15: ${{ needs.validate-macos-15.outputs.result }}"
-# echo "macOS 26: ${{ needs.validate-macos-26.outputs.result }}"
+# # Check the workflow run that triggered us
+# WORKFLOW_RUN_ID="${{ github.event.workflow_run.id }}"
+# CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+#
+# echo "Test Suite Run ID: $WORKFLOW_RUN_ID"
+# echo "Conclusion: $CONCLUSION"
+#
+# if [ "$CONCLUSION" = "success" ]; then
+#   echo "✅ All tests passed! No action needed."
+#   exit 0
+# fi
+#
+# # Get details of the failed run
+# gh run view $WORKFLOW_RUN_ID --json jobs,conclusion,headSha
 # ```
-# - If ALL passed → "All tests passing, no action required" → Exit
-# - If ANY failed → Continue to fix
+#
+# **If triggered by `schedule` or `workflow_dispatch`:**
+#
+# Trigger the Test Suite and wait for results:
+#
+# ```bash
+# # Trigger the Test Suite workflow
+# echo "Triggering Test Suite workflow..."
+# gh workflow run tests.yml
+#
+# # Wait a moment for workflow to start
+# sleep 10
+#
+# # Get the run ID of the workflow we just triggered
+# RUN_ID=$(gh run list --workflow=tests.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+# echo "Test Suite Run ID: $RUN_ID"
+#
+# # Wait for it to complete (with timeout)
+# echo "Waiting for Test Suite to complete..."
+# gh run watch $RUN_ID --exit-status || true
+#
+# # Check the conclusion
+# CONCLUSION=$(gh run view $RUN_ID --json conclusion --jq '.conclusion')
+# echo "Conclusion: $CONCLUSION"
+#
+# if [ "$CONCLUSION" = "success" ]; then
+#   echo "✅ All tests passed! No action needed."
+#   exit 0
+# fi
+# ```
 #
 # ### Step 2: Analyze Failures
 #
-# **For `workflow_run` trigger** - use GitHub CLI:
-# ```bash
-# gh run view ${{ github.event.workflow_run.id }} --log-failed 2>&1 | head -500
-# ```
+# Once you have a failed run ID, analyze the failures:
 #
-# **For `schedule`/`workflow_dispatch` trigger** - read local logs:
 # ```bash
-# cat ./validation-logs/macos-14-logs/test.log | grep -A 5 "failed\|error\|Error"
-# cat ./validation-logs/macos-15-logs/test.log | grep -A 5 "failed\|error\|Error"
-# cat ./validation-logs/macos-26-logs/test.log | grep -A 5 "failed\|error\|Error"
+# # View failed job logs
+# gh run view $RUN_ID --log-failed 2>&1 | head -1000
+#
+# # Get detailed job information
+# gh run view $RUN_ID --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, conclusion: .conclusion}'
 # ```
 #
 # Look for:
 # - `Test Case '-[ClassName testMethod]' failed`
 # - Compiler errors and missing imports
 # - Assertion failures
-# - Platform-specific issues
+# - Platform-specific issues (macOS 14 vs 15 vs 26)
 #
 # ### Step 3: Implement Fixes
 #
@@ -437,7 +203,9 @@
 #
 # ### Step 4: Create Pull Request
 #
-# After making fixes:
+# **⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
+#
+# After making fixes, commit locally (but do NOT push):
 #
 # ```bash
 # git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
@@ -445,9 +213,9 @@
 # git commit -m "fix: <description of what was fixed>"
 # ```
 #
-# **Do NOT run `git push` - the `create-pull-request` safe output handles this.**
+# **⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
 #
-# Then use `create-pull-request` with:
+# Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
 #
 # **Title:** `[Test Fix] <brief description>`
 #
@@ -456,12 +224,9 @@
 # ## Summary
 # <Brief description of what was fixed>
 #
-# ## Validation Results (Before Fix)
-# | Platform | Result |
-# |----------|--------|
-# | macOS 14 | ${{ needs.validate-macos-14.outputs.result }} |
-# | macOS 15 | ${{ needs.validate-macos-15.outputs.result }} |
-# | macOS 26 | ${{ needs.validate-macos-26.outputs.result }} |
+# ## Failed Test Suite Run
+# - Run ID: <run_id>
+# - URL: https://github.com/${{ github.repository }}/actions/runs/<run_id>
 #
 # ## Root Cause
 # <What caused the test failures>
@@ -473,6 +238,8 @@
 # - [ ] macOS 14 (Xcode 16.2)
 # - [ ] macOS 15 (Xcode 16.4)
 # - [ ] macOS 26 (Xcode 26.0)
+# - [ ] iOS
+# - [ ] watchOS
 # ```
 #
 # ## Context
@@ -481,8 +248,20 @@
 #
 # - **Core/**: Shared logic (must compile for all platforms)
 # - **Views/**: Platform-specific UI
-# - **Tests/aynaTests/**: Unit tests
-# - **Tests/aynaUITests/**: UI tests
+# - **Tests/aynaTests/**: macOS Unit tests
+# - **Tests/aynaUITests/**: macOS UI tests
+# - **Tests/Ayna-iOSTests/**: iOS Unit tests
+# - **Tests/Ayna-iOSUITests/**: iOS UI tests
+# - **Tests/Ayna-watchOSTests/**: watchOS Unit tests
+# - **Tests/Ayna-watchOSUITests/**: watchOS UI tests
+#
+# ## Test Matrix (from tests.yml)
+#
+# | Platform | Versions | Xcode |
+# |----------|----------|-------|
+# | macOS | 14, 15, 26 | 16.2, 16.4, 26.0 |
+# | iOS | Simulator (iPhone 16/17) | 16.2, 16.4, 26.0 |
+# | watchOS | Simulator (Watch Ultra 2/3) | 16.2, 16.4, 26.0 |
 #
 # ## Key Files
 #
@@ -503,12 +282,13 @@
 #
 # ## Final Checklist
 #
-# - [ ] Analyzed all validation logs
-# - [ ] Identified root cause of failures
+# - [ ] Got test results (from workflow_run or by triggering tests.yml)
+# - [ ] Analyzed failure logs
+# - [ ] Identified root cause
 # - [ ] Edited source files to fix issues
 # - [ ] Ran linting
-# - [ ] Created branch and committed changes
-# - [ ] Used `create-pull-request` (NOT `git push`)
+# - [ ] Created branch and committed changes locally
+# - [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)
 # ```
 #
 # Pinned GitHub Actions:
@@ -527,17 +307,7 @@ name: "Test Failure Fixer"
 "on":
   schedule:
   - cron: "0 6 * * *"
-  workflow_dispatch:
-    inputs:
-      test_target:
-        default: both
-        description: Which tests to run (aynaTests, aynaUITests, both)
-        options:
-        - aynaTests
-        - aynaUITests
-        - both
-        required: false
-        type: choice
+  workflow_dispatch: null
   workflow_run:
     # zizmor: ignore[dangerous-triggers] - workflow_run trigger is secured with role and fork validation
     branches:
@@ -672,11 +442,7 @@ jobs:
             });
 
   agent:
-    needs:
-      - activation
-      - validate-macos-14
-      - validate-macos-15
-      - validate-macos-26
+    needs: activation
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -710,10 +476,6 @@ jobs:
           echo "Created /tmp/gh-aw/agent directory for agentic workflow temporary files"
       - name: Checkout repository
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Download all artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          path: ./validation-logs
 
       - name: Configure Git credentials
         env:
@@ -2070,11 +1832,9 @@ jobs:
         env:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
           GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+          GH_AW_GITHUB_EVENT_WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_EXPR_1D92451F: ${{ needs.validate-macos-14.outputs.result }}
-          GH_AW_EXPR_5627DFEA: ${{ needs.validate-macos-15.outputs.result }}
-          GH_AW_EXPR_879AC5FF: ${{ needs.validate-macos-26.outputs.result }}
         run: |
           PROMPT_DIR="$(dirname "$GH_AW_PROMPT")"
           mkdir -p "$PROMPT_DIR"
@@ -2086,74 +1846,80 @@ jobs:
           ## How You Were Triggered
           
           **Workflow Run ID (if from Test Suite failure):** `${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID}`
-          
-          ### If triggered by `workflow_run` (Test Suite failure):
-          
-          The Test Suite workflow already ran and failed. Use the GitHub CLI to fetch logs:
-          
-          ```bash
-          # Get the failed workflow run ID
-          FAILED_RUN_ID="${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID}"
-          echo "Analyzing failed run: $FAILED_RUN_ID"
-          
-          # View failed job logs
-          gh run view $FAILED_RUN_ID --log-failed
-          
-          # Get job details
-          gh run view $FAILED_RUN_ID --json jobs,conclusion,headSha
-          ```
-          
-          ### If triggered by `schedule` or `workflow_dispatch`:
-          
-          Validation jobs ran before you. Check their results:
-          
-          | Platform | Xcode | Result |
-          |----------|-------|--------|
-          | macOS 14 | 16.2 | `${GH_AW_EXPR_1D92451F}` |
-          | macOS 15 | 16.4 | `${GH_AW_EXPR_5627DFEA}` |
-          | macOS 26 | 26.0 | `${GH_AW_EXPR_879AC5FF}` |
-          
-          **Logs are in `./validation-logs/` directory:**
-          - `./validation-logs/macos-14-logs/build.log` and `test.log`
-          - `./validation-logs/macos-15-logs/build.log` and `test.log`
-          - `./validation-logs/macos-26-logs/build.log` and `test.log`
+          **Workflow Run Conclusion:** `${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_CONCLUSION}`
           
           ## Your Task
           
-          ### Step 1: Check if action is needed
+          ### Step 1: Get Test Results
           
-          **For `workflow_run` trigger:**
-          - The Test Suite failed, so action IS needed
-          - Proceed to analyze the failure logs
+          **If triggered by `workflow_run` (Test Suite completed):**
           
-          **For `schedule`/`workflow_dispatch` trigger:**
+          The Test Suite workflow already ran. Check if it failed:
+          
           ```bash
-          echo "macOS 14: ${GH_AW_EXPR_1D92451F}"
-          echo "macOS 15: ${GH_AW_EXPR_5627DFEA}"
-          echo "macOS 26: ${GH_AW_EXPR_879AC5FF}"
+          # Check the workflow run that triggered us
+          WORKFLOW_RUN_ID="${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID}"
+          CONCLUSION="${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_CONCLUSION}"
+          
+          echo "Test Suite Run ID: $WORKFLOW_RUN_ID"
+          echo "Conclusion: $CONCLUSION"
+          
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "✅ All tests passed! No action needed."
+            exit 0
+          fi
+          
+          # Get details of the failed run
+          gh run view $WORKFLOW_RUN_ID --json jobs,conclusion,headSha
           ```
-          - If ALL passed → "All tests passing, no action required" → Exit
-          - If ANY failed → Continue to fix
+          
+          **If triggered by `schedule` or `workflow_dispatch`:**
+          
+          Trigger the Test Suite and wait for results:
+          
+          ```bash
+          # Trigger the Test Suite workflow
+          echo "Triggering Test Suite workflow..."
+          gh workflow run tests.yml
+          
+          # Wait a moment for workflow to start
+          sleep 10
+          
+          # Get the run ID of the workflow we just triggered
+          RUN_ID=$(gh run list --workflow=tests.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+          echo "Test Suite Run ID: $RUN_ID"
+          
+          # Wait for it to complete (with timeout)
+          echo "Waiting for Test Suite to complete..."
+          gh run watch $RUN_ID --exit-status || true
+          
+          # Check the conclusion
+          CONCLUSION=$(gh run view $RUN_ID --json conclusion --jq '.conclusion')
+          echo "Conclusion: $CONCLUSION"
+          
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "✅ All tests passed! No action needed."
+            exit 0
+          fi
+          ```
           
           ### Step 2: Analyze Failures
           
-          **For `workflow_run` trigger** - use GitHub CLI:
-          ```bash
-          gh run view ${GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID} --log-failed 2>&1 | head -500
-          ```
+          Once you have a failed run ID, analyze the failures:
           
-          **For `schedule`/`workflow_dispatch` trigger** - read local logs:
           ```bash
-          cat ./validation-logs/macos-14-logs/test.log | grep -A 5 "failed\|error\|Error"
-          cat ./validation-logs/macos-15-logs/test.log | grep -A 5 "failed\|error\|Error"
-          cat ./validation-logs/macos-26-logs/test.log | grep -A 5 "failed\|error\|Error"
+          # View failed job logs
+          gh run view $RUN_ID --log-failed 2>&1 | head -1000
+          
+          # Get detailed job information
+          gh run view $RUN_ID --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, conclusion: .conclusion}'
           ```
           
           Look for:
           - `Test Case '-[ClassName testMethod]' failed`
           - Compiler errors and missing imports
           - Assertion failures
-          - Platform-specific issues
+          - Platform-specific issues (macOS 14 vs 15 vs 26)
           
           ### Step 3: Implement Fixes
           
@@ -2176,7 +1942,9 @@ jobs:
           
           ### Step 4: Create Pull Request
           
-          After making fixes:
+          **⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
+          
+          After making fixes, commit locally (but do NOT push):
           
           ```bash
           git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
@@ -2184,9 +1952,9 @@ jobs:
           git commit -m "fix: <description of what was fixed>"
           ```
           
-          **Do NOT run `git push` - the `create-pull-request` safe output handles this.**
+          **⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
           
-          Then use `create-pull-request` with:
+          Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
           
           **Title:** `[Test Fix] <brief description>`
           
@@ -2195,12 +1963,9 @@ jobs:
           ## Summary
           <Brief description of what was fixed>
           
-          ## Validation Results (Before Fix)
-          | Platform | Result |
-          |----------|--------|
-          | macOS 14 | ${GH_AW_EXPR_1D92451F} |
-          | macOS 15 | ${GH_AW_EXPR_5627DFEA} |
-          | macOS 26 | ${GH_AW_EXPR_879AC5FF} |
+          ## Failed Test Suite Run
+          - Run ID: <run_id>
+          - URL: https://github.com/${GH_AW_GITHUB_REPOSITORY}/actions/runs/<run_id>
           
           ## Root Cause
           <What caused the test failures>
@@ -2212,6 +1977,8 @@ jobs:
           - [ ] macOS 14 (Xcode 16.2)
           - [ ] macOS 15 (Xcode 16.4)
           - [ ] macOS 26 (Xcode 26.0)
+          - [ ] iOS
+          - [ ] watchOS
           ```
           
           ## Context
@@ -2220,8 +1987,20 @@ jobs:
           
           - **Core/**: Shared logic (must compile for all platforms)
           - **Views/**: Platform-specific UI
-          - **Tests/aynaTests/**: Unit tests
-          - **Tests/aynaUITests/**: UI tests
+          - **Tests/aynaTests/**: macOS Unit tests
+          - **Tests/aynaUITests/**: macOS UI tests
+          - **Tests/Ayna-iOSTests/**: iOS Unit tests
+          - **Tests/Ayna-iOSUITests/**: iOS UI tests
+          - **Tests/Ayna-watchOSTests/**: watchOS Unit tests
+          - **Tests/Ayna-watchOSUITests/**: watchOS UI tests
+          
+          ## Test Matrix (from tests.yml)
+          
+          | Platform | Versions | Xcode |
+          |----------|----------|-------|
+          | macOS | 14, 15, 26 | 16.2, 16.4, 26.0 |
+          | iOS | Simulator (iPhone 16/17) | 16.2, 16.4, 26.0 |
+          | watchOS | Simulator (Watch Ultra 2/3) | 16.2, 16.4, 26.0 |
           
           ## Key Files
           
@@ -2242,12 +2021,13 @@ jobs:
           
           ## Final Checklist
           
-          - [ ] Analyzed all validation logs
-          - [ ] Identified root cause of failures
+          - [ ] Got test results (from workflow_run or by triggering tests.yml)
+          - [ ] Analyzed failure logs
+          - [ ] Identified root cause
           - [ ] Edited source files to fix issues
           - [ ] Ran linting
-          - [ ] Created branch and committed changes
-          - [ ] Used `create-pull-request` (NOT `git push`)
+          - [ ] Created branch and committed changes locally
+          - [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)
           
           PROMPT_EOF
       - name: Append XPIA security instructions to prompt
@@ -2360,11 +2140,9 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_GITHUB_EVENT_WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           GH_AW_GITHUB_EVENT_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           GH_AW_GITHUB_REPOSITORY: ${{ github.repository }}
-          GH_AW_EXPR_1D92451F: ${{ needs.validate-macos-14.outputs.result }}
-          GH_AW_EXPR_5627DFEA: ${{ needs.validate-macos-15.outputs.result }}
-          GH_AW_EXPR_879AC5FF: ${{ needs.validate-macos-26.outputs.result }}
         with:
           script: |
             const fs = require("fs");
@@ -6513,7 +6291,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           WORKFLOW_NAME: "Test Failure Fixer"
-          WORKFLOW_DESCRIPTION: "This workflow monitors unit and UI test failures across macOS 14, 15, and 26,\ninvestigates the root cause, and automatically creates draft PRs to fix the issues.\n\nFlow:\n1. Triggered by Test Suite workflow failure or manually/on schedule\n2. Runs validation jobs on all platforms to detect current test status\n3. Agent analyzes validation results\n4. If all tests pass, no action needed\n5. If any tests fail, agent creates a single PR to fix all failures"
+          WORKFLOW_DESCRIPTION: "This workflow monitors unit and UI test failures and automatically creates draft PRs to fix them.\n\nFlow:\n1. Triggered by Test Suite workflow failure, schedule, or manually\n2. Agent analyzes test results (from triggering workflow or by running tests)\n3. If all tests pass, no action needed\n4. If any tests fail, agent creates a single PR to fix all failures\n\nThe agent reuses the existing Test Suite workflow - no duplicate test definitions."
         with:
           script: |
             const fs = require('fs');
@@ -6818,211 +6596,4 @@ jobs:
               }
             }
             await main();
-
-  validate-macos-14:
-    needs: activation
-    if: github.event.workflow_run.id == ''
-    runs-on: macos-14
-    outputs:
-      log: ${{ steps.test.outputs.log }}
-      result: ${{ steps.test.outcome }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-      - name: Build and Test
-        id: test
-        run: |
-          set -o pipefail
-          TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-          echo "=== macOS 14 / Xcode 16.2 ===" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Build
-          xcodebuild \
-            -project ayna.xcodeproj \
-            -scheme Ayna \
-            -destination 'platform=macOS' \
-            -derivedDataPath ./build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee build.log
-
-          # Run unit tests
-          if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO \
-              -only-testing:aynaTests \
-              test 2>&1 | tee -a test.log
-          fi
-
-          # Run UI tests
-          if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="-" \
-              CODE_SIGNING_REQUIRED=YES \
-              CODE_SIGNING_ALLOWED=YES \
-              -only-testing:aynaUITests \
-              test 2>&1 | tee -a test.log
-          fi
-        continue-on-error: true
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: macos-14-logs
-          path: |
-            build.log
-            test.log
-
-  validate-macos-15:
-    needs: activation
-    if: github.event.workflow_run.id == ''
-    runs-on: macos-15
-    outputs:
-      log: ${{ steps.test.outputs.log }}
-      result: ${{ steps.test.outcome }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Select Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-      - name: Build and Test
-        id: test
-        run: |
-          set -o pipefail
-          TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-          echo "=== macOS 15 / Xcode 16.4 ===" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Build
-          xcodebuild \
-            -project ayna.xcodeproj \
-            -scheme Ayna \
-            -destination 'platform=macOS' \
-            -derivedDataPath ./build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee build.log
-
-          # Run unit tests
-          if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO \
-              -only-testing:aynaTests \
-              test 2>&1 | tee -a test.log
-          fi
-
-          # Run UI tests
-          if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="-" \
-              CODE_SIGNING_REQUIRED=YES \
-              CODE_SIGNING_ALLOWED=YES \
-              -only-testing:aynaUITests \
-              test 2>&1 | tee -a test.log
-          fi
-        continue-on-error: true
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: macos-15-logs
-          path: |
-            build.log
-            test.log
-
-  validate-macos-26:
-    needs: activation
-    if: github.event.workflow_run.id == ''
-    runs-on: macos-26
-    outputs:
-      log: ${{ steps.test.outputs.log }}
-      result: ${{ steps.test.outcome }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Select Xcode 26.0
-        run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
-      - name: Build and Test
-        id: test
-        run: |
-          set -o pipefail
-          TEST_TARGET="${{ github.event.inputs.test_target || 'both' }}"
-          echo "=== macOS 26 / Xcode 26.0 ===" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Build
-          xcodebuild \
-            -project ayna.xcodeproj \
-            -scheme Ayna \
-            -destination 'platform=macOS' \
-            -derivedDataPath ./build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee build.log
-
-          # Run unit tests
-          if [[ "$TEST_TARGET" == "aynaTests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running unit tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO \
-              -only-testing:aynaTests \
-              test 2>&1 | tee -a test.log
-          fi
-
-          # Run UI tests
-          if [[ "$TEST_TARGET" == "aynaUITests" || "$TEST_TARGET" == "both" ]]; then
-            echo "=== Running UI tests ===" | tee -a $GITHUB_STEP_SUMMARY
-            xcodebuild \
-              -project ayna.xcodeproj \
-              -scheme Ayna \
-              -destination 'platform=macOS' \
-              -derivedDataPath ./build \
-              CODE_SIGN_IDENTITY="-" \
-              CODE_SIGNING_REQUIRED=YES \
-              CODE_SIGNING_ALLOWED=YES \
-              -only-testing:aynaUITests \
-              test 2>&1 | tee -a test.log
-          fi
-        continue-on-error: true
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: macos-26-logs
-          path: |
-            build.log
-            test.log
 
