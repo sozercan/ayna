@@ -33,8 +33,8 @@ engine:
   model: claude-opus-4.5
 
 safe-outputs:
-  create-pull-request:
-    draft: true
+  noop:
+    max: 1
 
 tools:
   web-fetch:
@@ -45,9 +45,6 @@ tools:
 steps:
   - name: Checkout repository
     uses: actions/checkout@v5
-
-  - name: Set GITHUB_SHA for MCP
-    run: echo "GITHUB_SHA=${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_ENV
 ---
 
 # Test Failure Fixer
@@ -153,25 +150,25 @@ EOF
 
 ### Step 4: Create Pull Request
 
-**⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
-
-After making fixes, commit locally (but do NOT push):
+After making fixes, create a branch and commit locally:
 
 ```bash
-git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
+BRANCH_NAME="fix/test-$(date +%Y%m%d-%H%M%S)"
+git checkout -b "$BRANCH_NAME"
 git add -A
 git commit -m "fix: <description of what was fixed>"
 ```
 
-**⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
+**Push the branch and create the PR using the GitHub CLI:**
 
-Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
+```bash
+# Push the branch
+git push origin "$BRANCH_NAME"
 
-**Title:** `[Test Fix] <brief description>`
-
-**Body:**
-```markdown
-## Summary
+# Create a draft PR using gh CLI
+gh pr create --draft \
+  --title "[Test Fix] <brief description>" \
+  --body "## Summary
 <Brief description of what was fixed>
 
 ## Failed Test Suite Run
@@ -189,8 +186,10 @@ Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
 - [ ] macOS 15 (Xcode 16.4)
 - [ ] macOS 26 (Xcode 26.0)
 - [ ] iOS
-- [ ] watchOS
+- [ ] watchOS"
 ```
+
+**Then call the `noop` safe output** to log that the PR was created successfully, passing the PR URL in the message.
 
 ## Context
 
@@ -238,4 +237,5 @@ This is **Ayna**, a native macOS/iOS/watchOS ChatGPT client built with Swift and
 - [ ] Edited source files to fix issues
 - [ ] Ran linting
 - [ ] Created branch and committed changes locally
-- [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)
+- [ ] Pushed branch and created draft PR using `gh pr create`
+- [ ] Called `noop` safe output to confirm completion
