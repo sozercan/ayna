@@ -296,6 +296,7 @@ struct MacNewChatView: View {
                                                     .foregroundStyle(.secondary)
                                             }
                                             .buttonStyle(.plain)
+                                            .accessibilityLabel("Remove attachment")
                                         }
                                         .padding(8)
                                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -328,6 +329,7 @@ struct MacNewChatView: View {
                                         .foregroundStyle(Color.secondary.opacity(0.7))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Attach file")
                                 .padding(.leading, 8)
                                 .padding(.bottom, 8)
                             }

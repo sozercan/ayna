@@ -286,7 +286,7 @@ class MCPServerManager: ObservableObject {
                         ]
                     )
                     if delay > 0 {
-                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        try? await Task.sleep(for: .seconds(delay))
                     }
                     continue
                 }
@@ -370,7 +370,7 @@ class MCPServerManager: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             if delaySeconds > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                try? await Task.sleep(for: .seconds(delaySeconds))
             }
 
             await performScheduledReconnect(for: config.name)

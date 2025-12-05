@@ -41,7 +41,7 @@
             VStack(spacing: 12) {
                 Image(systemName: "bubble.left.and.bubble.right")
                     .font(.system(size: 32))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Text("No Conversations")
                     .font(.headline)
@@ -49,7 +49,7 @@
                 if !connectivityService.isReachable {
                     Text("Open Ayna on iPhone to sync")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 } else {
                     NavigationLink {
@@ -103,7 +103,7 @@
 
                     Text(avatarLetter)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -116,12 +116,12 @@
 
                         Text(formattedTime)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
 
                     Text(previewText)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }

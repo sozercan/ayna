@@ -399,7 +399,7 @@ struct InstallationInstructionsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .padding(8)
                             .background(Color(.textBackgroundColor))
-                            .cornerRadius(6)
+                            .clipShape(.rect(cornerRadius: 6))
 
                         Text("2. Initialize Podman Machine (first time only)")
                             .fontWeight(.medium)
@@ -416,7 +416,7 @@ struct InstallationInstructionsView: View {
                         .font(.system(.caption, design: .monospaced))
                         .padding(8)
                         .background(Color(.textBackgroundColor))
-                        .cornerRadius(6)
+                        .clipShape(.rect(cornerRadius: 6))
 
                         Text("3. Verify Installation")
                             .fontWeight(.medium)
@@ -428,7 +428,7 @@ struct InstallationInstructionsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .padding(8)
                             .background(Color(.textBackgroundColor))
-                            .cornerRadius(6)
+                            .clipShape(.rect(cornerRadius: 6))
                     }
 
                     Divider()
@@ -448,7 +448,7 @@ struct InstallationInstructionsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .padding(8)
                             .background(Color(.textBackgroundColor))
-                            .cornerRadius(6)
+                            .clipShape(.rect(cornerRadius: 6))
 
                         Text("Then select AIKit provider in settings")
                             .font(.caption)

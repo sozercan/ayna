@@ -282,7 +282,7 @@ enum OpenAIRetryPolicy {
         config: Config = .default
     ) async {
         let delaySeconds = delay(for: attempt, retryAfterDate: retryAfterDate, config: config)
-        try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+        try? await Task.sleep(for: .seconds(delaySeconds))
     }
 
     // MARK: - Error Classification

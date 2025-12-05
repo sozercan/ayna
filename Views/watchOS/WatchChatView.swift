@@ -122,7 +122,7 @@
                             Text("Stop")
                         }
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                         .background(Color.red)

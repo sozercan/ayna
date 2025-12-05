@@ -173,7 +173,7 @@ struct WebSearchSettingsSection: View {
                                 .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, Spacing.xxxs)
                                 .background(Color.orange.opacity(0.1))
-                                .cornerRadius(Spacing.CornerRadius.xs)
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                         }
                     }
 
@@ -196,7 +196,7 @@ struct WebSearchSettingsSection: View {
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(width: 32, height: 32)
                                 .background(Color.secondary.opacity(0.1))
-                                .cornerRadius(Spacing.CornerRadius.sm)
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.webSearch.apiKey.toggleVisibility")
@@ -603,7 +603,7 @@ struct ToolConfigurationPanel: View {
                                             .padding(.horizontal, Spacing.xs)
                                             .padding(.vertical, Spacing.xxxs)
                                             .background(Color.orange.opacity(0.1))
-                                            .cornerRadius(Spacing.CornerRadius.xs)
+                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                     }
                                 }
 
@@ -624,9 +624,10 @@ struct ToolConfigurationPanel: View {
                                             .foregroundStyle(Theme.textSecondary)
                                             .frame(width: 32, height: 32)
                                             .background(Color.secondary.opacity(0.1))
-                                            .cornerRadius(Spacing.CornerRadius.sm)
+                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
                                     .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
                                 }
 
@@ -709,6 +710,7 @@ struct APISettingsView: View {
                                 .foregroundStyle(Theme.accent)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Add new model")
                         .help("Add new model")
                     }
                 }
@@ -885,7 +887,7 @@ struct APISettingsView: View {
                                                 .padding(.horizontal, Spacing.xs)
                                                 .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(Spacing.CornerRadius.xs)
+                                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                         }
                                         TextField("gpt-4o, gpt-4o-mini, o1", text: $tempModelName)
                                             .textFieldStyle(.roundedBorder)
@@ -910,7 +912,7 @@ struct APISettingsView: View {
                                                 .padding(.horizontal, Spacing.xs)
                                                 .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(Spacing.CornerRadius.xs)
+                                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                         }
                                         TextField(
                                             "https://api.openai.com or http://localhost:8000", text: $tempEndpoint
@@ -938,7 +940,7 @@ struct APISettingsView: View {
                                                 .padding(.horizontal, Spacing.xs)
                                                 .padding(.vertical, Spacing.xxxs)
                                                 .background(Color.secondary.opacity(0.1))
-                                                .cornerRadius(Spacing.CornerRadius.xs)
+                                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                         }
                                         HStack(spacing: Spacing.sm) {
                                             if showAPIKey {
@@ -957,7 +959,7 @@ struct APISettingsView: View {
                                                     .foregroundStyle(Theme.textSecondary)
                                                     .frame(width: 32, height: 32)
                                                     .background(Color.secondary.opacity(0.1))
-                                                    .cornerRadius(Spacing.CornerRadius.sm)
+                                                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -971,7 +973,7 @@ struct APISettingsView: View {
                                 }
                                 .padding(Spacing.lg)
                                 .background(Theme.backgroundSecondary)
-                                .cornerRadius(Spacing.CornerRadius.md)
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
                                 // Action Buttons
                                 HStack(spacing: Spacing.md) {
@@ -1105,7 +1107,7 @@ struct APISettingsView: View {
                                             .padding(Spacing.md)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .background(Theme.backgroundSecondary)
-                                            .cornerRadius(Spacing.CornerRadius.sm)
+                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
 
                                             if !service.isAvailable {
                                                 Text("Apple Intelligence must be enabled in System Settings → Apple Intelligence & Siri")
@@ -1127,7 +1129,7 @@ struct APISettingsView: View {
                                                     .padding(.horizontal, Spacing.xs)
                                                     .padding(.vertical, Spacing.xxxs)
                                                     .background(Color.secondary.opacity(0.1))
-                                                    .cornerRadius(Spacing.CornerRadius.xs)
+                                                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                             }
                                             TextField("apple-intelligence", text: $tempModelName)
                                                 .textFieldStyle(.roundedBorder)
@@ -1153,12 +1155,12 @@ struct APISettingsView: View {
                                         .frame(maxWidth: .infinity)
                                         .padding(Spacing.contentPadding)
                                         .background(Color.orange.opacity(0.1))
-                                        .cornerRadius(Spacing.CornerRadius.md)
+                                        .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
                                     }
                                 }
                                 .padding(Spacing.lg)
                                 .background(Theme.backgroundSecondary)
-                                .cornerRadius(Spacing.CornerRadius.md)
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
                                 // Action Buttons
                                 if #available(macOS 26.0, *) {
@@ -1274,7 +1276,7 @@ struct APISettingsView: View {
                                 .padding(Spacing.lg)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Theme.backgroundSecondary)
-                                .cornerRadius(Spacing.CornerRadius.md)
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
                             }
                             .padding(.horizontal)
                             .padding(.bottom)
@@ -1601,7 +1603,7 @@ struct GitHubModelsConfigurationView: View {
                     }
                     .padding(Spacing.sm)
                     .background(Color.green.opacity(0.1))
-                    .cornerRadius(Spacing.CornerRadius.sm)
+                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                 } else {
                     // Sign In Button
                     VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -1633,7 +1635,7 @@ struct GitHubModelsConfigurationView: View {
                             }
                             .padding(Spacing.sm)
                             .background(Color.blue.opacity(0.1))
-                            .cornerRadius(Spacing.CornerRadius.sm)
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
 
                         if let error = githubOAuth.authError {
@@ -1674,7 +1676,7 @@ struct GitHubModelsConfigurationView: View {
                             .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, Spacing.xxxs)
                             .background(Color.secondary.opacity(0.1))
-                            .cornerRadius(Spacing.CornerRadius.xs)
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                     }
 
                     // Model Picker or fallback text field
@@ -1766,7 +1768,7 @@ struct GitHubModelsConfigurationView: View {
             }
             .padding(Spacing.lg)
             .background(Theme.backgroundSecondary)
-            .cornerRadius(Spacing.CornerRadius.md)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
             // Action Buttons
             HStack(spacing: Spacing.md) {
@@ -2021,7 +2023,7 @@ struct AIKitConfigurationView: View {
                     .padding(Spacing.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.backgroundSecondary)
-                    .cornerRadius(Spacing.CornerRadius.sm)
+                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
 
                     if let error = errorMessage {
                         Text(error)
@@ -2068,7 +2070,7 @@ struct AIKitConfigurationView: View {
             }
             .padding(Spacing.lg)
             .background(Theme.backgroundSecondary)
-            .cornerRadius(Spacing.CornerRadius.md)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
             // Add Model Button
             Button {

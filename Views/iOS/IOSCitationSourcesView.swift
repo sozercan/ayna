@@ -59,7 +59,7 @@ struct IOSCitationBadgeView: View {
     private var fallbackNumberView: some View {
         Text("\(citation.number)")
             .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
-            .foregroundColor(Theme.textPrimary)
+            .foregroundStyle(Theme.textPrimary)
     }
 
     private func openURL() {
@@ -97,7 +97,7 @@ struct IOSCitationSourcesFooter: View {
                             if citations.count > 4 {
                                 Text("+\(citations.count - 4)")
                                     .font(Typography.footnote)
-                                    .foregroundColor(Theme.textSecondary)
+                                    .foregroundStyle(Theme.textSecondary)
                                     .padding(.leading, Spacing.xxxs)
                             }
                         }
@@ -105,18 +105,18 @@ struct IOSCitationSourcesFooter: View {
 
                     Text("Sources")
                         .font(Typography.captionBold)
-                        .foregroundColor(Theme.textSecondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Spacer()
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: Typography.Size.sm, weight: .semibold))
-                        .foregroundColor(Theme.textSecondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
                 .background(Theme.textPrimary.opacity(0.05))
-                .cornerRadius(Spacing.CornerRadius.md)
+                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -150,13 +150,13 @@ struct IOSCitationSourceRow: View {
                 VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
                         .font(Typography.captionBold)
-                        .foregroundColor(Theme.textPrimary)
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
                     if let domain = extractDomain(from: citation.url) {
                         Text(domain)
                             .font(Typography.footnote)
-                            .foregroundColor(Theme.textSecondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
 
@@ -165,12 +165,12 @@ struct IOSCitationSourceRow: View {
                 // External link icon
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: Typography.Size.sm, weight: .medium))
-                    .foregroundColor(Theme.textSecondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.sm)
             .background(Theme.textPrimary.opacity(0.03))
-            .cornerRadius(Spacing.CornerRadius.md)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
         }
         .buttonStyle(PlainButtonStyle())
         .accessibilityLabel("Open \(citation.title)")

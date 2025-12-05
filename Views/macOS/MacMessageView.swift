@@ -144,7 +144,7 @@ struct MacMessageView: View {
                             }
                             .padding(Spacing.sm)
                             .background(Color.black.opacity(0.15))
-                            .cornerRadius(Spacing.CornerRadius.md)
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
                         }
                     }
 
@@ -254,7 +254,7 @@ struct MacMessageView: View {
                 bubbleContent
             }
             .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
-            .foregroundColor(Theme.userBubbleText)
+            .foregroundStyle(Theme.userBubbleText)
             .padding(.leading, isCurrentUser ? Spacing.bubblePaddingH : Spacing.contentPadding)
             .padding(.trailing, isCurrentUser ? Spacing.contentPadding : Spacing.bubblePaddingH)
             .padding(.vertical, Spacing.bubblePaddingV)
@@ -465,7 +465,7 @@ struct MacMessageView: View {
                         )
                     }
                     .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
-                    .foregroundColor(Theme.userBubbleText)
+                    .foregroundStyle(Theme.userBubbleText)
                     .padding(.leading, Spacing.contentPadding)
                     .padding(.trailing, Spacing.bubblePaddingH)
                     .padding(.vertical, Spacing.bubblePaddingV)
@@ -772,7 +772,7 @@ extension ContentBlock {
                 Rectangle()
                     .fill(Theme.textSecondary.opacity(0.4))
                     .frame(width: 3)
-                    .cornerRadius(3)
+                    .clipShape(.rect(cornerRadius: 3))
 
                 Text(text)
                     .font(Typography.body.weight(.medium))
@@ -784,7 +784,7 @@ extension ContentBlock {
             }
             .padding(Spacing.md)
             .background(Theme.textSecondary.opacity(0.08))
-            .cornerRadius(Spacing.CornerRadius.lg)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.lg))
 
         case let .table(table):
             ScrollView(.horizontal, showsIndicators: false) {

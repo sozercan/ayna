@@ -120,7 +120,7 @@ final class StreamingChunkBuffer {
     private func scheduleDelivery() {
         let delay = config.minDeliveryInterval
         deliveryTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
                 self?.deliverNow()

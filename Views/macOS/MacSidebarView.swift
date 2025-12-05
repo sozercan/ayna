@@ -63,7 +63,7 @@ struct MacSidebarView: View {
                     .textFieldStyle(.plain)
                     .font(Typography.modelName)
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-                    .onChange(of: searchText) { _ in
+                    .onChange(of: searchText) {
                         performSearch()
                     }
 
@@ -88,7 +88,7 @@ struct MacSidebarView: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.md)
             .padding(.bottom, Spacing.sm)
-            .onChange(of: conversationManager.conversations) { _ in
+            .onChange(of: conversationManager.conversations) {
                 if !searchText.isEmpty {
                     performSearch()
                 }

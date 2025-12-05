@@ -36,7 +36,7 @@
             List {
                 if watchUsableModels.isEmpty {
                     Text("No models available. Sync with iPhone.")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(watchUsableModels, id: \.self) { model in
                         Button {
@@ -50,7 +50,7 @@
                                 Spacer()
                                 if isModelSelected(model) {
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                 }
                             }
                         }

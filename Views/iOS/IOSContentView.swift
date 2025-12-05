@@ -79,10 +79,10 @@ struct IOSNewChatView: View {
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
-                    .onChange(of: conversation.messages.count) { _ in
+                    .onChange(of: conversation.messages.count) {
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
-                    .onChange(of: conversation.messages.last?.content) { _ in
+                    .onChange(of: conversation.messages.last?.content) {
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }

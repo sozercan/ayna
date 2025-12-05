@@ -32,7 +32,7 @@
                     // Message content
                     Text(WatchMarkdownRenderer.render(message.content))
                         .font(Typography.body)
-                        .foregroundColor(Theme.userBubbleText)
+                        .foregroundStyle(Theme.userBubbleText)
                         .padding(.horizontal, Spacing.bubblePaddingH)
                         .padding(.vertical, Spacing.bubblePaddingV)
                         .background(bubbleBackground)
@@ -47,7 +47,7 @@
                 if showTimestamp {
                     Text(formattedTime)
                         .font(Typography.micro)
-                        .foregroundColor(Theme.textSecondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, Spacing.xxs)
                 }
             }
@@ -164,7 +164,7 @@
                     // Content
                     Text(WatchMarkdownRenderer.render(content))
                         .font(Typography.body)
-                        .foregroundColor(Theme.userBubbleText)
+                        .foregroundStyle(Theme.userBubbleText)
                         .padding(.horizontal, Spacing.bubblePaddingH)
                         .padding(.vertical, Spacing.bubblePaddingV)
                         .background(Theme.assistantBubble)

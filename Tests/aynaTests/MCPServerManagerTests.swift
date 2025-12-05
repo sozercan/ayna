@@ -113,7 +113,7 @@ final class MCPServerManagerTests: XCTestCase {
             if manager.getServerStatus(config.name)?.state == .connected {
                 break
             }
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            try? await Task.sleep(for: .milliseconds(100))
         }
 
         XCTAssertTrue(manager.isServerConnected(config.name))
@@ -161,7 +161,7 @@ final class MCPServerManagerTests: XCTestCase {
             if manager.getServerStatus(updatedConfig.name)?.state == .connected {
                 break
             }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            try? await Task.sleep(for: .milliseconds(100))
         }
 
         XCTAssertEqual(initialService.disconnectCallCount, 1)

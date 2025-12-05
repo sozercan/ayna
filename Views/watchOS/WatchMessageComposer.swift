@@ -38,7 +38,7 @@
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 28))
-                                .foregroundColor(Theme.textSecondary)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         .buttonStyle(.plain)
 
@@ -50,7 +50,7 @@
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 36))
-                                .foregroundColor(messageText.isEmpty ? Theme.textSecondary : Theme.accent)
+                                .foregroundStyle(messageText.isEmpty ? Theme.textSecondary : Theme.accent)
                         }
                         .buttonStyle(.plain)
                         .disabled(messageText.isEmpty)

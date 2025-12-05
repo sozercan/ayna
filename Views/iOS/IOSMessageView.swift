@@ -98,7 +98,7 @@ struct IOSMessageView: View {
                 .padding(.vertical, Spacing.md - 2)
                 .background(Theme.toolBubble)
                 .foregroundStyle(Theme.userBubbleText)
-                .cornerRadius(Spacing.CornerRadius.xxl)
+                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xxl))
             }
             .frame(maxWidth: Spacing.Component.bubbleMaxWidth + 20, alignment: .leading)
 
@@ -167,7 +167,7 @@ struct IOSMessageView: View {
                         }
                         .padding(Spacing.xs)
                         .background(Color.black.opacity(0.1))
-                        .cornerRadius(Spacing.CornerRadius.sm)
+                        .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                     }
                 }
 
@@ -177,7 +177,7 @@ struct IOSMessageView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
-                            .cornerRadius(Spacing.CornerRadius.md)
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
                     } else {
                         ProgressView()
                             .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
@@ -506,7 +506,7 @@ struct IOSContentBlockView: View {
                     .font(Typography.codeBlock)
                     .padding()
                     .background(Theme.codeBackground)
-                    .cornerRadius(Spacing.CornerRadius.md)
+                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
             }
         case .divider:
             Divider()
@@ -519,7 +519,7 @@ struct IOSContentBlockView: View {
             }
             .padding(Spacing.sm)
             .background(Theme.toolBubble.opacity(0.1))
-            .cornerRadius(Spacing.CornerRadius.md)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
         }
     }
 }

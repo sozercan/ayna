@@ -989,7 +989,7 @@ struct GitHubModel: Codable, Identifiable {
         private func warningBanner(icon: String, message: String, color: Color) -> some View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .foregroundColor(color)
+                    .foregroundStyle(color)
                     .accessibilityIdentifier(TestIdentifiers.RateLimit.warningIcon)
                 Text(message)
                     .font(.caption)
@@ -999,7 +999,7 @@ struct GitHubModel: Codable, Identifiable {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(color.opacity(0.1))
-            .cornerRadius(8)
+            .clipShape(.rect(cornerRadius: 8))
             .accessibilityIdentifier(TestIdentifiers.RateLimit.warningBanner)
         }
 

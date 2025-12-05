@@ -68,7 +68,7 @@ struct CitationBadgeView: View {
     private var fallbackNumberView: some View {
         Text("\(citation.number)")
             .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
     }
 
     private func openURL() {
@@ -106,7 +106,7 @@ struct CitationSourcesFooter: View {
                             if citations.count > 5 {
                                 Text("+\(citations.count - 5)")
                                     .font(Typography.micro)
-                                    .foregroundColor(.white.opacity(0.7))
+                                    .foregroundStyle(.white.opacity(0.7))
                                     .padding(.leading, Spacing.xxxs)
                             }
                         }
@@ -114,18 +114,18 @@ struct CitationSourcesFooter: View {
 
                     Text("Sources")
                         .font(Typography.buttonSmall)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.8))
 
                     Spacer()
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: Typography.Size.xs, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
                 .background(Color.white.opacity(0.08))
-                .cornerRadius(Spacing.CornerRadius.md)
+                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
             }
             .buttonStyle(PlainButtonStyle())
 
@@ -160,13 +160,13 @@ struct CitationSourceRow: View {
                 VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
                         .font(Typography.buttonSmall)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
 
                     if let domain = extractDomain(from: citation.url) {
                         Text(domain)
                             .font(Typography.micro)
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundStyle(.white.opacity(0.6))
                     }
                 }
 
@@ -175,12 +175,12 @@ struct CitationSourceRow: View {
                 // External link icon
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: Typography.Size.xs, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundStyle(.white.opacity(0.5))
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.xs)
             .background(Color.white.opacity(isHovered ? 0.12 : 0.05))
-            .cornerRadius(Spacing.CornerRadius.sm)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
         }
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in

@@ -118,6 +118,7 @@ struct IOSMessageComposer: View {
                     .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
                     .background(Theme.backgroundSecondary)
                     .clipShape(Circle())
+                    .accessibilityLabel("Add attachment")
                     .accessibilityIdentifier("\(identifierPrefix).attachButton")
                     .confirmationDialog("Add Attachment", isPresented: $showAttachmentSourceSheet) {
                         Button {
@@ -167,6 +168,7 @@ struct IOSMessageComposer: View {
                             .symbolEffect(.pulse, options: .repeating, value: isGenerating)
                     }
                     .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
+                    .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
                     .accessibilityIdentifier("\(identifierPrefix).sendButton")
                 }
             }
