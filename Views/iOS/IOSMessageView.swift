@@ -128,7 +128,28 @@ struct IOSMessageView: View {
 
     // MARK: - Regular Message View
 
+    /// Whether this message should be hidden (empty assistant message waiting for tool execution)
+    private var shouldHideMessage: Bool {
+        // Hide empty assistant messages that have pending tool calls
+        // This prevents showing an empty bubble artifact while waiting for tool execution
+        message.role == .assistant &&
+            message.content.isEmpty &&
+            message.mediaType != .image &&
+            message.toolCalls != nil &&
+            !(message.toolCalls?.isEmpty ?? true)
+    }
+
+    @ViewBuilder
     private var regularMessageView: some View {
+        if shouldHideMessage {
+            // Don't render anything for empty assistant messages with pending tool calls
+            EmptyView()
+        } else {
+            regularMessageContent
+        }
+    }
+
+    private var regularMessageContent: some View {
         HStack(alignment: .top) {
             if message.role == .user {
                 Spacer()

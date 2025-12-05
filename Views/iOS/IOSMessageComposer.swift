@@ -6,6 +6,7 @@
 //
 
 import os.log
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -17,35 +18,44 @@ struct IOSMessageComposer: View {
     @Binding var isGenerating: Bool
     @Binding var errorMessage: String?
     @Binding var attachedFiles: [URL]
+    @Binding var attachedImages: [UIImage]
 
     let showAttachmentButton: Bool
     let onSend: () -> Void
     let onCancel: () -> Void
-    let onAttachmentRequested: () -> Void
+    let onFileAttachmentRequested: () -> Void
+    let onPhotoAttachmentRequested: () -> Void
 
     /// Accessibility identifier prefix for this composer instance
     let identifierPrefix: String
+
+    /// Whether to show the attachment source selection sheet
+    @State private var showAttachmentSourceSheet = false
 
     init(
         messageText: Binding<String>,
         isGenerating: Binding<Bool>,
         errorMessage: Binding<String?>,
         attachedFiles: Binding<[URL]> = .constant([]),
+        attachedImages: Binding<[UIImage]> = .constant([]),
         showAttachmentButton: Bool = true,
         identifierPrefix: String = "chat.composer",
         onSend: @escaping () -> Void,
         onCancel: @escaping () -> Void,
-        onAttachmentRequested: @escaping () -> Void = {}
+        onFileAttachmentRequested: @escaping () -> Void = {},
+        onPhotoAttachmentRequested: @escaping () -> Void = {}
     ) {
         _messageText = messageText
         _isGenerating = isGenerating
         _errorMessage = errorMessage
         _attachedFiles = attachedFiles
+        _attachedImages = attachedImages
         self.showAttachmentButton = showAttachmentButton
         self.identifierPrefix = identifierPrefix
         self.onSend = onSend
         self.onCancel = onCancel
-        self.onAttachmentRequested = onAttachmentRequested
+        self.onFileAttachmentRequested = onFileAttachmentRequested
+        self.onPhotoAttachmentRequested = onPhotoAttachmentRequested
     }
 
     var body: some View {
@@ -76,11 +86,14 @@ struct IOSMessageComposer: View {
             }
 
             // Attached files display
-            if !attachedFiles.isEmpty {
+            if !attachedFiles.isEmpty || !attachedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Spacing.sm) {
                         ForEach(attachedFiles, id: \.self) { url in
                             attachmentChip(for: url)
+                        }
+                        ForEach(attachedImages.indices, id: \.self) { index in
+                            imageAttachmentChip(for: attachedImages[index], at: index)
                         }
                     }
                     .padding(.horizontal)
@@ -92,7 +105,7 @@ struct IOSMessageComposer: View {
             HStack(alignment: .bottom, spacing: Spacing.md) {
                 // Attachment button - meets 44pt touch target
                 if showAttachmentButton {
-                    Button(action: onAttachmentRequested) {
+                    Button(action: { showAttachmentSourceSheet = true }) {
                         Image(systemName: "plus")
                             .font(.system(size: Typography.IconSize.lg, weight: .medium))
                             .foregroundStyle(Theme.textSecondary)
@@ -101,6 +114,23 @@ struct IOSMessageComposer: View {
                     .background(Theme.backgroundSecondary)
                     .clipShape(Circle())
                     .accessibilityIdentifier("\(identifierPrefix).attachButton")
+                    .confirmationDialog("Add Attachment", isPresented: $showAttachmentSourceSheet) {
+                        Button {
+                            onPhotoAttachmentRequested()
+                        } label: {
+                            Label("Photo Library", systemImage: "photo.on.rectangle")
+                        }
+                        .accessibilityIdentifier("\(identifierPrefix).attachPhotoButton")
+
+                        Button {
+                            onFileAttachmentRequested()
+                        } label: {
+                            Label("Choose File", systemImage: "folder")
+                        }
+                        .accessibilityIdentifier("\(identifierPrefix).attachFileButton")
+
+                        Button("Cancel", role: .cancel) {}
+                    }
                 }
 
                 // Text field container with smooth height animation
@@ -163,6 +193,32 @@ struct IOSMessageComposer: View {
         .background(Theme.backgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         .accessibilityIdentifier("\(identifierPrefix).attachment.\(url.lastPathComponent)")
+    }
+
+    @ViewBuilder
+    private func imageAttachmentChip(for image: UIImage, at index: Int) -> some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            Text("Image \(index + 1)")
+                .font(Typography.caption)
+                .lineLimit(1)
+            Button {
+                attachedImages.remove(at: index)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(Typography.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .accessibilityIdentifier("\(identifierPrefix).attachment.remove.image\(index)")
+        }
+        .padding(Spacing.xs)
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+        .accessibilityIdentifier("\(identifierPrefix).attachment.image\(index)")
     }
 
     private func handleSendOrCancel() {
@@ -254,5 +310,40 @@ enum IOSFileAttachmentUtils {
         }
 
         return (attachments, errors)
+    }
+
+    /// Processes UIImage attachments from the photo library into Message.FileAttachment array.
+    /// Compresses images to JPEG format for API compatibility.
+    static func processImageAttachments(from images: [UIImage]) -> [Message.FileAttachment] {
+        var attachments: [Message.FileAttachment] = []
+
+        for (index, image) in images.enumerated() {
+            // Compress to JPEG with reasonable quality for API upload
+            // OpenAI recommends images under 20MB and low detail mode for smaller sizes
+            guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .error,
+                    message: "❌ Failed to convert image \(index + 1) to JPEG data"
+                )
+                continue
+            }
+
+            let fileName = "photo_\(index + 1).jpg"
+            attachments.append(Message.FileAttachment(
+                fileName: fileName,
+                mimeType: "image/jpeg",
+                data: imageData
+            ))
+
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "📷 Processed image attachment: \(fileName)",
+                metadata: ["size": "\(imageData.count)", "originalSize": "\(image.size)"]
+            )
+        }
+
+        return attachments
     }
 }

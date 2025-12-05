@@ -6,6 +6,7 @@
 //
 
 import os.log
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -36,6 +37,8 @@ struct IOSNewChatView: View {
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
+    @State private var isPhotoPickerPresented = false
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showSettings = false
     @State private var showModelSelector = false
 
@@ -95,11 +98,13 @@ struct IOSNewChatView: View {
                 isGenerating: $viewModel.isGenerating,
                 errorMessage: $viewModel.errorMessage,
                 attachedFiles: $viewModel.attachedFiles,
+                attachedImages: $viewModel.attachedImages,
                 showAttachmentButton: true,
                 identifierPrefix: "newchat.composer",
                 onSend: { viewModel.sendMessage() },
                 onCancel: { viewModel.cancelGeneration() },
-                onAttachmentRequested: { isFileImporterPresented = true }
+                onFileAttachmentRequested: { isFileImporterPresented = true },
+                onPhotoAttachmentRequested: { isPhotoPickerPresented = true }
             )
         }
         .navigationTitle("New Chat")
@@ -110,6 +115,18 @@ struct IOSNewChatView: View {
             allowsMultipleSelection: true
         ) { result in
             viewModel.handleFileImport(result)
+        }
+        .photosPicker(
+            isPresented: $isPhotoPickerPresented,
+            selection: $selectedPhotoItems,
+            maxSelectionCount: 5,
+            matching: .images
+        )
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            Task {
+                await viewModel.handlePhotoSelection(newItems)
+                selectedPhotoItems = []
+            }
         }
         .toolbar {
             ToolbarItem(placement: .principal) {

@@ -8,6 +8,8 @@
 import Combine
 import Foundation
 import os.log
+import PhotosUI
+import SwiftUI
 
 /// A wrapper to make non-Sendable types Sendable by unchecked conformance.
 /// Use this only when you are sure the value is thread-safe or accessed safely.
@@ -29,6 +31,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     @Published var isGenerating = false
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
+    @Published var attachedImages: [UIImage] = []
 
     /// The name of the tool currently being executed (for UI indicator)
     @Published var currentToolName: String?
@@ -141,6 +144,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         isGenerating = false
         errorMessage = nil
         cleanupAttachedFiles()
+        attachedImages.removeAll()
         selectedModel = openAIService.selectedModel
         selectedModels = [openAIService.selectedModel]
 
@@ -201,6 +205,36 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         }
     }
 
+    /// Handle photo selection from the photo picker.
+    func handlePhotoSelection(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            do {
+                if let data = try await item.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data)
+                {
+                    await MainActor.run {
+                        attachedImages.append(image)
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "📷 Photo attached from library",
+                            metadata: ["imageSize": "\(image.size)"]
+                        )
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to load photo: \(error.localizedDescription)"
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .error,
+                        message: "❌ Photo selection failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+    }
+
     /// Cancel the current generation.
     func cancelGeneration() {
         let logMetadata: [String: String] = conversationId.map { ["conversationId": $0.uuidString] } ?? [:]
@@ -230,7 +264,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             ]
         )
 
-        guard !text.isEmpty || !attachedFiles.isEmpty else {
+        guard !text.isEmpty || !attachedFiles.isEmpty || !attachedImages.isEmpty else {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
@@ -296,12 +330,13 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 "conversationId": targetConversationId.uuidString,
                 "textLength": "\(text.count)",
                 "attachmentCount": "\(attachedFiles.count)",
+                "imageCount": "\(attachedImages.count)",
             ]
         )
 
         var userMessage = Message(role: .user, content: text)
 
-        // Process attachments with proper resource cleanup
+        // Process file attachments with proper resource cleanup
         if !attachedFiles.isEmpty {
             let result = IOSFileAttachmentUtils.processAttachments(from: attachedFiles)
             userMessage.attachments = result.attachments
@@ -309,6 +344,17 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 errorMessage = result.errors.joined(separator: "\n")
             }
             cleanupAttachedFiles()
+        }
+
+        // Process image attachments from photo library
+        if !attachedImages.isEmpty {
+            let imageAttachments = IOSFileAttachmentUtils.processImageAttachments(from: attachedImages)
+            if userMessage.attachments == nil {
+                userMessage.attachments = imageAttachments
+            } else {
+                userMessage.attachments?.append(contentsOf: imageAttachments)
+            }
+            attachedImages.removeAll()
         }
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
