@@ -39,6 +39,7 @@ safe-outputs:
 tools:
   web-fetch:
   bash:
+  edit:
   github:
     toolsets: [all]
 

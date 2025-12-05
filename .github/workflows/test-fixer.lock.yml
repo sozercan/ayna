@@ -70,6 +70,7 @@
 # tools:
 #   web-fetch:
 #   bash:
+#   edit:
 #   github:
 #     toolsets: [all]
 #
@@ -2116,6 +2117,21 @@ jobs:
           </temporary-files>
           
           PROMPT_EOF
+      - name: Append edit tool accessibility instructions to prompt
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        run: |
+          cat << 'PROMPT_EOF' | envsubst >> "$GH_AW_PROMPT"
+          <file-editing>
+          <description>File Editing Access Permissions</description>
+          <allowed-paths>
+            <path name="workspace">$GITHUB_WORKSPACE</path>
+            <path name="temporary">/tmp/gh-aw/</path>
+          </allowed-paths>
+          <restriction>Do NOT attempt to edit files outside these directories as you do not have the necessary permissions.</restriction>
+          </file-editing>
+          
+          PROMPT_EOF
       - name: Append safe outputs instructions to prompt
         env:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
@@ -2297,11 +2313,12 @@ jobs:
         # --allow-tool shell(wc)
         # --allow-tool shell(yq)
         # --allow-tool web-fetch
+        # --allow-tool write
         timeout-minutes: 60
         run: |
           set -o pipefail
           sudo -E awf --env-all --container-workdir "${GITHUB_WORKSPACE}" --mount /tmp:/tmp:rw --mount "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:rw" --mount /usr/bin/gh:/usr/bin/gh:ro --allow-domains api.enterprise.githubcopilot.com,api.github.com,github.com,raw.githubusercontent.com,registry.npmjs.org --log-level info --proxy-logs-dir /tmp/gh-aw/sandbox/firewall/logs \
-            -- npx -y @github/copilot@0.0.366 --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --add-dir "${GITHUB_WORKSPACE}" --disable-builtin-mcps --model claude-opus-4.5 --allow-tool github --allow-tool safeoutputs --allow-tool 'shell(cat)' --allow-tool 'shell(date)' --allow-tool 'shell(echo)' --allow-tool 'shell(grep)' --allow-tool 'shell(head)' --allow-tool 'shell(ls)' --allow-tool 'shell(pwd)' --allow-tool 'shell(sort)' --allow-tool 'shell(tail)' --allow-tool 'shell(uniq)' --allow-tool 'shell(wc)' --allow-tool 'shell(yq)' --allow-tool web-fetch --prompt "$(cat /tmp/gh-aw/aw-prompts/prompt.txt)" \
+            -- npx -y @github/copilot@0.0.366 --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --add-dir "${GITHUB_WORKSPACE}" --disable-builtin-mcps --model claude-opus-4.5 --allow-tool github --allow-tool safeoutputs --allow-tool 'shell(cat)' --allow-tool 'shell(date)' --allow-tool 'shell(echo)' --allow-tool 'shell(grep)' --allow-tool 'shell(head)' --allow-tool 'shell(ls)' --allow-tool 'shell(pwd)' --allow-tool 'shell(sort)' --allow-tool 'shell(tail)' --allow-tool 'shell(uniq)' --allow-tool 'shell(wc)' --allow-tool 'shell(yq)' --allow-tool web-fetch --allow-tool write --allow-all-paths --prompt "$(cat /tmp/gh-aw/aw-prompts/prompt.txt)" \
             2>&1 | tee /tmp/gh-aw/agent-stdio.log
         env:
           COPILOT_AGENT_RUNNER_TYPE: STANDALONE
