@@ -1,13 +1,13 @@
 ---
 description: |
   This workflow monitors unit and UI test failures and automatically creates draft PRs to fix them.
-  
+
   Flow:
   1. Triggered by Test Suite workflow failure, schedule, or manually
   2. Agent analyzes test results (from triggering workflow or by running tests)
   3. If all tests pass, no action needed
   4. If any tests fail, agent creates a single PR to fix all failures
-  
+
   The agent reuses the existing Test Suite workflow - no duplicate test definitions.
 
 on:
@@ -33,8 +33,8 @@ engine:
   model: claude-opus-4.5
 
 safe-outputs:
-  noop:
-    max: 1
+  create-pull-request:
+    draft: true
 
 tools:
   web-fetch:
@@ -150,25 +150,25 @@ EOF
 
 ### Step 4: Create Pull Request
 
-After making fixes, create a branch and commit locally:
+**⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
+
+After making fixes, commit locally (but do NOT push):
 
 ```bash
-BRANCH_NAME="fix/test-$(date +%Y%m%d-%H%M%S)"
-git checkout -b "$BRANCH_NAME"
+git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
 git add -A
 git commit -m "fix: <description of what was fixed>"
 ```
 
-**Push the branch and create the PR using the GitHub CLI:**
+**⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
 
-```bash
-# Push the branch
-git push origin "$BRANCH_NAME"
+Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
 
-# Create a draft PR using gh CLI
-gh pr create --draft \
-  --title "[Test Fix] <brief description>" \
-  --body "## Summary
+**Title:** `[Test Fix] <brief description>`
+
+**Body:**
+```markdown
+## Summary
 <Brief description of what was fixed>
 
 ## Failed Test Suite Run
@@ -186,10 +186,8 @@ gh pr create --draft \
 - [ ] macOS 15 (Xcode 16.4)
 - [ ] macOS 26 (Xcode 26.0)
 - [ ] iOS
-- [ ] watchOS"
+- [ ] watchOS
 ```
-
-**Then call the `noop` safe output** to log that the PR was created successfully, passing the PR URL in the message.
 
 ## Context
 
@@ -237,5 +235,4 @@ This is **Ayna**, a native macOS/iOS/watchOS ChatGPT client built with Swift and
 - [ ] Edited source files to fix issues
 - [ ] Ran linting
 - [ ] Created branch and committed changes locally
-- [ ] Pushed branch and created draft PR using `gh pr create`
-- [ ] Called `noop` safe output to confirm completion
+- [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)

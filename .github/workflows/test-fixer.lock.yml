@@ -64,8 +64,8 @@
 #   model: claude-opus-4.5
 #
 # safe-outputs:
-#   noop:
-#     max: 1
+#   create-pull-request:
+#     draft: true
 #
 # tools:
 #   web-fetch:
@@ -84,12 +84,17 @@
 #   activation["activation"]
 #   agent["agent"]
 #   conclusion["conclusion"]
+#   create_pull_request["create_pull_request"]
 #   detection["detection"]
 #   pre_activation["pre_activation"]
 #   pre_activation --> activation
 #   activation --> agent
 #   agent --> conclusion
 #   activation --> conclusion
+#   create_pull_request --> conclusion
+#   agent --> create_pull_request
+#   activation --> create_pull_request
+#   detection --> create_pull_request
 #   agent --> detection
 # ```
 #
@@ -198,25 +203,25 @@
 #
 # ### Step 4: Create Pull Request
 #
-# After making fixes, create a branch and commit locally:
+# **⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
+#
+# After making fixes, commit locally (but do NOT push):
 #
 # ```bash
-# BRANCH_NAME="fix/test-$(date +%Y%m%d-%H%M%S)"
-# git checkout -b "$BRANCH_NAME"
+# git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
 # git add -A
 # git commit -m "fix: <description of what was fixed>"
 # ```
 #
-# **Push the branch and create the PR using the GitHub CLI:**
+# **⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
 #
-# ```bash
-# # Push the branch
-# git push origin "$BRANCH_NAME"
+# Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
 #
-# # Create a draft PR using gh CLI
-# gh pr create --draft \
-#   --title "[Test Fix] <brief description>" \
-#   --body "## Summary
+# **Title:** `[Test Fix] <brief description>`
+#
+# **Body:**
+# ```markdown
+# ## Summary
 # <Brief description of what was fixed>
 #
 # ## Failed Test Suite Run
@@ -234,10 +239,8 @@
 # - [ ] macOS 15 (Xcode 16.4)
 # - [ ] macOS 26 (Xcode 26.0)
 # - [ ] iOS
-# - [ ] watchOS"
+# - [ ] watchOS
 # ```
-#
-# **Then call the `noop` safe output** to log that the PR was created successfully, passing the PR URL in the message.
 #
 # ## Context
 #
@@ -285,8 +288,7 @@
 # - [ ] Edited source files to fix issues
 # - [ ] Ran linting
 # - [ ] Created branch and committed changes locally
-# - [ ] Pushed branch and created draft PR using `gh pr create`
-# - [ ] Called `noop` safe output to confirm completion
+# - [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)
 # ```
 #
 # Pinned GitHub Actions:
@@ -563,20 +565,53 @@ jobs:
           which awf
           awf --version
       - name: Install GitHub Copilot CLI
-        run: npm install -g @github/copilot@0.0.365
+        run: npm install -g @github/copilot@0.0.366
       - name: Downloading container images
         run: |
           set -e
           docker pull ghcr.io/github/github-mcp-server:v0.24.0
           docker pull mcp/fetch
-      - name: Setup Safe Outputs Collector MCP
+      - name: Write Safe Outputs Config
         run: |
           mkdir -p /tmp/gh-aw/safeoutputs
           cat > /tmp/gh-aw/safeoutputs/config.json << 'EOF'
-          {"missing_tool":{"max":0},"noop":{"max":1}}
+          {"create_pull_request":{},"missing_tool":{"max":0},"noop":{"max":1}}
           EOF
           cat > /tmp/gh-aw/safeoutputs/tools.json << 'EOF'
           [
+            {
+              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. PRs will be created as drafts.",
+              "inputSchema": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "description": "Detailed PR description in Markdown. Include what changes were made, why, testing notes, and any breaking changes. Do NOT repeat the title as a heading.",
+                    "type": "string"
+                  },
+                  "branch": {
+                    "description": "Source branch name containing the changes. If omitted, uses the current working branch.",
+                    "type": "string"
+                  },
+                  "labels": {
+                    "description": "Labels to categorize the PR (e.g., 'enhancement', 'bugfix'). Labels must exist in the repository.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": {
+                    "description": "Concise PR title describing the changes. Follow repository conventions (e.g., conventional commits). The title appears as the main heading.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "body"
+                ],
+                "type": "object"
+              },
+              "name": "create_pull_request"
+            },
             {
               "description": "Report that a tool or capability needed to complete the task is not available. Use this when you cannot accomplish what was requested because the required functionality is missing or access is restricted.",
               "inputSchema": {
@@ -624,6 +659,35 @@ jobs:
           EOF
           cat > /tmp/gh-aw/safeoutputs/validation.json << 'EOF'
           {
+            "create_pull_request": {
+              "defaultMax": 1,
+              "fields": {
+                "body": {
+                  "required": true,
+                  "type": "string",
+                  "sanitize": true,
+                  "maxLength": 65000
+                },
+                "branch": {
+                  "required": true,
+                  "type": "string",
+                  "sanitize": true,
+                  "maxLength": 256
+                },
+                "labels": {
+                  "type": "array",
+                  "itemType": "string",
+                  "itemSanitize": true,
+                  "itemMaxLength": 128
+                },
+                "title": {
+                  "required": true,
+                  "type": "string",
+                  "sanitize": true,
+                  "maxLength": 128
+                }
+              }
+            },
             "missing_tool": {
               "defaultMax": 20,
               "fields": {
@@ -659,182 +723,11 @@ jobs:
             }
           }
           EOF
+      - name: Write Safe Outputs JavaScript Files
+        run: |
           cat > /tmp/gh-aw/safeoutputs/mcp-server.cjs << 'EOF'
             const fs = require("fs");
             const path = require("path");
-            const crypto = require("crypto");
-            function normalizeBranchName(branchName) {
-              if (!branchName || typeof branchName !== "string" || branchName.trim() === "") {
-                return branchName;
-              }
-              let normalized = branchName.replace(/[^a-zA-Z0-9\-_/.]+/g, "-");
-              normalized = normalized.replace(/-+/g, "-");
-              normalized = normalized.replace(/^-+|-+$/g, "");
-              if (normalized.length > 128) {
-                normalized = normalized.substring(0, 128);
-              }
-              normalized = normalized.replace(/-+$/, "");
-              normalized = normalized.toLowerCase();
-              return normalized;
-            }
-            function estimateTokens(text) {
-              if (!text) return 0;
-              return Math.ceil(text.length / 4);
-            }
-            function generateCompactSchema(content) {
-              try {
-                const parsed = JSON.parse(content);
-                if (Array.isArray(parsed)) {
-                  if (parsed.length === 0) {
-                    return "[]";
-                  }
-                  const firstItem = parsed[0];
-                  if (typeof firstItem === "object" && firstItem !== null) {
-                    const keys = Object.keys(firstItem);
-                    return `[{${keys.join(", ")}}] (${parsed.length} items)`;
-                  }
-                  return `[${typeof firstItem}] (${parsed.length} items)`;
-                } else if (typeof parsed === "object" && parsed !== null) {
-                  const keys = Object.keys(parsed);
-                  if (keys.length > 10) {
-                    return `{${keys.slice(0, 10).join(", ")}, ...} (${keys.length} keys)`;
-                  }
-                  return `{${keys.join(", ")}}`;
-                }
-                return `${typeof parsed}`;
-              } catch {
-                return "text content";
-              }
-            }
-            function writeLargeContentToFile(content) {
-              const logsDir = "/tmp/gh-aw/safeoutputs";
-              if (!fs.existsSync(logsDir)) {
-                fs.mkdirSync(logsDir, { recursive: true });
-              }
-              const hash = crypto.createHash("sha256").update(content).digest("hex");
-              const filename = `${hash}.json`;
-              const filepath = path.join(logsDir, filename);
-              fs.writeFileSync(filepath, content, "utf8");
-              const description = generateCompactSchema(content);
-              return {
-                filename: filename,
-                description: description,
-              };
-            }
-            const { execSync } = require("child_process");
-            function getCurrentBranch() {
-              const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
-              try {
-                const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-                  encoding: "utf8",
-                  cwd: cwd,
-                }).trim();
-                return branch;
-              } catch (error) {
-              }
-              const ghHeadRef = process.env.GITHUB_HEAD_REF;
-              const ghRefName = process.env.GITHUB_REF_NAME;
-              if (ghHeadRef) {
-                return ghHeadRef;
-              }
-              if (ghRefName) {
-                return ghRefName;
-              }
-              throw new Error("Failed to determine current branch: git command failed and no GitHub environment variables available");
-            }
-            function getBaseBranch() {
-              return process.env.GH_AW_BASE_BRANCH || "main";
-            }
-            function generateGitPatch(branchName) {
-              const patchPath = "/tmp/gh-aw/aw.patch";
-              const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
-              const defaultBranch = process.env.DEFAULT_BRANCH || getBaseBranch();
-              const githubSha = process.env.GITHUB_SHA;
-              const patchDir = path.dirname(patchPath);
-              if (!fs.existsSync(patchDir)) {
-                fs.mkdirSync(patchDir, { recursive: true });
-              }
-              let patchGenerated = false;
-              let errorMessage = null;
-              try {
-                if (branchName) {
-                  try {
-                    execSync(`git show-ref --verify --quiet refs/heads/${branchName}`, { cwd, encoding: "utf8" });
-                    let baseRef;
-                    try {
-                      execSync(`git show-ref --verify --quiet refs/remotes/origin/${branchName}`, { cwd, encoding: "utf8" });
-                      baseRef = `origin/${branchName}`;
-                    } catch {
-                      execSync(`git fetch origin ${defaultBranch}`, { cwd, encoding: "utf8" });
-                      baseRef = execSync(`git merge-base origin/${defaultBranch} ${branchName}`, { cwd, encoding: "utf8" }).trim();
-                    }
-                    const commitCount = parseInt(execSync(`git rev-list --count ${baseRef}..${branchName}`, { cwd, encoding: "utf8" }).trim(), 10);
-                    if (commitCount > 0) {
-                      const patchContent = execSync(`git format-patch ${baseRef}..${branchName} --stdout`, {
-                        cwd,
-                        encoding: "utf8",
-                      });
-                      if (patchContent && patchContent.trim()) {
-                        fs.writeFileSync(patchPath, patchContent, "utf8");
-                        patchGenerated = true;
-                      }
-                    }
-                  } catch (branchError) {
-                  }
-                }
-                if (!patchGenerated) {
-                  const currentHead = execSync("git rev-parse HEAD", { cwd, encoding: "utf8" }).trim();
-                  if (!githubSha) {
-                    errorMessage = "GITHUB_SHA environment variable is not set";
-                  } else if (currentHead === githubSha) {
-                  } else {
-                    try {
-                      execSync(`git merge-base --is-ancestor ${githubSha} HEAD`, { cwd, encoding: "utf8" });
-                      const commitCount = parseInt(execSync(`git rev-list --count ${githubSha}..HEAD`, { cwd, encoding: "utf8" }).trim(), 10);
-                      if (commitCount > 0) {
-                        const patchContent = execSync(`git format-patch ${githubSha}..HEAD --stdout`, {
-                          cwd,
-                          encoding: "utf8",
-                        });
-                        if (patchContent && patchContent.trim()) {
-                          fs.writeFileSync(patchPath, patchContent, "utf8");
-                          patchGenerated = true;
-                        }
-                      }
-                    } catch {
-                    }
-                  }
-                }
-              } catch (error) {
-                errorMessage = `Failed to generate patch: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              if (patchGenerated && fs.existsSync(patchPath)) {
-                const patchContent = fs.readFileSync(patchPath, "utf8");
-                const patchSize = Buffer.byteLength(patchContent, "utf8");
-                const patchLines = patchContent.split("\n").length;
-                if (!patchContent.trim()) {
-                  return {
-                    success: false,
-                    error: "No changes to commit - patch is empty",
-                    patchPath: patchPath,
-                    patchSize: 0,
-                    patchLines: 0,
-                  };
-                }
-                return {
-                  success: true,
-                  patchPath: patchPath,
-                  patchSize: patchSize,
-                  patchLines: patchLines,
-                };
-              }
-              return {
-                success: false,
-                error: errorMessage || "No changes to commit - no commits found",
-                patchPath: patchPath,
-              };
-            }
-            const os = require("os");
             class ReadBuffer {
               constructor() {
                 this._buffer = null;
@@ -991,6 +884,61 @@ jobs:
                 }
               };
             }
+            function loadToolHandlers(server, tools, basePath) {
+              server.debug(`Loading tool handlers...`);
+              server.debug(`  Total tools to process: ${tools.length}`);
+              server.debug(`  Base path: ${basePath || "(not specified)"}`);
+              let loadedCount = 0;
+              let skippedCount = 0;
+              let errorCount = 0;
+              for (const tool of tools) {
+                const toolName = tool.name || "(unnamed)";
+                if (!tool.handler) {
+                  server.debug(`  [${toolName}] No handler path specified, skipping handler load`);
+                  skippedCount++;
+                  continue;
+                }
+                const handlerPath = tool.handler;
+                server.debug(`  [${toolName}] Handler path specified: ${handlerPath}`);
+                let resolvedPath = handlerPath;
+                if (basePath && !path.isAbsolute(handlerPath)) {
+                  resolvedPath = path.resolve(basePath, handlerPath);
+                  server.debug(`  [${toolName}] Resolved relative path to: ${resolvedPath}`);
+                  const normalizedBase = path.resolve(basePath);
+                  const normalizedResolved = path.resolve(resolvedPath);
+                  if (!normalizedResolved.startsWith(normalizedBase + path.sep) && normalizedResolved !== normalizedBase) {
+                    server.debug(`  [${toolName}] ERROR: Handler path escapes base directory: ${resolvedPath} is not within ${basePath}`);
+                    errorCount++;
+                    continue;
+                  }
+                } else if (path.isAbsolute(handlerPath)) {
+                  server.debug(`  [${toolName}] Using absolute path (bypasses basePath validation): ${handlerPath}`);
+                }
+                tool.handlerPath = handlerPath;
+                try {
+                  server.debug(`  [${toolName}] Loading handler from: ${resolvedPath}`);
+                  if (!fs.existsSync(resolvedPath)) {
+                    server.debug(`  [${toolName}] ERROR: Handler file does not exist: ${resolvedPath}`);
+                    errorCount++;
+                    continue;
+                  }
+                  const ext = path.extname(resolvedPath).toLowerCase();
+                  server.debug(`  [${toolName}] Handler file extension: ${ext}`);
+                  if (ext === ".sh") {
+                    server.debug(`  [${toolName}] Detected shell script handler`);
+                    try {
+                      fs.accessSync(resolvedPath, fs.constants.X_OK);
+                      server.debug(`  [${toolName}] Shell script is executable`);
+                    } catch {
+                      try {
+                        fs.chmodSync(resolvedPath, 0o755);
+                        server.debug(`  [${toolName}] Made shell script executable`);
+                      } catch (chmodError) {
+                        server.debugError(`  [${toolName}] Warning: Could not make shell script executable: `, chmodError);
+                      }
+                    }
+            const { execFile } = require("child_process");
+            const os = require("os");
             function createShellHandler(server, toolName, scriptPath) {
               return async args => {
                 server.debug(`  [${toolName}] Invoking shell handler: ${scriptPath}`);
@@ -1080,62 +1028,84 @@ jobs:
                 });
               };
             }
-            function loadToolHandlers(server, tools, basePath) {
-              server.debug(`Loading tool handlers...`);
-              server.debug(`  Total tools to process: ${tools.length}`);
-              server.debug(`  Base path: ${basePath || "(not specified)"}`);
-              let loadedCount = 0;
-              let skippedCount = 0;
-              let errorCount = 0;
-              for (const tool of tools) {
-                const toolName = tool.name || "(unnamed)";
-                if (!tool.handler) {
-                  server.debug(`  [${toolName}] No handler path specified, skipping handler load`);
-                  skippedCount++;
-                  continue;
-                }
-                const handlerPath = tool.handler;
-                server.debug(`  [${toolName}] Handler path specified: ${handlerPath}`);
-                let resolvedPath = handlerPath;
-                if (basePath && !path.isAbsolute(handlerPath)) {
-                  resolvedPath = path.resolve(basePath, handlerPath);
-                  server.debug(`  [${toolName}] Resolved relative path to: ${resolvedPath}`);
-                  const normalizedBase = path.resolve(basePath);
-                  const normalizedResolved = path.resolve(resolvedPath);
-                  if (!normalizedResolved.startsWith(normalizedBase + path.sep) && normalizedResolved !== normalizedBase) {
-                    server.debug(`  [${toolName}] ERROR: Handler path escapes base directory: ${resolvedPath} is not within ${basePath}`);
-                    errorCount++;
-                    continue;
-                  }
-                } else if (path.isAbsolute(handlerPath)) {
-                  server.debug(`  [${toolName}] Using absolute path (bypasses basePath validation): ${handlerPath}`);
-                }
-                tool.handlerPath = handlerPath;
-                try {
-                  server.debug(`  [${toolName}] Loading handler from: ${resolvedPath}`);
-                  if (!fs.existsSync(resolvedPath)) {
-                    server.debug(`  [${toolName}] ERROR: Handler file does not exist: ${resolvedPath}`);
-                    errorCount++;
-                    continue;
-                  }
-                  const ext = path.extname(resolvedPath).toLowerCase();
-                  server.debug(`  [${toolName}] Handler file extension: ${ext}`);
-                  if (ext === ".sh") {
-                    server.debug(`  [${toolName}] Detected shell script handler`);
-                    try {
-                      fs.accessSync(resolvedPath, fs.constants.X_OK);
-                      server.debug(`  [${toolName}] Shell script is executable`);
-                    } catch {
-                      try {
-                        fs.chmodSync(resolvedPath, 0o755);
-                        server.debug(`  [${toolName}] Made shell script executable`);
-                      } catch (chmodError) {
-                        server.debugError(`  [${toolName}] Warning: Could not make shell script executable: `, chmodError);
-                      }
-                    }
                     tool.handler = createShellHandler(server, toolName, resolvedPath);
                     loadedCount++;
                     server.debug(`  [${toolName}] Shell handler created successfully`);
+                  } else if (ext === ".py") {
+                    server.debug(`  [${toolName}] Detected Python script handler`);
+                    try {
+                      fs.accessSync(resolvedPath, fs.constants.X_OK);
+                      server.debug(`  [${toolName}] Python script is executable`);
+                    } catch {
+                      try {
+                        fs.chmodSync(resolvedPath, 0o755);
+                        server.debug(`  [${toolName}] Made Python script executable`);
+                      } catch (chmodError) {
+                        server.debugError(`  [${toolName}] Warning: Could not make Python script executable: `, chmodError);
+                      }
+                    }
+            function createPythonHandler(server, toolName, scriptPath) {
+              return async args => {
+                server.debug(`  [${toolName}] Invoking Python handler: ${scriptPath}`);
+                server.debug(`  [${toolName}] Python handler args: ${JSON.stringify(args)}`);
+                const inputJson = JSON.stringify(args || {});
+                server.debug(
+                  `  [${toolName}] Input JSON (${inputJson.length} bytes): ${inputJson.substring(0, 200)}${inputJson.length > 200 ? "..." : ""}`
+                );
+                return new Promise((resolve, reject) => {
+                  server.debug(`  [${toolName}] Executing Python script...`);
+                  const child = execFile(
+                    "python3",
+                    [scriptPath],
+                    {
+                      env: process.env,
+                      timeout: 300000, 
+                      maxBuffer: 10 * 1024 * 1024, 
+                    },
+                    (error, stdout, stderr) => {
+                      if (stdout) {
+                        server.debug(`  [${toolName}] stdout: ${stdout.substring(0, 500)}${stdout.length > 500 ? "..." : ""}`);
+                      }
+                      if (stderr) {
+                        server.debug(`  [${toolName}] stderr: ${stderr.substring(0, 500)}${stderr.length > 500 ? "..." : ""}`);
+                      }
+                      if (error) {
+                        server.debugError(`  [${toolName}] Python script error: `, error);
+                        reject(error);
+                        return;
+                      }
+                      let result;
+                      try {
+                        if (stdout && stdout.trim()) {
+                          result = JSON.parse(stdout.trim());
+                        } else {
+                          result = { stdout: stdout || "", stderr: stderr || "" };
+                        }
+                      } catch (parseError) {
+                        server.debug(`  [${toolName}] Output is not JSON, returning as text`);
+                        result = { stdout: stdout || "", stderr: stderr || "" };
+                      }
+                      server.debug(`  [${toolName}] Python handler completed successfully`);
+                      resolve({
+                        content: [
+                          {
+                            type: "text",
+                            text: JSON.stringify(result),
+                          },
+                        ],
+                      });
+                    }
+                  );
+                  if (child.stdin) {
+                    child.stdin.write(inputJson);
+                    child.stdin.end();
+                  }
+                });
+              };
+            }
+                    tool.handler = createPythonHandler(server, toolName, resolvedPath);
+                    loadedCount++;
+                    server.debug(`  [${toolName}] Python handler created successfully`);
                   } else {
                     server.debug(`  [${toolName}] Loading JavaScript handler module`);
                     const handlerModule = require(resolvedPath);
@@ -1293,328 +1263,533 @@ jobs:
               process.stdin.resume();
               server.debug(`listening...`);
             }
-            const SERVER_INFO = { name: "safeoutputs", version: "1.0.0" };
-            const MCP_LOG_DIR = process.env.GH_AW_MCP_LOG_DIR;
-            const server = createServer(SERVER_INFO, { logDir: MCP_LOG_DIR });
-            const configPath = process.env.GH_AW_SAFE_OUTPUTS_CONFIG_PATH || "/tmp/gh-aw/safeoutputs/config.json";
-            let safeOutputsConfigRaw;
-            server.debug(`Reading config from file: ${configPath}`);
-            try {
-              if (fs.existsSync(configPath)) {
-                server.debug(`Config file exists at: ${configPath}`);
-                const configFileContent = fs.readFileSync(configPath, "utf8");
-                server.debug(`Config file content length: ${configFileContent.length} characters`);
-                server.debug(`Config file read successfully, attempting to parse JSON`);
-                safeOutputsConfigRaw = JSON.parse(configFileContent);
-                server.debug(`Successfully parsed config from file with ${Object.keys(safeOutputsConfigRaw).length} configuration keys`);
-              } else {
-                server.debug(`Config file does not exist at: ${configPath}`);
-                server.debug(`Using minimal default configuration`);
+            function loadConfig(server) {
+              const configPath = process.env.GH_AW_SAFE_OUTPUTS_CONFIG_PATH || "/tmp/gh-aw/safeoutputs/config.json";
+              let safeOutputsConfigRaw;
+              server.debug(`Reading config from file: ${configPath}`);
+              try {
+                if (fs.existsSync(configPath)) {
+                  server.debug(`Config file exists at: ${configPath}`);
+                  const configFileContent = fs.readFileSync(configPath, "utf8");
+                  server.debug(`Config file content length: ${configFileContent.length} characters`);
+                  server.debug(`Config file read successfully, attempting to parse JSON`);
+                  safeOutputsConfigRaw = JSON.parse(configFileContent);
+                  server.debug(`Successfully parsed config from file with ${Object.keys(safeOutputsConfigRaw).length} configuration keys`);
+                } else {
+                  server.debug(`Config file does not exist at: ${configPath}`);
+                  server.debug(`Using minimal default configuration`);
+                  safeOutputsConfigRaw = {};
+                }
+              } catch (error) {
+                server.debug(`Error reading config file: ${error instanceof Error ? error.message : String(error)}`);
+                server.debug(`Falling back to empty configuration`);
                 safeOutputsConfigRaw = {};
               }
-            } catch (error) {
-              server.debug(`Error reading config file: ${error instanceof Error ? error.message : String(error)}`);
-              server.debug(`Falling back to empty configuration`);
-              safeOutputsConfigRaw = {};
+              const safeOutputsConfig = Object.fromEntries(Object.entries(safeOutputsConfigRaw).map(([k, v]) => [k.replace(/-/g, "_"), v]));
+              server.debug(`Final processed config: ${JSON.stringify(safeOutputsConfig)}`);
+              const outputFile = process.env.GH_AW_SAFE_OUTPUTS || "/tmp/gh-aw/safeoutputs/outputs.jsonl";
+              if (!process.env.GH_AW_SAFE_OUTPUTS) {
+                server.debug(`GH_AW_SAFE_OUTPUTS not set, using default: ${outputFile}`);
+              }
+              const outputDir = path.dirname(outputFile);
+              if (!fs.existsSync(outputDir)) {
+                server.debug(`Creating output directory: ${outputDir}`);
+                fs.mkdirSync(outputDir, { recursive: true });
+              }
+              return {
+                config: safeOutputsConfig,
+                outputFile: outputFile,
+              };
             }
-            const safeOutputsConfig = Object.fromEntries(Object.entries(safeOutputsConfigRaw).map(([k, v]) => [k.replace(/-/g, "_"), v]));
-            server.debug(`Final processed config: ${JSON.stringify(safeOutputsConfig)}`);
-            const outputFile = process.env.GH_AW_SAFE_OUTPUTS || "/tmp/gh-aw/safeoutputs/outputs.jsonl";
-            if (!process.env.GH_AW_SAFE_OUTPUTS) {
-              server.debug(`GH_AW_SAFE_OUTPUTS not set, using default: ${outputFile}`);
+            function createAppendFunction(outputFile) {
+              return function appendSafeOutput(entry) {
+                if (!outputFile) throw new Error("No output file configured");
+                entry.type = entry.type.replace(/-/g, "_");
+                const jsonLine = JSON.stringify(entry) + "\n";
+                try {
+                  fs.appendFileSync(outputFile, jsonLine);
+                } catch (error) {
+                  throw new Error(`Failed to write to output file: ${error instanceof Error ? error.message : String(error)}`);
+                }
+              };
             }
-            const outputDir = path.dirname(outputFile);
-            if (!fs.existsSync(outputDir)) {
-              server.debug(`Creating output directory: ${outputDir}`);
-              fs.mkdirSync(outputDir, { recursive: true });
+            const crypto = require("crypto");
+            function normalizeBranchName(branchName) {
+              if (!branchName || typeof branchName !== "string" || branchName.trim() === "") {
+                return branchName;
+              }
+              let normalized = branchName.replace(/[^a-zA-Z0-9\-_/.]+/g, "-");
+              normalized = normalized.replace(/-+/g, "-");
+              normalized = normalized.replace(/^-+|-+$/g, "");
+              if (normalized.length > 128) {
+                normalized = normalized.substring(0, 128);
+              }
+              normalized = normalized.replace(/-+$/, "");
+              normalized = normalized.toLowerCase();
+              return normalized;
             }
-            function appendSafeOutput(entry) {
-              if (!outputFile) throw new Error("No output file configured");
-              entry.type = entry.type.replace(/-/g, "_");
-              const jsonLine = JSON.stringify(entry) + "\n";
+            function estimateTokens(text) {
+              if (!text) return 0;
+              return Math.ceil(text.length / 4);
+            }
+            function generateCompactSchema(content) {
               try {
-                fs.appendFileSync(outputFile, jsonLine);
-              } catch (error) {
-                throw new Error(`Failed to write to output file: ${error instanceof Error ? error.message : String(error)}`);
+                const parsed = JSON.parse(content);
+                if (Array.isArray(parsed)) {
+                  if (parsed.length === 0) {
+                    return "[]";
+                  }
+                  const firstItem = parsed[0];
+                  if (typeof firstItem === "object" && firstItem !== null) {
+                    const keys = Object.keys(firstItem);
+                    return `[{${keys.join(", ")}}] (${parsed.length} items)`;
+                  }
+                  return `[${typeof firstItem}] (${parsed.length} items)`;
+                } else if (typeof parsed === "object" && parsed !== null) {
+                  const keys = Object.keys(parsed);
+                  if (keys.length > 10) {
+                    return `{${keys.slice(0, 10).join(", ")}, ...} (${keys.length} keys)`;
+                  }
+                  return `{${keys.join(", ")}}`;
+                }
+                return `${typeof parsed}`;
+              } catch {
+                return "text content";
               }
             }
-            const defaultHandler = type => args => {
-              const entry = { ...(args || {}), type };
-              let largeContent = null;
-              let largeFieldName = null;
-              const TOKEN_THRESHOLD = 16000;
-              for (const [key, value] of Object.entries(entry)) {
-                if (typeof value === "string") {
-                  const tokens = estimateTokens(value);
-                  if (tokens > TOKEN_THRESHOLD) {
-                    largeContent = value;
-                    largeFieldName = key;
-                    server.debug(`Field '${key}' has ${tokens} tokens (exceeds ${TOKEN_THRESHOLD})`);
-                    break;
+            function writeLargeContentToFile(content) {
+              const logsDir = "/tmp/gh-aw/safeoutputs";
+              if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+              }
+              const hash = crypto.createHash("sha256").update(content).digest("hex");
+              const filename = `${hash}.json`;
+              const filepath = path.join(logsDir, filename);
+              fs.writeFileSync(filepath, content, "utf8");
+              const description = generateCompactSchema(content);
+              return {
+                filename: filename,
+                description: description,
+              };
+            }
+            function getCurrentBranch() {
+              const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
+              try {
+                const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+                  encoding: "utf8",
+                  cwd: cwd,
+                }).trim();
+                return branch;
+              } catch (error) {
+              }
+              const ghHeadRef = process.env.GITHUB_HEAD_REF;
+              const ghRefName = process.env.GITHUB_REF_NAME;
+              if (ghHeadRef) {
+                return ghHeadRef;
+              }
+              if (ghRefName) {
+                return ghRefName;
+              }
+              throw new Error("Failed to determine current branch: git command failed and no GitHub environment variables available");
+            }
+            function getBaseBranch() {
+              return process.env.GH_AW_BASE_BRANCH || "main";
+            }
+            function generateGitPatch(branchName) {
+              const patchPath = "/tmp/gh-aw/aw.patch";
+              const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
+              const defaultBranch = process.env.DEFAULT_BRANCH || getBaseBranch();
+              const githubSha = process.env.GITHUB_SHA;
+              const patchDir = path.dirname(patchPath);
+              if (!fs.existsSync(patchDir)) {
+                fs.mkdirSync(patchDir, { recursive: true });
+              }
+              let patchGenerated = false;
+              let errorMessage = null;
+              try {
+                if (branchName) {
+                  try {
+                    execSync(`git show-ref --verify --quiet refs/heads/${branchName}`, { cwd, encoding: "utf8" });
+                    let baseRef;
+                    try {
+                      execSync(`git show-ref --verify --quiet refs/remotes/origin/${branchName}`, { cwd, encoding: "utf8" });
+                      baseRef = `origin/${branchName}`;
+                    } catch {
+                      execSync(`git fetch origin ${defaultBranch}`, { cwd, encoding: "utf8" });
+                      baseRef = execSync(`git merge-base origin/${defaultBranch} ${branchName}`, { cwd, encoding: "utf8" }).trim();
+                    }
+                    const commitCount = parseInt(execSync(`git rev-list --count ${baseRef}..${branchName}`, { cwd, encoding: "utf8" }).trim(), 10);
+                    if (commitCount > 0) {
+                      const patchContent = execSync(`git format-patch ${baseRef}..${branchName} --stdout`, {
+                        cwd,
+                        encoding: "utf8",
+                      });
+                      if (patchContent && patchContent.trim()) {
+                        fs.writeFileSync(patchPath, patchContent, "utf8");
+                        patchGenerated = true;
+                      }
+                    }
+                  } catch (branchError) {
                   }
                 }
+                if (!patchGenerated) {
+                  const currentHead = execSync("git rev-parse HEAD", { cwd, encoding: "utf8" }).trim();
+                  if (!githubSha) {
+                    errorMessage = "GITHUB_SHA environment variable is not set";
+                  } else if (currentHead === githubSha) {
+                  } else {
+                    try {
+                      execSync(`git merge-base --is-ancestor ${githubSha} HEAD`, { cwd, encoding: "utf8" });
+                      const commitCount = parseInt(execSync(`git rev-list --count ${githubSha}..HEAD`, { cwd, encoding: "utf8" }).trim(), 10);
+                      if (commitCount > 0) {
+                        const patchContent = execSync(`git format-patch ${githubSha}..HEAD --stdout`, {
+                          cwd,
+                          encoding: "utf8",
+                        });
+                        if (patchContent && patchContent.trim()) {
+                          fs.writeFileSync(patchPath, patchContent, "utf8");
+                          patchGenerated = true;
+                        }
+                      }
+                    } catch {
+                    }
+                  }
+                }
+              } catch (error) {
+                errorMessage = `Failed to generate patch: ${error instanceof Error ? error.message : String(error)}`;
               }
-              if (largeContent && largeFieldName) {
-                const fileInfo = writeLargeContentToFile(largeContent);
-                entry[largeFieldName] = `[Content too large, saved to file: ${fileInfo.filename}]`;
+              if (patchGenerated && fs.existsSync(patchPath)) {
+                const patchContent = fs.readFileSync(patchPath, "utf8");
+                const patchSize = Buffer.byteLength(patchContent, "utf8");
+                const patchLines = patchContent.split("\n").length;
+                if (!patchContent.trim()) {
+                  return {
+                    success: false,
+                    error: "No changes to commit - patch is empty",
+                    patchPath: patchPath,
+                    patchSize: 0,
+                    patchLines: 0,
+                  };
+                }
+                return {
+                  success: true,
+                  patchPath: patchPath,
+                  patchSize: patchSize,
+                  patchLines: patchLines,
+                };
+              }
+              return {
+                success: false,
+                error: errorMessage || "No changes to commit - no commits found",
+                patchPath: patchPath,
+              };
+            }
+            function createHandlers(server, appendSafeOutput) {
+              const defaultHandler = type => args => {
+                const entry = { ...(args || {}), type };
+                let largeContent = null;
+                let largeFieldName = null;
+                const TOKEN_THRESHOLD = 16000;
+                for (const [key, value] of Object.entries(entry)) {
+                  if (typeof value === "string") {
+                    const tokens = estimateTokens(value);
+                    if (tokens > TOKEN_THRESHOLD) {
+                      largeContent = value;
+                      largeFieldName = key;
+                      server.debug(`Field '${key}' has ${tokens} tokens (exceeds ${TOKEN_THRESHOLD})`);
+                      break;
+                    }
+                  }
+                }
+                if (largeContent && largeFieldName) {
+                  const fileInfo = writeLargeContentToFile(largeContent);
+                  entry[largeFieldName] = `[Content too large, saved to file: ${fileInfo.filename}]`;
+                  appendSafeOutput(entry);
+                  return {
+                    content: [
+                      {
+                        type: "text",
+                        text: JSON.stringify(fileInfo),
+                      },
+                    ],
+                  };
+                }
                 appendSafeOutput(entry);
                 return {
                   content: [
                     {
                       type: "text",
-                      text: JSON.stringify(fileInfo),
+                      text: JSON.stringify({ result: "success" }),
                     },
                   ],
                 };
-              }
-              appendSafeOutput(entry);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({ result: "success" }),
-                  },
-                ],
               };
-            };
-            const uploadAssetHandler = args => {
-              const branchName = process.env.GH_AW_ASSETS_BRANCH;
-              if (!branchName) throw new Error("GH_AW_ASSETS_BRANCH not set");
-              const normalizedBranchName = normalizeBranchName(branchName);
-              const { path: filePath } = args;
-              const absolutePath = path.resolve(filePath);
-              const workspaceDir = process.env.GITHUB_WORKSPACE || process.cwd();
-              const tmpDir = "/tmp";
-              const isInWorkspace = absolutePath.startsWith(path.resolve(workspaceDir));
-              const isInTmp = absolutePath.startsWith(tmpDir);
-              if (!isInWorkspace && !isInTmp) {
-                throw new Error(
-                  `File path must be within workspace directory (${workspaceDir}) or /tmp directory. ` +
-                    `Provided path: ${filePath} (resolved to: ${absolutePath})`
-                );
-              }
-              if (!fs.existsSync(filePath)) {
-                throw new Error(`File not found: ${filePath}`);
-              }
-              const stats = fs.statSync(filePath);
-              const sizeBytes = stats.size;
-              const sizeKB = Math.ceil(sizeBytes / 1024);
-              const maxSizeKB = process.env.GH_AW_ASSETS_MAX_SIZE_KB ? parseInt(process.env.GH_AW_ASSETS_MAX_SIZE_KB, 10) : 10240; 
-              if (sizeKB > maxSizeKB) {
-                throw new Error(`File size ${sizeKB} KB exceeds maximum allowed size ${maxSizeKB} KB`);
-              }
-              const ext = path.extname(filePath).toLowerCase();
-              const allowedExts = process.env.GH_AW_ASSETS_ALLOWED_EXTS
-                ? process.env.GH_AW_ASSETS_ALLOWED_EXTS.split(",").map(ext => ext.trim())
-                : [
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                  ];
-              if (!allowedExts.includes(ext)) {
-                throw new Error(`File extension '${ext}' is not allowed. Allowed extensions: ${allowedExts.join(", ")}`);
-              }
-              const assetsDir = "/tmp/gh-aw/safeoutputs/assets";
-              if (!fs.existsSync(assetsDir)) {
-                fs.mkdirSync(assetsDir, { recursive: true });
-              }
-              const fileContent = fs.readFileSync(filePath);
-              const sha = crypto.createHash("sha256").update(fileContent).digest("hex");
-              const fileName = path.basename(filePath);
-              const fileExt = path.extname(fileName).toLowerCase();
-              const targetPath = path.join(assetsDir, fileName);
-              fs.copyFileSync(filePath, targetPath);
-              const targetFileName = (sha + fileExt).toLowerCase();
-              const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
-              const repo = process.env.GITHUB_REPOSITORY || "owner/repo";
-              const url = `${githubServer.replace("github.com", "raw.githubusercontent.com")}/${repo}/${normalizedBranchName}/${targetFileName}`;
-              const entry = {
-                type: "upload_asset",
-                path: filePath,
-                fileName: fileName,
-                sha: sha,
-                size: sizeBytes,
-                url: url,
-                targetFileName: targetFileName,
-              };
-              appendSafeOutput(entry);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({ result: url }),
-                  },
-                ],
-              };
-            };
-            const createPullRequestHandler = args => {
-              const entry = { ...args, type: "create_pull_request" };
-              const baseBranch = getBaseBranch();
-              if (!entry.branch || entry.branch.trim() === "" || entry.branch === baseBranch) {
-                const detectedBranch = getCurrentBranch();
-                if (entry.branch === baseBranch) {
-                  server.debug(`Branch equals base branch (${baseBranch}), detecting actual working branch: ${detectedBranch}`);
-                } else {
-                  server.debug(`Using current branch for create_pull_request: ${detectedBranch}`);
+              const uploadAssetHandler = args => {
+                const branchName = process.env.GH_AW_ASSETS_BRANCH;
+                if (!branchName) throw new Error("GH_AW_ASSETS_BRANCH not set");
+                const normalizedBranchName = normalizeBranchName(branchName);
+                const { path: filePath } = args;
+                const absolutePath = path.resolve(filePath);
+                const workspaceDir = process.env.GITHUB_WORKSPACE || process.cwd();
+                const tmpDir = "/tmp";
+                const isInWorkspace = absolutePath.startsWith(path.resolve(workspaceDir));
+                const isInTmp = absolutePath.startsWith(tmpDir);
+                if (!isInWorkspace && !isInTmp) {
+                  throw new Error(
+                    `File path must be within workspace directory (${workspaceDir}) or /tmp directory. ` +
+                      `Provided path: ${filePath} (resolved to: ${absolutePath})`
+                  );
                 }
-                entry.branch = detectedBranch;
-              }
-              server.debug(`Generating patch for create_pull_request with branch: ${entry.branch}`);
-              const patchResult = generateGitPatch(entry.branch);
-              if (!patchResult.success) {
-                const errorMsg = patchResult.error || "Failed to generate patch";
-                server.debug(`Patch generation failed: ${errorMsg}`);
-                throw new Error(errorMsg);
-              }
-              server.debug(`Patch generated successfully: ${patchResult.patchPath} (${patchResult.patchSize} bytes, ${patchResult.patchLines} lines)`);
-              appendSafeOutput(entry);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({
-                      result: "success",
-                      patch: {
-                        path: patchResult.patchPath,
-                        size: patchResult.patchSize,
-                        lines: patchResult.patchLines,
-                      },
-                    }),
-                  },
-                ],
-              };
-            };
-            const pushToPullRequestBranchHandler = args => {
-              const entry = { ...args, type: "push_to_pull_request_branch" };
-              const baseBranch = getBaseBranch();
-              if (!entry.branch || entry.branch.trim() === "" || entry.branch === baseBranch) {
-                const detectedBranch = getCurrentBranch();
-                if (entry.branch === baseBranch) {
-                  server.debug(`Branch equals base branch (${baseBranch}), detecting actual working branch: ${detectedBranch}`);
-                } else {
-                  server.debug(`Using current branch for push_to_pull_request_branch: ${detectedBranch}`);
+                if (!fs.existsSync(filePath)) {
+                  throw new Error(`File not found: ${filePath}`);
                 }
-                entry.branch = detectedBranch;
-              }
-              server.debug(`Generating patch for push_to_pull_request_branch with branch: ${entry.branch}`);
-              const patchResult = generateGitPatch(entry.branch);
-              if (!patchResult.success) {
-                const errorMsg = patchResult.error || "Failed to generate patch";
-                server.debug(`Patch generation failed: ${errorMsg}`);
-                throw new Error(errorMsg);
-              }
-              server.debug(`Patch generated successfully: ${patchResult.patchPath} (${patchResult.patchSize} bytes, ${patchResult.patchLines} lines)`);
-              appendSafeOutput(entry);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({
-                      result: "success",
-                      patch: {
-                        path: patchResult.patchPath,
-                        size: patchResult.patchSize,
-                        lines: patchResult.patchLines,
-                      },
-                    }),
-                  },
-                ],
+                const stats = fs.statSync(filePath);
+                const sizeBytes = stats.size;
+                const sizeKB = Math.ceil(sizeBytes / 1024);
+                const maxSizeKB = process.env.GH_AW_ASSETS_MAX_SIZE_KB ? parseInt(process.env.GH_AW_ASSETS_MAX_SIZE_KB, 10) : 10240; 
+                if (sizeKB > maxSizeKB) {
+                  throw new Error(`File size ${sizeKB} KB exceeds maximum allowed size ${maxSizeKB} KB`);
+                }
+                const ext = path.extname(filePath).toLowerCase();
+                const allowedExts = process.env.GH_AW_ASSETS_ALLOWED_EXTS
+                  ? process.env.GH_AW_ASSETS_ALLOWED_EXTS.split(",").map(ext => ext.trim())
+                  : [
+                      ".png",
+                      ".jpg",
+                      ".jpeg",
+                    ];
+                if (!allowedExts.includes(ext)) {
+                  throw new Error(`File extension '${ext}' is not allowed. Allowed extensions: ${allowedExts.join(", ")}`);
+                }
+                const assetsDir = "/tmp/gh-aw/safeoutputs/assets";
+                if (!fs.existsSync(assetsDir)) {
+                  fs.mkdirSync(assetsDir, { recursive: true });
+                }
+                const fileContent = fs.readFileSync(filePath);
+                const sha = crypto.createHash("sha256").update(fileContent).digest("hex");
+                const fileName = path.basename(filePath);
+                const fileExt = path.extname(fileName).toLowerCase();
+                const targetPath = path.join(assetsDir, fileName);
+                fs.copyFileSync(filePath, targetPath);
+                const targetFileName = (sha + fileExt).toLowerCase();
+                const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
+                const repo = process.env.GITHUB_REPOSITORY || "owner/repo";
+                const url = `${githubServer.replace("github.com", "raw.githubusercontent.com")}/${repo}/${normalizedBranchName}/${targetFileName}`;
+                const entry = {
+                  type: "upload_asset",
+                  path: filePath,
+                  fileName: fileName,
+                  sha: sha,
+                  size: sizeBytes,
+                  url: url,
+                  targetFileName: targetFileName,
+                };
+                appendSafeOutput(entry);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({ result: url }),
+                    },
+                  ],
+                };
               };
-            };
-            const toolsPath = process.env.GH_AW_SAFE_OUTPUTS_TOOLS_PATH || "/tmp/gh-aw/safeoutputs/tools.json";
-            let ALL_TOOLS = [];
-            server.debug(`Reading tools from file: ${toolsPath}`);
-            try {
-              if (fs.existsSync(toolsPath)) {
-                server.debug(`Tools file exists at: ${toolsPath}`);
-                const toolsFileContent = fs.readFileSync(toolsPath, "utf8");
-                server.debug(`Tools file content length: ${toolsFileContent.length} characters`);
-                server.debug(`Tools file read successfully, attempting to parse JSON`);
-                ALL_TOOLS = JSON.parse(toolsFileContent);
-                server.debug(`Successfully parsed ${ALL_TOOLS.length} tools from file`);
-              } else {
-                server.debug(`Tools file does not exist at: ${toolsPath}`);
-                server.debug(`Using empty tools array`);
+              const createPullRequestHandler = args => {
+                const entry = { ...args, type: "create_pull_request" };
+                const baseBranch = getBaseBranch();
+                if (!entry.branch || entry.branch.trim() === "" || entry.branch === baseBranch) {
+                  const detectedBranch = getCurrentBranch();
+                  if (entry.branch === baseBranch) {
+                    server.debug(`Branch equals base branch (${baseBranch}), detecting actual working branch: ${detectedBranch}`);
+                  } else {
+                    server.debug(`Using current branch for create_pull_request: ${detectedBranch}`);
+                  }
+                  entry.branch = detectedBranch;
+                }
+                server.debug(`Generating patch for create_pull_request with branch: ${entry.branch}`);
+                const patchResult = generateGitPatch(entry.branch);
+                if (!patchResult.success) {
+                  const errorMsg = patchResult.error || "Failed to generate patch";
+                  server.debug(`Patch generation failed: ${errorMsg}`);
+                  throw new Error(errorMsg);
+                }
+                server.debug(`Patch generated successfully: ${patchResult.patchPath} (${patchResult.patchSize} bytes, ${patchResult.patchLines} lines)`);
+                appendSafeOutput(entry);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({
+                        result: "success",
+                        patch: {
+                          path: patchResult.patchPath,
+                          size: patchResult.patchSize,
+                          lines: patchResult.patchLines,
+                        },
+                      }),
+                    },
+                  ],
+                };
+              };
+              const pushToPullRequestBranchHandler = args => {
+                const entry = { ...args, type: "push_to_pull_request_branch" };
+                const baseBranch = getBaseBranch();
+                if (!entry.branch || entry.branch.trim() === "" || entry.branch === baseBranch) {
+                  const detectedBranch = getCurrentBranch();
+                  if (entry.branch === baseBranch) {
+                    server.debug(`Branch equals base branch (${baseBranch}), detecting actual working branch: ${detectedBranch}`);
+                  } else {
+                    server.debug(`Using current branch for push_to_pull_request_branch: ${detectedBranch}`);
+                  }
+                  entry.branch = detectedBranch;
+                }
+                server.debug(`Generating patch for push_to_pull_request_branch with branch: ${entry.branch}`);
+                const patchResult = generateGitPatch(entry.branch);
+                if (!patchResult.success) {
+                  const errorMsg = patchResult.error || "Failed to generate patch";
+                  server.debug(`Patch generation failed: ${errorMsg}`);
+                  throw new Error(errorMsg);
+                }
+                server.debug(`Patch generated successfully: ${patchResult.patchPath} (${patchResult.patchSize} bytes, ${patchResult.patchLines} lines)`);
+                appendSafeOutput(entry);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({
+                        result: "success",
+                        patch: {
+                          path: patchResult.patchPath,
+                          size: patchResult.patchSize,
+                          lines: patchResult.patchLines,
+                        },
+                      }),
+                    },
+                  ],
+                };
+              };
+              return {
+                defaultHandler,
+                uploadAssetHandler,
+                createPullRequestHandler,
+                pushToPullRequestBranchHandler,
+              };
+            }
+            function loadTools(server) {
+              const toolsPath = process.env.GH_AW_SAFE_OUTPUTS_TOOLS_PATH || "/tmp/gh-aw/safeoutputs/tools.json";
+              let ALL_TOOLS = [];
+              server.debug(`Reading tools from file: ${toolsPath}`);
+              try {
+                if (fs.existsSync(toolsPath)) {
+                  server.debug(`Tools file exists at: ${toolsPath}`);
+                  const toolsFileContent = fs.readFileSync(toolsPath, "utf8");
+                  server.debug(`Tools file content length: ${toolsFileContent.length} characters`);
+                  server.debug(`Tools file read successfully, attempting to parse JSON`);
+                  ALL_TOOLS = JSON.parse(toolsFileContent);
+                  server.debug(`Successfully parsed ${ALL_TOOLS.length} tools from file`);
+                } else {
+                  server.debug(`Tools file does not exist at: ${toolsPath}`);
+                  server.debug(`Using empty tools array`);
+                  ALL_TOOLS = [];
+                }
+              } catch (error) {
+                server.debug(`Error reading tools file: ${error instanceof Error ? error.message : String(error)}`);
+                server.debug(`Falling back to empty tools array`);
                 ALL_TOOLS = [];
               }
-            } catch (error) {
-              server.debug(`Error reading tools file: ${error instanceof Error ? error.message : String(error)}`);
-              server.debug(`Falling back to empty tools array`);
-              ALL_TOOLS = [];
+              return ALL_TOOLS;
             }
-            ALL_TOOLS.forEach(tool => {
-              if (tool.name === "create_pull_request") {
-                tool.handler = createPullRequestHandler;
-              } else if (tool.name === "push_to_pull_request_branch") {
-                tool.handler = pushToPullRequestBranchHandler;
-              } else if (tool.name === "upload_asset") {
-                tool.handler = uploadAssetHandler;
-              }
-            });
+            function attachHandlers(tools, handlers) {
+              tools.forEach(tool => {
+                if (tool.name === "create_pull_request") {
+                  tool.handler = handlers.createPullRequestHandler;
+                } else if (tool.name === "push_to_pull_request_branch") {
+                  tool.handler = handlers.pushToPullRequestBranchHandler;
+                } else if (tool.name === "upload_asset") {
+                  tool.handler = handlers.uploadAssetHandler;
+                }
+              });
+              return tools;
+            }
+            function registerPredefinedTools(server, tools, config, registerTool, normalizeTool) {
+              tools.forEach(tool => {
+                if (Object.keys(config).find(configKey => normalizeTool(configKey) === tool.name)) {
+                  registerTool(server, tool);
+                }
+              });
+            }
+            function registerDynamicTools(server, tools, config, outputFile, registerTool, normalizeTool) {
+              Object.keys(config).forEach(configKey => {
+                const normalizedKey = normalizeTool(configKey);
+                if (server.tools[normalizedKey]) {
+                  return;
+                }
+                if (!tools.find(t => t.name === normalizedKey)) {
+                  const jobConfig = config[configKey];
+                  const dynamicTool = {
+                    name: normalizedKey,
+                    description: jobConfig && jobConfig.description ? jobConfig.description : `Custom safe-job: ${configKey}`,
+                    inputSchema: {
+                      type: "object",
+                      properties: {},
+                      additionalProperties: true, 
+                    },
+                    handler: args => {
+                      const entry = {
+                        type: normalizedKey,
+                        ...args,
+                      };
+                      const entryJSON = JSON.stringify(entry);
+                      fs.appendFileSync(outputFile, entryJSON + "\n");
+                      const outputText =
+                        jobConfig && jobConfig.output
+                          ? jobConfig.output
+                          : `Safe-job '${configKey}' executed successfully with arguments: ${JSON.stringify(args)}`;
+                      return {
+                        content: [
+                          {
+                            type: "text",
+                            text: JSON.stringify({ result: outputText }),
+                          },
+                        ],
+                      };
+                    },
+                  };
+                  if (jobConfig && jobConfig.inputs) {
+                    dynamicTool.inputSchema.properties = {};
+                    dynamicTool.inputSchema.required = [];
+                    Object.keys(jobConfig.inputs).forEach(inputName => {
+                      const inputDef = jobConfig.inputs[inputName];
+                      const propSchema = {
+                        type: inputDef.type || "string",
+                        description: inputDef.description || `Input parameter: ${inputName}`,
+                      };
+                      if (inputDef.options && Array.isArray(inputDef.options)) {
+                        propSchema.enum = inputDef.options;
+                      }
+                      dynamicTool.inputSchema.properties[inputName] = propSchema;
+                      if (inputDef.required) {
+                        dynamicTool.inputSchema.required.push(inputName);
+                      }
+                    });
+                  }
+                  registerTool(server, dynamicTool);
+                }
+              });
+            }
+            const SERVER_INFO = { name: "safeoutputs", version: "1.0.0" };
+            const MCP_LOG_DIR = process.env.GH_AW_MCP_LOG_DIR;
+            const server = createServer(SERVER_INFO, { logDir: MCP_LOG_DIR });
+            const { config: safeOutputsConfig, outputFile } = loadConfig(server);
+            const appendSafeOutput = createAppendFunction(outputFile);
+            const handlers = createHandlers(server, appendSafeOutput);
+            const { defaultHandler } = handlers;
+            let ALL_TOOLS = loadTools(server);
+            ALL_TOOLS = attachHandlers(ALL_TOOLS, handlers);
             server.debug(`  output file: ${outputFile}`);
             server.debug(`  config: ${JSON.stringify(safeOutputsConfig)}`);
-            ALL_TOOLS.forEach(tool => {
-              if (Object.keys(safeOutputsConfig).find(config => normalizeTool(config) === tool.name)) {
-                registerTool(server, tool);
-              }
-            });
-            Object.keys(safeOutputsConfig).forEach(configKey => {
-              const normalizedKey = normalizeTool(configKey);
-              if (server.tools[normalizedKey]) {
-                return;
-              }
-              if (!ALL_TOOLS.find(t => t.name === normalizedKey)) {
-                const jobConfig = safeOutputsConfig[configKey];
-                const dynamicTool = {
-                  name: normalizedKey,
-                  description: jobConfig && jobConfig.description ? jobConfig.description : `Custom safe-job: ${configKey}`,
-                  inputSchema: {
-                    type: "object",
-                    properties: {},
-                    additionalProperties: true, 
-                  },
-                  handler: args => {
-                    const entry = {
-                      type: normalizedKey,
-                      ...args,
-                    };
-                    const entryJSON = JSON.stringify(entry);
-                    fs.appendFileSync(outputFile, entryJSON + "\n");
-                    const outputText =
-                      jobConfig && jobConfig.output
-                        ? jobConfig.output
-                        : `Safe-job '${configKey}' executed successfully with arguments: ${JSON.stringify(args)}`;
-                    return {
-                      content: [
-                        {
-                          type: "text",
-                          text: JSON.stringify({ result: outputText }),
-                        },
-                      ],
-                    };
-                  },
-                };
-                if (jobConfig && jobConfig.inputs) {
-                  dynamicTool.inputSchema.properties = {};
-                  dynamicTool.inputSchema.required = [];
-                  Object.keys(jobConfig.inputs).forEach(inputName => {
-                    const inputDef = jobConfig.inputs[inputName];
-                    const propSchema = {
-                      type: inputDef.type || "string",
-                      description: inputDef.description || `Input parameter: ${inputName}`,
-                    };
-                    if (inputDef.options && Array.isArray(inputDef.options)) {
-                      propSchema.enum = inputDef.options;
-                    }
-                    dynamicTool.inputSchema.properties[inputName] = propSchema;
-                    if (inputDef.required) {
-                      dynamicTool.inputSchema.required.push(inputName);
-                    }
-                  });
-                }
-                registerTool(server, dynamicTool);
-              }
-            });
+            registerPredefinedTools(server, ALL_TOOLS, safeOutputsConfig, registerTool, normalizeTool);
+            registerDynamicTools(server, ALL_TOOLS, safeOutputsConfig, outputFile, registerTool, normalizeTool);
             server.debug(`  tools: ${Object.keys(server.tools).join(", ")}`);
             if (!Object.keys(server.tools).length) throw new Error("No tools enabled in configuration");
             start(server, { defaultHandler });
@@ -1662,7 +1837,10 @@ jobs:
                   "GH_AW_ASSETS_MAX_SIZE_KB": "\${GH_AW_ASSETS_MAX_SIZE_KB}",
                   "GH_AW_ASSETS_ALLOWED_EXTS": "\${GH_AW_ASSETS_ALLOWED_EXTS}",
                   "GITHUB_REPOSITORY": "\${GITHUB_REPOSITORY}",
-                  "GITHUB_SERVER_URL": "\${GITHUB_SERVER_URL}"
+                  "GITHUB_SERVER_URL": "\${GITHUB_SERVER_URL}",
+                  "GITHUB_SHA": "\${GITHUB_SHA}",
+                  "GITHUB_WORKSPACE": "\${GITHUB_WORKSPACE}",
+                  "DEFAULT_BRANCH": "\${DEFAULT_BRANCH}"
                 }
               },
               "web-fetch": {
@@ -1696,7 +1874,7 @@ jobs:
               engine_name: "GitHub Copilot CLI",
               model: "claude-opus-4.5",
               version: "",
-              agent_version: "0.0.365",
+              agent_version: "0.0.366",
               workflow_name: "Test Failure Fixer",
               experimental: false,
               supports_tools_allowlist: true,
@@ -1878,25 +2056,25 @@ jobs:
           
           ### Step 4: Create Pull Request
           
-          After making fixes, create a branch and commit locally:
+          **⚠️ IMPORTANT: The `create-pull-request` safe output handles EVERYTHING including pushing the branch. Do NOT run `git push` yourself.**
+          
+          After making fixes, commit locally (but do NOT push):
           
           ```bash
-          BRANCH_NAME="fix/test-$(date +%Y%m%d-%H%M%S)"
-          git checkout -b "$BRANCH_NAME"
+          git checkout -b fix/test-$(date +%Y%m%d-%H%M%S)
           git add -A
           git commit -m "fix: <description of what was fixed>"
           ```
           
-          **Push the branch and create the PR using the GitHub CLI:**
+          **⛔ STOP HERE - Do NOT run `git push`. The safe output will push for you.**
           
-          ```bash
-          # Push the branch
-          git push origin "$BRANCH_NAME"
+          Now use the `create-pull-request` safe output (via MCP safeoutputs server) with:
           
-          # Create a draft PR using gh CLI
-          gh pr create --draft \
-            --title "[Test Fix] <brief description>" \
-            --body "## Summary
+          **Title:** `[Test Fix] <brief description>`
+          
+          **Body:**
+          ```markdown
+          ## Summary
           <Brief description of what was fixed>
           
           ## Failed Test Suite Run
@@ -1914,10 +2092,8 @@ jobs:
           - [ ] macOS 15 (Xcode 16.4)
           - [ ] macOS 26 (Xcode 26.0)
           - [ ] iOS
-          - [ ] watchOS"
+          - [ ] watchOS
           ```
-          
-          **Then call the `noop` safe output** to log that the PR was created successfully, passing the PR URL in the message.
           
           ## Context
           
@@ -1965,8 +2141,7 @@ jobs:
           - [ ] Edited source files to fix issues
           - [ ] Ran linting
           - [ ] Created branch and committed changes locally
-          - [ ] Pushed branch and created draft PR using `gh pr create`
-          - [ ] Called `noop` safe output to confirm completion
+          - [ ] Used `create-pull-request` safe output (this handles pushing - NEVER run `git push` manually)
           
           PROMPT_EOF
       - name: Append XPIA security instructions to prompt
@@ -2000,6 +2175,21 @@ jobs:
           <path>/tmp/gh-aw/agent/</path>
           <instruction>When you need to create temporary files or directories during your work, always use the /tmp/gh-aw/agent/ directory that has been pre-created for you. Do NOT use the root /tmp/ directory directly.</instruction>
           </temporary-files>
+          
+          PROMPT_EOF
+      - name: Append edit tool accessibility instructions to prompt
+        env:
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        run: |
+          cat << 'PROMPT_EOF' | envsubst >> "$GH_AW_PROMPT"
+          <file-editing>
+          <description>File Editing Access Permissions</description>
+          <allowed-paths>
+            <path name="workspace">$GITHUB_WORKSPACE</path>
+            <path name="temporary">/tmp/gh-aw/</path>
+          </allowed-paths>
+          <restriction>Do NOT attempt to edit files outside these directories as you do not have the necessary permissions.</restriction>
+          </file-editing>
           
           PROMPT_EOF
       - name: Append safe outputs instructions to prompt
@@ -2170,24 +2360,14 @@ jobs:
         # Copilot CLI tool arguments (sorted):
         # --allow-tool github
         # --allow-tool safeoutputs
-        # --allow-tool shell(cat)
-        # --allow-tool shell(date)
-        # --allow-tool shell(echo)
-        # --allow-tool shell(grep)
-        # --allow-tool shell(head)
-        # --allow-tool shell(ls)
-        # --allow-tool shell(pwd)
-        # --allow-tool shell(sort)
-        # --allow-tool shell(tail)
-        # --allow-tool shell(uniq)
-        # --allow-tool shell(wc)
-        # --allow-tool shell(yq)
+        # --allow-tool shell
         # --allow-tool web-fetch
+        # --allow-tool write
         timeout-minutes: 60
         run: |
           set -o pipefail
-          sudo -E awf --env-all --container-workdir "${GITHUB_WORKSPACE}" --mount /tmp:/tmp:rw --mount "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:rw" --mount "${GITHUB_WORKSPACE}/.github:/workspace/.github:rw" --allow-domains api.enterprise.githubcopilot.com,api.github.com,github.com,raw.githubusercontent.com,registry.npmjs.org --log-level info --proxy-logs-dir /tmp/gh-aw/sandbox/firewall/logs \
-            -- npx -y @github/copilot@0.0.365 --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --add-dir "${GITHUB_WORKSPACE}" --disable-builtin-mcps --model claude-opus-4.5 --allow-tool github --allow-tool safeoutputs --allow-tool 'shell(cat)' --allow-tool 'shell(date)' --allow-tool 'shell(echo)' --allow-tool 'shell(grep)' --allow-tool 'shell(head)' --allow-tool 'shell(ls)' --allow-tool 'shell(pwd)' --allow-tool 'shell(sort)' --allow-tool 'shell(tail)' --allow-tool 'shell(uniq)' --allow-tool 'shell(wc)' --allow-tool 'shell(yq)' --allow-tool web-fetch --prompt "$(cat /tmp/gh-aw/aw-prompts/prompt.txt)" \
+          sudo -E awf --env-all --container-workdir "${GITHUB_WORKSPACE}" --mount /tmp:/tmp:rw --mount "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:rw" --mount /usr/bin/gh:/usr/bin/gh:ro --allow-domains api.enterprise.githubcopilot.com,api.github.com,github.com,raw.githubusercontent.com,registry.npmjs.org --log-level info --proxy-logs-dir /tmp/gh-aw/sandbox/firewall/logs \
+            -- npx -y @github/copilot@0.0.366 --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --add-dir "${GITHUB_WORKSPACE}" --disable-builtin-mcps --model claude-opus-4.5 --allow-tool github --allow-tool safeoutputs --allow-tool shell --allow-tool web-fetch --allow-tool write --allow-all-paths --prompt "$(cat /tmp/gh-aw/aw-prompts/prompt.txt)" \
             2>&1 | tee /tmp/gh-aw/agent-stdio.log
         env:
           COPILOT_AGENT_RUNNER_TYPE: STANDALONE
@@ -3589,6 +3769,8 @@ jobs:
                   "Safe Outputs": [],
                   "Safe Inputs": [],
                   "Git/GitHub": [],
+                  Playwright: [],
+                  Serena: [],
                   MCP: [],
                   "Custom Agents": [],
                   Other: [],
@@ -3628,6 +3810,10 @@ jobs:
                     categories["Safe Inputs"].push(toolName);
                   } else if (tool.startsWith("mcp__github__")) {
                     categories["Git/GitHub"].push(formatMcpName(tool));
+                  } else if (tool.startsWith("mcp__playwright__")) {
+                    categories["Playwright"].push(formatMcpName(tool));
+                  } else if (tool.startsWith("mcp__serena__")) {
+                    categories["Serena"].push(formatMcpName(tool));
                   } else if (tool.startsWith("mcp__") || ["ListMcpResourcesTool", "ReadMcpResourceTool"].includes(tool)) {
                     categories["MCP"].push(tool.startsWith("mcp__") ? formatMcpName(tool) : tool);
                   } else if (isLikelyCustomAgent(tool)) {
@@ -5087,11 +5273,19 @@ jobs:
             if (typeof module === "undefined" || require.main === module) {
               main();
             }
+      - name: Upload git patch
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: aw.patch
+          path: /tmp/gh-aw/aw.patch
+          if-no-files-found: ignore
 
   conclusion:
     needs:
       - agent
       - activation
+      - create_pull_request
     if: (always()) && (needs.agent.result != 'skipped')
     runs-on: ubuntu-slim
     permissions:
@@ -5556,6 +5750,629 @@ jobs:
               core.setFailed(error instanceof Error ? error.message : String(error));
             });
 
+  create_pull_request:
+    needs:
+      - agent
+      - activation
+      - detection
+    if: >
+      (((!cancelled()) && (needs.agent.result != 'skipped')) && (contains(needs.agent.outputs.output_types, 'create_pull_request'))) &&
+      (needs.detection.outputs.success == 'true')
+    runs-on: ubuntu-slim
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    timeout-minutes: 10
+    outputs:
+      branch_name: ${{ steps.create_pull_request.outputs.branch_name }}
+      fallback_used: ${{ steps.create_pull_request.outputs.fallback_used }}
+      issue_number: ${{ steps.create_pull_request.outputs.issue_number }}
+      issue_url: ${{ steps.create_pull_request.outputs.issue_url }}
+      pull_request_number: ${{ steps.create_pull_request.outputs.pull_request_number }}
+      pull_request_url: ${{ steps.create_pull_request.outputs.pull_request_url }}
+    steps:
+      - name: Download patch artifact
+        continue-on-error: true
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: aw.patch
+          path: /tmp/gh-aw/
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Configure Git credentials
+        env:
+          REPO_NAME: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          # Re-authenticate git with GitHub token
+          SERVER_URL_STRIPPED="${SERVER_URL#https://}"
+          git remote set-url origin "https://x-access-token:${{ github.token }}@${SERVER_URL_STRIPPED}/${REPO_NAME}.git"
+          echo "Git configured with standard GitHub Actions identity"
+      - name: Download agent output artifact
+        continue-on-error: true
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: agent_output.json
+          path: /tmp/gh-aw/safeoutputs/
+      - name: Setup agent output environment variable
+        run: |
+          mkdir -p /tmp/gh-aw/safeoutputs/
+          find "/tmp/gh-aw/safeoutputs/" -type f -print
+          echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/safeoutputs/agent_output.json" >> "$GITHUB_ENV"
+      - name: Create Pull Request
+        id: create_pull_request
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
+          GH_AW_WORKFLOW_ID: "agent"
+          GH_AW_BASE_BRANCH: ${{ github.ref_name }}
+          GH_AW_PR_DRAFT: "true"
+          GH_AW_PR_IF_NO_CHANGES: "warn"
+          GH_AW_MAX_PATCH_SIZE: 1024
+          GH_AW_WORKFLOW_NAME: "Test Failure Fixer"
+          GH_AW_ENGINE_ID: "copilot"
+          GH_AW_ENGINE_MODEL: "claude-opus-4.5"
+        with:
+          github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const crypto = require("crypto");
+            async function updateActivationComment(github, context, core, itemUrl, itemNumber, itemType = "pull_request") {
+              const itemLabel = itemType === "issue" ? "issue" : "pull request";
+              const linkMessage =
+                itemType === "issue"
+                  ? `\n\n✅ Issue created: [#${itemNumber}](${itemUrl})`
+                  : `\n\n✅ Pull request created: [#${itemNumber}](${itemUrl})`;
+              await updateActivationCommentWithMessage(github, context, core, linkMessage, itemLabel);
+            }
+            async function updateActivationCommentWithCommit(github, context, core, commitSha, commitUrl) {
+              const shortSha = commitSha.substring(0, 7);
+              const message = `\n\n✅ Commit pushed: [\`${shortSha}\`](${commitUrl})`;
+              await updateActivationCommentWithMessage(github, context, core, message, "commit");
+            }
+            async function updateActivationCommentWithMessage(github, context, core, message, label = "") {
+              const commentId = process.env.GH_AW_COMMENT_ID;
+              const commentRepo = process.env.GH_AW_COMMENT_REPO;
+              if (!commentId) {
+                core.info("No activation comment to update (GH_AW_COMMENT_ID not set)");
+                return;
+              }
+              core.info(`Updating activation comment ${commentId}`);
+              let repoOwner = context.repo.owner;
+              let repoName = context.repo.repo;
+              if (commentRepo) {
+                const parts = commentRepo.split("/");
+                if (parts.length === 2) {
+                  repoOwner = parts[0];
+                  repoName = parts[1];
+                } else {
+                  core.warning(`Invalid comment repo format: ${commentRepo}, expected "owner/repo". Falling back to context.repo.`);
+                }
+              }
+              core.info(`Updating comment in ${repoOwner}/${repoName}`);
+              const isDiscussionComment = commentId.startsWith("DC_");
+              try {
+                if (isDiscussionComment) {
+                  const currentComment = await github.graphql(
+                    `
+                    query($commentId: ID!) {
+                      node(id: $commentId) {
+                        ... on DiscussionComment {
+                          body
+                        }
+                      }
+                    }`,
+                    { commentId: commentId }
+                  );
+                  if (!currentComment?.node?.body) {
+                    core.warning("Unable to fetch current comment body, comment may have been deleted or is inaccessible");
+                    return;
+                  }
+                  const currentBody = currentComment.node.body;
+                  const updatedBody = currentBody + message;
+                  const result = await github.graphql(
+                    `
+                    mutation($commentId: ID!, $body: String!) {
+                      updateDiscussionComment(input: { commentId: $commentId, body: $body }) {
+                        comment {
+                          id
+                          url
+                        }
+                      }
+                    }`,
+                    { commentId: commentId, body: updatedBody }
+                  );
+                  const comment = result.updateDiscussionComment.comment;
+                  const successMessage = label
+                    ? `Successfully updated discussion comment with ${label} link`
+                    : "Successfully updated discussion comment";
+                  core.info(successMessage);
+                  core.info(`Comment ID: ${comment.id}`);
+                  core.info(`Comment URL: ${comment.url}`);
+                } else {
+                  const currentComment = await github.request("GET /repos/{owner}/{repo}/issues/comments/{comment_id}", {
+                    owner: repoOwner,
+                    repo: repoName,
+                    comment_id: parseInt(commentId, 10),
+                    headers: {
+                      Accept: "application/vnd.github+json",
+                    },
+                  });
+                  if (!currentComment?.data?.body) {
+                    core.warning("Unable to fetch current comment body, comment may have been deleted");
+                    return;
+                  }
+                  const currentBody = currentComment.data.body;
+                  const updatedBody = currentBody + message;
+                  const response = await github.request("PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}", {
+                    owner: repoOwner,
+                    repo: repoName,
+                    comment_id: parseInt(commentId, 10),
+                    body: updatedBody,
+                    headers: {
+                      Accept: "application/vnd.github+json",
+                    },
+                  });
+                  const successMessage = label ? `Successfully updated comment with ${label} link` : "Successfully updated comment";
+                  core.info(successMessage);
+                  core.info(`Comment ID: ${response.data.id}`);
+                  core.info(`Comment URL: ${response.data.html_url}`);
+                }
+              } catch (error) {
+                core.warning(`Failed to update activation comment: ${error instanceof Error ? error.message : String(error)}`);
+              }
+            }
+            function getTrackerID(format) {
+              const trackerID = process.env.GH_AW_TRACKER_ID || "";
+              if (trackerID) {
+                core.info(`Tracker ID: ${trackerID}`);
+                return format === "markdown" ? `\n\n<!-- tracker-id: ${trackerID} -->` : trackerID;
+              }
+              return "";
+            }
+            function generatePatchPreview(patchContent) {
+              if (!patchContent || !patchContent.trim()) {
+                return "";
+              }
+              const lines = patchContent.split("\n");
+              const maxLines = 500;
+              const maxChars = 2000;
+              let preview = lines.length <= maxLines ? patchContent : lines.slice(0, maxLines).join("\n");
+              const lineTruncated = lines.length > maxLines;
+              const charTruncated = preview.length > maxChars;
+              if (charTruncated) {
+                preview = preview.slice(0, maxChars);
+              }
+              const truncated = lineTruncated || charTruncated;
+              const summary = truncated
+                ? `Show patch preview (${Math.min(maxLines, lines.length)} of ${lines.length} lines)`
+                : `Show patch (${lines.length} lines)`;
+              return `\n\n<details><summary>${summary}</summary>\n\n\`\`\`diff\n${preview}${truncated ? "\n... (truncated)" : ""}\n\`\`\`\n\n</details>`;
+            }
+            async function main() {
+              core.setOutput("pull_request_number", "");
+              core.setOutput("pull_request_url", "");
+              core.setOutput("issue_number", "");
+              core.setOutput("issue_url", "");
+              core.setOutput("branch_name", "");
+              core.setOutput("fallback_used", "");
+              const isStaged = process.env.GH_AW_SAFE_OUTPUTS_STAGED === "true";
+              const workflowId = process.env.GH_AW_WORKFLOW_ID;
+              if (!workflowId) {
+                throw new Error("GH_AW_WORKFLOW_ID environment variable is required");
+              }
+              const baseBranch = process.env.GH_AW_BASE_BRANCH;
+              if (!baseBranch) {
+                throw new Error("GH_AW_BASE_BRANCH environment variable is required");
+              }
+              const agentOutputFile = process.env.GH_AW_AGENT_OUTPUT || "";
+              let outputContent = "";
+              if (agentOutputFile.trim() !== "") {
+                try {
+                  outputContent = fs.readFileSync(agentOutputFile, "utf8");
+                } catch (error) {
+                  core.setFailed(`Error reading agent output file: ${error instanceof Error ? error.message : String(error)}`);
+                  return;
+                }
+              }
+              if (outputContent.trim() === "") {
+                core.info("Agent output content is empty");
+              }
+              const ifNoChanges = process.env.GH_AW_PR_IF_NO_CHANGES || "warn";
+              if (!fs.existsSync("/tmp/gh-aw/aw.patch")) {
+                const message = "No patch file found - cannot create pull request without changes";
+                if (isStaged) {
+                  let summaryContent = "## 🎭 Staged Mode: Create Pull Request Preview\n\n";
+                  summaryContent += "The following pull request would be created if staged mode was disabled:\n\n";
+                  summaryContent += `**Status:** ⚠️ No patch file found\n\n`;
+                  summaryContent += `**Message:** ${message}\n\n`;
+                  await core.summary.addRaw(summaryContent).write();
+                  core.info("📝 Pull request creation preview written to step summary (no patch file)");
+                  return;
+                }
+                switch (ifNoChanges) {
+                  case "error":
+                    throw new Error(message);
+                  case "ignore":
+                    return;
+                  case "warn":
+                  default:
+                    core.warning(message);
+                    return;
+                }
+              }
+              const patchContent = fs.readFileSync("/tmp/gh-aw/aw.patch", "utf8");
+              if (patchContent.includes("Failed to generate patch")) {
+                const message = "Patch file contains error message - cannot create pull request without changes";
+                if (isStaged) {
+                  let summaryContent = "## 🎭 Staged Mode: Create Pull Request Preview\n\n";
+                  summaryContent += "The following pull request would be created if staged mode was disabled:\n\n";
+                  summaryContent += `**Status:** ⚠️ Patch file contains error\n\n`;
+                  summaryContent += `**Message:** ${message}\n\n`;
+                  await core.summary.addRaw(summaryContent).write();
+                  core.info("📝 Pull request creation preview written to step summary (patch error)");
+                  return;
+                }
+                switch (ifNoChanges) {
+                  case "error":
+                    throw new Error(message);
+                  case "ignore":
+                    return;
+                  case "warn":
+                  default:
+                    core.warning(message);
+                    return;
+                }
+              }
+              const isEmpty = !patchContent || !patchContent.trim();
+              if (!isEmpty) {
+                const maxSizeKb = parseInt(process.env.GH_AW_MAX_PATCH_SIZE || "1024", 10);
+                const patchSizeBytes = Buffer.byteLength(patchContent, "utf8");
+                const patchSizeKb = Math.ceil(patchSizeBytes / 1024);
+                core.info(`Patch size: ${patchSizeKb} KB (maximum allowed: ${maxSizeKb} KB)`);
+                if (patchSizeKb > maxSizeKb) {
+                  const message = `Patch size (${patchSizeKb} KB) exceeds maximum allowed size (${maxSizeKb} KB)`;
+                  if (isStaged) {
+                    let summaryContent = "## 🎭 Staged Mode: Create Pull Request Preview\n\n";
+                    summaryContent += "The following pull request would be created if staged mode was disabled:\n\n";
+                    summaryContent += `**Status:** ❌ Patch size exceeded\n\n`;
+                    summaryContent += `**Message:** ${message}\n\n`;
+                    await core.summary.addRaw(summaryContent).write();
+                    core.info("📝 Pull request creation preview written to step summary (patch size error)");
+                    return;
+                  }
+                  throw new Error(message);
+                }
+                core.info("Patch size validation passed");
+              }
+              if (isEmpty && !isStaged) {
+                const message = "Patch file is empty - no changes to apply (noop operation)";
+                switch (ifNoChanges) {
+                  case "error":
+                    throw new Error("No changes to push - failing as configured by if-no-changes: error");
+                  case "ignore":
+                    return;
+                  case "warn":
+                  default:
+                    core.warning(message);
+                    return;
+                }
+              }
+              core.info(`Agent output content length: ${outputContent.length}`);
+              if (!isEmpty) {
+                core.info("Patch content validation passed");
+              } else {
+                core.info("Patch file is empty - processing noop operation");
+              }
+              let validatedOutput;
+              try {
+                validatedOutput = JSON.parse(outputContent);
+              } catch (error) {
+                core.setFailed(`Error parsing agent output JSON: ${error instanceof Error ? error.message : String(error)}`);
+                return;
+              }
+              if (!validatedOutput.items || !Array.isArray(validatedOutput.items)) {
+                core.warning("No valid items found in agent output");
+                return;
+              }
+              const pullRequestItem = validatedOutput.items.find( item => item.type === "create_pull_request");
+              if (!pullRequestItem) {
+                core.warning("No create-pull-request item found in agent output");
+                return;
+              }
+              core.info(`Found create-pull-request item: title="${pullRequestItem.title}", bodyLength=${pullRequestItem.body.length}`);
+              if (isStaged) {
+                let summaryContent = "## 🎭 Staged Mode: Create Pull Request Preview\n\n";
+                summaryContent += "The following pull request would be created if staged mode was disabled:\n\n";
+                summaryContent += `**Title:** ${pullRequestItem.title || "No title provided"}\n\n`;
+                summaryContent += `**Branch:** ${pullRequestItem.branch || "auto-generated"}\n\n`;
+                summaryContent += `**Base:** ${baseBranch}\n\n`;
+                if (pullRequestItem.body) {
+                  summaryContent += `**Body:**\n${pullRequestItem.body}\n\n`;
+                }
+                if (fs.existsSync("/tmp/gh-aw/aw.patch")) {
+                  const patchStats = fs.readFileSync("/tmp/gh-aw/aw.patch", "utf8");
+                  if (patchStats.trim()) {
+                    summaryContent += `**Changes:** Patch file exists with ${patchStats.split("\n").length} lines\n\n`;
+                    summaryContent += `<details><summary>Show patch preview</summary>\n\n\`\`\`diff\n${patchStats.slice(0, 2000)}${patchStats.length > 2000 ? "\n... (truncated)" : ""}\n\`\`\`\n\n</details>\n\n`;
+                  } else {
+                    summaryContent += `**Changes:** No changes (empty patch)\n\n`;
+                  }
+                }
+                await core.summary.addRaw(summaryContent).write();
+                core.info("📝 Pull request creation preview written to step summary");
+                return;
+              }
+              let title = pullRequestItem.title.trim();
+              let bodyLines = pullRequestItem.body.split("\n");
+              let branchName = pullRequestItem.branch ? pullRequestItem.branch.trim() : null;
+              if (!title) {
+                title = "Agent Output";
+              }
+              const titlePrefix = process.env.GH_AW_PR_TITLE_PREFIX;
+              if (titlePrefix && !title.startsWith(titlePrefix)) {
+                title = titlePrefix + title;
+              }
+              const workflowName = process.env.GH_AW_WORKFLOW_NAME || "Workflow";
+              const runId = context.runId;
+              const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
+              const runUrl = context.payload.repository
+                ? `${context.payload.repository.html_url}/actions/runs/${runId}`
+                : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+              const trackerIDComment = getTrackerID("markdown");
+              if (trackerIDComment) {
+                bodyLines.push(trackerIDComment);
+              }
+              bodyLines.push(``, ``, `> AI generated by [${workflowName}](${runUrl})`, "");
+              const body = bodyLines.join("\n").trim();
+              const labelsEnv = process.env.GH_AW_PR_LABELS;
+              const labels = labelsEnv
+                ? labelsEnv
+                    .split(",")
+                    .map( label => label.trim())
+                    .filter( label => label)
+                : [];
+              const draftEnv = process.env.GH_AW_PR_DRAFT;
+              const draft = draftEnv ? draftEnv.toLowerCase() === "true" : true;
+              core.info(`Creating pull request with title: ${title}`);
+              core.info(`Labels: ${JSON.stringify(labels)}`);
+              core.info(`Draft: ${draft}`);
+              core.info(`Body length: ${body.length}`);
+              const randomHex = crypto.randomBytes(8).toString("hex");
+              if (!branchName) {
+                core.info("No branch name provided in JSONL, generating unique branch name");
+                branchName = `${workflowId}-${randomHex}`;
+              } else {
+                branchName = `${branchName}-${randomHex}`;
+                core.info(`Using branch name from JSONL with added salt: ${branchName}`);
+              }
+              core.info(`Generated branch name: ${branchName}`);
+              core.info(`Base branch: ${baseBranch}`);
+              core.info(`Fetching latest changes and checking out base branch: ${baseBranch}`);
+              await exec.exec("git fetch origin");
+              await exec.exec(`git checkout ${baseBranch}`);
+              core.info(`Branch should not exist locally, creating new branch from base: ${branchName}`);
+              await exec.exec(`git checkout -b ${branchName}`);
+              core.info(`Created new branch from base: ${branchName}`);
+              if (!isEmpty) {
+                core.info("Applying patch...");
+                const patchLines = patchContent.split("\n");
+                const previewLineCount = Math.min(500, patchLines.length);
+                core.info(`Patch preview (first ${previewLineCount} of ${patchLines.length} lines):`);
+                for (let i = 0; i < previewLineCount; i++) {
+                  core.info(patchLines[i]);
+                }
+                try {
+                  await exec.exec("git am /tmp/gh-aw/aw.patch");
+                  core.info("Patch applied successfully");
+                } catch (patchError) {
+                  core.error(`Failed to apply patch: ${patchError instanceof Error ? patchError.message : String(patchError)}`);
+                  try {
+                    core.info("Investigating patch failure...");
+                    const statusResult = await exec.getExecOutput("git", ["status"]);
+                    core.info("Git status output:");
+                    core.info(statusResult.stdout);
+                    const patchResult = await exec.getExecOutput("git", ["am", "--show-current-patch=diff"]);
+                    core.info("Failed patch content:");
+                    core.info(patchResult.stdout);
+                  } catch (investigateError) {
+                    core.warning(
+                      `Failed to investigate patch failure: ${investigateError instanceof Error ? investigateError.message : String(investigateError)}`
+                    );
+                  }
+                  core.setFailed("Failed to apply patch");
+                  return;
+                }
+                try {
+                  let remoteBranchExists = false;
+                  try {
+                    const { stdout } = await exec.getExecOutput(`git ls-remote --heads origin ${branchName}`);
+                    if (stdout.trim()) {
+                      remoteBranchExists = true;
+                    }
+                  } catch (checkError) {
+                    core.info(`Remote branch check failed (non-fatal): ${checkError instanceof Error ? checkError.message : String(checkError)}`);
+                  }
+                  if (remoteBranchExists) {
+                    core.warning(`Remote branch ${branchName} already exists - appending random suffix`);
+                    const extraHex = crypto.randomBytes(4).toString("hex");
+                    const oldBranch = branchName;
+                    branchName = `${branchName}-${extraHex}`;
+                    await exec.exec(`git branch -m ${oldBranch} ${branchName}`);
+                    core.info(`Renamed branch to ${branchName}`);
+                  }
+                  await exec.exec(`git push origin ${branchName}`);
+                  core.info("Changes pushed to branch");
+                } catch (pushError) {
+                  core.error(`Git push failed: ${pushError instanceof Error ? pushError.message : String(pushError)}`);
+                  core.warning("Git push operation failed - creating fallback issue instead of pull request");
+                  const runId = context.runId;
+                  const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
+                  const runUrl = context.payload.repository
+                    ? `${context.payload.repository.html_url}/actions/runs/${runId}`
+                    : `${githubServer}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}`;
+                  let patchPreview = "";
+                  if (fs.existsSync("/tmp/gh-aw/aw.patch")) {
+                    const patchContent = fs.readFileSync("/tmp/gh-aw/aw.patch", "utf8");
+                    patchPreview = generatePatchPreview(patchContent);
+                  }
+                  const fallbackBody = `${body}
+            ---
+            > [!NOTE]
+            > This was originally intended as a pull request, but the git push operation failed.
+            >
+            > **Workflow Run:** [View run details and download patch artifact](${runUrl})
+            >
+            > The patch file is available as an artifact (\`aw.patch\`) in the workflow run linked above.
+            To apply the patch locally:
+            \`\`\`sh
+            # Download the artifact from the workflow run ${runUrl}
+            # (Use GitHub MCP tools if gh CLI is not available)
+            gh run download ${runId} -n aw.patch
+            # Apply the patch
+            git am aw.patch
+            \`\`\`
+            ${patchPreview}`;
+                  try {
+                    const { data: issue } = await github.rest.issues.create({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      title: title,
+                      body: fallbackBody,
+                      labels: labels,
+                    });
+                    core.info(`Created fallback issue #${issue.number}: ${issue.html_url}`);
+                    await updateActivationComment(github, context, core, issue.html_url, issue.number, "issue");
+                    core.setOutput("issue_number", issue.number);
+                    core.setOutput("issue_url", issue.html_url);
+                    core.setOutput("branch_name", branchName);
+                    core.setOutput("fallback_used", "true");
+                    core.setOutput("push_failed", "true");
+                    await core.summary
+                      .addRaw(
+                        `
+            ## Push Failure Fallback
+            - **Push Error:** ${pushError instanceof Error ? pushError.message : String(pushError)}
+            - **Fallback Issue:** [#${issue.number}](${issue.html_url})
+            - **Patch Artifact:** Available in workflow run artifacts
+            - **Note:** Push failed, created issue as fallback
+            `
+                      )
+                      .write();
+                    return;
+                  } catch (issueError) {
+                    core.setFailed(
+                      `Failed to push and failed to create fallback issue. Push error: ${pushError instanceof Error ? pushError.message : String(pushError)}. Issue error: ${issueError instanceof Error ? issueError.message : String(issueError)}`
+                    );
+                    return;
+                  }
+                }
+              } else {
+                core.info("Skipping patch application (empty patch)");
+                const message = "No changes to apply - noop operation completed successfully";
+                switch (ifNoChanges) {
+                  case "error":
+                    throw new Error("No changes to apply - failing as configured by if-no-changes: error");
+                  case "ignore":
+                    return;
+                  case "warn":
+                  default:
+                    core.warning(message);
+                    return;
+                }
+              }
+              try {
+                const { data: pullRequest } = await github.rest.pulls.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: title,
+                  body: body,
+                  head: branchName,
+                  base: baseBranch,
+                  draft: draft,
+                });
+                core.info(`Created pull request #${pullRequest.number}: ${pullRequest.html_url}`);
+                if (labels.length > 0) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pullRequest.number,
+                    labels: labels,
+                  });
+                  core.info(`Added labels to pull request: ${JSON.stringify(labels)}`);
+                }
+                core.setOutput("pull_request_number", pullRequest.number);
+                core.setOutput("pull_request_url", pullRequest.html_url);
+                core.setOutput("branch_name", branchName);
+                await updateActivationComment(github, context, core, pullRequest.html_url, pullRequest.number);
+                await core.summary
+                  .addRaw(
+                    `
+            ## Pull Request
+            - **Pull Request**: [#${pullRequest.number}](${pullRequest.html_url})
+            - **Branch**: \`${branchName}\`
+            - **Base Branch**: \`${baseBranch}\`
+            `
+                  )
+                  .write();
+              } catch (prError) {
+                core.warning(`Failed to create pull request: ${prError instanceof Error ? prError.message : String(prError)}`);
+                core.info("Falling back to creating an issue instead");
+                const githubServer = process.env.GITHUB_SERVER_URL || "https://github.com";
+                const branchUrl = context.payload.repository
+                  ? `${context.payload.repository.html_url}/tree/${branchName}`
+                  : `${githubServer}/${context.repo.owner}/${context.repo.repo}/tree/${branchName}`;
+                let patchPreview = "";
+                if (fs.existsSync("/tmp/gh-aw/aw.patch")) {
+                  const patchContent = fs.readFileSync("/tmp/gh-aw/aw.patch", "utf8");
+                  patchPreview = generatePatchPreview(patchContent);
+                }
+                const fallbackBody = `${body}
+            ---
+            **Note:** This was originally intended as a pull request, but PR creation failed. The changes have been pushed to the branch [\`${branchName}\`](${branchUrl}).
+            **Original error:** ${prError instanceof Error ? prError.message : String(prError)}
+            You can manually create a pull request from the branch if needed.${patchPreview}`;
+                try {
+                  const { data: issue } = await github.rest.issues.create({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    title: title,
+                    body: fallbackBody,
+                    labels: labels,
+                  });
+                  core.info(`Created fallback issue #${issue.number}: ${issue.html_url}`);
+                  await updateActivationComment(github, context, core, issue.html_url, issue.number, "issue");
+                  core.setOutput("issue_number", issue.number);
+                  core.setOutput("issue_url", issue.html_url);
+                  core.setOutput("branch_name", branchName);
+                  core.setOutput("fallback_used", "true");
+                  await core.summary
+                    .addRaw(
+                      `
+            ## Fallback Issue Created
+            - **Issue**: [#${issue.number}](${issue.html_url})
+            - **Branch**: [\`${branchName}\`](${branchUrl})
+            - **Base Branch**: \`${baseBranch}\`
+            - **Note**: Pull request creation failed, created issue as fallback
+            `
+                    )
+                    .write();
+                } catch (issueError) {
+                  core.setFailed(
+                    `Failed to create both pull request and fallback issue. PR error: ${prError instanceof Error ? prError.message : String(prError)}. Issue error: ${issueError instanceof Error ? issueError.message : String(issueError)}`
+                  );
+                  return;
+                }
+              }
+            }
+            await main();
+
   detection:
     needs: agent
     if: needs.agent.outputs.output_types != '' || needs.agent.outputs.has_patch == 'true'
@@ -5731,7 +6548,7 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Install GitHub Copilot CLI
-        run: npm install -g @github/copilot@0.0.365
+        run: npm install -g @github/copilot@0.0.366
       - name: Execute GitHub Copilot CLI
         id: agentic_execution
         # Copilot CLI tool arguments (sorted):
