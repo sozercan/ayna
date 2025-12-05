@@ -100,10 +100,10 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 16
+            simulator: iPhone 15
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16
+            simulator: iPhone 16 Pro Max
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: iPhone 17
@@ -140,10 +140,10 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 16
+            simulator: iPhone 15
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16
+            simulator: iPhone 16 Pro Max
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: iPhone 17
@@ -180,7 +180,7 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
+            simulator: Apple Watch Series 9 (45mm)
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: Apple Watch Ultra 2 (49mm)
@@ -220,7 +220,7 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
+            simulator: Apple Watch Series 9 (45mm)
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: Apple Watch Ultra 2 (49mm)
