@@ -5,8 +5,8 @@
 //  Tests for ErrorBannerView component
 //
 
-import SwiftUI
 @testable import Ayna
+import SwiftUI
 import XCTest
 
 final class ErrorBannerViewTests: XCTestCase {

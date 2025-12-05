@@ -96,6 +96,84 @@ import AppKit  // Breaks iOS/watchOS build
 import UIKit   // Breaks macOS/watchOS build
 ```
 
+## SwiftUI API Best Practices
+
+Use modern SwiftUI APIs. Our minimum targets (iOS 17.6, macOS 14.0, watchOS 10.6) support all of these.
+
+### Deprecated APIs to Avoid
+
+| ❌ Deprecated | ✅ Use Instead | Notes |
+|--------------|----------------|-------|
+| `.foregroundColor(_:)` | `.foregroundStyle(_:)` | Works with any `ShapeStyle`, not just `Color` |
+| `.cornerRadius(_:)` | `.clipShape(.rect(cornerRadius:))` | More flexible, composable |
+| `onChange(of:) { newValue in }` | `onChange(of:) { oldValue, newValue in }` | Two-parameter closure required |
+| `Task.sleep(nanoseconds:)` | `Task.sleep(for: .seconds(_:))` | Use `Duration` for clarity |
+
+### Code Examples
+
+```swift
+// ❌ Don't
+Text("Hello")
+    .foregroundColor(.red)
+    .background(Color.blue)
+    .cornerRadius(8)
+
+// ✅ Do
+Text("Hello")
+    .foregroundStyle(.red)
+    .background(Color.blue)
+    .clipShape(.rect(cornerRadius: 8))
+```
+
+```swift
+// ❌ Don't
+.onChange(of: selectedItem) { newValue in
+    handleSelection(newValue)
+}
+
+// ✅ Do
+.onChange(of: selectedItem) { _, newValue in
+    handleSelection(newValue)
+}
+```
+
+```swift
+// ❌ Don't
+try await Task.sleep(nanoseconds: 500_000_000)
+
+// ✅ Do
+try await Task.sleep(for: .milliseconds(500))
+```
+
+### Accessibility Requirements
+
+Always add accessibility labels to image-only buttons:
+
+```swift
+// ❌ Don't
+Button {
+    dismiss()
+} label: {
+    Image(systemName: "xmark.circle.fill")
+}
+
+// ✅ Do
+Button {
+    dismiss()
+} label: {
+    Image(systemName: "xmark.circle.fill")
+}
+.accessibilityLabel("Close")
+```
+
+### Other Patterns to Prefer
+
+| Pattern | Preferred Approach |
+|---------|-------------------|
+| Main thread dispatch | `await MainActor.run { }` or `@MainActor` |
+| Array enumeration with index | `ForEach(Array(items.enumerated()), id: \.element.id)` is OK, but consider if index is truly needed |
+| Optional string display | Use `Text(verbatim:)` for user-generated content to avoid localization issues |
+
 ### Filtering Providers by Platform
 
 `OpenAIService.usableModels` automatically filters providers:

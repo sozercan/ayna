@@ -11,6 +11,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Design System Integration
+
 // Uses Theme, Typography, Spacing, and Motion from Core/Design/
 
 struct IOSMessageView: View {
@@ -549,16 +550,15 @@ struct IOSTypingIndicatorView: View {
 
     /// Calculate Y offset for wave effect
     private func offsetForDot(at index: Int) -> CGFloat {
-        let activeIndex: Int
-        switch animatingDot {
+        let activeIndex: Int = switch animatingDot {
         case 0, 5:
-            activeIndex = 0
+            0
         case 1, 4:
-            activeIndex = 1
+            1
         case 2, 3:
-            activeIndex = 2
+            2
         default:
-            activeIndex = -1
+            -1
         }
         return index == activeIndex ? -4 : 0
     }

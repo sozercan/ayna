@@ -66,9 +66,9 @@ public struct ErrorBannerView: View {
 
     public var body: some View {
         #if os(watchOS)
-        watchOSLayout
+            watchOSLayout
         #else
-        standardLayout
+            standardLayout
         #endif
     }
 
@@ -211,8 +211,8 @@ public struct ErrorBannerView: View {
 
 public extension ErrorBannerView {
     /// Creates an error banner from a LocalizedError with automatic recovery suggestion extraction.
-    init<E: LocalizedError>(
-        error: E,
+    init(
+        error: some LocalizedError,
         onRetry: (() -> Void)? = nil,
         onDismiss: @escaping () -> Void,
         identifierPrefix: String = "error.banner"

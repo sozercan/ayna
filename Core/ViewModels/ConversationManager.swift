@@ -5,7 +5,6 @@
 //  Created on 11/2/25.
 //
 
-import CloudKit
 import Combine
 #if !os(watchOS)
     import CoreSpotlight
@@ -50,8 +49,29 @@ final class ConversationManager: ObservableObject {
         )
         loadingTask = Task {
             await loadConversations()
-            // iCloud sync disabled for free developer account
-            // await syncWithCloud()
+        }
+
+        // Listen for save failures to reload data from disk
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSaveFailure(_:)),
+            name: .conversationSaveFailed,
+            object: nil
+        )
+    }
+
+    @objc private func handleSaveFailure(_ notification: Notification) {
+        guard let conversationId = notification.userInfo?["conversationId"] as? UUID else { return }
+
+        logManager(
+            "🔄 Reloading conversations after save failure",
+            level: .info,
+            metadata: ["failedId": conversationId.uuidString]
+        )
+
+        // Reload all conversations from disk to restore consistent state
+        Task {
+            await loadConversations()
         }
     }
 
@@ -97,12 +117,6 @@ final class ConversationManager: ObservableObject {
         Task {
             do {
                 try await persistenceCoordinator.delete(conversationId)
-                // iCloud sync disabled for free developer account
-                /*
-                 Task.detached {
-                     try? await CloudKitService.shared.delete(conversationId: conversationId)
-                 }
-                 */
                 await loadConversations()
                 if selectedConversationId == conversationId {
                     selectedConversationId = nil
@@ -204,12 +218,6 @@ final class ConversationManager: ObservableObject {
         conversations.removeAll { $0.id == conversation.id }
         Task {
             try? await store.delete(conversation.id)
-            // iCloud sync disabled for free developer account
-            /*
-             Task.detached {
-                 try? await CloudKitService.shared.delete(conversationId: conversation.id)
-             }
-             */
             #if !os(watchOS)
                 deindexConversation(id: conversation.id)
             #endif
@@ -675,63 +683,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    private func syncWithCloud() async {
-        // iCloud sync disabled for free developer account
-        /*
-         guard let tokenData = AppPreferences.storage.data(forKey: "cloudKitChangeToken"),
-               let token = try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: tokenData) else {
-             // Initial sync
-             await performCloudFetch(since: nil)
-             return
-         }
-         await performCloudFetch(since: token)
-         */
-    }
-
-    private func performCloudFetch(since _: CKServerChangeToken?) async {
-        // iCloud sync disabled for free developer account
-        /*
-         do {
-             let changes = try await CloudKitService.shared.fetchChanges(since: token)
-             let (changed, deleted, newToken) = (changes.changed, changes.deleted, changes.newToken)
-
-             // Apply deletions
-             for recordID in deleted {
-                 if let uuid = UUID(uuidString: recordID.recordName) {
-                     try? await store.delete(uuid)
-                     // Also remove from memory
-                     if let index = conversations.firstIndex(where: { $0.id == uuid }) {
-                         conversations.remove(at: index)
-                     }
-                 }
-             }
-
-             // Apply changes
-             for record in changed {
-                 if let asset = record["encryptedData"] as? CKAsset, let fileURL = asset.fileURL {
-                     // Copy file to store
-                     if let uuid = UUID(uuidString: record.recordID.recordName) {
-                         let destURL = store.fileURL(for: uuid)
-                         try? FileManager.default.removeItem(at: destURL)
-                         try? FileManager.default.copyItem(at: fileURL, to: destURL)
-                     }
-                 }
-             }
-
-             // Save new token
-             if let newToken = newToken {
-                 let data = try NSKeyedArchiver.archivedData(withRootObject: newToken, requiringSecureCoding: true)
-                 AppPreferences.storage.set(data, forKey: "cloudKitChangeToken")
-             }
-
-             // Reload conversations to reflect changes
-             await loadConversations()
-
-         } catch {
-             logManager("Cloud sync failed", level: .error, metadata: ["error": error.localizedDescription])
-         }
-         */
-    }
 }
 
 // Helper class for title generation

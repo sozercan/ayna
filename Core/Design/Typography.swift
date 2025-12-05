@@ -16,7 +16,6 @@ import SwiftUI
 /// All fonts use Dynamic Type (Text Styles) for accessibility.
 /// Fonts scale automatically based on user's accessibility settings.
 public enum Typography {
-
     // MARK: - Legacy Size Reference (for non-font uses like icons, spacing calculations)
 
     /// Reference sizes for calculations that need fixed values (icons, spacing).
@@ -25,113 +24,114 @@ public enum Typography {
         /// Extra small reference: 9pt (macOS/iOS), 8pt (watchOS)
         public static var xs: CGFloat {
             #if os(watchOS)
-            8
+                8
             #else
-            9
+                9
             #endif
         }
 
         /// Small reference: 11pt (macOS/iOS), 10pt (watchOS)
         public static var sm: CGFloat {
             #if os(watchOS)
-            10
+                10
             #else
-            11
+                11
             #endif
         }
 
         /// Caption reference: 12pt (macOS/iOS), 11pt (watchOS)
         public static var caption: CGFloat {
             #if os(watchOS)
-            11
+                11
             #else
-            12
+                12
             #endif
         }
 
         /// Body reference: 14pt (macOS/iOS), 13pt (watchOS)
         public static var body: CGFloat {
             #if os(watchOS)
-            13
+                13
             #else
-            14
+                14
             #endif
         }
 
         /// Standard reference: 15pt (macOS/iOS), 14pt (watchOS)
         public static var standard: CGFloat {
             #if os(watchOS)
-            14
+                14
             #else
-            15
+                15
             #endif
         }
 
         /// Subheadline reference: 16pt (macOS/iOS), 15pt (watchOS)
         public static var subheadline: CGFloat {
             #if os(watchOS)
-            15
+                15
             #else
-            16
+                16
             #endif
         }
 
         /// Headline reference: 18pt (macOS/iOS), 16pt (watchOS)
         public static var headline: CGFloat {
             #if os(watchOS)
-            16
+                16
             #else
-            18
+                18
             #endif
         }
 
         /// Title 3 reference: 20pt (macOS/iOS), 18pt (watchOS)
         public static var title3: CGFloat {
             #if os(watchOS)
-            18
+                18
             #else
-            20
+                20
             #endif
         }
 
         /// Title 2 reference: 22pt (macOS/iOS), 20pt (watchOS)
         public static var title2: CGFloat {
             #if os(watchOS)
-            20
+                20
             #else
-            22
+                22
             #endif
         }
 
         /// Title 1 reference: 28pt (macOS/iOS), 24pt (watchOS)
         public static var title1: CGFloat {
             #if os(watchOS)
-            24
+                24
             #else
-            28
+                28
             #endif
         }
 
         /// Large Title reference: 34pt (macOS/iOS), 28pt (watchOS)
         public static var largeTitle: CGFloat {
             #if os(watchOS)
-            28
+                28
             #else
-            34
+                34
             #endif
         }
 
         /// Hero reference: 48pt (macOS/iOS), 32pt (watchOS)
         public static var hero: CGFloat {
             #if os(watchOS)
-            32
+                32
             #else
-            48
+                48
             #endif
         }
     }
 
     // MARK: - Semantic Text Styles (Dynamic Type)
+
     // These fonts automatically scale with user's accessibility settings
 
     /// Large title for hero sections - scales with Dynamic Type
@@ -250,40 +250,36 @@ public enum Typography {
 
 // MARK: - View Modifiers
 
-extension View {
+public extension View {
     /// Applies the standard body text style with Dynamic Type support
-    public func bodyText() -> some View {
-        self
-            .font(Typography.body)
+    func bodyText() -> some View {
+        font(Typography.body)
             .lineSpacing(Typography.bodyLineSpacing)
     }
 
     /// Applies the caption text style with Dynamic Type support
-    public func captionText() -> some View {
-        self
-            .font(Typography.caption)
+    func captionText() -> some View {
+        font(Typography.caption)
             .foregroundStyle(Theme.textSecondary)
     }
 
     /// Applies the headline text style with Dynamic Type support
-    public func headlineText() -> some View {
-        self
-            .font(Typography.headline)
+    func headlineText() -> some View {
+        font(Typography.headline)
     }
 
     /// Applies the code text style with Dynamic Type support
-    public func codeText() -> some View {
-        self
-            .font(Typography.code)
+    func codeText() -> some View {
+        font(Typography.code)
     }
 }
 
 // MARK: - Icon Sizes
 
-extension Typography {
+public extension Typography {
     /// Consistent icon sizes that pair well with text.
     /// Note: Icons use fixed sizes as SF Symbols scale independently via symbolRenderingMode.
-    public enum IconSize {
+    enum IconSize {
         /// Inline with caption text: 12pt
         public static let xs: CGFloat = 12
 

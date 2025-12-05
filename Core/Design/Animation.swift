@@ -14,7 +14,6 @@ import SwiftUI
 /// Centralized animation presets for the Ayna design system.
 /// Ensures consistent motion language throughout the app.
 public enum Motion {
-
     // MARK: - Durations
 
     public enum Duration {
@@ -128,40 +127,40 @@ public enum Motion {
 
 // MARK: - View Modifiers
 
-extension View {
+public extension View {
     /// Applies standard animation to a value change
-    public func animateStandard<V: Equatable>(value: V) -> some View {
-        self.animation(Motion.springStandard, value: value)
+    func animateStandard(value: some Equatable) -> some View {
+        animation(Motion.springStandard, value: value)
     }
 
     /// Applies quick animation to a value change
-    public func animateQuick<V: Equatable>(value: V) -> some View {
-        self.animation(Motion.easeQuick, value: value)
+    func animateQuick(value: some Equatable) -> some View {
+        animation(Motion.easeQuick, value: value)
     }
 
     /// Applies snappy spring animation to a value change
-    public func animateSnappy<V: Equatable>(value: V) -> some View {
-        self.animation(Motion.springSnappy, value: value)
+    func animateSnappy(value: some Equatable) -> some View {
+        animation(Motion.springSnappy, value: value)
     }
 
     /// Fades in the view when it appears
-    public func fadeIn() -> some View {
-        self.transition(Motion.fadeTransition)
+    func fadeIn() -> some View {
+        transition(Motion.fadeTransition)
     }
 
     /// Scales in the view when it appears (for popovers)
-    public func scaleIn() -> some View {
-        self.transition(Motion.scaleTransition)
+    func scaleIn() -> some View {
+        transition(Motion.scaleTransition)
     }
 
     /// Slides up when appearing (for sheets)
-    public func slideUp() -> some View {
-        self.transition(Motion.slideUpTransition)
+    func slideUp() -> some View {
+        transition(Motion.slideUpTransition)
     }
 
     /// Applies message appearance transition
-    public func messageAppearance() -> some View {
-        self.transition(Motion.messageTransition)
+    func messageAppearance() -> some View {
+        transition(Motion.messageTransition)
     }
 }
 
@@ -200,9 +199,9 @@ public struct ShimmerModifier: ViewModifier {
     }
 }
 
-extension View {
+public extension View {
     /// Applies a shimmer effect for loading states
-    public func shimmer() -> some View {
+    func shimmer() -> some View {
         modifier(ShimmerModifier())
     }
 }
@@ -234,9 +233,9 @@ public struct PulseModifier: ViewModifier {
     }
 }
 
-extension View {
+public extension View {
     /// Applies a subtle pulse effect when active
-    public func pulse(isActive: Bool) -> some View {
+    func pulse(isActive: Bool) -> some View {
         modifier(PulseModifier(isActive: isActive))
     }
 }
@@ -275,16 +274,15 @@ public struct TypingDotsView: View {
     private func offsetForDot(at index: Int) -> CGFloat {
         // Wave pattern: dot rises when animatingDot matches its turn
         // Sequence: 0,1,2,2,1,0 creates smooth wave
-        let activeIndex: Int
-        switch animatingDot {
+        let activeIndex: Int = switch animatingDot {
         case 0, 5:
-            activeIndex = 0
+            0
         case 1, 4:
-            activeIndex = 1
+            1
         case 2, 3:
-            activeIndex = 2
+            2
         default:
-            activeIndex = -1
+            -1
         }
         return index == activeIndex ? -4 : 0
     }

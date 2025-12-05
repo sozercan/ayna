@@ -226,7 +226,7 @@ final class WatchDataModelTests: XCTestCase {
 
         let watchConversation = WatchConversation(from: conversation)
 
-    XCTAssertEqual(watchConversation.createdAt, createdAt)
-    XCTAssertEqual(watchConversation.updatedAt, updatedAt)
+        XCTAssertEqual(watchConversation.createdAt, createdAt)
+        XCTAssertEqual(watchConversation.updatedAt, updatedAt)
     }
 }

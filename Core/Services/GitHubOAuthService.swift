@@ -491,6 +491,9 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
     #if !os(watchOS)
         func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
+            // Cancel any existing auth flow before starting new one to prevent state mismatch
+            cancelAuthentication()
+
             presentationContextProvider = contextProvider
             isAuthenticating = true
             authError = nil

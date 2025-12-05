@@ -8,6 +8,11 @@
 import Foundation
 import os.log
 
+/// Notification posted when a conversation save fails (contains conversationId in userInfo)
+extension Notification.Name {
+    static let conversationSaveFailed = Notification.Name("conversationSaveFailed")
+}
+
 /// Actor that coordinates conversation persistence to prevent race conditions.
 /// All save operations are serialized through this actor, with debouncing
 /// to coalesce rapid successive saves.
@@ -116,6 +121,15 @@ actor ConversationPersistenceCoordinator {
                     message: "❌ Failed to save conversation",
                     metadata: ["id": id.uuidString, "error": error.localizedDescription]
                 )
+                // Post notification so ConversationManager can reload from disk
+                // This ensures in-memory state doesn't diverge from persisted state
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .conversationSaveFailed,
+                        object: nil,
+                        userInfo: ["conversationId": id]
+                    )
+                }
             }
         }
     }

@@ -39,6 +39,13 @@ docs/       → Detailed documentation for AI agents
 
 5. **Never `git push`**: Leave pushing to the human.
 
+6. **Use Modern SwiftUI APIs**: See [docs/platforms.md](docs/platforms.md#swiftui-api-best-practices) for details.
+   - `.foregroundStyle()` not `.foregroundColor()`
+   - `.clipShape(.rect(cornerRadius:))` not `.cornerRadius()`
+   - `onChange(of:) { _, newValue in }` (two-param closure)
+   - `Task.sleep(for: .seconds())` not `Task.sleep(nanoseconds:)`
+   - Add `.accessibilityLabel()` to image-only buttons
+
 ## Before You Start: Read the Relevant Docs
 
 | If your task involves...                  | Read this first                              |

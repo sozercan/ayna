@@ -279,7 +279,7 @@ final class WatchConversationStoreNativeTests: XCTestCase {
 
         store.updateConversations([updatedOlder])
 
-    // Older should now be first (most recently updated)
-    XCTAssertEqual(store.conversations.first?.id, older.id)
+        // Older should now be first (most recently updated)
+        XCTAssertEqual(store.conversations.first?.id, older.id)
     }
 }

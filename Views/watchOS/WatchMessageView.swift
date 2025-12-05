@@ -10,6 +10,7 @@
     import SwiftUI
 
     // MARK: - Design System Integration
+
     // Uses Theme, Typography, Spacing from Core/Design/
 
     /// Compact message bubble for Watch

@@ -25,6 +25,13 @@
         private let maxPersistedConversations = 20
 
         private init() {
+            // Don't load from disk in init - wait for WCSession to activate first
+            // loadFromDisk() will be called by WatchConnectivityService after session activation
+            // This prevents accessing WCSession before it's ready
+        }
+
+        /// Initialize store from persisted data. Called after WCSession is ready.
+        func initializeFromDisk() {
             loadFromDisk()
         }
 

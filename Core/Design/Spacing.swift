@@ -13,7 +13,6 @@ import SwiftUI
 /// Centralized spacing and layout constants for the Ayna design system.
 /// Uses a 4pt base grid for consistency.
 public enum Spacing {
-
     // MARK: - Base Grid (4pt)
 
     /// 2pt - Hairline spacing
@@ -51,56 +50,56 @@ public enum Spacing {
     /// Standard content padding
     public static var contentPadding: CGFloat {
         #if os(watchOS)
-        8
+            8
         #elseif os(iOS)
-        16
+            16
         #else
-        24
+            24
         #endif
     }
 
     /// Horizontal padding for message bubbles
     public static var bubblePaddingH: CGFloat {
         #if os(watchOS)
-        12
+            12
         #else
-        18
+            18
         #endif
     }
 
     /// Vertical padding for message bubbles
     public static var bubblePaddingV: CGFloat {
         #if os(watchOS)
-        8
+            8
         #else
-        12
+            12
         #endif
     }
 
     /// Spacing between messages in list
     public static var messageSpacing: CGFloat {
         #if os(watchOS)
-        8
+            8
         #else
-        12
+            12
         #endif
     }
 
     /// Spacing between sections
     public static var sectionSpacing: CGFloat {
         #if os(watchOS)
-        16
+            16
         #else
-        24
+            24
         #endif
     }
 
     /// Minimum touch target size (accessibility)
     public static var minTouchTarget: CGFloat {
         #if os(watchOS)
-        38
+            38
         #else
-        44
+            44
         #endif
     }
 
@@ -141,9 +140,9 @@ public enum Spacing {
         /// Avatar size in sidebar
         public static var avatarSize: CGFloat {
             #if os(watchOS)
-            32
+                32
             #else
-            44
+                44
             #endif
         }
 
@@ -159,9 +158,9 @@ public enum Spacing {
         /// Icon button size
         public static var iconButton: CGFloat {
             #if os(watchOS)
-            32
+                32
             #else
-            36
+                36
             #endif
         }
 
@@ -171,18 +170,18 @@ public enum Spacing {
         /// Composer minimum height
         public static var composerMinHeight: CGFloat {
             #if os(watchOS)
-            28
+                28
             #else
-            44
+                44
             #endif
         }
 
         /// Composer maximum height
         public static var composerMaxHeight: CGFloat {
             #if os(watchOS)
-            80
+                80
             #else
-            220
+                220
             #endif
         }
 
@@ -194,11 +193,11 @@ public enum Spacing {
         /// Message bubble maximum width
         public static var bubbleMaxWidth: CGFloat {
             #if os(watchOS)
-            140
+                140
             #elseif os(iOS)
-            300
+                300
             #else
-            480
+                480
             #endif
         }
 
@@ -247,46 +246,45 @@ public enum Spacing {
 
 // MARK: - View Extensions
 
-extension View {
+public extension View {
     /// Applies standard content padding
-    public func contentPadding() -> some View {
-        self.padding(Spacing.contentPadding)
+    func contentPadding() -> some View {
+        padding(Spacing.contentPadding)
     }
 
     /// Applies horizontal content padding
-    public func contentPaddingH() -> some View {
-        self.padding(.horizontal, Spacing.contentPadding)
+    func contentPaddingH() -> some View {
+        padding(.horizontal, Spacing.contentPadding)
     }
 
     /// Applies standard bubble padding
-    public func bubblePadding() -> some View {
-        self
-            .padding(.horizontal, Spacing.bubblePaddingH)
+    func bubblePadding() -> some View {
+        padding(.horizontal, Spacing.bubblePaddingH)
             .padding(.vertical, Spacing.bubblePaddingV)
     }
 
     /// Applies standard corner radius
-    public func standardCornerRadius() -> some View {
-        self.clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+    func standardCornerRadius() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
     }
 
     /// Applies bubble corner radius
-    public func bubbleCornerRadius() -> some View {
-        self.clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.bubble))
+    func bubbleCornerRadius() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.bubble))
     }
 }
 
 // MARK: - Safe Area Helpers
 
-extension Spacing {
+public extension Spacing {
     /// Bottom safe area padding for composer
-    public static var composerBottomPadding: CGFloat {
+    static var composerBottomPadding: CGFloat {
         #if os(watchOS)
-        4
+            4
         #elseif os(iOS)
-        8
+            8
         #else
-        20
+            20
         #endif
     }
 }

@@ -221,134 +221,134 @@ struct MacChatView: View {
             VStack(spacing: 0) {
                 // Messages
                 ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(displayableItems) { item in
-                                    switch item {
-                                    case let .message(message):
-                                        MacMessageView(
-                                            message: message,
-                                            modelName: message.model,
-                                            onRetry: message.role == .assistant
-                                                ? {
-                                                    retryLastMessage(beforeMessage: message)
-                                                } : nil,
-                                            onSwitchModel: message.role == .assistant
-                                                ? { newModel in
-                                                    switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                                } : nil
-                                        )
-                                        .id(message.id)
-                                    case let .responseGroup(groupId, responses):
-                                        MultiModelResponseView(
-                                            responseGroupId: groupId,
-                                            responses: responses,
-                                            conversation: currentConversation,
-                                            onSelectResponse: { messageId in
-                                                conversationManager.selectResponse(
-                                                    in: currentConversation,
-                                                    groupId: groupId,
-                                                    messageId: messageId
-                                                )
-                                            },
-                                            onRetry: { message in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(displayableItems) { item in
+                                switch item {
+                                case let .message(message):
+                                    MacMessageView(
+                                        message: message,
+                                        modelName: message.model,
+                                        onRetry: message.role == .assistant
+                                            ? {
                                                 retryLastMessage(beforeMessage: message)
-                                            }
-                                        )
-                                        .id(item.id)
-                                    }
-                                }
-
-                                // Anchor for scroll position detection
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id("bottom")
-                                    .onAppear { isNearBottom = true; showScrollToBottom = false }
-                                    .onDisappear { isNearBottom = false; showScrollToBottom = true }
-                            }
-                            .padding(.horizontal, Spacing.contentPadding)
-                            .padding(.vertical, Spacing.contentPadding)
-                        }
-                        .defaultScrollAnchor(.bottom)
-                        .onChange(of: currentConversation.messages.count) { _, _ in
-                            scrollDebounceTask?.cancel()
-                            scrollDebounceTask = Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
-                                guard !Task.isCancelled, isNearBottom else { return }
-                                if let lastMessage = currentConversation.messages.last {
-                                    if isGenerating {
-                                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                    } else {
-                                        withAnimation {
-                                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                            } : nil,
+                                        onSwitchModel: message.role == .assistant
+                                            ? { newModel in
+                                                switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                            } : nil
+                                    )
+                                    .id(message.id)
+                                case let .responseGroup(groupId, responses):
+                                    MultiModelResponseView(
+                                        responseGroupId: groupId,
+                                        responses: responses,
+                                        conversation: currentConversation,
+                                        onSelectResponse: { messageId in
+                                            conversationManager.selectResponse(
+                                                in: currentConversation,
+                                                groupId: groupId,
+                                                messageId: messageId
+                                            )
+                                        },
+                                        onRetry: { message in
+                                            retryLastMessage(beforeMessage: message)
                                         }
-                                    }
+                                    )
+                                    .id(item.id)
                                 }
                             }
+
+                            // Anchor for scroll position detection
+                            Color.clear
+                                .frame(height: 1)
+                                .id("bottom")
+                                .onAppear { isNearBottom = true; showScrollToBottom = false }
+                                .onDisappear { isNearBottom = false; showScrollToBottom = true }
                         }
-                        .onAppear {
-                            updateVisibleMessages()
-                            syncSelectedModelWithConversation()
-                            // Scroll to bottom after a short delay to ensure content is laid out
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(100))
-                                if let lastMessage = currentConversation.messages.last {
+                        .padding(.horizontal, Spacing.contentPadding)
+                        .padding(.vertical, Spacing.contentPadding)
+                    }
+                    .defaultScrollAnchor(.bottom)
+                    .onChange(of: currentConversation.messages.count) { _, _ in
+                        scrollDebounceTask?.cancel()
+                        scrollDebounceTask = Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
+                            guard !Task.isCancelled, isNearBottom else { return }
+                            if let lastMessage = currentConversation.messages.last {
+                                if isGenerating {
                                     proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
-                            }
-                        }
-                        .onChange(of: conversation.id) { _, _ in
-                            updateVisibleMessages()
-                            syncSelectedModelWithConversation()
-                            // Scroll to bottom when switching conversations
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(100))
-                                if let lastMessage = currentConversation.messages.last {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
-                            }
-                        }
-                        .onChange(of: currentConversation.messages) { _, _ in
-                            updateVisibleMessages()
-                        }
-                        .onChange(of: currentConversation.messages.last?.content) { _, _ in
-                            if isGenerating {
-                                Task { @MainActor in
-                                    guard isNearBottom else { return }
-                                    if let lastMessage = currentConversation.messages.last {
+                                } else {
+                                    withAnimation {
                                         proxy.scrollTo(lastMessage.id, anchor: .bottom)
                                     }
                                 }
                             }
-                        }
-                        .onChange(of: currentConversation.model) { _, _ in
-                            syncSelectedModelWithConversation()
-                        }
-                        .onChange(of: isGenerating) { _, _ in
-                            updateVisibleMessages()
-                        }
-                        .simultaneousGesture(
-                            TapGesture().onEnded {
-                                if isToolSectionExpanded {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isToolSectionExpanded = false
-                                    }
-                                }
-                            }
-                        )
-                        // Overlay scroll-to-bottom button inside ScrollViewReader so we can use proxy
-                        .overlay(alignment: .bottom) {
-                            MacScrollToBottomButton(
-                                isVisible: showScrollToBottom && !isGenerating,
-                                unreadCount: 0
-                            ) {
-                                withAnimation(Motion.springStandard) {
-                                    proxy.scrollTo("bottom", anchor: .bottom)
-                                }
-                            }
-                            .padding(.bottom, Spacing.md)
                         }
                     }
+                    .onAppear {
+                        updateVisibleMessages()
+                        syncSelectedModelWithConversation()
+                        // Scroll to bottom after a short delay to ensure content is laid out
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if let lastMessage = currentConversation.messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: conversation.id) { _, _ in
+                        updateVisibleMessages()
+                        syncSelectedModelWithConversation()
+                        // Scroll to bottom when switching conversations
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if let lastMessage = currentConversation.messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: currentConversation.messages) { _, _ in
+                        updateVisibleMessages()
+                    }
+                    .onChange(of: currentConversation.messages.last?.content) { _, _ in
+                        if isGenerating {
+                            Task { @MainActor in
+                                guard isNearBottom else { return }
+                                if let lastMessage = currentConversation.messages.last {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
+                    .onChange(of: currentConversation.model) { _, _ in
+                        syncSelectedModelWithConversation()
+                    }
+                    .onChange(of: isGenerating) { _, _ in
+                        updateVisibleMessages()
+                    }
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            if isToolSectionExpanded {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isToolSectionExpanded = false
+                                }
+                            }
+                        }
+                    )
+                    // Overlay scroll-to-bottom button inside ScrollViewReader so we can use proxy
+                    .overlay(alignment: .bottom) {
+                        MacScrollToBottomButton(
+                            isVisible: showScrollToBottom && !isGenerating,
+                            unreadCount: 0
+                        ) {
+                            withAnimation(Motion.springStandard) {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
+                        }
+                        .padding(.bottom, Spacing.md)
+                    }
+                }
 
                 // Rate Limit Warning Banner (GitHub Models only)
                 if openAIService.provider == .githubModels {

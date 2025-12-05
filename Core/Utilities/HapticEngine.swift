@@ -21,7 +21,6 @@ import SwiftUI
 /// HapticEngine.selection()
 /// ```
 public enum HapticEngine {
-
     // MARK: - Impact Feedback
 
     /// Triggers impact feedback with the specified intensity.
@@ -30,23 +29,22 @@ public enum HapticEngine {
     /// - Parameter style: The intensity of the impact (light, medium, heavy, soft, rigid)
     public static func impact(_ style: ImpactStyle) {
         #if os(iOS)
-        let generator: UIImpactFeedbackGenerator
-        switch style {
-        case .light:
-            generator = UIImpactFeedbackGenerator(style: .light)
-        case .medium:
-            generator = UIImpactFeedbackGenerator(style: .medium)
-        case .heavy:
-            generator = UIImpactFeedbackGenerator(style: .heavy)
-        case .soft:
-            generator = UIImpactFeedbackGenerator(style: .soft)
-        case .rigid:
-            generator = UIImpactFeedbackGenerator(style: .rigid)
-        }
-        generator.impactOccurred()
+            let generator = switch style {
+            case .light:
+                UIImpactFeedbackGenerator(style: .light)
+            case .medium:
+                UIImpactFeedbackGenerator(style: .medium)
+            case .heavy:
+                UIImpactFeedbackGenerator(style: .heavy)
+            case .soft:
+                UIImpactFeedbackGenerator(style: .soft)
+            case .rigid:
+                UIImpactFeedbackGenerator(style: .rigid)
+            }
+            generator.impactOccurred()
         #elseif os(watchOS)
-        // watchOS uses WKInterfaceDevice for haptics
-        WKInterfaceDevice.current().play(style.watchOSHapticType)
+            // watchOS uses WKInterfaceDevice for haptics
+            WKInterfaceDevice.current().play(style.watchOSHapticType)
         #endif
     }
 
@@ -64,16 +62,16 @@ public enum HapticEngine {
         case rigid
 
         #if os(watchOS)
-        var watchOSHapticType: WKHapticType {
-            switch self {
-            case .light, .soft:
-                return .click
-            case .medium:
-                return .click
-            case .heavy, .rigid:
-                return .directionUp
+            var watchOSHapticType: WKHapticType {
+                switch self {
+                case .light, .soft:
+                    .click
+                case .medium:
+                    .click
+                case .heavy, .rigid:
+                    .directionUp
+                }
             }
-        }
         #endif
     }
 
@@ -85,17 +83,17 @@ public enum HapticEngine {
     /// - Parameter type: The type of notification (success, warning, error)
     public static func notification(_ type: NotificationType) {
         #if os(iOS)
-        let generator = UINotificationFeedbackGenerator()
-        switch type {
-        case .success:
-            generator.notificationOccurred(.success)
-        case .warning:
-            generator.notificationOccurred(.warning)
-        case .error:
-            generator.notificationOccurred(.error)
-        }
+            let generator = UINotificationFeedbackGenerator()
+            switch type {
+            case .success:
+                generator.notificationOccurred(.success)
+            case .warning:
+                generator.notificationOccurred(.warning)
+            case .error:
+                generator.notificationOccurred(.error)
+            }
         #elseif os(watchOS)
-        WKInterfaceDevice.current().play(type.watchOSHapticType)
+            WKInterfaceDevice.current().play(type.watchOSHapticType)
         #endif
     }
 
@@ -109,16 +107,16 @@ public enum HapticEngine {
         case error
 
         #if os(watchOS)
-        var watchOSHapticType: WKHapticType {
-            switch self {
-            case .success:
-                return .success
-            case .warning:
-                return .retry
-            case .error:
-                return .failure
+            var watchOSHapticType: WKHapticType {
+                switch self {
+                case .success:
+                    .success
+                case .warning:
+                    .retry
+                case .error:
+                    .failure
+                }
             }
-        }
         #endif
     }
 
@@ -128,10 +126,10 @@ public enum HapticEngine {
     /// Use for model selection, conversation switching, etc.
     public static func selection() {
         #if os(iOS)
-        let generator = UISelectionFeedbackGenerator()
-        generator.selectionChanged()
+            let generator = UISelectionFeedbackGenerator()
+            generator.selectionChanged()
         #elseif os(watchOS)
-        WKInterfaceDevice.current().play(.click)
+            WKInterfaceDevice.current().play(.click)
         #endif
     }
 
@@ -201,5 +199,5 @@ public enum HapticEngine {
 // MARK: - watchOS Support
 
 #if os(watchOS)
-import WatchKit
+    import WatchKit
 #endif

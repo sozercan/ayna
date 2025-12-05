@@ -160,9 +160,9 @@ final class WatchMarkdownRendererTests: XCTestCase {
     }
 
     func testStripMarkdownUnderscoreItalic() {
-    let text = "Hello _italic_ world"
-    let result = WatchMarkdownRenderer.stripMarkdown(text)
+        let text = "Hello _italic_ world"
+        let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-    XCTAssertEqual(result, "Hello italic world")
+        XCTAssertEqual(result, "Hello italic world")
     }
 }

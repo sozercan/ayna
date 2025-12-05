@@ -70,6 +70,8 @@ class OpenAIService: ObservableObject {
     private var currentTask: URLSessionDataTask?
     private var currentStreamTask: Task<Void, Never>?
     private var multiModelTask: Task<Void, Never>?
+    /// Tracks individual stream tasks for each model in multi-model mode
+    private var multiModelStreamTasks: [String: Task<Void, Never>] = [:]
     #if !os(watchOS)
         private var appleIntelligenceTask: Task<Void, Never>?
     #endif
@@ -533,6 +535,17 @@ class OpenAIService: ObservableObject {
         currentStreamTask = nil
         multiModelTask?.cancel()
         multiModelTask = nil
+        // Cancel all individual multi-model stream tasks
+        for (model, task) in multiModelStreamTasks {
+            task.cancel()
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .info,
+                message: "Cancelled multi-model stream task",
+                metadata: ["model": model]
+            )
+        }
+        multiModelStreamTasks.removeAll()
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -822,7 +835,7 @@ class OpenAIService: ObservableObject {
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
-            streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest)
+            streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest, modelName: requestModel)
         } else {
             nonStreamResponse(
                 request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
@@ -870,8 +883,12 @@ class OpenAIService: ObservableObject {
             metadata: ["models": models.joined(separator: ", ")]
         )
 
-        // Cancel any existing multi-model task
+        // Cancel any existing multi-model task and individual stream tasks
         multiModelTask?.cancel()
+        for (_, task) in multiModelStreamTasks {
+            task.cancel()
+        }
+        multiModelStreamTasks.removeAll()
 
         // Use a TaskGroup to send requests in parallel
         let task = Task {
@@ -958,6 +975,7 @@ class OpenAIService: ObservableObject {
             // All models completed
             await MainActor.run {
                 self.multiModelTask = nil
+                self.multiModelStreamTasks.removeAll()
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .info,
@@ -1212,7 +1230,8 @@ class OpenAIService: ObservableObject {
         request: URLRequest,
         callbacks: StreamCallbacks,
         attempt: Int = 0,
-        isMultiModelRequest: Bool = false
+        isMultiModelRequest: Bool = false,
+        modelName: String? = nil
     ) {
         let session = urlSession
 
@@ -1459,11 +1478,17 @@ class OpenAIService: ObservableObject {
                     hasReceivedData: hasReceivedData,
                     request: request,
                     callbacks: callbacks,
-                    isMultiModelRequest: isMultiModelRequest
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: modelName
                 )
             }
         }
-        currentStreamTask = task
+        // Store task reference - use dictionary for multi-model, single var otherwise
+        if isMultiModelRequest, let modelName {
+            multiModelStreamTasks[modelName] = task
+        } else {
+            currentStreamTask = task
+        }
     }
 
     /// Parse Server-Sent Events data and deliver chunks (used for non-streaming fallback)
@@ -1560,7 +1585,8 @@ class OpenAIService: ObservableObject {
         hasReceivedData: Bool,
         request: URLRequest,
         callbacks: StreamCallbacks,
-        isMultiModelRequest: Bool = false
+        isMultiModelRequest: Bool = false,
+        modelName: String? = nil
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
             // Get retry-after date for GitHub Models rate limits
@@ -1583,12 +1609,18 @@ class OpenAIService: ObservableObject {
                     request: request,
                     callbacks: callbacks,
                     attempt: attempt + 1,
-                    isMultiModelRequest: isMultiModelRequest
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: modelName
                 )
             }
         } else {
             await MainActor.run {
-                self.currentStreamTask = nil
+                // Clean up task reference appropriately
+                if isMultiModelRequest, let modelName {
+                    self.multiModelStreamTasks.removeValue(forKey: modelName)
+                } else {
+                    self.currentStreamTask = nil
+                }
                 // Check if it's a timeout error and provide a better message
                 if let urlError = error as? URLError, urlError.code == .timedOut {
                     callbacks.onError(

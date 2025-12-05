@@ -125,7 +125,7 @@ final class WatchChatViewModelNativeTests: XCTestCase {
         // Calling retry when there's no failed message should do nothing
         viewModel.retryFailedMessage()
 
-    // Should not crash and state should remain unchanged
-    XCTAssertFalse(viewModel.isLoading)
+        // Should not crash and state should remain unchanged
+        XCTAssertFalse(viewModel.isLoading)
     }
 }

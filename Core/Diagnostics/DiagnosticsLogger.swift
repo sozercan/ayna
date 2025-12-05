@@ -21,7 +21,6 @@ enum DiagnosticsCategory: String, CaseIterable, Codable {
     case chatView = "ChatView"
     case contentView = "ContentView"
     case attachmentStorage = "AttachmentStorage"
-    case cloudKit = "CloudKitService"
     case watchConnectivity = "WatchConnectivity"
 }
 

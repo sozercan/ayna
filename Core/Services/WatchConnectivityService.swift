@@ -858,6 +858,9 @@ private enum WatchMessageKeys {
                     ]
                 )
 
+                // Initialize conversation store from disk now that session is ready
+                conversationStore?.initializeFromDisk()
+
                 // Process any existing context
                 let context = session.receivedApplicationContext
                 if !context.isEmpty {

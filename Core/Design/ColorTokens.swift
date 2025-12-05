@@ -19,7 +19,6 @@ import SwiftUI
 /// Centralized semantic color tokens for the Ayna design system.
 /// Use these instead of hardcoded colors throughout the app.
 public enum Theme {
-
     // MARK: - Message Bubbles
 
     /// User message bubble background - modern solid blue (not gradient)
@@ -43,12 +42,12 @@ public enum Theme {
     /// Assistant message bubble background
     public static var assistantBubble: Color {
         #if os(macOS)
-        Color(nsColor: .controlBackgroundColor).opacity(0.8)
+            Color(nsColor: .controlBackgroundColor).opacity(0.8)
         #elseif os(watchOS)
-        // Avoid pure black - use elevated dark gray for OLED friendliness
-        Color(white: 0.18)
+            // Avoid pure black - use elevated dark gray for OLED friendliness
+            Color(white: 0.18)
         #else
-        Color(uiColor: .systemGray5)
+            Color(uiColor: .systemGray5)
         #endif
     }
 
@@ -77,9 +76,9 @@ public enum Theme {
     /// Text color for assistant bubbles
     public static var assistantBubbleText: Color {
         #if os(watchOS)
-        .white
+            .white
         #else
-        .primary
+            .primary
         #endif
     }
 
@@ -108,13 +107,13 @@ public enum Theme {
     /// Returns the appropriate status color for a connection state
     public static func statusColor(isConnected: Bool, isConnecting: Bool = false, hasError: Bool = false) -> Color {
         if hasError {
-            return statusError
+            statusError
         } else if isConnected {
-            return statusConnected
+            statusConnected
         } else if isConnecting {
-            return statusConnecting
+            statusConnecting
         } else {
-            return statusDisconnected
+            statusDisconnected
         }
     }
 
@@ -123,45 +122,45 @@ public enum Theme {
     /// Primary window/view background
     public static var background: Color {
         #if os(macOS)
-        Color(nsColor: .windowBackgroundColor)
+            Color(nsColor: .windowBackgroundColor)
         #elseif os(watchOS)
-        // Never pure black on OLED - use very dark gray
-        Color(white: 0.05)
+            // Never pure black on OLED - use very dark gray
+            Color(white: 0.05)
         #else
-        Color(uiColor: .systemBackground)
+            Color(uiColor: .systemBackground)
         #endif
     }
 
     /// Secondary/grouped background - elevated surfaces are LIGHTER in dark mode
     public static var backgroundSecondary: Color {
         #if os(macOS)
-        Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         #elseif os(watchOS)
-        Color(white: 0.10)
+            Color(white: 0.10)
         #else
-        Color(uiColor: .secondarySystemBackground)
+            Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
     /// Tertiary/elevated background - highest elevation = lightest in dark mode
     public static var backgroundTertiary: Color {
         #if os(macOS)
-        Color(nsColor: .underPageBackgroundColor)
+            Color(nsColor: .underPageBackgroundColor)
         #elseif os(watchOS)
-        Color(white: 0.15)
+            Color(white: 0.15)
         #else
-        Color(uiColor: .tertiarySystemBackground)
+            Color(uiColor: .tertiarySystemBackground)
         #endif
     }
 
     /// Elevated surface background (cards, popovers) - follows Apple's elevation model
     public static var backgroundElevated: Color {
         #if os(macOS)
-        Color(nsColor: .controlBackgroundColor)
+            Color(nsColor: .controlBackgroundColor)
         #elseif os(watchOS)
-        Color(white: 0.12)
+            Color(white: 0.12)
         #else
-        Color(uiColor: .secondarySystemBackground)
+            Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
@@ -185,9 +184,9 @@ public enum Theme {
     /// Hover state (macOS)
     public static var hover: Color {
         #if os(macOS)
-        Color(nsColor: .controlAccentColor).opacity(0.1)
+            Color(nsColor: .controlAccentColor).opacity(0.1)
         #else
-        Color.accentColor.opacity(0.1)
+            Color.accentColor.opacity(0.1)
         #endif
     }
 
@@ -223,22 +222,22 @@ public enum Theme {
     /// Tertiary/hint text
     public static var textTertiary: Color {
         #if os(macOS)
-        Color(nsColor: .tertiaryLabelColor)
+            Color(nsColor: .tertiaryLabelColor)
         #elseif os(watchOS)
-        Color.secondary.opacity(0.7)
+            Color.secondary.opacity(0.7)
         #else
-        Color(uiColor: .tertiaryLabel)
+            Color(uiColor: .tertiaryLabel)
         #endif
     }
 
     /// Placeholder text
     public static var textPlaceholder: Color {
         #if os(macOS)
-        Color(nsColor: .placeholderTextColor)
+            Color(nsColor: .placeholderTextColor)
         #elseif os(watchOS)
-        Color.secondary.opacity(0.5)
+            Color.secondary.opacity(0.5)
         #else
-        Color(uiColor: .placeholderText)
+            Color(uiColor: .placeholderText)
         #endif
     }
 
@@ -259,11 +258,11 @@ public enum Theme {
     /// Code block background
     public static var codeBackground: Color {
         #if os(macOS)
-        Color(nsColor: .controlBackgroundColor).opacity(0.5)
+            Color(nsColor: .controlBackgroundColor).opacity(0.5)
         #elseif os(watchOS)
-        Color(white: 0.15)
+            Color(white: 0.15)
         #else
-        Color(uiColor: .secondarySystemBackground)
+            Color(uiColor: .secondarySystemBackground)
         #endif
     }
 
@@ -287,11 +286,11 @@ public enum Theme {
     /// GitHub brand color
     public static var providerGitHub: Color {
         #if os(macOS)
-        Color(nsColor: .labelColor) // Black/white depending on mode
+            Color(nsColor: .labelColor) // Black/white depending on mode
         #elseif os(iOS)
-        Color(uiColor: .label) // Black/white depending on mode
+            Color(uiColor: .label) // Black/white depending on mode
         #else
-        .white
+            .white
         #endif
     }
 
@@ -308,26 +307,26 @@ public enum Theme {
 
 // MARK: - Convenience Extensions
 
-extension Color {
+public extension Color {
     /// Creates a color that adapts between light and dark mode
     /// - Parameters:
     ///   - light: Color to use in light mode
     ///   - dark: Color to use in dark mode
-    public static func adaptive(light: Color, dark: Color) -> Color {
+    static func adaptive(light: Color, dark: Color) -> Color {
         #if os(macOS)
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(dark)
-                : NSColor(light)
-        })
+            Color(nsColor: NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                    ? NSColor(dark)
+                    : NSColor(light)
+            })
         #elseif os(watchOS)
-        dark // watchOS is always dark
+            dark // watchOS is always dark
         #else
-        Color(uiColor: UIColor { traitCollection in
-            traitCollection.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
-        })
+            Color(uiColor: UIColor { traitCollection in
+                traitCollection.userInterfaceStyle == .dark
+                    ? UIColor(dark)
+                    : UIColor(light)
+            })
         #endif
     }
 }
@@ -335,19 +334,19 @@ extension Color {
 // MARK: - Status Color Helper for MCPServerStatus
 
 #if os(macOS)
-extension Theme {
-    /// Returns the status color for an MCP server status state
-    static func statusColor(for state: MCPServerStatus.State) -> Color {
-        switch state {
-        case .connected:
-            return statusConnected
-        case .connecting, .reconnecting:
-            return statusConnecting
-        case .disabled, .idle:
-            return statusDisconnected
-        case .error:
-            return statusError
+    extension Theme {
+        /// Returns the status color for an MCP server status state
+        static func statusColor(for state: MCPServerStatus.State) -> Color {
+            switch state {
+            case .connected:
+                statusConnected
+            case .connecting, .reconnecting:
+                statusConnecting
+            case .disabled, .idle:
+                statusDisconnected
+            case .error:
+                statusError
+            }
         }
     }
-}
 #endif

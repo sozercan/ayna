@@ -647,6 +647,8 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                             level: .default,
                             message: "⚠️ Tool call requested but conversation no longer exists"
                         )
+                        self.isGenerating = false
+                        self.currentToolName = nil
                         return
                     }
 
@@ -667,6 +669,12 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                         )
                         self.isGenerating = false
                         self.currentToolName = nil
+                        self.errorMessage = "Tool call limit reached. Please try again."
+                        // Remove the empty assistant placeholder message
+                        self.conversationManager.removeMessage(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId
+                        )
                         return
                     }
 
