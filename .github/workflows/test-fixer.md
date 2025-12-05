@@ -45,6 +45,9 @@ tools:
 steps:
   - name: Checkout repository
     uses: actions/checkout@v5
+
+  - name: Set GITHUB_SHA for MCP
+    run: echo "GITHUB_SHA=${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_ENV
 ---
 
 # Test Failure Fixer
