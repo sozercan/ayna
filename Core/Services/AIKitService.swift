@@ -638,4 +638,21 @@ enum AIKitError: LocalizedError {
             "Failed to stop container: \(message)"
         }
     }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .noModelSelected:
+            "Go to Settings → Local Models to select a model"
+        case .modelNotPulled:
+            "Pull the model first in Settings → Local Models"
+        case .noContainerRunning:
+            "Start a container in Settings → Local Models"
+        case .podmanNotAvailable:
+            "Run 'brew install podman' in Terminal"
+        case .imagePullFailed:
+            "Check your internet connection and try again"
+        case .containerStartFailed, .containerStopFailed:
+            "Try restarting Podman or check container logs"
+        }
+    }
 }

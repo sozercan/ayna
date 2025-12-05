@@ -36,6 +36,12 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     /// The name of the tool currently being executed (for UI indicator)
     @Published var currentToolName: String?
 
+    /// The last failed message content, stored for retry functionality
+    @Published var failedMessage: String?
+
+    /// Recovery suggestion for the current error (if available)
+    @Published var errorRecoverySuggestion: String?
+
     // MARK: - Dependencies
 
     private var conversationManager: ConversationManager
@@ -46,6 +52,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
     private let maxToolCallDepth = 10
+
+    /// Stores the pending user message text for retry on failure
+    private var pendingUserMessage: String?
 
     // MARK: - Configuration
 
@@ -143,6 +152,8 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         messageText = ""
         isGenerating = false
         errorMessage = nil
+        errorRecoverySuggestion = nil
+        failedMessage = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
         selectedModel = openAIService.selectedModel
@@ -153,6 +164,34 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             level: .info,
             message: "📱 IOSChatViewModel reset for new chat"
         )
+    }
+
+    /// Retry the last failed message
+    func retryFailedMessage() {
+        guard let message = failedMessage else { return }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔄 Retrying failed message",
+            metadata: ["messageLength": "\(message.count)"]
+        )
+
+        // Clear error state
+        failedMessage = nil
+        errorMessage = nil
+        errorRecoverySuggestion = nil
+
+        // Set message text and send
+        messageText = message
+        sendMessage()
+    }
+
+    /// Dismiss the current error without retrying
+    func dismissError() {
+        failedMessage = nil
+        errorMessage = nil
+        errorRecoverySuggestion = nil
     }
 
     /// Handle file import results from the file importer.
@@ -358,9 +397,14 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         }
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
+
+        // Store the message text for retry in case of failure
+        pendingUserMessage = text
         messageText = ""
         isGenerating = true
         errorMessage = nil
+        errorRecoverySuggestion = nil
+        failedMessage = nil
 
         // Play message sent sound
         SoundEngine.messageSent()
@@ -508,6 +552,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                     if self.currentToolName == nil {
                         self.isGenerating = false
 
+                        // Clear pending message on success
+                        self.pendingUserMessage = nil
+
                         // Play message received sound
                         SoundEngine.messageReceived()
 
@@ -559,29 +606,20 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                     self.toolCallDepth = 0
                     self.errorMessage = error.localizedDescription
 
-                    // Update the specific assistant message with error content so it persists
-                    // Use safe ID-based update instead of index-based access
-                    let errorContent = "⚠️ Error: \(error.localizedDescription)"
-                    let success = self.conversationManager.updateMessage(
-                        conversationId: conversationId,
-                        messageId: assistantMessageId
-                    ) { message in
-                        message.content = errorContent
+                    // Extract recovery suggestion if available
+                    if let localizedError = error as? LocalizedError {
+                        self.errorRecoverySuggestion = localizedError.recoverySuggestion
                     }
 
-                    if success {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "📝 Updated assistant message with error"
-                        )
-                    } else {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .error,
-                            message: "❌ Could not find assistant message to update with error"
-                        )
-                    }
+                    // Store the failed message for retry
+                    self.failedMessage = self.pendingUserMessage
+                    self.pendingUserMessage = nil
+
+                    // Remove the empty assistant placeholder message since we show error in banner
+                    self.conversationManager.removeMessage(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId
+                    )
 
                     // Still notify for navigation even on error if conversation was created
                     if self.isNewChatMode {

@@ -192,41 +192,13 @@
         }
 
         private func errorView(_ message: String) -> some View {
-            VStack(spacing: 8) {
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-
-                if viewModel.failedMessage != nil {
-                    HStack(spacing: 12) {
-                        Button {
-                            viewModel.retryFailedMessage()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Retry")
-                            }
-                            .font(.system(size: 12, weight: .medium))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-
-                        Button {
-                            viewModel.dismissError()
-                        } label: {
-                            Text("Dismiss")
-                                .font(.system(size: 12))
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
-            .background(Color.red.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .frame(maxWidth: .infinity, alignment: .center)
+            ErrorBannerView(
+                message: message,
+                recoverySuggestion: nil, // watchOS errors don't typically have recovery suggestions
+                onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
+                onDismiss: { viewModel.dismissError() },
+                identifierPrefix: "watch.chat.error"
+            )
         }
     }
 

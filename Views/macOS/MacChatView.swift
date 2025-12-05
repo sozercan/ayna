@@ -46,6 +46,8 @@ struct MacChatView: View {
     @State private var messageText = ""
     @State private var isGenerating = false
     @State private var errorMessage: String?
+    @State private var errorRecoverySuggestion: String?
+    @State private var failedMessage: String?
     @State private var selectedModel: String
     @State private var attachedFiles: [URL] = []
     @State private var toolCallDepth = 0
@@ -359,20 +361,14 @@ struct MacChatView: View {
 
                 // Error Message
                 if let error = errorMessage {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.statusError)
-                        Text(error)
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.statusError)
-                        Spacer()
-                        Button("Dismiss") {
-                            errorMessage = nil
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding()
-                    .background(Theme.statusError.opacity(0.1))
+                    ErrorBannerView(
+                        message: error,
+                        recoverySuggestion: errorRecoverySuggestion,
+                        onRetry: failedMessage != nil ? { retryFailedMessage() } : nil,
+                        onDismiss: { dismissError() },
+                        identifierPrefix: "chat.error"
+                    )
+                    .padding(.horizontal, Spacing.contentPadding)
                 }
 
                 // Tool execution status indicator
@@ -869,6 +865,33 @@ struct MacChatView: View {
         }
     }
 
+    // MARK: - Error Handling
+
+    /// Retry the last failed message
+    private func retryFailedMessage() {
+        guard let message = failedMessage else { return }
+
+        logChat("🔄 Retrying failed message", level: .info, metadata: ["messageLength": "\(message.count)"])
+
+        // Clear error state
+        failedMessage = nil
+        errorMessage = nil
+        errorRecoverySuggestion = nil
+
+        // Set message text and send
+        messageText = message
+        sendMessage()
+    }
+
+    /// Dismiss the current error without retrying
+    private func dismissError() {
+        failedMessage = nil
+        errorMessage = nil
+        errorRecoverySuggestion = nil
+    }
+
+    // MARK: - Message Sending
+
     // This method coordinates attachment handling, MCP tool availability, streaming setup, and state
     // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
     // we defer that refactor and explicitly allow the longer body.
@@ -994,6 +1017,8 @@ struct MacChatView: View {
         isComposerFocused = true
         attachedFiles = [] // Clear attached files after sending
         errorMessage = nil
+        errorRecoverySuggestion = nil
+        failedMessage = promptText // Store for retry in case of failure
         isGenerating = true
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
@@ -1173,7 +1198,12 @@ struct MacChatView: View {
                     isGenerating = false
                     errorMessage = error.localizedDescription
 
-                    // Update the placeholder message with error content so it persists
+                    // Extract recovery suggestion if available
+                    if let localizedError = error as? LocalizedError {
+                        errorRecoverySuggestion = localizedError.recoverySuggestion
+                    }
+
+                    // Remove the empty assistant placeholder message since we show error in banner
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
@@ -1182,8 +1212,7 @@ struct MacChatView: View {
                            conversationManager.conversations[index].messages[lastIndex].role == .assistant,
                            conversationManager.conversations[index].messages[lastIndex].content.isEmpty
                         {
-                            conversationManager.conversations[index].messages[lastIndex].content =
-                                "⚠️ Error: \(error.localizedDescription)"
+                            conversationManager.conversations[index].messages.remove(at: lastIndex)
                         }
                     }
                 }
@@ -1478,6 +1507,7 @@ struct MacChatView: View {
                     if currentToolName == nil {
                         logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
                         isGenerating = false
+                        failedMessage = nil // Clear failed message on success
                         toolChainTimeoutTask?.cancel()
                         toolChainTimeoutTask = nil
                     } else {
@@ -1501,7 +1531,7 @@ struct MacChatView: View {
                         metadata: ["error": error.localizedDescription]
                     )
 
-                    // Update the empty assistant message with error content
+                    // Remove the empty assistant placeholder message since we show error in banner
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
@@ -1510,8 +1540,7 @@ struct MacChatView: View {
                            conversationManager.conversations[index].messages[lastIndex].role == .assistant,
                            conversationManager.conversations[index].messages[lastIndex].content.isEmpty
                         {
-                            conversationManager.conversations[index].messages[lastIndex].content =
-                                "⚠️ Error: \(error.localizedDescription)"
+                            conversationManager.conversations[index].messages.remove(at: lastIndex)
                         }
                     }
 
@@ -1536,6 +1565,11 @@ struct MacChatView: View {
                     toolChainTimeoutTask?.cancel()
                     toolChainTimeoutTask = nil
                     errorMessage = error.localizedDescription
+
+                    // Extract recovery suggestion if available
+                    if let localizedError = error as? LocalizedError {
+                        errorRecoverySuggestion = localizedError.recoverySuggestion
+                    }
                 }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in

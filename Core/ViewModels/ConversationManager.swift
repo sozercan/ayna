@@ -313,6 +313,22 @@ final class ConversationManager: ObservableObject {
         return true
     }
 
+    /// Safely remove a message by IDs. Returns true if removal succeeded.
+    @discardableResult
+    func removeMessage(
+        conversationId: UUID,
+        messageId: UUID
+    ) -> Bool {
+        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
+        else {
+            return false
+        }
+        conversations[convIndex].messages.remove(at: msgIndex)
+        conversations[convIndex].updatedAt = Date()
+        return true
+    }
+
     /// Safely update a response group status by IDs. Returns true if update succeeded.
     @discardableResult
     func updateResponseGroupStatus(

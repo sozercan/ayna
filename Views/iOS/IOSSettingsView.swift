@@ -374,7 +374,11 @@ struct IOSModelEditView: View {
                         }
 
                         if let error = githubOAuth.authError {
-                            Text(error).foregroundStyle(Theme.statusError).font(Typography.caption)
+                            ErrorBannerView(
+                                message: error,
+                                onDismiss: { githubOAuth.authError = nil },
+                                identifierPrefix: "settings.github.authError"
+                            )
                         }
                     } header: {
                         Text("Sign In")
@@ -614,9 +618,11 @@ struct IOSGitHubAccountView: View {
                 }
 
                 if let error = githubOAuth.authError {
-                    Text(error)
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.statusError)
+                    ErrorBannerView(
+                        message: error,
+                        onDismiss: { githubOAuth.authError = nil },
+                        identifierPrefix: "settings.oauth.authError"
+                    )
                 }
             }
         }

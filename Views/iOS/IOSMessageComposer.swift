@@ -20,11 +20,20 @@ struct IOSMessageComposer: View {
     @Binding var attachedFiles: [URL]
     @Binding var attachedImages: [UIImage]
 
+    /// Optional recovery suggestion for the current error
+    var errorRecoverySuggestion: String?
+
+    /// Optional retry action for failed messages
+    var onRetry: (() -> Void)?
+
     let showAttachmentButton: Bool
     let onSend: () -> Void
     let onCancel: () -> Void
     let onFileAttachmentRequested: () -> Void
     let onPhotoAttachmentRequested: () -> Void
+
+    /// Called when error is dismissed
+    var onDismissError: (() -> Void)?
 
     /// Accessibility identifier prefix for this composer instance
     let identifierPrefix: String
@@ -38,10 +47,13 @@ struct IOSMessageComposer: View {
         errorMessage: Binding<String?>,
         attachedFiles: Binding<[URL]> = .constant([]),
         attachedImages: Binding<[UIImage]> = .constant([]),
+        errorRecoverySuggestion: String? = nil,
+        onRetry: (() -> Void)? = nil,
         showAttachmentButton: Bool = true,
         identifierPrefix: String = "chat.composer",
         onSend: @escaping () -> Void,
         onCancel: @escaping () -> Void,
+        onDismissError: (() -> Void)? = nil,
         onFileAttachmentRequested: @escaping () -> Void = {},
         onPhotoAttachmentRequested: @escaping () -> Void = {}
     ) {
@@ -50,39 +62,32 @@ struct IOSMessageComposer: View {
         _errorMessage = errorMessage
         _attachedFiles = attachedFiles
         _attachedImages = attachedImages
+        self.errorRecoverySuggestion = errorRecoverySuggestion
+        self.onRetry = onRetry
         self.showAttachmentButton = showAttachmentButton
         self.identifierPrefix = identifierPrefix
         self.onSend = onSend
         self.onCancel = onCancel
+        self.onDismissError = onDismissError
         self.onFileAttachmentRequested = onFileAttachmentRequested
         self.onPhotoAttachmentRequested = onPhotoAttachmentRequested
     }
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            // Error message display - inline banner style (Apple native)
+            // Error message display using ErrorBannerView
             if let errorMessage {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Theme.statusError)
-                    Text(errorMessage)
-                        .foregroundStyle(Theme.statusError)
-                        .font(Typography.caption)
-                    Spacer()
-                    Button {
+                ErrorBannerView(
+                    message: errorMessage,
+                    recoverySuggestion: errorRecoverySuggestion,
+                    onRetry: onRetry,
+                    onDismiss: {
                         self.errorMessage = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(Theme.statusError.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+                        onDismissError?()
+                    },
+                    identifierPrefix: "\(identifierPrefix).error"
+                )
                 .padding(.horizontal)
-                .accessibilityIdentifier("\(identifierPrefix).errorMessage")
             }
 
             // Attached files display

@@ -115,6 +115,8 @@
 		C855C1712EE208910073EB99 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16A2EE208910073EB99 /* HapticEngine.swift */; };
 		C855C1732EE208A40073EB99 /* ScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */; };
 		C855C1752EE20A040073EB99 /* MacScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */; };
+		C855C17B2EE34C120073EB99 /* ErrorBannerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */; };
+		C855C17D2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C17C2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
@@ -290,6 +292,8 @@
 		C855C16B2EE208910073EB99 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEngine.swift; sourceTree = "<group>"; };
 		C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScrollToBottomButton.swift; sourceTree = "<group>"; };
+		C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerViewTests.swift; sourceTree = "<group>"; };
+		C855C17C2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporterIOSTests.swift; sourceTree = "<group>"; };
 		C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -547,6 +551,8 @@
 		C81393D62ED3DEB800F5E7F9 /* aynaTests */ = {
 			isa = PBXGroup;
 			children = (
+				C855C17C2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift */,
+				C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */,
 				C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */,
 				C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */,
 				C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */,
@@ -1080,6 +1086,7 @@
 			files = (
 				C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */,
 				C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */,
+				C855C17D2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift in Sources */,
 				C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */,
 				C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */,
 				C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */,
@@ -1089,6 +1096,7 @@
 				CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */,
 				WATCH0CHAT0VM0TEST13064F89 /* WatchChatViewModelTests.swift in Sources */,
 				WATCH0CONV0STORE0TEST1307 /* WatchConversationStoreTests.swift in Sources */,
+				C855C17B2EE34C120073EB99 /* ErrorBannerViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

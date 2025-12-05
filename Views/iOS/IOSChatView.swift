@@ -202,12 +202,15 @@ struct IOSChatView: View {
                 errorMessage: $viewModel.errorMessage,
                 attachedFiles: $viewModel.attachedFiles,
                 attachedImages: $viewModel.attachedImages,
+                errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
+                onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                 showAttachmentButton: true,
                 identifierPrefix: "chat.composer",
                 onSend: {
                     viewModel.sendMessage()
                 },
                 onCancel: { viewModel.cancelGeneration() },
+                onDismissError: { viewModel.dismissError() },
                 onFileAttachmentRequested: { isFileImporterPresented = true },
                 onPhotoAttachmentRequested: { isPhotoPickerPresented = true }
             )

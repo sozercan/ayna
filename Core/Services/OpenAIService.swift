@@ -1863,6 +1863,27 @@ class OpenAIService: ObservableObject {
                 "Content filtered: \(message)"
             }
         }
+
+        var recoverySuggestion: String? {
+            switch self {
+            case .missingAPIKey:
+                "Go to Settings → API Keys to add your key"
+            case .missingModel:
+                "Go to Settings → Models to select a model"
+            case .invalidResponse, .noData:
+                "Try again or check your internet connection"
+            case .invalidRequest:
+                "Try sending a shorter message"
+            case .apiError:
+                "Check your API configuration or try again later"
+            case .invalidURL:
+                "Verify the API endpoint URL in Settings"
+            case .unsupportedProvider:
+                "Switch to an OpenAI-compatible model for image generation"
+            case .contentFiltered:
+                "Try rephrasing your message"
+            }
+        }
     }
 }
 

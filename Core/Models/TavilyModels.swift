@@ -127,6 +127,21 @@ enum TavilyError: LocalizedError, Sendable {
             "Tavily API error: \(message)"
         }
     }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .notConfigured:
+            "Add your Tavily API key in Settings → Web Search"
+        case .invalidAPIKey:
+            "Check your Tavily API key in Settings → Web Search"
+        case .rateLimitExceeded:
+            "Wait a moment and try again"
+        case .networkError:
+            "Check your internet connection"
+        case .invalidResponse, .apiError:
+            "Try again or contact support if the issue persists"
+        }
+    }
 }
 
 // MARK: - Formatting Extension

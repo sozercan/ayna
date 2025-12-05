@@ -99,10 +99,13 @@ struct IOSNewChatView: View {
                 errorMessage: $viewModel.errorMessage,
                 attachedFiles: $viewModel.attachedFiles,
                 attachedImages: $viewModel.attachedImages,
+                errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
+                onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                 showAttachmentButton: true,
                 identifierPrefix: "newchat.composer",
                 onSend: { viewModel.sendMessage() },
                 onCancel: { viewModel.cancelGeneration() },
+                onDismissError: { viewModel.dismissError() },
                 onFileAttachmentRequested: { isFileImporterPresented = true },
                 onPhotoAttachmentRequested: { isPhotoPickerPresented = true }
             )
