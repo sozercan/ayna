@@ -2,7 +2,11 @@ import Foundation
 import os
 
 /// Result from parsing a single SSE stream line
-struct StreamLineResult {
+///
+/// Marked as `@unchecked Sendable` because the `toolCallBuffer` dictionary
+/// contains JSON-like data that is only accessed sequentially within the
+/// streaming pipeline. The dictionary is never mutated concurrently.
+struct StreamLineResult: @unchecked Sendable {
     let shouldComplete: Bool
     let toolCallBuffer: [String: Any]
     let toolCallId: String
@@ -22,7 +26,11 @@ struct StreamLineResult {
 }
 
 /// Result from tool call completion handling
-struct ToolCallCompletionResult {
+///
+/// Marked as `@unchecked Sendable` because the `buffer` dictionary
+/// contains JSON-like data that is only accessed sequentially within the
+/// streaming pipeline.
+struct ToolCallCompletionResult: @unchecked Sendable {
     let buffer: [String: Any]
     let id: String
     let content: String?

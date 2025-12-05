@@ -682,7 +682,6 @@ final class ConversationManager: ObservableObject {
                 }
         }
     }
-
 }
 
 // Helper class for title generation
