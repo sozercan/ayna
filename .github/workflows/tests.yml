@@ -100,16 +100,13 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 15
-            ios-runtime: iOS-17-5
+            destination: 'platform=iOS Simulator,OS=17.5,name=iPhone 15'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16 Pro Max
-            ios-runtime: ''
+            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: iPhone 17
-            ios-runtime: ''
+            destination: 'platform=iOS Simulator,name=iPhone 17'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -121,20 +118,12 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Install iOS runtime and create simulator
-      if: matrix.ios-runtime != ''
+    - name: List available simulators
       run: |
-        # Install iOS 17.5 runtime for iPhone 15
-        xcodebuild -downloadPlatform iOS -buildVersion 21F79
-        # List available runtimes and device types for debugging
         echo "Available iOS runtimes:"
-        xcrun simctl list runtimes | grep -i ios
-        echo "Available iPhone device types:"
-        xcrun simctl list devicetypes | grep -i iphone
-        # Create iPhone 15 simulator with iOS 17.5
-        xcrun simctl create "iPhone 15" "com.apple.CoreSimulator.SimDeviceType.iPhone-15" "com.apple.CoreSimulator.SimRuntime.iOS-17-5" || true
-        # Verify simulator was created
-        xcrun simctl list devices | grep -i "iphone 15"
+        xcrun simctl list runtimes | grep -i ios || true
+        echo "Available iOS devices:"
+        xcrun simctl list devices available | grep -i iphone | head -20 || true
 
     - name: Run iOS unit tests
       run: |
@@ -142,7 +131,7 @@ jobs:
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
-          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-iOSTests \
           CODE_SIGN_IDENTITY="" \
@@ -158,16 +147,13 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 15
-            ios-runtime: iOS-17-5
+            destination: 'platform=iOS Simulator,OS=17.5,name=iPhone 15'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16 Pro Max
-            ios-runtime: ''
+            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: iPhone 17
-            ios-runtime: ''
+            destination: 'platform=iOS Simulator,name=iPhone 17'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -179,20 +165,12 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Install iOS runtime and create simulator
-      if: matrix.ios-runtime != ''
+    - name: List available simulators
       run: |
-        # Install iOS 17.5 runtime for iPhone 15
-        xcodebuild -downloadPlatform iOS -buildVersion 21F79
-        # List available runtimes and device types for debugging
         echo "Available iOS runtimes:"
-        xcrun simctl list runtimes | grep -i ios
-        echo "Available iPhone device types:"
-        xcrun simctl list devicetypes | grep -i iphone
-        # Create iPhone 15 simulator with iOS 17.5
-        xcrun simctl create "iPhone 15" "com.apple.CoreSimulator.SimDeviceType.iPhone-15" "com.apple.CoreSimulator.SimRuntime.iOS-17-5" || true
-        # Verify simulator was created
-        xcrun simctl list devices | grep -i "iphone 15"
+        xcrun simctl list runtimes | grep -i ios || true
+        echo "Available iOS devices:"
+        xcrun simctl list devices available | grep -i iphone | head -20 || true
 
     - name: Run iOS UI tests
       run: |
@@ -200,7 +178,7 @@ jobs:
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
-          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-iOSUITests \
           CODE_SIGN_IDENTITY="-" \
@@ -216,16 +194,13 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Series 9 (45mm)
-            watchos-runtime: watchOS-10-5
+            destination: 'platform=watchOS Simulator,OS=10.5,name=Apple Watch Series 9 (45mm)'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
-            watchos-runtime: ''
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: Apple Watch Ultra 3 (49mm)
-            watchos-runtime: ''
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -237,20 +212,12 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Install watchOS runtime and create simulator
-      if: matrix.watchos-runtime != ''
+    - name: List available simulators
       run: |
-        # Install watchOS 10.5 runtime for Apple Watch Series 9
-        xcodebuild -downloadPlatform watchOS -buildVersion 21T576
-        # List available runtimes and device types for debugging
         echo "Available watchOS runtimes:"
-        xcrun simctl list runtimes | grep -i watchos
-        echo "Available Watch device types:"
-        xcrun simctl list devicetypes | grep -i watch
-        # Create Apple Watch Series 9 simulator with watchOS 10.5
-        xcrun simctl create "Apple Watch Series 9 (45mm)" "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-9-45mm" "com.apple.CoreSimulator.SimRuntime.watchOS-10-5" || true
-        # Verify simulator was created
-        xcrun simctl list devices | grep -i "watch series 9"
+        xcrun simctl list runtimes | grep -i watchos || true
+        echo "Available watchOS devices:"
+        xcrun simctl list devices available | grep -i watch | head -20 || true
 
     - name: Run watchOS unit tests
       run: |
@@ -258,7 +225,7 @@ jobs:
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
           CODE_SIGN_IDENTITY="" \
@@ -274,16 +241,13 @@ jobs:
         include:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Series 9 (45mm)
-            watchos-runtime: watchOS-10-5
+            destination: 'platform=watchOS Simulator,OS=10.5,name=Apple Watch Series 9 (45mm)'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
-            watchos-runtime: ''
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: Apple Watch Ultra 3 (49mm)
-            watchos-runtime: ''
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -295,20 +259,12 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Install watchOS runtime and create simulator
-      if: matrix.watchos-runtime != ''
+    - name: List available simulators
       run: |
-        # Install watchOS 10.5 runtime for Apple Watch Series 9
-        xcodebuild -downloadPlatform watchOS -buildVersion 21T576
-        # List available runtimes and device types for debugging
         echo "Available watchOS runtimes:"
-        xcrun simctl list runtimes | grep -i watchos
-        echo "Available Watch device types:"
-        xcrun simctl list devicetypes | grep -i watch
-        # Create Apple Watch Series 9 simulator with watchOS 10.5
-        xcrun simctl create "Apple Watch Series 9 (45mm)" "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-9-45mm" "com.apple.CoreSimulator.SimRuntime.watchOS-10-5" || true
-        # Verify simulator was created
-        xcrun simctl list devices | grep -i "watch series 9"
+        xcrun simctl list runtimes | grep -i watchos || true
+        echo "Available watchOS devices:"
+        xcrun simctl list devices available | grep -i watch | head -20 || true
 
     - name: Run watchOS UI tests
       run: |
@@ -316,7 +272,7 @@ jobs:
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSUITests \
           CODE_SIGN_IDENTITY="-" \
