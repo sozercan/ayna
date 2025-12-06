@@ -126,10 +126,15 @@ jobs:
       run: |
         # Install iOS 17.5 runtime for iPhone 15
         xcodebuild -downloadPlatform iOS -buildVersion 21F79
+        # List available runtimes and device types for debugging
+        echo "Available iOS runtimes:"
+        xcrun simctl list runtimes | grep -i ios
+        echo "Available iPhone device types:"
+        xcrun simctl list devicetypes | grep -i iphone
         # Create iPhone 15 simulator with iOS 17.5
-        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'iOS 17.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'iPhone 15,' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        xcrun simctl create "iPhone 15" "$DEVICE_TYPE" "$RUNTIME_ID" || true
+        xcrun simctl create "iPhone 15" "com.apple.CoreSimulator.SimDeviceType.iPhone-15" "com.apple.CoreSimulator.SimRuntime.iOS-17-5" || true
+        # Verify simulator was created
+        xcrun simctl list devices | grep -i "iphone 15"
 
     - name: Run iOS unit tests
       run: |
@@ -179,10 +184,15 @@ jobs:
       run: |
         # Install iOS 17.5 runtime for iPhone 15
         xcodebuild -downloadPlatform iOS -buildVersion 21F79
+        # List available runtimes and device types for debugging
+        echo "Available iOS runtimes:"
+        xcrun simctl list runtimes | grep -i ios
+        echo "Available iPhone device types:"
+        xcrun simctl list devicetypes | grep -i iphone
         # Create iPhone 15 simulator with iOS 17.5
-        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'iOS 17.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'iPhone 15,' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        xcrun simctl create "iPhone 15" "$DEVICE_TYPE" "$RUNTIME_ID" || true
+        xcrun simctl create "iPhone 15" "com.apple.CoreSimulator.SimDeviceType.iPhone-15" "com.apple.CoreSimulator.SimRuntime.iOS-17-5" || true
+        # Verify simulator was created
+        xcrun simctl list devices | grep -i "iphone 15"
 
     - name: Run iOS UI tests
       run: |
@@ -232,10 +242,15 @@ jobs:
       run: |
         # Install watchOS 10.5 runtime for Apple Watch Series 9
         xcodebuild -downloadPlatform watchOS -buildVersion 21T576
+        # List available runtimes and device types for debugging
+        echo "Available watchOS runtimes:"
+        xcrun simctl list runtimes | grep -i watchos
+        echo "Available Watch device types:"
+        xcrun simctl list devicetypes | grep -i watch
         # Create Apple Watch Series 9 simulator with watchOS 10.5
-        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'watchOS 10.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'Apple Watch Series 9 (45mm)' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        xcrun simctl create "Apple Watch Series 9 (45mm)" "$DEVICE_TYPE" "$RUNTIME_ID" || true
+        xcrun simctl create "Apple Watch Series 9 (45mm)" "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-9-45mm" "com.apple.CoreSimulator.SimRuntime.watchOS-10-5" || true
+        # Verify simulator was created
+        xcrun simctl list devices | grep -i "watch series 9"
 
     - name: Run watchOS unit tests
       run: |
@@ -285,10 +300,15 @@ jobs:
       run: |
         # Install watchOS 10.5 runtime for Apple Watch Series 9
         xcodebuild -downloadPlatform watchOS -buildVersion 21T576
+        # List available runtimes and device types for debugging
+        echo "Available watchOS runtimes:"
+        xcrun simctl list runtimes | grep -i watchos
+        echo "Available Watch device types:"
+        xcrun simctl list devicetypes | grep -i watch
         # Create Apple Watch Series 9 simulator with watchOS 10.5
-        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'watchOS 10.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'Apple Watch Series 9 (45mm)' | head -1 | awk -F'[()]' '{print $(NF-1)}')
-        xcrun simctl create "Apple Watch Series 9 (45mm)" "$DEVICE_TYPE" "$RUNTIME_ID" || true
+        xcrun simctl create "Apple Watch Series 9 (45mm)" "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-9-45mm" "com.apple.CoreSimulator.SimRuntime.watchOS-10-5" || true
+        # Verify simulator was created
+        xcrun simctl list devices | grep -i "watch series 9"
 
     - name: Run watchOS UI tests
       run: |
