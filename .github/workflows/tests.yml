@@ -101,12 +101,15 @@ jobs:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
             simulator: iPhone 15
+            ios-runtime: iOS-17-5
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: iPhone 16 Pro Max
+            ios-runtime: ''
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: iPhone 17
+            ios-runtime: ''
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -117,6 +120,16 @@ jobs:
 
     - name: Show Xcode version
       run: xcodebuild -version
+
+    - name: Install iOS runtime and create simulator
+      if: matrix.ios-runtime != ''
+      run: |
+        # Install iOS 17.5 runtime for iPhone 15
+        xcodebuild -downloadPlatform iOS -buildVersion 21F79
+        # Create iPhone 15 simulator with iOS 17.5
+        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'iOS 17.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'iPhone 15,' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        xcrun simctl create "iPhone 15" "$DEVICE_TYPE" "$RUNTIME_ID" || true
 
     - name: Run iOS unit tests
       run: |
@@ -141,12 +154,15 @@ jobs:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
             simulator: iPhone 15
+            ios-runtime: iOS-17-5
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: iPhone 16 Pro Max
+            ios-runtime: ''
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: iPhone 17
+            ios-runtime: ''
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -157,6 +173,16 @@ jobs:
 
     - name: Show Xcode version
       run: xcodebuild -version
+
+    - name: Install iOS runtime and create simulator
+      if: matrix.ios-runtime != ''
+      run: |
+        # Install iOS 17.5 runtime for iPhone 15
+        xcodebuild -downloadPlatform iOS -buildVersion 21F79
+        # Create iPhone 15 simulator with iOS 17.5
+        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'iOS 17.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'iPhone 15,' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        xcrun simctl create "iPhone 15" "$DEVICE_TYPE" "$RUNTIME_ID" || true
 
     - name: Run iOS UI tests
       run: |
@@ -181,12 +207,15 @@ jobs:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
             simulator: Apple Watch Series 9 (45mm)
+            watchos-runtime: watchOS-10-5
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: Apple Watch Ultra 2 (49mm)
+            watchos-runtime: ''
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: Apple Watch Ultra 3 (49mm)
+            watchos-runtime: ''
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -197,6 +226,16 @@ jobs:
 
     - name: Show Xcode version
       run: xcodebuild -version
+
+    - name: Install watchOS runtime and create simulator
+      if: matrix.watchos-runtime != ''
+      run: |
+        # Install watchOS 10.5 runtime for Apple Watch Series 9
+        xcodebuild -downloadPlatform watchOS -buildVersion 21T576
+        # Create Apple Watch Series 9 simulator with watchOS 10.5
+        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'watchOS 10.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'Apple Watch Series 9 (45mm)' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        xcrun simctl create "Apple Watch Series 9 (45mm)" "$DEVICE_TYPE" "$RUNTIME_ID" || true
 
     - name: Run watchOS unit tests
       run: |
@@ -221,12 +260,15 @@ jobs:
           - macos-version: macos-14
             xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
             simulator: Apple Watch Series 9 (45mm)
+            watchos-runtime: watchOS-10-5
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             simulator: Apple Watch Ultra 2 (49mm)
+            watchos-runtime: ''
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             simulator: Apple Watch Ultra 3 (49mm)
+            watchos-runtime: ''
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -237,6 +279,16 @@ jobs:
 
     - name: Show Xcode version
       run: xcodebuild -version
+
+    - name: Install watchOS runtime and create simulator
+      if: matrix.watchos-runtime != ''
+      run: |
+        # Install watchOS 10.5 runtime for Apple Watch Series 9
+        xcodebuild -downloadPlatform watchOS -buildVersion 21T576
+        # Create Apple Watch Series 9 simulator with watchOS 10.5
+        RUNTIME_ID=$(xcrun simctl list runtimes | grep 'watchOS 10.5' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        DEVICE_TYPE=$(xcrun simctl list devicetypes | grep 'Apple Watch Series 9 (45mm)' | head -1 | awk -F'[()]' '{print $(NF-1)}')
+        xcrun simctl create "Apple Watch Series 9 (45mm)" "$DEVICE_TYPE" "$RUNTIME_ID" || true
 
     - name: Run watchOS UI tests
       run: |
