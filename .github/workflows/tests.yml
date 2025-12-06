@@ -98,15 +98,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 15
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16 Pro Max
+            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: iPhone 17
+            destination: 'platform=iOS Simulator,name=iPhone 17'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -118,13 +115,20 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List available simulators
+      run: |
+        echo "Available iOS runtimes:"
+        xcrun simctl list runtimes | grep -i ios || true
+        echo "Available iOS devices:"
+        xcrun simctl list devices available | grep -i iphone | head -20 || true
+
     - name: Run iOS unit tests
       run: |
         set -o pipefail
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
-          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-iOSTests \
           CODE_SIGN_IDENTITY="" \
@@ -138,15 +142,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: iPhone 15
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: iPhone 16 Pro Max
+            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: iPhone 17
+            destination: 'platform=iOS Simulator,name=iPhone 17'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -158,13 +159,20 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List available simulators
+      run: |
+        echo "Available iOS runtimes:"
+        xcrun simctl list runtimes | grep -i ios || true
+        echo "Available iOS devices:"
+        xcrun simctl list devices available | grep -i iphone | head -20 || true
+
     - name: Run iOS UI tests
       run: |
         set -o pipefail
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme Ayna-iOS \
-          -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-iOSUITests \
           CODE_SIGN_IDENTITY="-" \
@@ -178,15 +186,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Series 9 (45mm)
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: Apple Watch Ultra 3 (49mm)
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -198,13 +203,20 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List available simulators
+      run: |
+        echo "Available watchOS runtimes:"
+        xcrun simctl list runtimes | grep -i watchos || true
+        echo "Available watchOS devices:"
+        xcrun simctl list devices available | grep -i watch | head -20 || true
+
     - name: Run watchOS unit tests
       run: |
         set -o pipefail
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
           CODE_SIGN_IDENTITY="" \
@@ -218,15 +230,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            simulator: Apple Watch Series 9 (45mm)
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            simulator: Apple Watch Ultra 2 (49mm)
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            simulator: Apple Watch Ultra 3 (49mm)
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -238,13 +247,20 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List available simulators
+      run: |
+        echo "Available watchOS runtimes:"
+        xcrun simctl list runtimes | grep -i watchos || true
+        echo "Available watchOS devices:"
+        xcrun simctl list devices available | grep -i watch | head -20 || true
+
     - name: Run watchOS UI tests
       run: |
         set -o pipefail
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination 'platform=watchOS Simulator,name=${{ matrix.simulator }}' \
+          -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSUITests \
           CODE_SIGN_IDENTITY="-" \

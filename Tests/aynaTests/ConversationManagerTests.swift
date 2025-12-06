@@ -108,10 +108,9 @@ final class ConversationManagerTests: XCTestCase {
         let keyId = "test-key-id"
         let manager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)
 
-        manager.createNewConversation()
-        guard let conversation = manager.conversations.first else {
-            return XCTFail("Conversation missing")
-        }
+        // Create conversation directly without triggering debounced save
+        let conversation = Conversation(title: "Test Conversation", model: "test-model")
+        manager.conversations.insert(conversation, at: 0)
 
         // Manually update the conversation in the array (simulating what ChatView does with chunks)
         if let index = manager.conversations.firstIndex(where: { $0.id == conversation.id }) {
