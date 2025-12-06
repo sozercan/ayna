@@ -98,9 +98,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            destination: 'platform=iOS Simulator,OS=17.5,name=iPhone 15'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
@@ -145,9 +142,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            destination: 'platform=iOS Simulator,OS=17.5,name=iPhone 15'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
@@ -192,9 +186,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,OS=10.5,name=Apple Watch Series 9 (45mm)'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
@@ -239,9 +230,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,OS=10.5,name=Apple Watch Series 9 (45mm)'
           - macos-version: macos-15
             xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
