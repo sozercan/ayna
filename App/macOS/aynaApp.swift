@@ -59,6 +59,8 @@ struct aynaApp: App {
 
         // Initialize "Work with Apps" if enabled
         Task { @MainActor in
+            // Store reference to conversation manager for window creation
+            AynaAppDelegate.conversationManager = manager
             setupWorkWithApps(conversationManager: manager)
         }
     }
@@ -154,7 +156,19 @@ struct aynaApp: App {
 }
 
 @MainActor
-final class AynaAppDelegate: NSObject, NSApplicationDelegate {
+final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    /// Reference to manually created window (if any)
+    static var manualWindow: NSWindow?
+
+    /// Reference to the hosting controller to prevent deallocation
+    static var manualHostingController: NSHostingController<AnyView>?
+
+    /// Reference to the conversation manager for window creation
+    static weak var conversationManager: ConversationManager?
+
+    /// Shared instance for window delegate
+    static let shared = AynaAppDelegate()
+
     func applicationWillTerminate(_: Notification) {
         DiagnosticsLogger.log(
             .app,
@@ -166,6 +180,98 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
         // Clean up Work with Apps
         GlobalHotkeyService.shared.unregister()
         AccessibilityService.shared.stopMonitoring()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "applicationShouldHandleReopen called",
+            metadata: ["hasVisibleWindows": "\(flag)"]
+        )
+        // Return true to let SwiftUI handle window creation
+        return true
+    }
+
+    /// Opens the main window, creating one if necessary
+    @MainActor
+    static func openMainWindow() async {
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Check if we have a main window (not panel, not about window)
+        let existingWindow = NSApp.windows.first(where: { window in
+            !window.isKind(of: NSPanel.self) &&
+                window.contentViewController != nil
+        })
+
+        if let window = existingWindow {
+            window.makeKeyAndOrderFront(nil)
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Opened existing main window"
+            )
+            return
+        }
+
+        // Check if our manual window exists and can be shown
+        if let window = manualWindow {
+            window.makeKeyAndOrderFront(nil)
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Opened existing manual window"
+            )
+            return
+        }
+
+        // No window exists - create one manually
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "No main window found, creating manually"
+        )
+
+        guard let manager = conversationManager else {
+            DiagnosticsLogger.log(
+                .app,
+                level: .error,
+                message: "Cannot create window - no conversation manager"
+            )
+            return
+        }
+
+        // Create window with SwiftUI content - wrap in AnyView
+        let contentView = AnyView(
+            MacContentView()
+                .environmentObject(manager)
+        )
+
+        let hostingController = NSHostingController(rootView: contentView)
+        manualHostingController = hostingController // Retain it!
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.contentViewController = hostingController
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false // Keep window alive when closed
+        window.center()
+        window.setFrameAutosaveName("MainWindow")
+        window.makeKeyAndOrderFront(nil)
+
+        manualWindow = window
+
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "Created manual main window"
+        )
     }
 }
 
@@ -198,70 +304,29 @@ private func setupWorkWithApps(conversationManager: ConversationManager) {
     // Start accessibility permission monitoring
     AccessibilityService.shared.startMonitoring()
 
-    // Set up hotkey handler
-    GlobalHotkeyService.shared.onHotkeyPressed = { capturedApp in
+    // Set up hotkey handler - opens Spotlight-style panel (no auto-capture)
+    GlobalHotkeyService.shared.onHotkeyPressed = { _ in
         Task { @MainActor in
-            await handleWorkWithAppsHotkey(capturedApp: capturedApp, conversationManager: conversationManager)
+            // Simply show the Spotlight panel - user will manually attach context if needed
+            FloatingPanelController.shared.show(conversationManager: conversationManager)
         }
     }
 
-    // Set up floating panel handlers
+    // Set up floating panel submit handler
     FloatingPanelController.shared.onSubmit = { question, contentResult in
         handleWorkWithAppsSubmit(
             question: question,
             contentResult: contentResult,
             conversationManager: conversationManager,
-            openMainWindow: false
-        )
-    }
-
-    FloatingPanelController.shared.onOpenMainWindow = { question, contentResult in
-        handleWorkWithAppsSubmit(
-            question: question,
-            contentResult: contentResult,
-            conversationManager: conversationManager,
-            openMainWindow: true
+            openMainWindow: true // Always open main window
         )
     }
 
     DiagnosticsLogger.log(
         .workWithApps,
         level: .info,
-        message: "✅ Work with Apps initialized"
+        message: "✅ Work with Apps initialized (Spotlight mode)"
     )
-}
-
-@MainActor
-private func handleWorkWithAppsHotkey(capturedApp: NSRunningApplication?, conversationManager: ConversationManager) async {
-    DiagnosticsLogger.log(
-        .workWithApps,
-        level: .info,
-        message: "Hotkey handler called",
-        metadata: [
-            "capturedApp": capturedApp?.localizedName ?? "nil",
-            "bundleId": capturedApp?.bundleIdentifier ?? "nil"
-        ]
-    )
-
-    let contentResult: AppContentResult = if let app = capturedApp {
-        // Extract content from the captured app
-        await AppContentService.shared.extractContent(from: app)
-    } else {
-        .noFocusedApp
-    }
-
-    DiagnosticsLogger.log(
-        .workWithApps,
-        level: .info,
-        message: "Content extraction complete",
-        metadata: [
-            "result": String(describing: contentResult),
-            "hasContent": "\(contentResult.content != nil)"
-        ]
-    )
-
-    // Show the floating panel
-    FloatingPanelController.shared.show(with: contentResult, conversationManager: conversationManager)
 }
 
 @MainActor
@@ -271,6 +336,18 @@ private func handleWorkWithAppsSubmit(
     conversationManager: ConversationManager,
     openMainWindow: Bool
 ) {
+    DiagnosticsLogger.log(
+        .workWithApps,
+        level: .info,
+        message: "handleWorkWithAppsSubmit called",
+        metadata: [
+            "question": question,
+            "hasContent": "\(contentResult != nil)"
+        ]
+    )
+
+    var conversationId: UUID?
+
     if let contentResult, case let .success(content) = contentResult {
         // Create conversation with context
         // Note: Smart truncation already applied by extractors, just redact secrets
@@ -281,6 +358,7 @@ private func handleWorkWithAppsSubmit(
             content: content.redacted.content,
             userMessage: question
         )
+        conversationId = conversation.id
 
         DiagnosticsLogger.log(
             .workWithApps,
@@ -293,27 +371,54 @@ private func handleWorkWithAppsSubmit(
         )
     } else {
         // Create regular conversation without context
-        conversationManager.createNewConversation(title: "New Conversation")
+        conversationManager.createNewConversation(title: "Quick Chat")
 
-        if let id = conversationManager.conversations.first?.id {
+        if let conv = conversationManager.conversations.first {
             let message = Message(role: .user, content: question)
-            if let conv = conversationManager.conversation(byId: id) {
-                conversationManager.addMessage(to: conv, message: message)
-            }
+            conversationManager.addMessage(to: conv, message: message)
+            conversationId = conv.id
+
+            // Select this conversation
+            conversationManager.selectedConversationId = conv.id
         }
 
         DiagnosticsLogger.log(
             .workWithApps,
             level: .info,
-            message: "Created conversation without context"
+            message: "Created conversation without context",
+            metadata: ["conversationId": conversationId?.uuidString ?? "nil"]
         )
     }
 
     // Open main window if requested
     if openMainWindow {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
-            window.makeKeyAndOrderFront(nil)
+        Task {
+            // Use the AppDelegate helper to open/create window
+            await AynaAppDelegate.openMainWindow()
+
+            // Wait for window to be ready
+            try? await Task.sleep(for: .milliseconds(500))
+
+            // Ensure window is visible and focused
+            if let window = NSApp.windows.first(where: { !$0.isKind(of: NSPanel.self) }) {
+                window.makeKeyAndOrderFront(nil)
+            }
+
+            // Trigger AI response
+            if let convId = conversationId {
+                try? await Task.sleep(for: .milliseconds(200))
+                NotificationCenter.default.post(
+                    name: .sendPendingMessage,
+                    object: nil,
+                    userInfo: ["conversationId": convId]
+                )
+                DiagnosticsLogger.log(
+                    .workWithApps,
+                    level: .info,
+                    message: "Posted sendPendingMessage notification",
+                    metadata: ["conversationId": convId.uuidString]
+                )
+            }
         }
     }
 }

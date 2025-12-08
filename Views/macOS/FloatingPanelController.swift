@@ -2,27 +2,30 @@
 //  FloatingPanelController.swift
 //  ayna
 //
-//  Manages the floating input panel window for "Work with Apps".
+//  Manages the Spotlight-style floating command bar.
 //
 
 #if os(macOS)
     import AppKit
     import SwiftUI
 
-    /// Controller for managing the floating quick input panel.
+    /// A custom panel that can always become key window for text input
+    final class KeyablePanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { false }
+    }
+
+    /// Controller for managing the Spotlight-style floating command bar.
     @MainActor
     final class FloatingPanelController: NSObject, ObservableObject {
         /// Shared instance
         static let shared = FloatingPanelController()
 
         /// The floating panel window
-        private var panel: NSPanel?
+        private var panel: KeyablePanel?
 
         /// The hosting view for SwiftUI content
         private var hostingView: NSHostingView<AnyView>?
-
-        /// Currently displayed content result
-        @Published private(set) var currentContentResult: AppContentResult?
 
         /// Whether the panel is currently visible
         @Published private(set) var isVisible: Bool = false
@@ -30,22 +33,15 @@
         /// Callback when user submits a question
         var onSubmit: ((String, AppContentResult?) -> Void)?
 
-        /// Callback when user wants to open main window
-        var onOpenMainWindow: ((String, AppContentResult?) -> Void)?
-
         override private init() {
             super.init()
         }
 
         // MARK: - Panel Management
 
-        /// Shows the floating panel near the mouse cursor.
-        /// - Parameters:
-        ///   - content: The extracted content result to display
-        ///   - conversationManager: The conversation manager for handling submissions
-        func show(with content: AppContentResult, conversationManager: ConversationManager) {
-            currentContentResult = content
-
+        /// Shows the Spotlight-style panel centered on screen.
+        /// - Parameter conversationManager: The conversation manager for handling submissions
+        func show(conversationManager: ConversationManager) {
             // Create or update the panel
             if panel == nil {
                 createPanel()
@@ -54,13 +50,27 @@
             // Update the content view
             updateContentView(conversationManager: conversationManager)
 
-            // Position near mouse
-            positionPanelNearMouse()
+            // Position centered on screen
+            positionPanelCentered()
 
             // Show with animation
             panel?.alphaValue = 0
+            panel?.setFrame(
+                NSRect(
+                    x: panel?.frame.origin.x ?? 0,
+                    y: panel?.frame.origin.y ?? 0,
+                    width: 600,
+                    height: 88 // Initial height for quick chat
+                ),
+                display: true
+            )
+
+            // Make key and bring to front
             panel?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+
+            // Ensure the panel becomes first responder
+            panel?.makeFirstResponder(panel?.contentView)
 
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
@@ -73,7 +83,7 @@
             DiagnosticsLogger.log(
                 .workWithApps,
                 level: .info,
-                message: "Floating panel shown"
+                message: "Spotlight panel shown"
             )
         }
 
@@ -89,63 +99,60 @@
                 Task { @MainActor in
                     self?.panel?.orderOut(nil)
                     self?.isVisible = false
-                    self?.currentContentResult = nil
                 }
             }
 
             DiagnosticsLogger.log(
                 .workWithApps,
                 level: .info,
-                message: "Floating panel hidden"
+                message: "Spotlight panel hidden"
             )
         }
 
         /// Toggles the panel visibility.
-        func toggle(with content: AppContentResult, conversationManager: ConversationManager) {
+        func toggle(conversationManager: ConversationManager) {
             if isVisible {
                 hide()
             } else {
-                show(with: content, conversationManager: conversationManager)
+                show(conversationManager: conversationManager)
             }
         }
 
         // MARK: - Panel Creation
 
-        /// Creates the floating panel window
+        /// Creates the Spotlight-style panel window
         private func createPanel() {
-            let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 320),
-                styleMask: [
-                    .titled,
-                    .closable,
-                    .fullSizeContentView,
-                    .nonactivatingPanel,
-                    .hudWindow
-                ],
+            // Use .titled to allow key window status, but hide the title bar
+            let panel = KeyablePanel(
+                contentRect: NSRect(x: 0, y: 0, width: 600, height: 88),
+                styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
             )
 
-            // Configure panel appearance
+            // Configure panel appearance - Spotlight style
             panel.level = .floating
             panel.titlebarAppearsTransparent = true
             panel.titleVisibility = .hidden
-            panel.isMovableByWindowBackground = true
-            panel.hidesOnDeactivate = false
+            panel.isMovableByWindowBackground = false
+            panel.hidesOnDeactivate = false // Don't hide when clicking elsewhere
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
             panel.backgroundColor = .clear
             panel.isOpaque = false
-            panel.hasShadow = true
+            panel.hasShadow = false // Shadow handled by SwiftUI
 
-            // Allow first responder for text input
+            // CRITICAL: Allow panel to become key window for text input
             panel.becomesKeyOnlyIfNeeded = false
+
+            // Set delegate
+            panel.delegate = self
 
             self.panel = panel
 
             DiagnosticsLogger.log(
                 .workWithApps,
                 level: .info,
-                message: "Floating panel created"
+                message: "Spotlight panel created"
             )
         }
 
@@ -153,24 +160,17 @@
         private func updateContentView(conversationManager: ConversationManager) {
             guard let panel else { return }
 
-            let quickInputView = QuickInputView(
-                contentResult: currentContentResult ?? .noContentAvailable,
-                onSubmit: { [weak self] question in
-                    self?.handleSubmit(question: question)
+            let spotlightView = SpotlightInputView(
+                onSubmit: { [weak self] question, contentResult in
+                    self?.handleSubmit(question: question, contentResult: contentResult)
                 },
                 onDismiss: { [weak self] in
                     self?.hide()
-                },
-                onOpenMainWindow: { [weak self] question in
-                    self?.handleOpenMainWindow(question: question)
-                },
-                onRequestPermission: {
-                    AccessibilityService.shared.openAccessibilityPreferences()
                 }
             )
             .environmentObject(conversationManager)
 
-            let hostingView = NSHostingView(rootView: AnyView(quickInputView))
+            let hostingView = NSHostingView(rootView: AnyView(spotlightView))
             hostingView.frame = panel.contentView?.bounds ?? .zero
             hostingView.autoresizingMask = [.width, .height]
 
@@ -180,26 +180,18 @@
 
         // MARK: - Positioning
 
-        /// Positions the panel near the mouse cursor
-        private func positionPanelNearMouse() {
+        /// Positions the panel centered horizontally, 20% from top
+        private func positionPanelCentered() {
             guard let panel, let screen = NSScreen.main else { return }
 
-            let mouseLocation = NSEvent.mouseLocation
-            let panelSize = panel.frame.size
             let screenFrame = screen.visibleFrame
+            let panelWidth: CGFloat = 600
 
-            // Calculate position (offset from mouse)
-            var posX = mouseLocation.x - panelSize.width / 2
-            var posY = mouseLocation.y - panelSize.height - 20 // Below cursor
+            // Center horizontally
+            let posX = screenFrame.midX - panelWidth / 2
 
-            // Ensure panel stays within screen bounds
-            posX = max(screenFrame.minX + 10, min(posX, screenFrame.maxX - panelSize.width - 10))
-            posY = max(screenFrame.minY + 10, min(posY, screenFrame.maxY - panelSize.height - 10))
-
-            // If panel would be below screen, show above cursor instead
-            if posY < screenFrame.minY + 10 {
-                posY = mouseLocation.y + 20
-            }
+            // 20% from top (80% from bottom in screen coordinates)
+            let posY = screenFrame.minY + screenFrame.height * 0.7
 
             panel.setFrameOrigin(NSPoint(x: posX, y: posY))
         }
@@ -207,14 +199,8 @@
         // MARK: - Event Handling
 
         /// Handles question submission
-        private func handleSubmit(question: String) {
-            onSubmit?(question, currentContentResult)
-            hide()
-        }
-
-        /// Handles opening the main window with the question
-        private func handleOpenMainWindow(question: String) {
-            onOpenMainWindow?(question, currentContentResult)
+        private func handleSubmit(question: String, contentResult: AppContentResult?) {
+            onSubmit?(question, contentResult)
             hide()
         }
 
@@ -240,13 +226,12 @@
 
     extension FloatingPanelController: NSWindowDelegate {
         func windowDidResignKey(_: Notification) {
-            // Optionally hide when losing focus
-            // hide()
+            // Hide when losing focus (like Spotlight)
+            hide()
         }
 
         func windowWillClose(_: Notification) {
             isVisible = false
-            currentContentResult = nil
         }
     }
 #endif

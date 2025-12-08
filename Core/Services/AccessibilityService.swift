@@ -238,6 +238,295 @@
 
             return getTitle(window)
         }
+
+        // MARK: - Window Enumeration
+
+        /// Information about a window
+        struct WindowInfo: Identifiable, Hashable {
+            let id: CGWindowID
+            let title: String
+            let appPID: pid_t
+            let appName: String
+            let appIcon: NSImage?
+            let bundleIdentifier: String?
+            let axElement: AXUIElement
+
+            func hash(into hasher: inout Hasher) {
+                hasher.combine(id)
+            }
+
+            static func == (lhs: WindowInfo, rhs: WindowInfo) -> Bool {
+                lhs.id == rhs.id
+            }
+        }
+
+        /// Information about an app and its windows
+        struct AppWindowGroup: Identifiable {
+            let id: String // bundleIdentifier or processIdentifier
+            let app: NSRunningApplication
+            let appName: String
+            let appIcon: NSImage?
+            let bundleIdentifier: String?
+            var windows: [WindowInfo]
+        }
+
+        /// Gets all windows grouped by application.
+        /// - Returns: Array of app groups with their windows
+        func getAllWindowsGroupedByApp() -> [AppWindowGroup] {
+            var appGroups: [String: AppWindowGroup] = [:]
+
+            // Get all running apps that could have windows
+            let runningApps = NSWorkspace.shared.runningApplications.filter { app in
+                app.activationPolicy == .regular &&
+                    app.bundleIdentifier != Bundle.main.bundleIdentifier // Exclude Ayna
+            }
+
+            DiagnosticsLogger.log(
+                .workWithApps,
+                level: .info,
+                message: "Found running apps",
+                metadata: ["count": "\(runningApps.count)"]
+            )
+
+            for app in runningApps {
+                let appElement = createApplicationElement(for: app)
+                let windows = getWindowsForApp(appElement: appElement, app: app)
+
+                DiagnosticsLogger.log(
+                    .workWithApps,
+                    level: .debug,
+                    message: "App windows",
+                    metadata: [
+                        "app": app.localizedName ?? "Unknown",
+                        "windowCount": "\(windows.count)"
+                    ]
+                )
+
+                // Only include apps that have at least one window
+                guard !windows.isEmpty else { continue }
+
+                let groupId = app.bundleIdentifier ?? "\(app.processIdentifier)"
+
+                let group = AppWindowGroup(
+                    id: groupId,
+                    app: app,
+                    appName: app.localizedName ?? "Unknown",
+                    appIcon: app.icon,
+                    bundleIdentifier: app.bundleIdentifier,
+                    windows: windows
+                )
+
+                appGroups[groupId] = group
+            }
+
+            DiagnosticsLogger.log(
+                .workWithApps,
+                level: .info,
+                message: "Window groups created",
+                metadata: ["groupCount": "\(appGroups.count)"]
+            )
+
+            // Sort by app name
+            return appGroups.values.sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+        }
+
+        /// Gets all windows for a specific application.
+        /// - Parameters:
+        ///   - appElement: The application's AXUIElement
+        ///   - app: The running application
+        /// - Returns: Array of window info
+        private func getWindowsForApp(appElement: AXUIElement, app: NSRunningApplication) -> [WindowInfo] {
+            var windows: [WindowInfo] = []
+
+            // Get windows array from AX
+            var windowsRef: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(
+                appElement,
+                kAXWindowsAttribute as CFString,
+                &windowsRef
+            )
+
+            // Log the result for debugging
+            if result != .success {
+                DiagnosticsLogger.log(
+                    .workWithApps,
+                    level: .debug,
+                    message: "Failed to get windows for app",
+                    metadata: [
+                        "app": app.localizedName ?? "Unknown",
+                        "axError": "\(result.rawValue)"
+                    ]
+                )
+                return windows
+            }
+
+            guard let windowArray = windowsRef as? [AXUIElement] else {
+                DiagnosticsLogger.log(
+                    .workWithApps,
+                    level: .debug,
+                    message: "Windows ref is not array",
+                    metadata: ["app": app.localizedName ?? "Unknown"]
+                )
+                return windows
+            }
+
+            for (index, windowElement) in windowArray.enumerated() {
+                // Get window title
+                let title = getTitle(windowElement) ?? "Window \(index + 1)"
+
+                // Skip windows with empty titles or specific system windows
+                if title.isEmpty || title == "Window" {
+                    continue
+                }
+
+                // Create a unique ID using index since we can't easily get CGWindowID from AXUIElement
+                let windowId = CGWindowID(app.processIdentifier * 1000 + Int32(index))
+
+                let windowInfo = WindowInfo(
+                    id: windowId,
+                    title: title,
+                    appPID: app.processIdentifier,
+                    appName: app.localizedName ?? "Unknown",
+                    appIcon: app.icon,
+                    bundleIdentifier: app.bundleIdentifier,
+                    axElement: windowElement
+                )
+
+                windows.append(windowInfo)
+            }
+
+            return windows
+        }
+
+        /// Extracts content from a specific window.
+        /// - Parameter window: The window info to extract from
+        /// - Returns: The extracted content result
+        func extractContent(from window: WindowInfo) async -> AppContentResult {
+            guard checkPermission(prompt: false) else {
+                return .permissionDenied
+            }
+
+            // Get the running app
+            guard let app = NSRunningApplication(processIdentifier: window.appPID) else {
+                return .extractionFailed(reason: "Application no longer running")
+            }
+
+            // Try to get content from the window's focused element or main content
+            // First, try to get selected text
+            if let selectedText = getSelectedText(window.axElement), !selectedText.isEmpty {
+                return .success(AppContent(
+                    appName: window.appName,
+                    appIcon: window.appIcon,
+                    bundleIdentifier: window.bundleIdentifier,
+                    windowTitle: window.title,
+                    content: selectedText,
+                    contentType: .selectedText,
+                    isTruncated: false,
+                    originalLength: selectedText.count
+                ))
+            }
+
+            // Try to get value from the window or its focused element
+            if let focusedElement = getFocusedElementInWindow(window.axElement),
+               let value = getValue(focusedElement), !value.isEmpty
+            {
+                let contentType = determineContentType(for: app)
+                return .success(AppContent(
+                    appName: window.appName,
+                    appIcon: window.appIcon,
+                    bundleIdentifier: window.bundleIdentifier,
+                    windowTitle: window.title,
+                    content: value,
+                    contentType: contentType,
+                    isTruncated: false,
+                    originalLength: value.count
+                ))
+            }
+
+            // Fall back to using the main extractor for this app
+            return await AppContentService.shared.extractContent(from: app)
+        }
+
+        /// Gets the focused element within a window.
+        private func getFocusedElementInWindow(_ windowElement: AXUIElement) -> AXUIElement? {
+            var focusedElement: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(
+                windowElement,
+                kAXFocusedUIElementAttribute as CFString,
+                &focusedElement
+            )
+
+            guard result == .success, let element = focusedElement else {
+                // Try to get the main content area instead
+                return getMainContentElement(windowElement)
+            }
+
+            // swiftlint:disable:next force_cast
+            return (element as! AXUIElement)
+        }
+
+        /// Attempts to find the main content element in a window.
+        private func getMainContentElement(_ windowElement: AXUIElement) -> AXUIElement? {
+            // Try to get AXContents or first child
+            var contentsRef: CFTypeRef?
+            var result = AXUIElementCopyAttributeValue(
+                windowElement,
+                "AXContents" as CFString,
+                &contentsRef
+            )
+
+            if result == .success, let contents = contentsRef as? [AXUIElement], let first = contents.first {
+                return first
+            }
+
+            // Try children
+            result = AXUIElementCopyAttributeValue(
+                windowElement,
+                kAXChildrenAttribute as CFString,
+                &contentsRef
+            )
+
+            if result == .success, let children = contentsRef as? [AXUIElement] {
+                // Look for text area or text field
+                for child in children {
+                    if let role = getRole(child),
+                       role == "AXTextArea" || role == "AXTextField" || role == "AXScrollArea"
+                    {
+                        return child
+                    }
+                }
+                return children.first
+            }
+
+            return nil
+        }
+
+        /// Determines the content type based on the app.
+        private func determineContentType(for app: NSRunningApplication) -> AppContent.ContentType {
+            guard let bundleId = app.bundleIdentifier else {
+                return .generic
+            }
+
+            if bundleId.contains("Terminal") || bundleId.contains("iTerm") ||
+                bundleId.contains("Warp") || bundleId.contains("ghostty") || bundleId.contains("alacritty")
+            {
+                return .terminalOutput
+            }
+
+            if bundleId.contains("Xcode") || bundleId.contains("VSCode") ||
+                bundleId.contains("sublime") || bundleId.contains("jetbrains")
+            {
+                return .documentContent
+            }
+
+            if bundleId.contains("Safari") || bundleId.contains("Chrome") ||
+                bundleId.contains("Firefox") || bundleId.contains("Arc") || bundleId.contains("Brave")
+            {
+                return .browserURL
+            }
+
+            return .generic
+        }
     }
 
     // MARK: - Notifications

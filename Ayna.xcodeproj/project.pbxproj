@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C41CC606F7D696D80483FFA /* SpotlightInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F700D7D1530071DC1B9E2A4 /* SpotlightInputView.swift */; };
 		10B50F7D71BEBBF7F402B67F /* AppContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111CD8162CAB3A89531236C3 /* AppContentTests.swift */; };
 		1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		260F283846905C00945D62F7 /* GlobalHotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */; };
@@ -235,6 +236,7 @@
 		111CD8162CAB3A89531236C3 /* AppContentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentTests.swift; sourceTree = "<group>"; };
 		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
 		2915B243E4E84EB9ED8F7FC7 /* GlobalHotkeyServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyServiceTests.swift; sourceTree = "<group>"; };
+		2F700D7D1530071DC1B9E2A4 /* SpotlightInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpotlightInputView.swift; sourceTree = "<group>"; };
 		5041140C587A1567CE78F530 /* QuickInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickInputView.swift; sourceTree = "<group>"; };
 		5EB7A400D037C175556BE0E2 /* AppContentServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentServiceTests.swift; sourceTree = "<group>"; };
 		63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyService.swift; sourceTree = "<group>"; };
@@ -725,6 +727,7 @@
 				C813942B2ED3DEC900F5E7F9 /* MCPToolSummaryView.swift */,
 				A778EF766A48372FF1B30067 /* FloatingPanelController.swift */,
 				5041140C587A1567CE78F530 /* QuickInputView.swift */,
+				2F700D7D1530071DC1B9E2A4 /* SpotlightInputView.swift */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -1115,6 +1118,7 @@
 				C3427A91EED5B0E9C5E67C18 /* FloatingPanelController.swift in Sources */,
 				8B4F193BE17779C03A24FC96 /* QuickInputView.swift in Sources */,
 				91C4E9BA7595E165BC7AB0E6 /* AppContent.swift in Sources */,
+				0C41CC606F7D696D80483FFA /* SpotlightInputView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
