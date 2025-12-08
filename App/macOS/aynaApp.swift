@@ -22,6 +22,7 @@ private var uiTestFallbackWindow: NSWindow?
 struct aynaApp: App {
     @NSApplicationDelegateAdaptor(AynaAppDelegate.self) private var appDelegate
     @StateObject private var conversationManager: ConversationManager
+    @StateObject private var floatingPanelController = FloatingPanelController.shared
 
     init() {
         AppPreferences.registerDefaults()
@@ -54,6 +55,11 @@ struct aynaApp: App {
                 message: "✅ MCP initialization complete. Available tools: \(MCPServerManager.shared.availableTools.count)",
                 metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
             )
+        }
+
+        // Initialize "Work with Apps" if enabled
+        Task { @MainActor in
+            setupWorkWithApps(conversationManager: manager)
         }
     }
 
@@ -156,6 +162,159 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
             message: "🛑 Application terminating; disconnecting MCP servers"
         )
         MCPServerManager.shared.disconnectAllServers()
+
+        // Clean up Work with Apps
+        GlobalHotkeyService.shared.unregister()
+        AccessibilityService.shared.stopMonitoring()
+    }
+}
+
+// MARK: - Work with Apps Setup
+
+@MainActor
+private func setupWorkWithApps(conversationManager: ConversationManager) {
+    guard AppPreferences.workWithAppsEnabled else {
+        DiagnosticsLogger.log(
+            .workWithApps,
+            level: .info,
+            message: "Work with Apps is disabled"
+        )
+        return
+    }
+
+    // Register the global hotkey
+    do {
+        try GlobalHotkeyService.shared.registerDefault()
+    } catch {
+        DiagnosticsLogger.log(
+            .workWithApps,
+            level: .error,
+            message: "Failed to register global hotkey",
+            metadata: ["error": error.localizedDescription]
+        )
+        return
+    }
+
+    // Start accessibility permission monitoring
+    AccessibilityService.shared.startMonitoring()
+
+    // Set up hotkey handler
+    GlobalHotkeyService.shared.onHotkeyPressed = { capturedApp in
+        Task { @MainActor in
+            await handleWorkWithAppsHotkey(capturedApp: capturedApp, conversationManager: conversationManager)
+        }
+    }
+
+    // Set up floating panel handlers
+    FloatingPanelController.shared.onSubmit = { question, contentResult in
+        handleWorkWithAppsSubmit(
+            question: question,
+            contentResult: contentResult,
+            conversationManager: conversationManager,
+            openMainWindow: false
+        )
+    }
+
+    FloatingPanelController.shared.onOpenMainWindow = { question, contentResult in
+        handleWorkWithAppsSubmit(
+            question: question,
+            contentResult: contentResult,
+            conversationManager: conversationManager,
+            openMainWindow: true
+        )
+    }
+
+    DiagnosticsLogger.log(
+        .workWithApps,
+        level: .info,
+        message: "✅ Work with Apps initialized"
+    )
+}
+
+@MainActor
+private func handleWorkWithAppsHotkey(capturedApp: NSRunningApplication?, conversationManager: ConversationManager) async {
+    DiagnosticsLogger.log(
+        .workWithApps,
+        level: .info,
+        message: "Hotkey handler called",
+        metadata: [
+            "capturedApp": capturedApp?.localizedName ?? "nil",
+            "bundleId": capturedApp?.bundleIdentifier ?? "nil"
+        ]
+    )
+
+    let contentResult: AppContentResult = if let app = capturedApp {
+        // Extract content from the captured app
+        await AppContentService.shared.extractContent(from: app)
+    } else {
+        .noFocusedApp
+    }
+
+    DiagnosticsLogger.log(
+        .workWithApps,
+        level: .info,
+        message: "Content extraction complete",
+        metadata: [
+            "result": String(describing: contentResult),
+            "hasContent": "\(contentResult.content != nil)"
+        ]
+    )
+
+    // Show the floating panel
+    FloatingPanelController.shared.show(with: contentResult, conversationManager: conversationManager)
+}
+
+@MainActor
+private func handleWorkWithAppsSubmit(
+    question: String,
+    contentResult: AppContentResult?,
+    conversationManager: ConversationManager,
+    openMainWindow: Bool
+) {
+    if let contentResult, case let .success(content) = contentResult {
+        // Create conversation with context
+        // Note: Smart truncation already applied by extractors, just redact secrets
+        let conversation = conversationManager.createConversationWithContext(
+            appName: content.appName,
+            windowTitle: content.windowTitle,
+            contentType: content.contentType.displayName,
+            content: content.redacted.content,
+            userMessage: question
+        )
+
+        DiagnosticsLogger.log(
+            .workWithApps,
+            level: .info,
+            message: "Created conversation with app context",
+            metadata: [
+                "conversationId": conversation.id.uuidString,
+                "appName": content.appName
+            ]
+        )
+    } else {
+        // Create regular conversation without context
+        conversationManager.createNewConversation(title: "New Conversation")
+
+        if let id = conversationManager.conversations.first?.id {
+            let message = Message(role: .user, content: question)
+            if let conv = conversationManager.conversation(byId: id) {
+                conversationManager.addMessage(to: conv, message: message)
+            }
+        }
+
+        DiagnosticsLogger.log(
+            .workWithApps,
+            level: .info,
+            message: "Created conversation without context"
+        )
+    }
+
+    // Open main window if requested
+    if openMainWindow {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 }
 

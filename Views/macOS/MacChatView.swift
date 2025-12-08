@@ -638,6 +638,55 @@ struct MacChatView: View {
         .onAppear {
             isComposerFocused = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
+            // Handle Work with Apps: auto-send message when conversation is created with context
+            guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
+                  conversationId == conversation.id,
+                  !isGenerating
+            else { return }
+
+            // Check if there's a pending user message without assistant response
+            let messages = currentConversation.messages
+            if let lastMessage = messages.last,
+               lastMessage.role == .user,
+               !messages.contains(where: { $0.role == .assistant })
+            {
+                logChat("📤 Auto-sending message from Work with Apps", level: .info)
+                sendPendingUserMessage()
+            }
+        }
+    }
+
+    /// Sends the last user message in the conversation (used for Work with Apps)
+    private func sendPendingUserMessage() {
+        guard let lastUserMessage = currentConversation.messages.last(where: { $0.role == .user }) else {
+            return
+        }
+
+        isGenerating = true
+
+        // Build messages for API using the same pattern as sendMessage
+        var messagesToSend = currentConversation.messages
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: currentConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        // Create assistant placeholder
+        let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        // Use unified tool collection (includes Tavily + MCP tools)
+        let tools = openAIService.getAllAvailableTools()
+
+        // Send to AI
+        sendMessageWithToolSupport(
+            messages: messagesToSend,
+            model: currentConversation.model,
+            temperature: currentConversation.temperature,
+            tools: tools,
+            isInitialRequest: true
+        )
     }
 
     private func calculateTextHeight() -> CGFloat {

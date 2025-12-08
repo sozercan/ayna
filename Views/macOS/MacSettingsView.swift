@@ -48,6 +48,7 @@ struct MacSettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
+    @State private var workWithAppsEnabled = AppPreferences.workWithAppsEnabled
     @ObservedObject private var openAIService = OpenAIService.shared
     @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
@@ -130,6 +131,9 @@ struct GeneralSettingsView: View {
                 Text("These settings apply when using image generation models")
                     .font(Typography.caption)
             }
+
+            // Work with Apps Section
+            WorkWithAppsSettingsSection(isEnabled: $workWithAppsEnabled)
 
             Section {
                 Button("Clear All Conversations") {
@@ -217,6 +221,86 @@ struct WebSearchSettingsSection: View {
         } footer: {
             Text("When enabled, models can search the web for current information using Tavily. This allows answering questions about recent events, current prices, and other time-sensitive topics.")
                 .font(Typography.caption)
+        }
+    }
+}
+
+/// Settings section for "Work with Apps" feature
+struct WorkWithAppsSettingsSection: View {
+    @Binding var isEnabled: Bool
+    @State private var accessibilityEnabled = AccessibilityService.shared.isEnabled
+
+    var body: some View {
+        Section {
+            Toggle("Enable Work with Apps", isOn: $isEnabled)
+                .help("Use a global hotkey to capture context from any app and ask questions about it")
+                .accessibilityIdentifier("settings.workWithApps.enableToggle")
+                .onChange(of: isEnabled) { _, newValue in
+                    AppPreferences.workWithAppsEnabled = newValue
+
+                    if newValue {
+                        // Register hotkey when enabled
+                        do {
+                            try GlobalHotkeyService.shared.registerDefault()
+                            AccessibilityService.shared.startMonitoring()
+                        } catch {
+                            DiagnosticsLogger.log(
+                                .workWithApps,
+                                level: .error,
+                                message: "Failed to register hotkey",
+                                metadata: ["error": error.localizedDescription]
+                            )
+                        }
+                    } else {
+                        // Unregister when disabled
+                        GlobalHotkeyService.shared.unregister()
+                        AccessibilityService.shared.stopMonitoring()
+                    }
+                }
+
+            if isEnabled {
+                // Hotkey display
+                LabeledContent("Hotkey") {
+                    Text(AppPreferences.workWithAppsHotkey)
+                        .font(Typography.code)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(Theme.backgroundSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xs))
+                }
+                .accessibilityIdentifier("settings.workWithApps.hotkey")
+
+                // Accessibility permission status
+                LabeledContent("Accessibility") {
+                    if accessibilityEnabled {
+                        Label("Enabled", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.statusConnected)
+                            .font(Typography.caption)
+                    } else {
+                        Button {
+                            AccessibilityService.shared.openAccessibilityPreferences()
+                        } label: {
+                            Label("Grant Permission", systemImage: "gearshape")
+                        }
+                        .buttonStyle(.link)
+                        .font(Typography.caption)
+                    }
+                }
+                .accessibilityIdentifier("settings.workWithApps.accessibility")
+            }
+        } header: {
+            Text("Work with Apps")
+        } footer: {
+            Text("Press \(AppPreferences.workWithAppsHotkey) anywhere to capture content from the focused app and ask questions about it. Requires Accessibility permission.")
+                .font(Typography.caption)
+        }
+        .onAppear {
+            accessibilityEnabled = AccessibilityService.shared.checkPermission(prompt: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accessibilityPermissionChanged)) { notification in
+            if let enabled = notification.userInfo?["enabled"] as? Bool {
+                accessibilityEnabled = enabled
+            }
         }
     }
 }

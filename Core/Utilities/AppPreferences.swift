@@ -23,11 +23,15 @@ private final class DefaultsState: @unchecked Sendable {
 enum AppPreferences {
     private static let state = DefaultsState()
     private static let globalSystemPromptKey = "globalSystemPrompt"
+    private static let workWithAppsEnabledKey = "workWithAppsEnabled"
+    private static let workWithAppsHotkeyKey = "workWithAppsHotkey"
 
     private static var defaultValues: [String: Any] {
         [
             "autoGenerateTitle": true,
-            globalSystemPromptKey: ""
+            globalSystemPromptKey: "",
+            workWithAppsEnabledKey: false,
+            workWithAppsHotkeyKey: "⌘⇧Space"
         ]
     }
 
@@ -40,6 +44,21 @@ enum AppPreferences {
     static var globalSystemPrompt: String {
         get { storage.string(forKey: globalSystemPromptKey) ?? "" }
         set { storage.set(newValue, forKey: globalSystemPromptKey) }
+    }
+
+    // MARK: - Work with Apps (macOS only)
+
+    /// Whether the "Work with Apps" feature is enabled.
+    /// When enabled, a global hotkey can be used to capture context from other apps.
+    static var workWithAppsEnabled: Bool {
+        get { storage.bool(forKey: workWithAppsEnabledKey) }
+        set { storage.set(newValue, forKey: workWithAppsEnabledKey) }
+    }
+
+    /// The hotkey string for "Work with Apps" (e.g., "⌘⇧Space").
+    static var workWithAppsHotkey: String {
+        get { storage.string(forKey: workWithAppsHotkeyKey) ?? "⌘⇧Space" }
+        set { storage.set(newValue, forKey: workWithAppsHotkeyKey) }
     }
 
     static func registerDefaults() {
