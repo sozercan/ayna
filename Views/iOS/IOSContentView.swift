@@ -12,22 +12,58 @@ import UniformTypeIdentifiers
 
 struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            IOSSidebarView(columnVisibility: $columnVisibility)
-        } detail: {
-            if let selectedId = conversationManager.selectedConversationId,
-               selectedId != ConversationManager.newConversationId
-            {
-                IOSChatView(conversationId: selectedId)
-            } else {
-                IOSNewChatView()
-                    .id(conversationManager.selectedConversationId)
+        ZStack {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                IOSSidebarView(columnVisibility: $columnVisibility)
+            } detail: {
+                if let selectedId = conversationManager.selectedConversationId,
+                   selectedId != ConversationManager.newConversationId
+                {
+                    IOSChatView(conversationId: selectedId)
+                } else {
+                    IOSNewChatView()
+                        .id(conversationManager.selectedConversationId)
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+
+            // Deep link error banner overlay
+            if let errorMessage = deepLinkManager.errorMessage {
+                VStack {
+                    ErrorBannerView(
+                        message: errorMessage,
+                        recoverySuggestion: deepLinkManager.errorRecoverySuggestion,
+                        onDismiss: { deepLinkManager.dismissError() }
+                    )
+                    Spacer()
+                }
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
             }
         }
-        .navigationSplitViewStyle(.balanced)
+        // Add model confirmation alert (iOS style)
+        .alert(
+            "Add Model",
+            isPresented: .init(
+                get: { deepLinkManager.pendingAddModel != nil },
+                set: { if !$0 { deepLinkManager.cancelAddModel() } }
+            ),
+            presenting: deepLinkManager.pendingAddModel
+        ) { _ in
+            Button("Cancel", role: .cancel) {
+                deepLinkManager.cancelAddModel()
+            }
+            Button("Add") {
+                deepLinkManager.confirmAddModel()
+            }
+        } message: { request in
+            Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
+        }
     }
 }
 

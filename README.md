@@ -74,6 +74,51 @@ brew install --cask ayna
 - `Enter`: Send message
 - `Shift+Enter`: New line
 
+### Deep Links
+
+Ayna supports URL deep links for automation and integration with other apps.
+
+**Add a Model**
+
+```
+ayna://add-model?name=<model>&provider=<provider>&endpoint=<url>&key=<apikey>&type=<type>
+```
+
+| Parameter | Required | Description |
+|-----------|:--------:|-------------|
+| `name` | ✅ | Model name (e.g., `gpt-4o`) |
+| `provider` | | `openai`, `github`, `azure`, `apple`, or `aikit` |
+| `endpoint` | | Custom API endpoint URL |
+| `key` | | API key (will prompt if omitted) |
+| `type` | | `chat`, `responses`, or `image` |
+
+A confirmation dialog appears before adding any model for security.
+
+**Start a Chat**
+
+```
+ayna://chat?model=<model>&prompt=<message>&system=<systemprompt>
+```
+
+| Parameter | Required | Description |
+|-----------|:--------:|-------------|
+| `model` | | Model to use (uses default if omitted) |
+| `prompt` | | Message to send automatically |
+| `system` | | System prompt for the conversation |
+
+**Examples**
+
+```bash
+# Add an OpenAI model
+open "ayna://add-model?name=gpt-4o&provider=openai"
+
+# Start a chat with a specific model and prompt
+open "ayna://chat?model=gpt-4o&prompt=Hello"
+
+# Quick question
+open "ayna://chat?prompt=What%20is%20the%20capital%20of%20France?"
+```
+
 ## Privacy
 
 - **No Telemetry**: We don't track your usage.

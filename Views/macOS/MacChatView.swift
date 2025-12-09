@@ -637,6 +637,35 @@ struct MacChatView: View {
         }
         .onAppear {
             isComposerFocused = true
+            checkAndProcessPendingPrompt()
+        }
+    }
+
+    /// Check for and process a pending auto-send prompt from deep link.
+    private func checkAndProcessPendingPrompt() {
+        guard let index = getConversationIndex(),
+              let prompt = conversationManager.conversations[index].pendingAutoSendPrompt,
+              !prompt.isEmpty
+        else {
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔗 Processing pending auto-send prompt from deep link",
+            metadata: ["promptLength": "\(prompt.count)"]
+        )
+
+        // Clear the pending prompt to prevent re-sending
+        conversationManager.conversations[index].pendingAutoSendPrompt = nil
+
+        // Set the message text and send
+        messageText = prompt
+        // Use a small delay to ensure the view is fully loaded
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            sendMessage()
         }
     }
 

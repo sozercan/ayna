@@ -102,6 +102,63 @@ Allows sending a single prompt to multiple models simultaneously for comparison.
 - **Files**: `MCPServerManager.swift`, `MCPService.swift`, `MCPModels.swift`
 - **Flow**: User Message → LLM requests tool → App executes via MCP server → Result sent back → Final answer
 
+## Deep Link Manager
+
+Handles URL scheme (`ayna://`) for automation and external app integration.
+
+- **File**: `Core/Utilities/DeepLinkManager.swift`
+- **Platforms**: macOS, iOS (watchOS receives settings via WatchConnectivity sync)
+
+### Supported Actions
+
+| Action | URL Pattern | Description |
+|--------|-------------|-------------|
+| Add Model | `ayna://add-model?...` | Configure a new AI model |
+| Chat | `ayna://chat?...` | Start a conversation |
+
+### Add Model Parameters
+
+| Parameter | Required | Values | Description |
+|-----------|:--------:|--------|-------------|
+| `name` | ✅ | String | Model identifier (e.g., `gpt-4o`) |
+| `provider` | | `openai`, `github`, `azure`, `apple`, `aikit` | API provider |
+| `endpoint` | | URL | Custom API endpoint |
+| `key` | | String | API key |
+| `type` | | `chat`, `responses`, `image` | Model capability type |
+
+### Chat Parameters
+
+| Parameter | Required | Values | Description |
+|-----------|:--------:|--------|-------------|
+| `model` | | String | Model to use (default if omitted) |
+| `prompt` | | String | Auto-send message |
+| `system` | | String | System prompt |
+
+### Security
+
+- **Confirmation dialogs**: All `add-model` requests show a confirmation UI before adding
+- **URL validation**: Invalid parameters show error banners
+- **No auto-key storage**: API keys from URLs require user confirmation
+
+### Implementation Flow
+
+```
+URL received → DeepLinkManager.handleURL()
+                    ↓
+            Parse action & parameters
+                    ↓
+         ┌─────────┴─────────┐
+    add-model              chat
+         ↓                   ↓
+  pendingAddModel     startConversation()
+  (shows confirmation)   (auto-sends prompt)
+```
+
+### Platform-Specific Handling
+
+- **macOS**: App delegate `application(_:open:)` with `handlesExternalEvents(matching:)` for single-window behavior
+- **iOS**: `.onOpenURL` modifier in `AynaIOSApp`
+
 ## Persistence & Sync Services
 
 | Service | Purpose |

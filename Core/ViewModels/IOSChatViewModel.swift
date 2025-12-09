@@ -134,6 +134,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     func configure(with manager: ConversationManager, conversationId: UUID) {
         conversationManager = manager
         self.conversationId = conversationId
+
+        // Check for pending auto-send prompt (from deep link)
+        checkAndProcessPendingPrompt()
     }
 
     /// The model to use for sending messages.
@@ -164,6 +167,36 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             level: .info,
             message: "📱 IOSChatViewModel reset for new chat"
         )
+    }
+
+    /// Check for and process a pending auto-send prompt from deep link.
+    /// This should be called after the view model is configured with a conversation.
+    private func checkAndProcessPendingPrompt() {
+        guard let convId = conversationId,
+              let index = conversationManager.conversations.firstIndex(where: { $0.id == convId }),
+              let prompt = conversationManager.conversations[index].pendingAutoSendPrompt,
+              !prompt.isEmpty
+        else {
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔗 Processing pending auto-send prompt from deep link",
+            metadata: ["promptLength": "\(prompt.count)"]
+        )
+
+        // Clear the pending prompt to prevent re-sending
+        conversationManager.conversations[index].pendingAutoSendPrompt = nil
+
+        // Set the message text and send
+        messageText = prompt
+        // Use a small delay to ensure the view is fully loaded
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            sendMessage()
+        }
     }
 
     /// Retry the last failed message
