@@ -51,7 +51,12 @@ struct IOSContentView: View {
             "Add Model",
             isPresented: .init(
                 get: { deepLinkManager.pendingAddModel != nil },
-                set: { if !$0 { deepLinkManager.cancelAddModel() } }
+                set: { newValue in
+                    // Only cancel if alert is being dismissed AND pendingAddModel is still set
+                    if !newValue, deepLinkManager.pendingAddModel != nil {
+                        deepLinkManager.cancelAddModel()
+                    }
+                }
             ),
             presenting: deepLinkManager.pendingAddModel
         ) { _ in
@@ -63,6 +68,23 @@ struct IOSContentView: View {
             }
         } message: { request in
             Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
+        }
+        // Process pending chat after add-model alert is dismissed (unified flow)
+        .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
+            // When pendingAddModel goes from some value to nil AND we have a pending chat
+            if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
+                // Model was added (or cancelled), process the pending chat if model now exists
+                if let model = chatRequest.model,
+                   OpenAIService.shared.customModels.contains(model)
+                {
+                    _ = conversationManager.startConversation(
+                        model: chatRequest.model,
+                        prompt: chatRequest.prompt,
+                        systemPrompt: chatRequest.systemPrompt
+                    )
+                }
+                deepLinkManager.clearPendingChat()
+            }
         }
     }
 }

@@ -213,16 +213,35 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
     private func handleDeepLinkURL(_ url: URL, app: NSApplication) async {
         await DeepLinkManager.shared.handle(url: url)
 
+        DiagnosticsLogger.log(
+            .app,
+            level: .fault,
+            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
+        )
+
         // Handle chat deep links by starting a conversation
-        if let chatRequest = DeepLinkManager.shared.pendingChat,
+        // BUT only if there's no pending add-model confirmation (unified flow)
+        if DeepLinkManager.shared.pendingAddModel == nil,
+           let chatRequest = DeepLinkManager.shared.pendingChat,
            let manager = conversationManager
         {
+            DiagnosticsLogger.log(
+                .app,
+                level: .fault,
+                message: "🔗 DEBUG AppDelegate: Starting conversation (no pending add model)"
+            )
             _ = manager.startConversation(
                 model: chatRequest.model,
                 prompt: chatRequest.prompt,
                 systemPrompt: chatRequest.systemPrompt
             )
             DeepLinkManager.shared.clearPendingChat()
+        } else if DeepLinkManager.shared.pendingAddModel != nil {
+            DiagnosticsLogger.log(
+                .app,
+                level: .fault,
+                message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
+            )
         }
 
         // Bring window to front

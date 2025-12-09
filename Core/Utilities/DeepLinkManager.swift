@@ -88,6 +88,8 @@ struct ChatRequest: Equatable {
     let model: String?
     let prompt: String?
     let systemPrompt: String?
+    /// Optional model configuration for unified add+chat flow
+    let modelConfig: AddModelRequest?
 }
 
 // MARK: - Deep Link Action
@@ -104,7 +106,9 @@ enum DeepLinkAction: Equatable {
 /// Manages deep link URL handling for the Ayna app.
 /// Supports:
 /// - `ayna://add-model?name=...&provider=...&endpoint=...&key=...&type=...`
-/// - `ayna://chat?model=...&prompt=...&system=...`
+/// - `ayna://chat?model=...&prompt=...&system=...&provider=...&endpoint=...&key=...&type=...`
+/// The chat action supports a unified flow: if model config params are provided and the model
+/// doesn't exist, it will prompt to add the model first, then start the chat.
 @MainActor
 final class DeepLinkManager: ObservableObject {
     static let shared = DeepLinkManager()
@@ -112,7 +116,7 @@ final class DeepLinkManager: ObservableObject {
     /// Pending add-model request awaiting user confirmation
     @Published var pendingAddModel: AddModelRequest?
 
-    /// Pending chat request to be executed
+    /// Pending chat request to be executed (stored while waiting for add-model confirmation)
     @Published var pendingChat: ChatRequest?
 
     /// Error message to display in error banner
@@ -164,16 +168,51 @@ final class DeepLinkManager: ObservableObject {
                 )
 
             case let .chat(request):
-                pendingChat = request
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .info,
-                    message: "🔗 Pending chat request",
-                    metadata: [
-                        "model": request.model ?? "default",
-                        "hasPrompt": "\(request.prompt != nil)"
-                    ]
-                )
+                // Check if this is a unified flow (chat with model config)
+                if let modelConfig = request.modelConfig {
+                    let modelExists = openAIService.customModels.contains(modelConfig.name)
+                    print("🔗 DEBUG: modelConfig.name=\(modelConfig.name), modelExists=\(modelExists), customModels=\(openAIService.customModels)")
+                    if !modelExists {
+                        // Model doesn't exist - show add confirmation first, store chat for after
+                        pendingAddModel = modelConfig
+                        pendingChat = request
+                        DiagnosticsLogger.log(
+                            .app,
+                            level: .fault,
+                            message: "🔗 DEBUG: Set pendingAddModel=\(String(describing: pendingAddModel)), pendingChat model=\(request.model ?? "nil")"
+                        )
+                        DiagnosticsLogger.log(
+                            .app,
+                            level: .info,
+                            message: "🔗 Unified flow: add model then chat",
+                            metadata: ["modelName": modelConfig.name, "hasPrompt": "\(request.prompt != nil)"]
+                        )
+                    } else {
+                        // Model exists - proceed with chat directly
+                        pendingChat = request
+                        DiagnosticsLogger.log(
+                            .app,
+                            level: .info,
+                            message: "🔗 Pending chat request (model exists)",
+                            metadata: [
+                                "model": request.model ?? "default",
+                                "hasPrompt": "\(request.prompt != nil)"
+                            ]
+                        )
+                    }
+                } else {
+                    // No config provided - proceed with chat directly
+                    pendingChat = request
+                    DiagnosticsLogger.log(
+                        .app,
+                        level: .info,
+                        message: "🔗 Pending chat request",
+                        metadata: [
+                            "model": request.model ?? "default",
+                            "hasPrompt": "\(request.prompt != nil)"
+                        ]
+                    )
+                }
 
             case let .oauthCallback(callbackURL):
                 // Delegate to GitHubOAuthService
@@ -200,6 +239,7 @@ final class DeepLinkManager: ObservableObject {
     }
 
     /// Confirm and execute the pending add-model request
+    /// If there's a pending chat request, it will proceed after adding the model
     func confirmAddModel() {
         guard let request = pendingAddModel else { return }
 
@@ -211,19 +251,28 @@ final class DeepLinkManager: ObservableObject {
                 message: "✅ Model added via deep link",
                 metadata: ["modelName": request.name]
             )
+            // Note: pendingChat is preserved so the chat can proceed
         } catch let error as DeepLinkError {
             errorMessage = error.errorDescription
             errorRecoverySuggestion = error.recoverySuggestion
+            // Clear pending chat on error since the model wasn't added
+            pendingChat = nil
         } catch {
             errorMessage = error.localizedDescription
+            pendingChat = nil
         }
 
         pendingAddModel = nil
     }
 
     /// Cancel the pending add-model request
+    /// Also clears any pending chat that was waiting for the model
     func cancelAddModel() {
         pendingAddModel = nil
+        // Also clear pending chat if it was part of unified flow
+        if pendingChat?.modelConfig != nil {
+            pendingChat = nil
+        }
         DiagnosticsLogger.log(
             .app,
             level: .info,
@@ -272,7 +321,7 @@ final class DeepLinkManager: ObservableObject {
             return try parseChat(params: params)
         case "main":
             // Internal action to open main window - no action needed, window will open
-            return .chat(ChatRequest(model: nil, prompt: nil, systemPrompt: nil))
+            return .chat(ChatRequest(model: nil, prompt: nil, systemPrompt: nil, modelConfig: nil))
         default:
             throw DeepLinkError.unknownAction(host)
         }
@@ -356,11 +405,81 @@ final class DeepLinkManager: ObservableObject {
     }
 
     /// Parse chat action parameters
+    /// Supports unified flow: if provider/endpoint/key/type params are present along with model,
+    /// creates a model config that will be used to add the model if it doesn't exist
     private func parseChat(params: [String: String]) throws -> DeepLinkAction {
+        let model = params["model"]
+
+        // Check if model configuration params are provided (unified add+chat flow)
+        var modelConfig: AddModelRequest?
+        if let modelName = model {
+            let hasConfigParams = params["provider"] != nil ||
+                                  params["endpoint"] != nil ||
+                                  params["key"] != nil ||
+                                  params["type"] != nil
+
+            if hasConfigParams {
+                // Parse provider
+                let provider: AIProvider
+                if let providerString = params["provider"] {
+                    let normalizedProvider = providerString.lowercased()
+                    switch normalizedProvider {
+                    case "openai", "open ai":
+                        provider = .openai
+                    case "github", "github models", "githubmodels":
+                        provider = .githubModels
+                    case "apple", "apple intelligence", "appleintelligence":
+                        provider = .appleIntelligence
+                    case "aikit", "local":
+                        provider = .aikit
+                    default:
+                        if let exactMatch = AIProvider.allCases.first(where: { $0.rawValue.lowercased() == normalizedProvider }) {
+                            provider = exactMatch
+                        } else {
+                            throw DeepLinkError.invalidProvider(providerString)
+                        }
+                    }
+                } else {
+                    provider = .openai
+                }
+
+                // Parse endpoint type
+                let endpointType: APIEndpointType
+                if let typeString = params["type"] {
+                    let normalizedType = typeString.lowercased()
+                    switch normalizedType {
+                    case "chat", "chatcompletions", "chat completions":
+                        endpointType = .chatCompletions
+                    case "responses", "response":
+                        endpointType = .responses
+                    case "image", "imagegeneration", "image generation":
+                        endpointType = .imageGeneration
+                    default:
+                        if let exactMatch = APIEndpointType.allCases.first(where: { $0.rawValue.lowercased() == normalizedType }) {
+                            endpointType = exactMatch
+                        } else {
+                            throw DeepLinkError.invalidEndpointType(typeString)
+                        }
+                    }
+                } else {
+                    endpointType = .chatCompletions
+                }
+
+                modelConfig = AddModelRequest(
+                    name: modelName,
+                    provider: provider,
+                    endpoint: params["endpoint"],
+                    apiKey: params["key"],
+                    endpointType: endpointType
+                )
+            }
+        }
+
         let request = ChatRequest(
-            model: params["model"],
+            model: model,
             prompt: params["prompt"],
-            systemPrompt: params["system"]
+            systemPrompt: params["system"],
+            modelConfig: modelConfig
         )
         return .chat(request)
     }

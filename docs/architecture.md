@@ -133,6 +133,10 @@ Handles URL scheme (`ayna://`) for automation and external app integration.
 | `model` | | String | Model to use (default if omitted) |
 | `prompt` | | String | Auto-send message |
 | `system` | | String | System prompt |
+| `provider` | | See Add Model | For unified flow (if model doesn't exist) |
+| `endpoint` | | URL | For unified flow |
+| `key` | | String | For unified flow |
+| `type` | | See Add Model | For unified flow |
 
 ### Security
 
@@ -150,8 +154,22 @@ URL received → DeepLinkManager.handleURL()
          ┌─────────┴─────────┐
     add-model              chat
          ↓                   ↓
-  pendingAddModel     startConversation()
-  (shows confirmation)   (auto-sends prompt)
+  pendingAddModel     Check model config params
+  (shows confirmation)        ↓
+                    ┌────────┴────────┐
+              No config params    Has config params
+                    ↓                   ↓
+           startConversation()   Model exists?
+                                      ↓
+                              ┌───────┴───────┐
+                            Yes              No
+                              ↓               ↓
+                   startConversation()  pendingAddModel +
+                                        pendingChat (unified)
+                                              ↓
+                                     User confirms add
+                                              ↓
+                                     startConversation()
 ```
 
 ### Platform-Specific Handling
