@@ -98,10 +98,33 @@ struct MacContentView: View {
         // Add model confirmation sheet
         .sheet(isPresented: .init(
             get: { deepLinkManager.pendingAddModel != nil },
-            set: { if !$0 { deepLinkManager.cancelAddModel() } }
+            set: { newValue in
+                // Only cancel if the sheet is being dismissed AND pendingAddModel is still set
+                // (i.e., user dismissed without clicking Add - confirmAddModel already clears it)
+                if !newValue, deepLinkManager.pendingAddModel != nil {
+                    deepLinkManager.cancelAddModel()
+                }
+            }
         )) {
             if let request = deepLinkManager.pendingAddModel {
                 AddModelConfirmationSheet(request: request)
+            }
+        }
+        // Process pending chat after add-model sheet is dismissed (unified flow)
+        .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
+            // When pendingAddModel goes from some value to nil AND we have a pending chat
+            if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
+                // Model was added (or cancelled), process the pending chat if model now exists
+                if let model = chatRequest.model,
+                   OpenAIService.shared.customModels.contains(model)
+                {
+                    _ = conversationManager.startConversation(
+                        model: chatRequest.model,
+                        prompt: chatRequest.prompt,
+                        systemPrompt: chatRequest.systemPrompt
+                    )
+                }
+                deepLinkManager.clearPendingChat()
             }
         }
     }

@@ -450,4 +450,144 @@ final class DeepLinkManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.pendingAddModel?.name, "gpt-4o-2024-05-13")
     }
+
+    // MARK: - Unified Add+Chat Flow Tests
+
+    @MainActor
+    func testUnifiedFlowChatWithModelConfigShowsAddConfirmation() async {
+        // Model doesn't exist, should show add confirmation
+        let url = URL(string: "ayna://chat?model=new-model&provider=openai&endpoint=https://api.test.com&prompt=Hello")!
+
+        await manager.handle(url: url)
+
+        // Should have both pending add model AND pending chat
+        XCTAssertNotNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+        XCTAssertEqual(manager.pendingAddModel?.name, "new-model")
+        XCTAssertEqual(manager.pendingAddModel?.provider, .openai)
+        XCTAssertEqual(manager.pendingAddModel?.endpoint, "https://api.test.com")
+        XCTAssertEqual(manager.pendingChat?.prompt, "Hello")
+        XCTAssertNil(manager.errorMessage)
+    }
+
+    @MainActor
+    func testUnifiedFlowConfirmAddsModelAndPreservesChat() async {
+        let url = URL(string: "ayna://chat?model=unified-model&provider=github&key=test-key&prompt=Test%20prompt")!
+        await manager.handle(url: url)
+
+        XCTAssertNotNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+
+        manager.confirmAddModel()
+
+        // Model should be added
+        XCTAssertTrue(mockService.customModels.contains("unified-model"))
+        XCTAssertEqual(mockService.modelProviders["unified-model"], .githubModels)
+        XCTAssertEqual(mockService.modelAPIKeys["unified-model"], "test-key")
+
+        // Add model confirmation cleared, but chat preserved
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+        XCTAssertEqual(manager.pendingChat?.prompt, "Test prompt")
+    }
+
+    @MainActor
+    func testUnifiedFlowCancelClearsBothPendingRequests() async {
+        let url = URL(string: "ayna://chat?model=cancel-model&provider=openai&prompt=Test")!
+        await manager.handle(url: url)
+
+        XCTAssertNotNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+
+        manager.cancelAddModel()
+
+        // Both should be cleared
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNil(manager.pendingChat)
+        XCTAssertFalse(mockService.customModels.contains("cancel-model"))
+    }
+
+    @MainActor
+    func testUnifiedFlowExistingModelSkipsAddConfirmation() async {
+        // First add a model
+        mockService.customModels.append("existing-model")
+
+        // Now try unified flow with same model name
+        let url = URL(string: "ayna://chat?model=existing-model&provider=openai&prompt=Hello")!
+        await manager.handle(url: url)
+
+        // Should skip add confirmation since model exists
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+        XCTAssertEqual(manager.pendingChat?.model, "existing-model")
+        XCTAssertEqual(manager.pendingChat?.prompt, "Hello")
+    }
+
+    @MainActor
+    func testUnifiedFlowWithAllConfigParams() async {
+        let url = URL(string: "ayna://chat?model=full-config&provider=aikit&endpoint=http://localhost:8080&key=local-key&type=responses&prompt=Test&system=Be%20helpful")!
+
+        await manager.handle(url: url)
+
+        XCTAssertNotNil(manager.pendingAddModel)
+        XCTAssertEqual(manager.pendingAddModel?.name, "full-config")
+        XCTAssertEqual(manager.pendingAddModel?.provider, .aikit)
+        XCTAssertEqual(manager.pendingAddModel?.endpoint, "http://localhost:8080")
+        XCTAssertEqual(manager.pendingAddModel?.apiKey, "local-key")
+        XCTAssertEqual(manager.pendingAddModel?.endpointType, .responses)
+
+        XCTAssertNotNil(manager.pendingChat)
+        XCTAssertEqual(manager.pendingChat?.model, "full-config")
+        XCTAssertEqual(manager.pendingChat?.prompt, "Test")
+        XCTAssertEqual(manager.pendingChat?.systemPrompt, "Be helpful")
+    }
+
+    @MainActor
+    func testUnifiedFlowModelConfigIsStored() async {
+        let url = URL(string: "ayna://chat?model=config-test&provider=github&prompt=Hello")!
+
+        await manager.handle(url: url)
+
+        // Verify modelConfig is set on the chat request
+        XCTAssertNotNil(manager.pendingChat?.modelConfig)
+        XCTAssertEqual(manager.pendingChat?.modelConfig?.name, "config-test")
+        XCTAssertEqual(manager.pendingChat?.modelConfig?.provider, .githubModels)
+    }
+
+    @MainActor
+    func testUnifiedFlowInvalidProviderShowsError() async {
+        let url = URL(string: "ayna://chat?model=test&provider=invalid&prompt=Hello")!
+
+        await manager.handle(url: url)
+
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNil(manager.pendingChat)
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertTrue(manager.errorMessage?.contains("provider") ?? false)
+    }
+
+    @MainActor
+    func testUnifiedFlowInvalidTypeShowsError() async {
+        let url = URL(string: "ayna://chat?model=test&type=invalid&prompt=Hello")!
+
+        await manager.handle(url: url)
+
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNil(manager.pendingChat)
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertTrue(manager.errorMessage?.contains("type") ?? false)
+    }
+
+    @MainActor
+    func testChatWithoutConfigParamsHasNoModelConfig() async {
+        let url = URL(string: "ayna://chat?model=simple-model&prompt=Hello")!
+
+        await manager.handle(url: url)
+
+        // No config params, so no add model flow
+        XCTAssertNil(manager.pendingAddModel)
+        XCTAssertNotNil(manager.pendingChat)
+        XCTAssertNil(manager.pendingChat?.modelConfig)
+        XCTAssertEqual(manager.pendingChat?.model, "simple-model")
+    }
 }
