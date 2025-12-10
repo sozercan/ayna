@@ -6,8 +6,8 @@ final class DeepLinkManagerTests: XCTestCase {
     private var manager: DeepLinkManager!
     private var mockService: OpenAIService!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         mockService = OpenAIService.shared
         // Clear any existing custom models
         mockService.customModels = []
@@ -18,14 +18,14 @@ final class DeepLinkManagerTests: XCTestCase {
         manager = DeepLinkManager(openAIService: mockService)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         manager = nil
         mockService.customModels = []
         mockService.modelProviders = [:]
         mockService.modelEndpoints = [:]
         mockService.modelAPIKeys = [:]
         mockService.modelEndpointTypes = [:]
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - URL Parsing Tests
