@@ -68,6 +68,11 @@ struct IOSChatView: View {
 
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+                // Hide assistant messages that only have tool calls (intermediate steps)
+                // These are placeholders that triggered tool execution but have no response content
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    return false
+                }
                 // Always show assistant messages in a response group (multi-model mode)
                 // They need to remain visible even after generation to show failed/empty states
                 if message.responseGroupId != nil {
