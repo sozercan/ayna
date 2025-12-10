@@ -414,9 +414,9 @@ final class DeepLinkManager: ObservableObject {
         var modelConfig: AddModelRequest?
         if let modelName = model {
             let hasConfigParams = params["provider"] != nil ||
-                                  params["endpoint"] != nil ||
-                                  params["key"] != nil ||
-                                  params["type"] != nil
+                params["endpoint"] != nil ||
+                params["key"] != nil ||
+                params["type"] != nil
 
             if hasConfigParams {
                 // Parse provider

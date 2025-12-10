@@ -27,6 +27,9 @@ struct IOSChatView: View {
     @State private var showScrollToBottom = false
     @State private var isNearBottom = true
 
+    /// Performance: Cached displayable items to avoid O(n) computation on every render
+    @State private var cachedDisplayableItems: [DisplayableItem] = []
+
     /// Get the conversation from the environment's conversation manager
     private var conversation: Conversation? {
         conversationManager.conversations.first { $0.id == conversationId }
@@ -49,9 +52,13 @@ struct IOSChatView: View {
         }
     }
 
-    /// Converts visible messages into displayable items, grouping parallel responses
-    private var displayableItems: [DisplayableItem] {
-        guard let conversation else { return [] }
+    /// Updates cached displayable items. Call when messages change or isGenerating changes.
+    private func updateDisplayableItems() {
+        guard let conversation else {
+            cachedDisplayableItems = []
+            return
+        }
+
         var items: [DisplayableItem] = []
         var processedGroupIds: Set<UUID> = []
 
@@ -98,7 +105,7 @@ struct IOSChatView: View {
             }
         }
 
-        return items
+        cachedDisplayableItems = items
     }
 
     var body: some View {
@@ -108,7 +115,7 @@ struct IOSChatView: View {
                     ZStack(alignment: .bottom) {
                         ScrollView(.vertical, showsIndicators: true) {
                             LazyVStack(spacing: 12) {
-                                ForEach(displayableItems) { item in
+                                ForEach(cachedDisplayableItems) { item in
                                     switch item {
                                     case let .message(message):
                                         IOSMessageView(
@@ -169,12 +176,16 @@ struct IOSChatView: View {
                         .padding(.bottom, Spacing.md)
                     }
                     .onChange(of: conversation.messages.count) {
+                        updateDisplayableItems()
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
                     .onChange(of: conversation.messages.last?.content) {
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
+                    }
+                    .onChange(of: viewModel.isGenerating) { _, _ in
+                        updateDisplayableItems()
                     }
                     .onAppear {
                         DiagnosticsLogger.log(
@@ -183,6 +194,7 @@ struct IOSChatView: View {
                             message: "📱 IOSChatView appeared",
                             metadata: ["conversationId": conversationId.uuidString]
                         )
+                        updateDisplayableItems()
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(100))
                             if let lastId = conversation.messages.last?.id {
