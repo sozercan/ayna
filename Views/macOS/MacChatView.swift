@@ -69,6 +69,7 @@ struct MacChatView: View {
     @State private var batchUpdateTask: Task<Void, Never>?
     @State private var visibleMessages: [Message] = []
     @State private var cachedConversationIndex: Int?
+    @State private var cachedDisplayableItems: [DisplayableItem] = []
 
     // Cached font for text height calculation (computed property to avoid lazy initialization issues)
     private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
@@ -144,6 +145,9 @@ struct MacChatView: View {
 
             return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
+
+        // Update displayable items after visible messages change
+        updateDisplayableItems()
     }
 
     // MARK: - Multi-Model Display
@@ -163,8 +167,8 @@ struct MacChatView: View {
         }
     }
 
-    /// Converts visible messages into displayable items, grouping parallel responses
-    private var displayableItems: [DisplayableItem] {
+    /// Updates cached displayable items. Call when messages change or isGenerating changes.
+    private func updateDisplayableItems() {
         var items: [DisplayableItem] = []
         var processedGroupIds: Set<UUID> = []
 
@@ -187,7 +191,7 @@ struct MacChatView: View {
             }
         }
 
-        return items
+        cachedDisplayableItems = items
     }
 
     private var normalizedSelectedModel: String {
@@ -228,7 +232,7 @@ struct MacChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 0) {
-                            ForEach(displayableItems) { item in
+                            ForEach(cachedDisplayableItems) { item in
                                 switch item {
                                 case let .message(message):
                                     MacMessageView(
