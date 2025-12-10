@@ -1014,15 +1014,17 @@ class OpenAIService: ObservableObject {
 
         let response = "UI Test Response: \(userContent)"
 
-        let deliverResponse = {
-            onChunk(response)
-            onComplete()
-        }
-
         if stream {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: deliverResponse)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                onChunk(response)
+                onComplete()
+            }
         } else {
-            DispatchQueue.main.async(execute: deliverResponse)
+            Task { @MainActor in
+                onChunk(response)
+                onComplete()
+            }
         }
     }
 
@@ -1072,7 +1074,7 @@ class OpenAIService: ObservableObject {
         }
 
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 // Clear the task reference
                 self?.currentTask = nil
 
@@ -1654,7 +1656,7 @@ class OpenAIService: ObservableObject {
         attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let error {
                     if self?.shouldRetry(error: error, attempt: attempt) == true {
                         DiagnosticsLogger.log(
@@ -2031,7 +2033,7 @@ extension OpenAIService {
     @objc private func ubiquitousKeyValueStoreDidChange(notification _: NSNotification) {
         let store = NSUbiquitousKeyValueStore.default
 
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if let models = store.array(forKey: "customModels") as? [String] {
                 self.customModels = models
             }

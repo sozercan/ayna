@@ -104,10 +104,16 @@ actor ConversationPersistenceCoordinator {
         pendingSaves.removeAll()
 
         for (id, conversation) in conversationsToSave {
-            activeSaveTasks.removeValue(forKey: id)
+            // Guard: skip if task was cancelled during debounce period
+            guard !Task.isCancelled else {
+                activeSaveTasks.removeValue(forKey: id)
+                continue
+            }
 
             do {
                 try await store.save(conversation)
+                // Remove from active tasks AFTER save completes to prevent concurrent writes
+                activeSaveTasks.removeValue(forKey: id)
                 DiagnosticsLogger.log(
                     .conversationManager,
                     level: .debug,
@@ -115,6 +121,8 @@ actor ConversationPersistenceCoordinator {
                     metadata: ["id": id.uuidString]
                 )
             } catch {
+                // Also remove on error to allow future saves
+                activeSaveTasks.removeValue(forKey: id)
                 DiagnosticsLogger.log(
                     .conversationManager,
                     level: .error,

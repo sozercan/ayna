@@ -178,7 +178,7 @@ final class OpenAIImageService: @unchecked Sendable {
                     level: .error,
                     message: "No data received from image generation"
                 )
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     onError(OpenAIService.OpenAIError.noData)
                 }
                 return
@@ -197,7 +197,7 @@ final class OpenAIImageService: @unchecked Sendable {
         onError: @escaping @Sendable (Error) -> Void,
         attempt: Int
     ) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             if OpenAIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
                 DiagnosticsLogger.log(
                     .openAIService,
@@ -205,19 +205,15 @@ final class OpenAIImageService: @unchecked Sendable {
                     message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
                     metadata: ["error": error.localizedDescription]
                 )
-                Task {
-                    await OpenAIRetryPolicy.wait(for: attempt)
-                    await MainActor.run {
-                        self?.generateImage(
-                            prompt: prompt,
-                            requestConfig: requestConfig,
-                            imageConfig: imageConfig,
-                            onComplete: onComplete,
-                            onError: onError,
-                            attempt: attempt + 1
-                        )
-                    }
-                }
+                await OpenAIRetryPolicy.wait(for: attempt)
+                self?.generateImage(
+                    prompt: prompt,
+                    requestConfig: requestConfig,
+                    imageConfig: imageConfig,
+                    onComplete: onComplete,
+                    onError: onError,
+                    attempt: attempt + 1
+                )
                 return
             }
             onError(error)
@@ -231,7 +227,7 @@ final class OpenAIImageService: @unchecked Sendable {
     ) {
         do {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     onError(OpenAIService.OpenAIError.invalidResponse)
                 }
                 return
@@ -248,7 +244,7 @@ final class OpenAIImageService: @unchecked Sendable {
                     message: "API error in image generation",
                     metadata: ["code": code, "message": message]
                 )
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     if code == "contentFilter" {
                         onError(OpenAIService.OpenAIError.contentFiltered(message))
                     } else {
@@ -262,7 +258,7 @@ final class OpenAIImageService: @unchecked Sendable {
             guard let dataArray = json["data"] as? [[String: Any]],
                   let firstItem = dataArray.first
             else {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     onError(OpenAIService.OpenAIError.invalidResponse)
                 }
                 return
@@ -272,7 +268,7 @@ final class OpenAIImageService: @unchecked Sendable {
             if let b64String = firstItem["b64_json"] as? String,
                let imageData = Data(base64Encoded: b64String)
             {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     onComplete(imageData)
                 }
                 return
@@ -297,11 +293,11 @@ final class OpenAIImageService: @unchecked Sendable {
                 return
             }
 
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 onError(OpenAIService.OpenAIError.invalidResponse)
             }
         } catch {
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 onError(error)
             }
         }
