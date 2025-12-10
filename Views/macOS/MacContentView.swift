@@ -804,6 +804,7 @@ struct MacNewChatView: View {
 
         // Create placeholder messages for each model
         var messageIds: [String: UUID] = [:]
+        var placeholderMessages: [Message] = []
         for model in models {
             let messageId = UUID()
             messageIds[model] = messageId
@@ -816,11 +817,15 @@ struct MacNewChatView: View {
                 model: model,
                 responseGroupId: responseGroupId
             )
-            conversationManager.addMessage(to: updatedConversation, message: placeholderMessage)
+            placeholderMessages.append(placeholderMessage)
         }
 
-        // Add response group to conversation
-        conversationManager.addResponseGroup(to: updatedConversation, group: responseGroup)
+        // Add all messages and response group atomically to prevent UI flicker
+        conversationManager.addMultiModelResponse(
+            to: updatedConversation,
+            messages: placeholderMessages,
+            responseGroup: responseGroup
+        )
 
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
