@@ -36,7 +36,7 @@ docs/       → Detailed documentation for AI agents
 
 ## Critical Rules (Apply to EVERY task)
 
-> ⚠️ **NEVER run `git push`** — Always leave pushing to the human. Commit changes but do not push.
+> ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
 
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
