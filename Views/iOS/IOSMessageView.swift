@@ -17,6 +17,8 @@ import UniformTypeIdentifiers
 struct IOSMessageView: View {
     let message: Message
     var onRetry: (() -> Void)?
+    var onSwitchModel: ((String) -> Void)?
+    var availableModels: [String] = []
 
     @State private var contentBlocks: [ContentBlock]
     @State private var lastContentHash: Int
@@ -27,10 +29,14 @@ struct IOSMessageView: View {
 
     init(
         message: Message,
-        onRetry: (() -> Void)? = nil
+        onRetry: (() -> Void)? = nil,
+        onSwitchModel: ((String) -> Void)? = nil,
+        availableModels: [String] = []
     ) {
         self.message = message
         self.onRetry = onRetry
+        self.onSwitchModel = onSwitchModel
+        self.availableModels = availableModels
         // Parse content synchronously on init to avoid flash of empty/raw text bubbles
         _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
         _lastContentHash = State(initialValue: message.content.hashValue)
@@ -260,7 +266,34 @@ struct IOSMessageView: View {
                         )
                         onRetry()
                     } label: {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Label("Try Again", systemImage: "arrow.clockwise")
+                    }
+                }
+
+                // Switch Model submenu - only for assistant messages
+                if message.role == .assistant, let onSwitchModel, !availableModels.isEmpty {
+                    Menu {
+                        ForEach(availableModels, id: \.self) { model in
+                            Button {
+                                HapticEngine.impact(.medium)
+                                DiagnosticsLogger.log(
+                                    .chatView,
+                                    level: .info,
+                                    message: "🔄 Switch model requested via context menu",
+                                    metadata: ["messageId": message.id.uuidString, "newModel": model]
+                                )
+                                onSwitchModel(model)
+                            } label: {
+                                HStack {
+                                    Text(model)
+                                    if model == message.model {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Switch Model", systemImage: "arrow.left.arrow.right")
                     }
                 }
 
