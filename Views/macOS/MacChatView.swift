@@ -128,6 +128,11 @@ struct MacChatView: View {
             // Show if: has content, has image data, or is generating image
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
+                // Hide assistant messages that only have tool calls (intermediate steps)
+                // These are placeholders that triggered tool execution but have no response content
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    return false
+                }
                 // Always show assistant messages in a response group (multi-model mode)
                 // They need to remain visible even after generation to show failed/empty states
                 if message.responseGroupId != nil {
@@ -637,6 +642,7 @@ struct MacChatView: View {
         }
         .onAppear {
             isComposerFocused = true
+            checkAndProcessPendingPrompt()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
             // Handle Work with Apps: auto-send message when conversation is created with context
@@ -654,6 +660,34 @@ struct MacChatView: View {
                 logChat("📤 Auto-sending message from Work with Apps", level: .info)
                 sendPendingUserMessage()
             }
+        }
+    }
+
+    /// Check for and process a pending auto-send prompt from deep link.
+    private func checkAndProcessPendingPrompt() {
+        guard let index = getConversationIndex(),
+              let prompt = conversationManager.conversations[index].pendingAutoSendPrompt,
+              !prompt.isEmpty
+        else {
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔗 Processing pending auto-send prompt from deep link",
+            metadata: ["promptLength": "\(prompt.count)"]
+        )
+
+        // Clear the pending prompt to prevent re-sending
+        conversationManager.conversations[index].pendingAutoSendPrompt = nil
+
+        // Set the message text and send
+        messageText = prompt
+        // Use a small delay to ensure the view is fully loaded
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            sendMessage()
         }
     }
 

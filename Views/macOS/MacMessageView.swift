@@ -277,6 +277,8 @@ struct MacMessageView: View {
             actionControls(for: message.role)
                 .offset(y: -26)
         }
+        .padding(.top, 30) // Extra space for action controls above bubble
+        .contentShape(Rectangle()) // Make entire area including controls hoverable
         .animation(Motion.easeStandard, value: isHovered)
     }
 
@@ -335,11 +337,19 @@ struct MacMessageView: View {
             }
         }
 
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
+        // Check if message has meaningful reasoning content
+        let hasReasoning = message.reasoning.map { !$0.isEmpty } ?? false
+
+        // Show typing indicator for empty assistant messages (waiting for response)
+        // But not if we have reasoning content (model is thinking)
+        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image, !hasReasoning {
             TypingIndicatorView()
         }
 
-        if let reasoning = message.reasoning, !reasoning.isEmpty {
+        if hasReasoning, let reasoning = message.reasoning {
+            // Determine if still actively thinking (has reasoning but no content yet)
+            let isStillThinking = message.content.isEmpty && message.mediaType != .image
+
             Button(action: {
                 withAnimation(Motion.springStandard) {
                     showReasoning.toggle()
@@ -348,8 +358,12 @@ struct MacMessageView: View {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
                         .font(Typography.caption)
-                    Text("Thinking")
+                    Text(isStillThinking ? "Thinking..." : "Thinking")
                         .font(Typography.captionBold)
+                    if isStillThinking {
+                        // Show animated indicator while still thinking
+                        ThinkingIndicatorDots()
+                    }
                     Spacer(minLength: 0)
                     Text("\(reasoning.count) chars")
                         .font(Typography.caption)
@@ -387,16 +401,18 @@ struct MacMessageView: View {
     @MainActor @ViewBuilder
     private func actionControls(for role: Message.Role) -> some View {
         if isHovered || UITestEnvironment.isEnabled {
-            HStack(spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xxs) {
                 Button(action: {
                     copyToClipboard(message.content)
                 }) {
                     Image(systemName: "doc.on.doc")
                         .font(Typography.caption)
-                        .padding(Spacing.xs)
+                        .padding(Spacing.sm)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.action.copy")
+                .accessibilityLabel("Copy message")
 
                 if role == .assistant {
                     Menu {
@@ -432,16 +448,16 @@ struct MacMessageView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(Typography.caption)
-                            .padding(Spacing.xs)
+                            .padding(Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    .accessibilityLabel("More options")
                 }
             }
             .foregroundStyle(Theme.userBubbleText)
-            .padding(.horizontal, Spacing.md - 2)
-            .padding(.vertical, Spacing.xs)
             .background(.ultraThinMaterial, in: Capsule())
             .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
             .transition(Motion.scaleTransition)
@@ -1224,6 +1240,27 @@ struct SyntaxHighlightedCodeView: View {
 
         for match in matches {
             attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
+        }
+    }
+}
+
+// Compact thinking indicator dots for inline use
+struct ThinkingIndicatorDots: View {
+    @State private var animatingDot = 0
+
+    let timer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0 ..< 3, id: \.self) { index in
+                Circle()
+                    .fill(Theme.userBubbleText.opacity(index == animatingDot ? 1.0 : 0.4))
+                    .frame(width: 4, height: 4)
+                    .animation(.easeInOut(duration: 0.2), value: animatingDot)
+            }
+        }
+        .onReceive(timer) { _ in
+            animatingDot = (animatingDot + 1) % 3
         }
     }
 }

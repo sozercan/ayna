@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		0C41CC606F7D696D80483FFA /* SpotlightInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F700D7D1530071DC1B9E2A4 /* SpotlightInputView.swift */; };
 		10B50F7D71BEBBF7F402B67F /* AppContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111CD8162CAB3A89531236C3 /* AppContentTests.swift */; };
+		BF8498C967537054EFCA290C /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
+		68A3FF5BAE69E4210CFD9DD5 /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
+		DE5F7D295910E68B13CA11F3 /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
 		1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		260F283846905C00945D62F7 /* GlobalHotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */; };
 		348246282A314913BC20394F /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
@@ -128,6 +131,7 @@
 		C855C17B2EE34C120073EB99 /* ErrorBannerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */; };
 		C855C17D2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C17C2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
+		DEEPLINK0TEST13064F88B81B01 /* DeepLinkManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEEPLINK0TEST13064F88B81B00 /* DeepLinkManagerTests.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
 		C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */; };
@@ -269,6 +273,7 @@
 		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
 		C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
 		C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
+		FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkManager.swift; sourceTree = "<group>"; };
 		C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 		C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
 		C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EphemeralKeychainStorage.swift; sourceTree = "<group>"; };
@@ -285,6 +290,7 @@
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
 		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		DEEPLINK0TEST13064F88B81B00 /* DeepLinkManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkManagerTests.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
@@ -610,6 +616,7 @@
 				C855C16B2EE208910073EB99 /* SoundEngine.swift */,
 				C82E6B942EDBD77F0055158F /* WatchMarkdownRenderer.swift */,
 				C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */,
+				FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */,
 				C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */,
 				C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */,
 				C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */,
@@ -662,6 +669,7 @@
 				CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */,
 				WATCH0CHAT0VM0TEST13064F88 /* WatchChatViewModelTests.swift */,
 				WATCH0CONV0STORE0TEST1306 /* WatchConversationStoreTests.swift */,
+				DEEPLINK0TEST13064F88B81B00 /* DeepLinkManagerTests.swift */,
 				C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */,
 				F007AD97FB2A82E9E1B03F1E /* AccessibilityServiceTests.swift */,
 				111CD8162CAB3A89531236C3 /* AppContentTests.swift */,
@@ -1091,6 +1099,7 @@
 				C81394112ED3DEB800F5E7F9 /* MCPProcessTracker.swift in Sources */,
 				C81394122ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */,
 				C81394132ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */,
+				68A3FF5BAE69E4210CFD9DD5 /* DeepLinkManager.swift in Sources */,
 				C81394142ED3DEB800F5E7F9 /* MCPServerStatus.swift in Sources */,
 				C81394162ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */,
 				C81394182ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */,
@@ -1133,6 +1142,7 @@
 				C855C16E2EE208910073EB99 /* SoundEngine.swift in Sources */,
 				C855C16F2EE208910073EB99 /* HapticEngine.swift in Sources */,
 				C82E6BA32EDBDFF90055158F /* AppPreferences.swift in Sources */,
+				DE5F7D295910E68B13CA11F3 /* DeepLinkManager.swift in Sources */,
 				C82E6B902EDBD7640055158F /* WatchChatViewModel.swift in Sources */,
 				C82E6B962EDBD77F0055158F /* WatchMarkdownRenderer.swift in Sources */,
 				C82E6B912EDBD7640055158F /* WatchConversationStore.swift in Sources */,
@@ -1196,6 +1206,7 @@
 				CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */,
 				WATCH0CHAT0VM0TEST13064F89 /* WatchChatViewModelTests.swift in Sources */,
 				WATCH0CONV0STORE0TEST1307 /* WatchConversationStoreTests.swift in Sources */,
+				DEEPLINK0TEST13064F88B81B01 /* DeepLinkManagerTests.swift in Sources */,
 				C855C17B2EE34C120073EB99 /* ErrorBannerViewTests.swift in Sources */,
 				7F38CD598966A6C637C30B17 /* AccessibilityServiceTests.swift in Sources */,
 				10B50F7D71BEBBF7F402B67F /* AppContentTests.swift in Sources */,
@@ -1237,6 +1248,7 @@
 				C81393EE2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,
 				C81393F12ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift in Sources */,
 				C81393F22ED3DEB800F5E7F9 /* AppPreferences.swift in Sources */,
+				BF8498C967537054EFCA290C /* DeepLinkManager.swift in Sources */,
 				C81393F52ED3DEB800F5E7F9 /* ConversationManager.swift in Sources */,
 				C81393F72ED3DEB800F5E7F9 /* DiagnosticsLogger.swift in Sources */,
 				C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */,
@@ -1451,6 +1463,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/macOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -1488,6 +1501,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/macOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

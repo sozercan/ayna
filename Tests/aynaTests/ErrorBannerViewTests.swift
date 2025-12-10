@@ -9,6 +9,7 @@
 import SwiftUI
 import XCTest
 
+@MainActor
 final class ErrorBannerViewTests: XCTestCase {
     // MARK: - Initialization Tests
 

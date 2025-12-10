@@ -102,6 +102,113 @@ Allows sending a single prompt to multiple models simultaneously for comparison.
 - **Files**: `MCPServerManager.swift`, `MCPService.swift`, `MCPModels.swift`
 - **Flow**: User Message → LLM requests tool → App executes via MCP server → Result sent back → Final answer
 
+## Deep Link Manager
+
+Handles URL scheme (`ayna://`) for automation and external app integration.
+
+- **File**: `Core/Utilities/DeepLinkManager.swift`
+- **Platforms**: macOS, iOS (watchOS receives settings via WatchConnectivity sync)
+
+### Supported Actions
+
+| Action | URL Pattern | Description |
+|--------|-------------|-------------|
+| Add Model | `ayna://add-model?...` | Configure a new AI model |
+| Chat | `ayna://chat?...` | Start a conversation |
+
+### Add Model Parameters
+
+| Parameter | Required | Values | Description |
+|-----------|:--------:|--------|-------------|
+| `name` | ✅ | String | Model identifier (e.g., `gpt-4o`) |
+| `provider` | | `openai`, `github`, `azure`, `apple`, `aikit` | API provider |
+| `endpoint` | | URL | Custom API endpoint |
+| `key` | | String | API key |
+| `type` | | `chat`, `responses`, `image` | Model capability type |
+
+### Chat Parameters
+
+| Parameter | Required | Values | Description |
+|-----------|:--------:|--------|-------------|
+| `model` | | String | Model to use (default if omitted) |
+| `prompt` | | String | Auto-send message |
+| `system` | | String | System prompt |
+| `provider` | | See Add Model | For unified flow (if model doesn't exist) |
+| `endpoint` | | URL | For unified flow |
+| `key` | | String | For unified flow |
+| `type` | | See Add Model | For unified flow |
+
+### Security
+
+- **Confirmation dialogs**: All `add-model` requests show a confirmation UI before adding
+- **URL validation**: Invalid parameters show error banners
+- **No auto-key storage**: API keys from URLs require user confirmation
+
+### Implementation Flow
+
+```
+URL received → DeepLinkManager.handleURL()
+                    ↓
+            Parse action & parameters
+                    ↓
+         ┌─────────┴─────────┐
+    add-model              chat
+         ↓                   ↓
+  pendingAddModel     Check model config params
+  (shows confirmation)        ↓
+                    ┌────────┴────────┐
+              No config params    Has config params
+                    ↓                   ↓
+           startConversation()   Model exists?
+                                      ↓
+                              ┌───────┴───────┐
+                            Yes              No
+                              ↓               ↓
+                   startConversation()  pendingAddModel +
+                                        pendingChat (unified)
+                                              ↓
+                                     User confirms add
+                                              ↓
+                                     startConversation()
+```
+
+### URL Format
+
+**Add a Model**
+
+```
+ayna://add-model?name=<model>&provider=<provider>&endpoint=<url>&key=<apikey>&type=<type>
+```
+
+**Start a Chat**
+
+```
+ayna://chat?model=<model>&prompt=<message>&system=<systemprompt>&provider=<provider>&endpoint=<url>&key=<apikey>&type=<type>
+```
+
+**Note:** If you include `provider`, `endpoint`, `key`, or `type` parameters in a chat URL and the model doesn't exist, Ayna will prompt to add it first, then start the chat.
+
+### Examples
+
+```bash
+# Add an OpenAI model
+open "ayna://add-model?name=gpt-4o&provider=openai"
+
+# Start a chat with a specific model and prompt
+open "ayna://chat?model=gpt-4o&prompt=Hello"
+
+# Quick question
+open "ayna://chat?prompt=What%20is%20the%20capital%20of%20France?"
+
+# Unified flow: Add model and start chat in one URL
+open "ayna://chat?model=my-model&provider=openai&endpoint=https://api.example.com&key=sk-xxx&prompt=Hello"
+```
+
+### Platform-Specific Handling
+
+- **macOS**: App delegate `application(_:open:)` with `handlesExternalEvents(matching:)` for single-window behavior
+- **iOS**: `.onOpenURL` modifier in `AynaIOSApp`
+
 ## Persistence & Sync Services
 
 | Service | Purpose |

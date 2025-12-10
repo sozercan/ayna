@@ -18,6 +18,7 @@ This document details platform-specific capabilities, limitations, and implement
 | **Attachments** | ✅ | ✅ | ❌ |
 | **CloudKit Sync** | ✅ | ✅ | ❌ |
 | **Export (Markdown/PDF)** | ✅ | ✅ | ❌ |
+| **Deep Links** | ✅ | ✅ | ❌ |
 
 ## Platform Details
 

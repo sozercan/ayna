@@ -214,6 +214,60 @@ final class ConversationManager: ObservableObject {
         save(conversation)
     }
 
+    /// Start a new conversation with optional model, prompt, and system prompt.
+    /// Used by deep links to create a conversation and optionally auto-send a message.
+    /// - Parameters:
+    ///   - model: The model to use. If nil, uses the currently selected model.
+    ///   - prompt: An initial prompt to auto-send. If nil, no message is sent automatically.
+    ///   - systemPrompt: A custom system prompt for this conversation. If nil, inherits global.
+    /// - Returns: The created conversation.
+    @discardableResult
+    func startConversation(
+        model: String? = nil,
+        prompt: String? = nil,
+        systemPrompt: String? = nil
+    ) -> Conversation {
+        let effectiveModel = model ?? OpenAIService.shared.selectedModel
+
+        // Validate model exists
+        let availableModels = OpenAIService.shared.customModels
+        let validatedModel = availableModels.contains(effectiveModel)
+            ? effectiveModel
+            : OpenAIService.shared.selectedModel
+
+        var conversation = Conversation(
+            title: "New Conversation",
+            model: validatedModel
+        )
+
+        // Set system prompt mode
+        if let systemPrompt, !systemPrompt.isEmpty {
+            conversation.systemPromptMode = .custom(systemPrompt)
+        }
+
+        // Set pending auto-send prompt (will be picked up by the chat view)
+        if let prompt, !prompt.isEmpty {
+            conversation.pendingAutoSendPrompt = prompt
+        }
+
+        conversations.insert(conversation, at: 0)
+        selectedConversationId = conversation.id
+        save(conversation)
+
+        logManager(
+            "🔗 Started conversation via deep link",
+            level: .info,
+            metadata: [
+                "conversationId": conversation.id.uuidString,
+                "model": validatedModel,
+                "hasPrompt": "\(prompt != nil)",
+                "hasSystemPrompt": "\(systemPrompt != nil)"
+            ]
+        )
+
+        return conversation
+    }
+
     func deleteConversation(_ conversation: Conversation) {
         conversations.removeAll { $0.id == conversation.id }
         Task {
