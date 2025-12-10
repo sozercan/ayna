@@ -335,11 +335,18 @@ struct MacMessageView: View {
             }
         }
 
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image {
+        // Show typing indicator for empty assistant messages (waiting for response)
+        // But not if we have reasoning content (model is thinking)
+        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
+           message.reasoning == nil || message.reasoning?.isEmpty == true
+        {
             TypingIndicatorView()
         }
 
         if let reasoning = message.reasoning, !reasoning.isEmpty {
+            // Determine if still actively thinking (has reasoning but no content yet)
+            let isStillThinking = message.content.isEmpty && message.mediaType != .image
+
             Button(action: {
                 withAnimation(Motion.springStandard) {
                     showReasoning.toggle()
@@ -348,8 +355,12 @@ struct MacMessageView: View {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: showReasoning ? "chevron.down" : "chevron.right")
                         .font(Typography.caption)
-                    Text("Thinking")
+                    Text(isStillThinking ? "Thinking..." : "Thinking")
                         .font(Typography.captionBold)
+                    if isStillThinking {
+                        // Show animated indicator while still thinking
+                        ThinkingIndicatorDots()
+                    }
                     Spacer(minLength: 0)
                     Text("\(reasoning.count) chars")
                         .font(Typography.caption)
@@ -1224,6 +1235,27 @@ struct SyntaxHighlightedCodeView: View {
 
         for match in matches {
             attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
+        }
+    }
+}
+
+// Compact thinking indicator dots for inline use
+struct ThinkingIndicatorDots: View {
+    @State private var animatingDot = 0
+
+    let timer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0 ..< 3, id: \.self) { index in
+                Circle()
+                    .fill(Theme.userBubbleText.opacity(index == animatingDot ? 1.0 : 0.4))
+                    .frame(width: 4, height: 4)
+                    .animation(.easeInOut(duration: 0.2), value: animatingDot)
+            }
+        }
+        .onReceive(timer) { _ in
+            animatingDot = (animatingDot + 1) % 3
         }
     }
 }
