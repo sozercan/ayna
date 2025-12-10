@@ -916,6 +916,66 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
         )
     }
 
+    /// Switch to a different model and retry the message.
+    /// This retries with the specified model without changing the conversation's default model.
+    func switchModelAndRetry(beforeMessage: Message, newModel: String) {
+        guard let conversation else { return }
+        let targetConversationId = conversation.id
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔄 Switching model and retrying",
+            metadata: [
+                "conversationId": targetConversationId.uuidString,
+                "newModel": newModel,
+            ]
+        )
+
+        // Find the index of the message to retry
+        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessage.id }) else {
+            return
+        }
+
+        // Remove the assistant message and any subsequent messages
+        let updatedMessages = Array(conversation.messages.prefix(messageIndex))
+
+        // Update the conversation
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == targetConversationId }) {
+            conversationManager.conversations[convIndex].messages = updatedMessages
+        }
+
+        // Create a new assistant message placeholder with the new model
+        let assistantMessage = Message(role: .assistant, content: "", model: newModel)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        isGenerating = true
+        errorMessage = nil
+
+        // Re-fetch conversation with updated messages
+        guard let updatedConversation = self.conversation else { return }
+        var messagesToSend = Array(updatedConversation.messages.dropLast())
+
+        // Prepend system prompt if configured
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        // Get available tools and use helper method
+        let tools = openAIService.getAllAvailableTools()
+        toolCallDepth = 0
+
+        // Use the new model for this request
+        sendMessageWithToolSupport(
+            messages: messagesToSend,
+            model: newModel,
+            conversationId: targetConversationId,
+            assistantMessageId: assistantMessage.id,
+            tools: tools
+        )
+    }
+
     // MARK: - Multi-Model Message Sending
 
     private func sendMultiModelMessage() {

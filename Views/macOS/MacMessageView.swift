@@ -279,6 +279,8 @@ struct MacMessageView: View {
             actionControls(for: message.role)
                 .offset(y: -26)
         }
+        .padding(.top, 30) // Extra space for action controls above bubble
+        .contentShape(Rectangle()) // Make entire area including controls hoverable
         .animation(Motion.easeStandard, value: isHovered)
     }
 
@@ -401,16 +403,18 @@ struct MacMessageView: View {
     @MainActor @ViewBuilder
     private func actionControls(for role: Message.Role) -> some View {
         if isHovered || UITestEnvironment.isEnabled {
-            HStack(spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xxs) {
                 Button(action: {
                     copyToClipboard(message.content)
                 }) {
                     Image(systemName: "doc.on.doc")
                         .font(Typography.caption)
-                        .padding(Spacing.xs)
+                        .padding(Spacing.sm)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.action.copy")
+                .accessibilityLabel("Copy message")
 
                 if role == .assistant {
                     Menu {
@@ -446,16 +450,16 @@ struct MacMessageView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(Typography.caption)
-                            .padding(Spacing.xs)
+                            .padding(Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    .accessibilityLabel("More options")
                 }
             }
             .foregroundStyle(Theme.userBubbleText)
-            .padding(.horizontal, Spacing.md - 2)
-            .padding(.vertical, Spacing.xs)
             .background(.ultraThinMaterial, in: Capsule())
             .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
             .transition(Motion.scaleTransition)
