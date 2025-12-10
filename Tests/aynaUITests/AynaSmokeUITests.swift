@@ -130,8 +130,9 @@ final class AynaSmokeUITests: AynaUITestCase {
         let modelsTab = app.buttons["Models"]
         XCTAssertTrue(modelsTab.waitForExistence(timeout: 5))
 
-        let mcpTab = app.buttons["MCP Tools"]
-        XCTAssertTrue(mcpTab.waitForExistence(timeout: 5))
+        // The Tools tab (formerly MCP Tools)
+        let toolsTab = app.buttons["Tools"]
+        XCTAssertTrue(toolsTab.waitForExistence(timeout: 5))
     }
 
     func testConversationSwitching() {
