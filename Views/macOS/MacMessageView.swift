@@ -335,15 +335,16 @@ struct MacMessageView: View {
             }
         }
 
+        // Check if message has meaningful reasoning content
+        let hasReasoning = message.reasoning.map { !$0.isEmpty } ?? false
+
         // Show typing indicator for empty assistant messages (waiting for response)
         // But not if we have reasoning content (model is thinking)
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
-           message.reasoning == nil || message.reasoning?.isEmpty == true
-        {
+        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image, !hasReasoning {
             TypingIndicatorView()
         }
 
-        if let reasoning = message.reasoning, !reasoning.isEmpty {
+        if hasReasoning, let reasoning = message.reasoning {
             // Determine if still actively thinking (has reasoning but no content yet)
             let isStillThinking = message.content.isEmpty && message.mediaType != .image
 
