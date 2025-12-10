@@ -211,10 +211,17 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func openMainWindow() async {
         NSApp.activate(ignoringOtherApps: true)
 
-        // Check if we have a main window (not panel, not about window)
+        // Check if we have a main window (not panel, not settings window)
         let existingWindow = NSApp.windows.first(where: { window in
             !window.isKind(of: NSPanel.self) &&
-                window.contentViewController != nil
+                window.contentViewController != nil &&
+                // Exclude settings window (has "Settings" or "Preferences" in identifier/title)
+                !(window.identifier?.rawValue.contains("settings") ?? false) &&
+                !(window.identifier?.rawValue.contains("Settings") ?? false) &&
+                !(window.title.contains("Settings")) &&
+                !(window.title.contains("Preferences")) &&
+                // Also check it's not a toolbar-only window
+                window.contentView != nil
         })
 
         if let window = existingWindow {
@@ -485,8 +492,11 @@ private func handleWorkWithAppsSubmit(
             // Wait for window to be ready
             try? await Task.sleep(for: .milliseconds(500))
 
-            // Ensure window is visible and focused
-            if let window = NSApp.windows.first(where: { !$0.isKind(of: NSPanel.self) }) {
+            // Ensure main window (not settings) is visible and focused
+            if let window = NSApp.windows.first(where: {
+                !$0.isKind(of: NSPanel.self) &&
+                    !($0.title.contains("Settings") || $0.title.contains("Preferences"))
+            }) {
                 window.makeKeyAndOrderFront(nil)
             }
 
