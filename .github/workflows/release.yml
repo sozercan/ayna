@@ -18,7 +18,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
     - name: Show Xcode version
       run: xcodebuild -version
@@ -104,7 +104,7 @@ jobs:
       run: mv ayna.dmg "${{ steps.artifact.outputs.filename }}"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v4
       with:
         name: ${{ steps.artifact.outputs.filename }}
         path: ${{ steps.artifact.outputs.filename }}
