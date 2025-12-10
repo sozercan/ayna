@@ -6,6 +6,8 @@
 //  Created on 11/2/25.
 //
 
+// swiftlint:disable file_length
+
 import Combine
 import CoreSpotlight
 import OSLog
@@ -188,6 +190,50 @@ struct MacNewChatView: View {
         }
     }
 
+    // MARK: - Multi-Model Display
+
+    /// Represents either a single message or a group of parallel responses
+    private enum DisplayableItem: Identifiable {
+        case message(Message)
+        case responseGroup(groupId: UUID, responses: [Message])
+
+        var id: String {
+            switch self {
+            case let .message(msg):
+                msg.id.uuidString
+            case let .responseGroup(groupId, _):
+                "group-\(groupId.uuidString)"
+            }
+        }
+    }
+
+    /// Converts visible messages into displayable items, grouping parallel responses
+    private var displayableItems: [DisplayableItem] {
+        var items: [DisplayableItem] = []
+        var processedGroupIds: Set<UUID> = []
+
+        for message in visibleMessages {
+            // Check if this message is part of a response group
+            if let groupId = message.responseGroupId {
+                // Only process each group once
+                guard !processedGroupIds.contains(groupId) else { continue }
+                processedGroupIds.insert(groupId)
+
+                // Collect all messages in this group
+                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
+
+                // Always show response groups as a group, even if only one response is currently visible
+                // This prevents UI jumping when responses arrive sequentially
+                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
+            } else {
+                // Regular message (not part of a response group)
+                items.append(.message(message))
+            }
+        }
+
+        return items
+    }
+
     private var needsModelSetup: Bool {
         openAIService.usableModels.isEmpty
             || openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -252,14 +298,34 @@ struct MacNewChatView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 0) {
-                                ForEach(visibleMessages) { message in
-                                    MacMessageView(
-                                        message: message,
-                                        modelName: message.model,
-                                        onRetry: nil,
-                                        onSwitchModel: nil
-                                    )
-                                    .id(message.id)
+                                ForEach(displayableItems) { item in
+                                    switch item {
+                                    case let .message(message):
+                                        MacMessageView(
+                                            message: message,
+                                            modelName: message.model,
+                                            onRetry: nil,
+                                            onSwitchModel: nil
+                                        )
+                                        .id(message.id)
+                                    case let .responseGroup(groupId, responses):
+                                        if let conversation = currentConversation {
+                                            MultiModelResponseView(
+                                                responseGroupId: groupId,
+                                                responses: responses,
+                                                conversation: conversation,
+                                                onSelectResponse: { messageId in
+                                                    conversationManager.selectResponse(
+                                                        in: conversation,
+                                                        groupId: groupId,
+                                                        messageId: messageId
+                                                    )
+                                                },
+                                                onRetry: nil
+                                            )
+                                            .id(item.id)
+                                        }
+                                    }
                                 }
                             }
                             .padding(.horizontal, 24)
