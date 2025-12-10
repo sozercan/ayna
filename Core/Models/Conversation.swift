@@ -185,17 +185,25 @@ struct Conversation: Identifiable, Codable, Equatable {
     /// Select a response from a response group
     mutating func selectResponse(in groupId: UUID, messageId: UUID) {
         if let index = responseGroups.firstIndex(where: { $0.id == groupId }) {
+            let previousSelection = responseGroups[index].selectedResponseId
             responseGroups[index].selectResponse(messageId)
 
             // Mark messages accordingly
             for msgIndex in messages.indices where messages[msgIndex].responseGroupId == groupId {
-                messages[msgIndex].isSelectedResponse = (messages[msgIndex].id == messageId)
+                let isNewSelection = messages[msgIndex].id == messageId
+                let wasPreviousSelection = messages[msgIndex].id == previousSelection
+
+                messages[msgIndex].isSelectedResponse = isNewSelection
 
                 #if !os(watchOS)
                     // If this is the selected message and it has pending tool calls, activate them
-                    if messages[msgIndex].id == messageId, let pendingCalls = messages[msgIndex].pendingToolCalls {
+                    if isNewSelection, let pendingCalls = messages[msgIndex].pendingToolCalls {
                         messages[msgIndex].toolCalls = pendingCalls
                         messages[msgIndex].pendingToolCalls = nil
+                    }
+                    // Clear tool calls from previous selection to prevent confusion
+                    if wasPreviousSelection, previousSelection != nil {
+                        messages[msgIndex].toolCalls = nil
                     }
                 #endif
             }

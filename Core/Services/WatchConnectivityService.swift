@@ -120,6 +120,16 @@ private enum WatchMessageKeys {
                 let encoder = JSONEncoder()
                 let data = try encoder.encode(watchConversations)
 
+                // Warn if payload is large (WCSession limit is ~65KB for applicationContext)
+                if data.count > 50000 {
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .default,
+                        message: "⚠️ Watch sync payload large",
+                        metadata: ["bytes": "\(data.count)"]
+                    )
+                }
+
                 // Get all model configuration for Watch
                 let availableModels = OpenAIService.shared.usableModels
                 let selectedModel = OpenAIService.shared.selectedModel

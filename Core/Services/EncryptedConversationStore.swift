@@ -9,6 +9,20 @@ import CryptoKit
 import Foundation
 import os.log
 
+/// Errors specific to the encrypted conversation store
+enum EncryptedStoreError: LocalizedError {
+    /// The encryption key was previously created but is now missing (e.g., after device restore/migration)
+    /// This indicates the key was deleted or corrupted, and existing encrypted data cannot be recovered
+    case keyLost
+
+    var errorDescription: String? {
+        switch self {
+        case .keyLost:
+            "Encryption key was lost. Previously encrypted conversations cannot be recovered. Please contact support if you need assistance."
+        }
+    }
+}
+
 final class EncryptedConversationStore: Sendable {
     static let shared = EncryptedConversationStore()
 
@@ -172,12 +186,29 @@ final class EncryptedConversationStore: Sendable {
     private static func getEncryptionKey(keyIdentifier: String, keychain: KeychainStoring) throws
         -> SymmetricKey
     {
+        let flagKey = "\(keyIdentifier)_initialized"
+
         if let existing = try keychain.data(for: keyIdentifier) {
             return SymmetricKey(data: existing)
         }
+
+        // Check if we previously had a key (flag exists but key is missing)
+        if (try? keychain.string(for: flagKey)) != nil {
+            // Key was deleted/corrupted but flag exists - don't silently generate new key
+            // This would orphan all existing encrypted data
+            DiagnosticsLogger.log(
+                .encryptedStore,
+                level: .error,
+                message: "❌ Encryption key missing but initialization flag exists - possible key loss"
+            )
+            throw EncryptedStoreError.keyLost
+        }
+
+        // First-time setup: generate new key and set initialization flag
         let newKey = SymmetricKey(size: .bits256)
         let keyData = newKey.withUnsafeBytes { Data($0) }
         try keychain.setData(keyData, for: keyIdentifier)
+        try keychain.setString("1", for: flagKey)
         return newKey
     }
 
