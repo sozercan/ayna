@@ -79,6 +79,10 @@ struct Conversation: Identifiable, Codable, Equatable {
     var activeModels: [String] // Models selected for parallel queries
     var responseGroups: [ResponseGroup] // Track all response groups
 
+    // Deep link support - transient, not persisted
+    /// When set, the chat view should auto-send this prompt on load
+    var pendingAutoSendPrompt: String?
+
     init(
         id: UUID = UUID(),
         title: String = "New Conversation",

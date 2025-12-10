@@ -62,6 +62,9 @@ struct aynaApp: App {
             MacContentView()
                 .environmentObject(conversationManager)
                 .onAppear {
+                    // Pass conversation manager to app delegate for deep link handling
+                    appDelegate.conversationManager = conversationManager
+
                     // If running UI tests, ensure window is ready
                     if UITestEnvironment.isEnabled {
                         Task { @MainActor in
@@ -71,10 +74,20 @@ struct aynaApp: App {
                         }
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .deepLinkNeedsWindow)) { _ in
+                    // Window was created by WindowGroup, bring to front
+                    Task { @MainActor in
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
+                            window.makeKeyAndOrderFront(nil)
+                        }
+                    }
+                }
                 .onContinueUserActivity(handoffActivityType) { activity in
                     handleHandoff(activity)
                 }
         }
+        .handlesExternalEvents(matching: ["main"])
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
@@ -149,6 +162,9 @@ struct aynaApp: App {
 
 @MainActor
 final class AynaAppDelegate: NSObject, NSApplicationDelegate {
+    /// Reference to the conversation manager for deep link handling
+    weak var conversationManager: ConversationManager?
+
     func applicationWillTerminate(_: Notification) {
         DiagnosticsLogger.log(
             .app,
@@ -157,6 +173,89 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
         )
         MCPServerManager.shared.disconnectAllServers()
     }
+
+    /// Called when the app is reactivated (e.g., clicked in dock) with no windows
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // If no visible windows, let the system create one
+        return !flag
+    }
+
+    /// Handle deep link URLs at the app delegate level to prevent new window creation
+    func application(_ app: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+
+        // First, ensure we have a window by activating the app
+        app.activate(ignoringOtherApps: true)
+
+        // Check if we need to create a window first (app is running but all windows closed)
+        let hasVisibleWindow = app.windows.contains { $0.canBecomeMain && !$0.isMiniaturized }
+
+        if !hasVisibleWindow {
+            // Open a window by triggering the WindowGroup
+            // Use NSWorkspace to open a neutral URL that matches handlesExternalEvents
+            if let mainURL = URL(string: "ayna://main") {
+                NSWorkspace.shared.open(mainURL)
+            }
+            // Small delay to let the window appear before handling the actual deep link
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                await self.handleDeepLinkURL(url, app: app)
+            }
+        } else {
+            // Window exists, handle immediately
+            Task { @MainActor in
+                await self.handleDeepLinkURL(url, app: app)
+            }
+        }
+    }
+
+    @MainActor
+    private func handleDeepLinkURL(_ url: URL, app: NSApplication) async {
+        await DeepLinkManager.shared.handle(url: url)
+
+        DiagnosticsLogger.log(
+            .app,
+            level: .fault,
+            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
+        )
+
+        // Handle chat deep links by starting a conversation
+        // BUT only if there's no pending add-model confirmation (unified flow)
+        if DeepLinkManager.shared.pendingAddModel == nil,
+           let chatRequest = DeepLinkManager.shared.pendingChat,
+           let manager = conversationManager
+        {
+            DiagnosticsLogger.log(
+                .app,
+                level: .fault,
+                message: "🔗 DEBUG AppDelegate: Starting conversation (no pending add model)"
+            )
+            _ = manager.startConversation(
+                model: chatRequest.model,
+                prompt: chatRequest.prompt,
+                systemPrompt: chatRequest.systemPrompt
+            )
+            DeepLinkManager.shared.clearPendingChat()
+        } else if DeepLinkManager.shared.pendingAddModel != nil {
+            DiagnosticsLogger.log(
+                .app,
+                level: .fault,
+                message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
+            )
+        }
+
+        // Bring window to front
+        if let window = app.windows.first(where: { $0.canBecomeMain }) {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+extension Notification.Name {
+    static let deepLinkNeedsWindow = Notification.Name("deepLinkNeedsWindow")
 }
 
 @MainActor

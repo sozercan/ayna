@@ -36,6 +36,8 @@ docs/       → Detailed documentation for AI agents
 
 ## Critical Rules (Apply to EVERY task)
 
+> ⚠️ **NEVER run `git push`** — Always leave pushing to the human. Commit changes but do not push.
+
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
 2. **Verify Builds**: After modifying shared code, verify both platforms:
@@ -51,9 +53,7 @@ docs/       → Detailed documentation for AI agents
 
 4. **Unit Tests Required**: New code in `Core/` must include tests in `Tests/aynaTests/`.
 
-5. **Never `git push`**: Leave pushing to the human.
-
-6. **Use Modern SwiftUI APIs**: See [docs/platforms.md](docs/platforms.md#swiftui-api-best-practices) for details.
+5. **Use Modern SwiftUI APIs**: See [docs/platforms.md](docs/platforms.md#swiftui-api-best-practices) for details.
    - `.foregroundStyle()` not `.foregroundColor()`
    - `.clipShape(.rect(cornerRadius:))` not `.cornerRadius()`
    - `onChange(of:) { _, newValue in }` (two-param closure)
@@ -64,9 +64,9 @@ docs/       → Detailed documentation for AI agents
    - Avoid `AnyView` — use concrete types or `@ViewBuilder`
    - Add `.accessibilityLabel()` to image-only buttons
 
-7. **No Third-Party Frameworks**: Do not introduce third-party dependencies without asking first.
+6. **No Third-Party Frameworks**: Do not introduce third-party dependencies without asking first.
 
-8. **Swift Concurrency**: Always mark `@Observable` classes with `@MainActor`. Never use `DispatchQueue` — use Swift concurrency (`async`/`await`, `MainActor`).
+7. **Swift Concurrency**: Always mark `@Observable` classes with `@MainActor`. Never use `DispatchQueue` — use Swift concurrency (`async`/`await`, `MainActor`).
 
 ## Quick Style Rules
 

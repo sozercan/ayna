@@ -45,7 +45,18 @@ struct AynaIOSApp: App {
                 .environmentObject(openAIService)
                 .onOpenURL { url in
                     Task {
-                        await GitHubOAuthService.shared.handleCallbackURL(url)
+                        // Handle deep links (including OAuth callbacks)
+                        await DeepLinkManager.shared.handle(url: url)
+
+                        // Handle chat deep links by starting a conversation
+                        if let chatRequest = DeepLinkManager.shared.pendingChat {
+                            _ = conversationManager.startConversation(
+                                model: chatRequest.model,
+                                prompt: chatRequest.prompt,
+                                systemPrompt: chatRequest.systemPrompt
+                            )
+                            DeepLinkManager.shared.clearPendingChat()
+                        }
                     }
                 }
                 .onContinueUserActivity(handoffActivityType) { activity in
