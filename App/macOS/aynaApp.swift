@@ -177,7 +177,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the app is reactivated (e.g., clicked in dock) with no windows
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // If no visible windows, let the system create one
-        return !flag
+        !flag
     }
 
     /// Handle deep link URLs at the app delegate level to prevent new window creation

@@ -5,6 +5,8 @@
 //  Created on 11/2/25.
 //
 
+// swiftlint:disable file_length
+
 import SwiftUI
 
 // MARK: - Design System Integration
@@ -1036,6 +1038,130 @@ struct ImageGeneratingView: View {
     }
 }
 
+// MARK: - Syntax Highlighting Regex Cache
+
+/// Pre-compiled regex patterns for syntax highlighting to avoid expensive regex compilation
+/// on every render. This cache is shared across all instances of SyntaxHighlightedCodeView.
+/// Thread-safety is ensured through the use of nonisolated(unsafe) and atomic initialization.
+private enum SyntaxRegexCache {
+    /// Thread-safe cache for compiled regex patterns using a concurrent dictionary pattern
+    private final class RegexCache: @unchecked Sendable {
+        private var cache: [String: NSRegularExpression] = [:]
+        private let lock = NSLock()
+
+        func get(_ pattern: String) -> NSRegularExpression? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let cached = cache[pattern] {
+                return cached
+            }
+
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+                return nil
+            }
+
+            cache[pattern] = regex
+            return regex
+        }
+    }
+
+    private static let sharedCache = RegexCache()
+
+    /// Pre-compiled keyword patterns for each language
+    static let swiftKeywords = createKeywordPattern([
+        "func", "var", "let", "if", "else", "for", "while", "return", "import", "class", "struct",
+        "enum", "protocol", "extension", "public", "private", "internal", "static", "override",
+        "init", "self", "super", "nil", "true", "false", "guard", "switch", "case", "default",
+        "break", "continue", "in", "where", "as", "is", "try", "catch", "throw", "throws",
+        "async", "await", "actor"
+    ])
+
+    static let pythonKeywords = createKeywordPattern([
+        "def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as",
+        "try", "except", "finally", "with", "lambda", "yield", "async", "await", "pass", "break",
+        "continue", "and", "or", "not", "in", "is", "None", "True", "False", "self"
+    ])
+
+    static let jsKeywords = createKeywordPattern([
+        "function", "const", "let", "var", "if", "else", "for", "while", "return", "import",
+        "export", "class", "extends", "constructor", "this", "super", "async", "await", "try",
+        "catch", "throw", "new", "typeof", "instanceof", "null", "undefined", "true", "false",
+        "switch", "case", "default", "break", "continue"
+    ])
+
+    static let bashKeywords = createKeywordPattern([
+        "if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac",
+        "function", "return", "echo", "exit", "export", "source", "cd", "ls", "cp", "mv",
+        "rm", "mkdir", "chmod", "sudo", "apt", "brew", "npm", "pip", "git"
+    ])
+
+    static let rustKeywords = createKeywordPattern([
+        "fn", "let", "mut", "if", "else", "for", "while", "loop", "return", "use", "mod",
+        "pub", "struct", "enum", "impl", "trait", "type", "where", "match", "self", "Self",
+        "true", "false", "const", "static", "async", "await", "move"
+    ])
+
+    static let goKeywords = createKeywordPattern([
+        "func", "var", "const", "if", "else", "for", "range", "return", "import", "package",
+        "type", "struct", "interface", "map", "chan", "go", "defer", "select", "switch", "case",
+        "default", "break", "continue", "nil", "true", "false"
+    ])
+
+    static let javaKeywords = createKeywordPattern([
+        "public", "private", "protected", "class", "interface", "extends", "implements", "if",
+        "else", "for", "while", "return", "import", "package", "new", "this", "super", "static",
+        "final", "void", "int", "String", "boolean", "true", "false", "null", "try", "catch",
+        "throw", "throws"
+    ])
+
+    static let cKeywords = createKeywordPattern([
+        "if", "else", "for", "while", "return", "void", "int", "char", "float", "double",
+        "struct", "typedef", "enum", "union", "static", "const", "sizeof", "break", "continue",
+        "switch", "case", "default", "#include", "#define", "NULL"
+    ])
+
+    static let rubyKeywords = createKeywordPattern([
+        "def", "end", "class", "module", "if", "elsif", "else", "unless", "case", "when", "for",
+        "while", "until", "do", "return", "yield", "self", "super", "nil", "true", "false",
+        "and", "or", "not", "begin", "rescue", "ensure"
+    ])
+
+    static let phpKeywords = createKeywordPattern([
+        "function", "class", "if", "else", "elseif", "for", "foreach", "while", "return",
+        "public", "private", "protected", "static", "new", "this", "self", "parent", "try",
+        "catch", "throw", "null", "true", "false", "echo", "print", "require", "include"
+    ])
+
+    // Common patterns used across multiple languages
+    static let doubleQuoteString = getOrCreate("\"(?:[^\"\\\\]|\\\\.)*\"")
+    static let singleQuoteString = getOrCreate("'(?:[^'\\\\]|\\\\.)*'")
+    static let backtickString = getOrCreate("`(?:[^`\\\\]|\\\\.)*`")
+    static let singleLineComment = getOrCreate("//.*")
+    static let hashComment = getOrCreate("#.*")
+    static let multiLineComment = getOrCreate("/\\*[\\s\\S]*?\\*/")
+    static let htmlComment = getOrCreate("<!--.*?-->")
+    static let numbers = getOrCreate("\\b\\d+\\.?\\d*\\b")
+    static let phpVariable = getOrCreate("\\$[a-zA-Z_][a-zA-Z0-9_]*")
+    static let bashVariable = getOrCreate("\\$[a-zA-Z_][a-zA-Z0-9_]*")
+    static let jsonKeyPattern = getOrCreate("\"[^\"]*\"\\s*:")
+    static let jsonLiterals = getOrCreate("\\b(true|false|null)\\b")
+    static let htmlTags = getOrCreate("<[^>]+>")
+    static let cssSelector = getOrCreate("[.#][a-zA-Z][a-zA-Z0-9_-]*")
+    static let cssProperty = getOrCreate("[a-zA-Z-]+(?=\\s*:)")
+
+    /// Create a keyword pattern from array of keywords
+    private static func createKeywordPattern(_ keywords: [String]) -> NSRegularExpression? {
+        let pattern = "\\b(" + keywords.joined(separator: "|") + ")\\b"
+        return try? NSRegularExpression(pattern: pattern, options: [])
+    }
+
+    /// Get or create a cached regex for the given pattern
+    static func getOrCreate(_ pattern: String) -> NSRegularExpression? {
+        sharedCache.get(pattern)
+    }
+}
+
 // Syntax highlighted code view
 struct SyntaxHighlightedCodeView: View {
     let code: String
@@ -1095,104 +1221,133 @@ struct SyntaxHighlightedCodeView: View {
     }
 
     private func highlightSwift(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["func", "var", "let", "if", "else", "for", "while", "return", "import", "class", "struct", "enum", "protocol", "extension", "public", "private", "internal", "static", "override", "init", "self", "super", "nil", "true", "false", "guard", "switch", "case", "default", "break", "continue", "in", "where", "as", "is", "try", "catch", "throw", "throws", "async", "await", "actor"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        // Use pre-compiled patterns from cache
+        if let keywordRegex = SyntaxRegexCache.swiftKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightPython(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "try", "except", "finally", "with", "lambda", "yield", "async", "await", "pass", "break", "continue", "and", "or", "not", "in", "is", "None", "True", "False", "self"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.pythonKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
+        highlightComments(attributedString, color: .systemGreen, useHashComment: true)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightJavaScript(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["function", "const", "let", "var", "if", "else", "for", "while", "return", "import", "export", "class", "extends", "constructor", "this", "super", "async", "await", "try", "catch", "throw", "new", "typeof", "instanceof", "null", "undefined", "true", "false", "switch", "case", "default", "break", "continue"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.jsKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightBash(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "function", "return", "echo", "exit", "export", "source", "cd", "ls", "cp", "mv", "rm", "mkdir", "chmod", "sudo", "apt", "brew", "npm", "pip", "git"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.bashKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
-        highlightPattern(attributedString, pattern: "\\$[a-zA-Z_][a-zA-Z0-9_]*", color: .systemCyan) // Variables
+        highlightComments(attributedString, color: .systemGreen, useHashComment: true)
+        if let varRegex = SyntaxRegexCache.bashVariable {
+            applyRegex(varRegex, to: attributedString, color: .systemCyan)
+        }
     }
 
     private func highlightJSON(_ attributedString: NSMutableAttributedString) {
-        highlightPattern(attributedString, pattern: "\"[^\"]*\"\\s*:", color: .systemBlue) // Keys
+        if let keyRegex = SyntaxRegexCache.jsonKeyPattern {
+            applyRegex(keyRegex, to: attributedString, color: .systemBlue)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightPattern(attributedString, pattern: "\\b(true|false|null)\\b", color: .systemPink)
+        if let literalRegex = SyntaxRegexCache.jsonLiterals {
+            applyRegex(literalRegex, to: attributedString, color: .systemPink)
+        }
         highlightNumbers(attributedString, color: .systemOrange)
     }
 
     private func highlightHTML(_ attributedString: NSMutableAttributedString) {
-        highlightPattern(attributedString, pattern: "<[^>]+>", color: .systemPink) // Tags
+        if let tagRegex = SyntaxRegexCache.htmlTags {
+            applyRegex(tagRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightComments(attributedString, color: .systemGreen, pattern: "<!--.*?-->")
+        if let commentRegex = SyntaxRegexCache.htmlComment {
+            applyRegex(commentRegex, to: attributedString, color: .systemGreen)
+        }
     }
 
     private func highlightCSS(_ attributedString: NSMutableAttributedString) {
-        highlightPattern(attributedString, pattern: "[.#][a-zA-Z][a-zA-Z0-9_-]*", color: .systemBlue) // Selectors
-        highlightPattern(attributedString, pattern: "[a-zA-Z-]+(?=\\s*:)", color: .systemCyan) // Properties
+        if let selectorRegex = SyntaxRegexCache.cssSelector {
+            applyRegex(selectorRegex, to: attributedString, color: .systemBlue)
+        }
+        if let propertyRegex = SyntaxRegexCache.cssProperty {
+            applyRegex(propertyRegex, to: attributedString, color: .systemCyan)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightComments(attributedString, color: .systemGreen, pattern: "/\\*.*?\\*/")
+        if let commentRegex = SyntaxRegexCache.multiLineComment {
+            applyRegex(commentRegex, to: attributedString, color: .systemGreen)
+        }
         highlightNumbers(attributedString, color: .systemOrange)
     }
 
     private func highlightRust(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["fn", "let", "mut", "if", "else", "for", "while", "loop", "return", "use", "mod", "pub", "struct", "enum", "impl", "trait", "type", "where", "match", "self", "Self", "true", "false", "const", "static", "async", "await", "move"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.rustKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightGo(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["func", "var", "const", "if", "else", "for", "range", "return", "import", "package", "type", "struct", "interface", "map", "chan", "go", "defer", "select", "switch", "case", "default", "break", "continue", "nil", "true", "false"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.goKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightJava(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["public", "private", "protected", "class", "interface", "extends", "implements", "if", "else", "for", "while", "return", "import", "package", "new", "this", "super", "static", "final", "void", "int", "String", "boolean", "true", "false", "null", "try", "catch", "throw", "throws"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.javaKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightC(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["if", "else", "for", "while", "return", "void", "int", "char", "float", "double", "struct", "typedef", "enum", "union", "static", "const", "sizeof", "break", "continue", "switch", "case", "default", "#include", "#define", "NULL"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.cKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightRuby(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["def", "end", "class", "module", "if", "elsif", "else", "unless", "case", "when", "for", "while", "until", "do", "return", "yield", "self", "super", "nil", "true", "false", "and", "or", "not", "begin", "rescue", "ensure"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.rubyKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
-        highlightComments(attributedString, color: .systemGreen, pattern: "#.*")
+        highlightComments(attributedString, color: .systemGreen, useHashComment: true)
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
     private func highlightPHP(_ attributedString: NSMutableAttributedString) {
-        let keywords = ["function", "class", "if", "else", "elseif", "for", "foreach", "while", "return", "public", "private", "protected", "static", "new", "this", "self", "parent", "try", "catch", "throw", "null", "true", "false", "echo", "print", "require", "include"]
-        highlightKeywords(attributedString, keywords: keywords, color: .systemPink)
+        if let keywordRegex = SyntaxRegexCache.phpKeywords {
+            applyRegex(keywordRegex, to: attributedString, color: .systemPink)
+        }
         highlightStrings(attributedString, color: .systemRed)
         highlightComments(attributedString, color: .systemGreen)
-        highlightPattern(attributedString, pattern: "\\$[a-zA-Z_][a-zA-Z0-9_]*", color: .systemCyan) // Variables
+        if let varRegex = SyntaxRegexCache.phpVariable {
+            applyRegex(varRegex, to: attributedString, color: .systemCyan)
+        }
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
@@ -1202,40 +1357,51 @@ struct SyntaxHighlightedCodeView: View {
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
-    // Helper methods
-    private func highlightKeywords(_ attributedString: NSMutableAttributedString, keywords: [String], color: NSColor) {
-        for keyword in keywords {
-            let pattern = "\\b\(keyword)\\b"
-            highlightPattern(attributedString, pattern: pattern, color: color)
+    // MARK: - Optimized Helper Methods
+
+    /// Apply a pre-compiled regex to the attributed string
+    private func applyRegex(_ regex: NSRegularExpression, to attributedString: NSMutableAttributedString, color: NSColor) {
+        let range = NSRange(location: 0, length: attributedString.length)
+        let matches = regex.matches(in: attributedString.string, options: [], range: range)
+        for match in matches {
+            attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
         }
     }
 
     private func highlightStrings(_ attributedString: NSMutableAttributedString, color: NSColor) {
         // Double quotes
-        highlightPattern(attributedString, pattern: "\"(?:[^\"\\\\]|\\\\.)*\"", color: color)
+        if let regex = SyntaxRegexCache.doubleQuoteString {
+            applyRegex(regex, to: attributedString, color: color)
+        }
         // Single quotes
-        highlightPattern(attributedString, pattern: "'(?:[^'\\\\]|\\\\.)*'", color: color)
+        if let regex = SyntaxRegexCache.singleQuoteString {
+            applyRegex(regex, to: attributedString, color: color)
+        }
         // Backticks (template literals)
-        highlightPattern(attributedString, pattern: "`(?:[^`\\\\]|\\\\.)*`", color: color)
+        if let regex = SyntaxRegexCache.backtickString {
+            applyRegex(regex, to: attributedString, color: color)
+        }
     }
 
-    private func highlightComments(_ attributedString: NSMutableAttributedString, color: NSColor, pattern: String = "//.*") {
-        highlightPattern(attributedString, pattern: pattern, color: color)
+    private func highlightComments(_ attributedString: NSMutableAttributedString, color: NSColor, useHashComment: Bool = false) {
+        if useHashComment {
+            if let regex = SyntaxRegexCache.hashComment {
+                applyRegex(regex, to: attributedString, color: color)
+            }
+        } else {
+            if let regex = SyntaxRegexCache.singleLineComment {
+                applyRegex(regex, to: attributedString, color: color)
+            }
+        }
         // Multi-line comments
-        highlightPattern(attributedString, pattern: "/\\*[\\s\\S]*?\\*/", color: color)
+        if let regex = SyntaxRegexCache.multiLineComment {
+            applyRegex(regex, to: attributedString, color: color)
+        }
     }
 
     private func highlightNumbers(_ attributedString: NSMutableAttributedString, color: NSColor) {
-        highlightPattern(attributedString, pattern: "\\b\\d+\\.?\\d*\\b", color: color)
-    }
-
-    private func highlightPattern(_ attributedString: NSMutableAttributedString, pattern: String, color: NSColor) {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
-        let range = NSRange(location: 0, length: attributedString.length)
-        let matches = regex.matches(in: attributedString.string, options: [], range: range)
-
-        for match in matches {
-            attributedString.addAttribute(.foregroundColor, value: color, range: match.range)
+        if let regex = SyntaxRegexCache.numbers {
+            applyRegex(regex, to: attributedString, color: color)
         }
     }
 }
