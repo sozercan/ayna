@@ -172,6 +172,38 @@ URL received → DeepLinkManager.handleURL()
                                      startConversation()
 ```
 
+### URL Format
+
+**Add a Model**
+
+```
+ayna://add-model?name=<model>&provider=<provider>&endpoint=<url>&key=<apikey>&type=<type>
+```
+
+**Start a Chat**
+
+```
+ayna://chat?model=<model>&prompt=<message>&system=<systemprompt>&provider=<provider>&endpoint=<url>&key=<apikey>&type=<type>
+```
+
+**Note:** If you include `provider`, `endpoint`, `key`, or `type` parameters in a chat URL and the model doesn't exist, Ayna will prompt to add it first, then start the chat.
+
+### Examples
+
+```bash
+# Add an OpenAI model
+open "ayna://add-model?name=gpt-4o&provider=openai"
+
+# Start a chat with a specific model and prompt
+open "ayna://chat?model=gpt-4o&prompt=Hello"
+
+# Quick question
+open "ayna://chat?prompt=What%20is%20the%20capital%20of%20France?"
+
+# Unified flow: Add model and start chat in one URL
+open "ayna://chat?model=my-model&provider=openai&endpoint=https://api.example.com&key=sk-xxx&prompt=Hello"
+```
+
 ### Platform-Specific Handling
 
 - **macOS**: App delegate `application(_:open:)` with `handlesExternalEvents(matching:)` for single-window behavior
