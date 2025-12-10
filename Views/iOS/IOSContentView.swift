@@ -127,7 +127,11 @@ struct IOSNewChatView: View {
                                     message: message,
                                     onRetry: message.role == .assistant ? {
                                         viewModel.retryMessage(beforeMessage: message)
-                                    } : nil
+                                    } : nil,
+                                    onSwitchModel: message.role == .assistant ? { newModel in
+                                        viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                    } : nil,
+                                    availableModels: openAIService.usableModels
                                 )
                                 .id(message.id)
                                 .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
