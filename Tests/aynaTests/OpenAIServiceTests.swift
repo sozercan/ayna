@@ -6,7 +6,6 @@ final class OpenAIServiceTests: XCTestCase {
     private var defaults: UserDefaults!
 
     override func setUp() async throws {
-        try await super.setUp()
         guard let suite = UserDefaults(suiteName: "OpenAIServiceTests") else {
             fatalError("Failed to create UserDefaults suite for OpenAIServiceTests")
         }
@@ -26,7 +25,6 @@ final class OpenAIServiceTests: XCTestCase {
         defaults = nil
         OpenAIService.keychain = KeychainStorage.shared
         MockURLProtocol.reset()
-        try await super.tearDown()
     }
 
     private func makeService() -> OpenAIService {

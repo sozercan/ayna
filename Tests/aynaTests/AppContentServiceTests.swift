@@ -14,7 +14,6 @@
         var service: AppContentService!
 
     override func setUp() async throws {
-      try await super.setUp()
             service = AppContentService.shared
         }
 

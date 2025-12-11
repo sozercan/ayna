@@ -15,14 +15,12 @@
         var service: GlobalHotkeyService!
 
     override func setUp() async throws {
-      try await super.setUp()
             service = GlobalHotkeyService.shared
         }
 
     override func tearDown() async throws {
             service.unregister()
             service.onHotkeyPressed = nil
-      try await super.tearDown()
         }
 
         // MARK: - Registration Tests

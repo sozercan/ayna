@@ -14,13 +14,11 @@
         var service: AccessibilityService!
 
     override func setUp() async throws {
-      try await super.setUp()
             service = AccessibilityService.shared
         }
 
     override func tearDown() async throws {
             service.stopMonitoring()
-      try await super.tearDown()
         }
 
         // MARK: - Permission Tests
