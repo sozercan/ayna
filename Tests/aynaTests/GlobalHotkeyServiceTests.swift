@@ -14,15 +14,15 @@
     final class GlobalHotkeyServiceTests: XCTestCase {
         var service: GlobalHotkeyService!
 
-        override func setUp() async throws {
-            try await super.setUp()
+        override func setUp() {
+            super.setUp()
             service = GlobalHotkeyService.shared
         }
 
-        override func tearDown() async throws {
+        override func tearDown() {
             service.unregister()
             service.onHotkeyPressed = nil
-            try await super.tearDown()
+            super.tearDown()
         }
 
         // MARK: - Registration Tests
