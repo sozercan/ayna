@@ -9,7 +9,9 @@
     import AppKit
 
     /// Represents content extracted from a focused application.
-    struct AppContent: Sendable {
+    /// Note: Uses @unchecked Sendable because NSImage isn't Sendable, but this struct
+    /// is only created and used on MainActor in practice. The appIcon is purely for display.
+    struct AppContent: @unchecked Sendable {
         /// The display name of the application
         let appName: String
 
@@ -189,20 +191,21 @@
             #"(?i)bearer\s+[a-zA-Z0-9\-._~+/]+=*"# // Bearer tokens
         ]
 
+        /// Pre-compiled regex patterns for better performance
+        private static let compiledPatterns: [NSRegularExpression] = secretPatterns.compactMap { try? NSRegularExpression(pattern: $0, options: []) }
+
         /// Returns content with potential secrets redacted
         var redacted: AppContent {
             var redactedContent = content
 
-            for pattern in Self.secretPatterns {
-                if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                    let range = NSRange(redactedContent.startIndex..., in: redactedContent)
-                    redactedContent = regex.stringByReplacingMatches(
-                        in: redactedContent,
-                        options: [],
-                        range: range,
-                        withTemplate: "[REDACTED]"
-                    )
-                }
+            for regex in Self.compiledPatterns {
+                let range = NSRange(redactedContent.startIndex..., in: redactedContent)
+                redactedContent = regex.stringByReplacingMatches(
+                    in: redactedContent,
+                    options: [],
+                    range: range,
+                    withTemplate: "[REDACTED]"
+                )
             }
 
             return AppContent(

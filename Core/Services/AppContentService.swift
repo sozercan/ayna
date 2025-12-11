@@ -13,9 +13,9 @@
 
     /// Strategies for truncating content when it exceeds the token budget
     enum TruncationStrategy {
-        case keepEnd        // Terminal: keep recent output
-        case keepStart      // Documentation: keep beginning
-        case smartAnchors   // Code: keep head + cursor area + tail
+        case keepEnd // Terminal: keep recent output
+        case keepStart // Documentation: keep beginning
+        case smartAnchors // Code: keep head + cursor area + tail
     }
 
     /// Utilities for token-based content management
@@ -127,7 +127,7 @@
             }
 
             // Add previous blocks that have errors (if space allows)
-            let errorBlocks = commandBlocks.dropLast().filter { $0.hasError }.reversed()
+            let errorBlocks = commandBlocks.dropLast().filter(\.hasError).reversed()
             for block in errorBlocks {
                 let blockLines = Array(lines[block.startIndex ... block.endIndex])
                 let blockContent = blockLines.joined(separator: "\n")
@@ -169,8 +169,8 @@
             let lines = content.components(separatedBy: .newlines)
 
             // Budget allocation
-            let headBudget = maxChars / 8        // ~12.5% for imports/header
-            let tailBudget = maxChars / 16       // ~6.25% for closing structure
+            let headBudget = maxChars / 8 // ~12.5% for imports/header
+            let tailBudget = maxChars / 16 // ~6.25% for closing structure
             let cursorBudget = maxChars - headBudget - tailBudget // ~81.25% for main content
 
             // === HEAD SECTION: Imports and declarations ===
@@ -406,7 +406,7 @@
             let extractor = extractors.first { $0.canHandle(bundleIdentifier: bundleId) } ?? extractors.last!
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Extracting content",
                 metadata: [
@@ -423,7 +423,7 @@
             switch result {
             case let .success(content):
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .info,
                     message: "Content extracted successfully",
                     metadata: [
@@ -435,7 +435,7 @@
                 )
             case let .extractionFailed(reason):
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .error,
                     message: "Content extraction failed",
                     metadata: ["reason": reason]

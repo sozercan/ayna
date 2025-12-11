@@ -81,7 +81,7 @@
             isVisible = true
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Spotlight panel shown"
             )
@@ -103,7 +103,7 @@
             }
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Spotlight panel hidden"
             )
@@ -150,7 +150,7 @@
             self.panel = panel
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Spotlight panel created"
             )
@@ -202,23 +202,6 @@
         private func handleSubmit(question: String, contentResult: AppContentResult?) {
             onSubmit?(question, contentResult)
             hide()
-        }
-
-        // MARK: - Keyboard Handling
-
-        /// Sets up escape key handler to dismiss
-        func setupKeyboardHandling() {
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, isVisible else { return event }
-
-                // Escape key dismisses
-                if event.keyCode == 53 { // Escape
-                    hide()
-                    return nil
-                }
-
-                return event
-            }
         }
     }
 

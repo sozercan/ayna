@@ -34,6 +34,97 @@ docs/       → Detailed documentation for AI agents
 | Writing or running tests                       | [docs/testing.md](docs/testing.md)           |
 | Platform-specific features, SwiftUI patterns   | [docs/platforms.md](docs/platforms.md)       |
 
+## Task Planning: Phases with Exit Criteria
+
+For any non-trivial task, **plan in phases with testable exit criteria** before writing code. This ensures incremental progress and early detection of issues.
+
+### Phase Structure
+
+Every task should be broken into phases. Each phase must have:
+1. **Clear deliverable** — What artifact or change is produced
+2. **Testable exit criteria** — How to verify the phase is complete
+3. **Rollback point** — The phase should leave the codebase in a working state
+
+### Standard Phases
+
+#### Phase 1: Research & Understanding
+| Deliverable | Exit Criteria |
+|-------------|---------------|
+| Identify affected files and dependencies | List all files to modify/create |
+| Understand existing patterns | Can explain how similar features work |
+| Read relevant docs | Confirmed patterns in `docs/` apply |
+
+**Exit gate**: Can articulate the implementation plan without ambiguity.
+
+#### Phase 2: Interface Design
+| Deliverable | Exit Criteria |
+|-------------|---------------|
+| Define new types/protocols | Type signatures compile |
+| Plan public API surface | No breaking changes to existing callers (or changes identified) |
+| Identify platform constraints | `#if os()` guards planned where needed |
+
+**Exit gate**: `xcodebuild build` succeeds with stub implementations.
+
+#### Phase 3: Core Implementation
+| Deliverable | Exit Criteria |
+|-------------|---------------|
+| Implement business logic | Unit tests pass for new code |
+| Handle error cases | Error paths have test coverage |
+| Add logging | `DiagnosticsLogger` calls in place |
+
+**Exit gate**: `xcodebuild test -only-testing:aynaTests` passes.
+
+#### Phase 4: Platform Integration
+| Deliverable | Exit Criteria |
+|-------------|---------------|
+| macOS build succeeds | `xcodebuild -scheme Ayna -destination 'platform=macOS' build` ✅ |
+| iOS build succeeds | `xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` ✅ |
+| watchOS build succeeds (if applicable) | `xcodebuild -scheme Ayna-watchOS ...` ✅ |
+
+**Exit gate**: All platform builds pass.
+
+#### Phase 5: Quality Assurance
+| Deliverable | Exit Criteria |
+|-------------|---------------|
+| Linting passes | `swiftlint --strict` reports 0 errors |
+| Formatting applied | `swiftformat .` makes no changes |
+| Full test suite passes | `xcodebuild test` succeeds |
+
+**Exit gate**: CI-equivalent checks pass locally.
+
+### Example: Adding a New Service
+
+```
+Phase 1: Research
+├── Exit: Understand OpenAIService pattern, confirm no existing solution
+
+Phase 2: Interface
+├── Create NewService.swift with protocol + stub
+├── Exit: `xcodebuild build` passes on macOS
+
+Phase 3: Implementation
+├── Implement methods, add error handling
+├── Create NewServiceTests.swift
+├── Exit: `xcodebuild test -only-testing:aynaTests/NewServiceTests` passes
+
+Phase 4: Integration
+├── Wire into ConversationManager or relevant ViewModel
+├── Exit: All 3 platform builds pass
+
+Phase 5: QA
+├── Run swiftlint, swiftformat
+├── Exit: Full test suite passes, no lint errors
+```
+
+### Checkpoint Communication
+
+After each phase, briefly report:
+- ✅ What was completed
+- 🧪 Test/verification results
+- ➡️ Next phase plan
+
+This keeps the human informed and provides natural points to course-correct.
+
 ## Critical Rules (Apply to EVERY task)
 
 > ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
@@ -115,6 +206,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
 | AIKit (Local)                  |   ✅   |   ❌   |    ❌    |
 | MCP Tools                      |   ✅   |   ❌   |    ❌    |
 | Web Search (Tavily)            |   ✅   |   ✅   |    ✅    |
+| Attach from App                |   ✅   |   ❌   |    ❌    |
 
 ## Key Files
 

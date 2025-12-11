@@ -2,7 +2,7 @@
 //  QuickInputView.swift
 //  ayna
 //
-//  SwiftUI view displayed inside the floating panel for "Work with Apps".
+//  SwiftUI view displayed inside the floating panel for "Attach from App".
 //
 
 #if os(macOS)
@@ -96,7 +96,7 @@
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 32, height: 32)
 
-                    Text("Work with Apps")
+                    Text("Attach from App")
                         .font(Typography.headline)
                 }
 

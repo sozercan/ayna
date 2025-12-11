@@ -48,7 +48,7 @@ struct MacSettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
-    @State private var workWithAppsEnabled = AppPreferences.workWithAppsEnabled
+    @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
     @ObservedObject private var openAIService = OpenAIService.shared
     @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
@@ -132,8 +132,8 @@ struct GeneralSettingsView: View {
                     .font(Typography.caption)
             }
 
-            // Work with Apps Section
-            WorkWithAppsSettingsSection(isEnabled: $workWithAppsEnabled)
+            // Attach from App Section
+            AttachFromAppSettingsSection(isEnabled: $attachFromAppEnabled)
 
             Section {
                 Button("Clear All Conversations") {
@@ -225,18 +225,18 @@ struct WebSearchSettingsSection: View {
     }
 }
 
-/// Settings section for "Work with Apps" feature
-struct WorkWithAppsSettingsSection: View {
+/// Settings section for "Attach from App" feature
+struct AttachFromAppSettingsSection: View {
     @Binding var isEnabled: Bool
     @State private var accessibilityEnabled = AccessibilityService.shared.isEnabled
 
     var body: some View {
         Section {
-            Toggle("Enable Work with Apps", isOn: $isEnabled)
+            Toggle("Enable Attach from App", isOn: $isEnabled)
                 .help("Use a global hotkey to capture context from any app and ask questions about it")
-                .accessibilityIdentifier("settings.workWithApps.enableToggle")
+                .accessibilityIdentifier("settings.attachFromApp.enableToggle")
                 .onChange(of: isEnabled) { _, newValue in
-                    AppPreferences.workWithAppsEnabled = newValue
+                    AppPreferences.attachFromAppEnabled = newValue
 
                     if newValue {
                         // Register hotkey when enabled
@@ -245,7 +245,7 @@ struct WorkWithAppsSettingsSection: View {
                             AccessibilityService.shared.startMonitoring()
                         } catch {
                             DiagnosticsLogger.log(
-                                .workWithApps,
+                                .attachFromApp,
                                 level: .error,
                                 message: "Failed to register hotkey",
                                 metadata: ["error": error.localizedDescription]
@@ -261,14 +261,14 @@ struct WorkWithAppsSettingsSection: View {
             if isEnabled {
                 // Hotkey display
                 LabeledContent("Hotkey") {
-                    Text(AppPreferences.workWithAppsHotkey)
+                    Text(AppPreferences.attachFromAppHotkey)
                         .font(Typography.code)
                         .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, Spacing.xxs)
                         .background(Theme.backgroundSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xs))
                 }
-                .accessibilityIdentifier("settings.workWithApps.hotkey")
+                .accessibilityIdentifier("settings.attachFromApp.hotkey")
 
                 // Accessibility permission status
                 LabeledContent("Accessibility") {
@@ -286,12 +286,12 @@ struct WorkWithAppsSettingsSection: View {
                         .font(Typography.caption)
                     }
                 }
-                .accessibilityIdentifier("settings.workWithApps.accessibility")
+                .accessibilityIdentifier("settings.attachFromApp.accessibility")
             }
         } header: {
-            Text("Work with Apps")
+            Text("Attach from App")
         } footer: {
-            Text("Press \(AppPreferences.workWithAppsHotkey) anywhere to capture content from the focused app and ask questions about it. Requires Accessibility permission.")
+            Text("Press \(AppPreferences.attachFromAppHotkey) anywhere to capture content from the focused app and ask questions about it. Requires Accessibility permission.")
                 .font(Typography.caption)
         }
         .onAppear {

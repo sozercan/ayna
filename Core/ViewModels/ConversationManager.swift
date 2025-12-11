@@ -523,10 +523,10 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    // MARK: - Work with Apps Context
+    // MARK: - Attach from App Context
 
     #if os(macOS)
-        /// Creates a new conversation with app context from "Work with Apps" feature.
+        /// Creates a new conversation with app context from "Attach from App" feature.
         /// - Parameters:
         ///   - appName: The name of the source application
         ///   - windowTitle: The window title (optional)

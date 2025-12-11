@@ -45,7 +45,7 @@
             isEnabled = trusted
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Accessibility permission check",
                 metadata: [
@@ -60,12 +60,19 @@
         /// Opens System Settings to the Accessibility pane for granting permission.
         func openAccessibilityPreferences() {
             // Deep link to System Settings > Privacy & Security > Accessibility
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+            guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+                DiagnosticsLogger.log(
+                    .attachFromApp,
+                    level: .error,
+                    message: "Failed to create Accessibility preferences URL"
+                )
+                return
+            }
 
             NSWorkspace.shared.open(url)
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Opened Accessibility preferences"
             )
@@ -79,7 +86,7 @@
             guard pollingTask == nil else { return }
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Started accessibility permission monitoring"
             )
@@ -93,7 +100,7 @@
 
                     if wasEnabled != nowEnabled {
                         DiagnosticsLogger.log(
-                            .workWithApps,
+                            .attachFromApp,
                             level: .info,
                             message: "Accessibility permission changed",
                             metadata: ["enabled": "\(nowEnabled)"]
@@ -118,7 +125,7 @@
             pollingTask = nil
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Stopped accessibility permission monitoring"
             )
@@ -144,12 +151,15 @@
                 &focusedElement
             )
 
-            guard result == .success, let element = focusedElement else {
+            guard result == .success,
+                  let element = focusedElement,
+                  CFGetTypeID(element as CFTypeRef) == AXUIElementGetTypeID()
+            else {
                 return nil
             }
 
-            // swiftlint:disable:next force_cast
-            return (element as! AXUIElement)
+            // Safe cast after type check - AXUIElement is a CFTypeRef alias
+            return unsafeBitCast(element, to: AXUIElement.self)
         }
 
         /// Gets an attribute value from an AXUIElement.
@@ -220,12 +230,15 @@
                 &focusedWindow
             )
 
-            guard result == .success, let window = focusedWindow else {
+            guard result == .success,
+                  let window = focusedWindow,
+                  CFGetTypeID(window as CFTypeRef) == AXUIElementGetTypeID()
+            else {
                 return nil
             }
 
-            // swiftlint:disable:next force_cast
-            return (window as! AXUIElement)
+            // Safe cast after type check - AXUIElement is a CFTypeRef alias
+            return unsafeBitCast(window, to: AXUIElement.self)
         }
 
         /// Gets the window title from an application.
@@ -282,7 +295,7 @@
             }
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Found running apps",
                 metadata: ["count": "\(runningApps.count)"]
@@ -293,7 +306,7 @@
                 let windows = getWindowsForApp(appElement: appElement, app: app)
 
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .debug,
                     message: "App windows",
                     metadata: [
@@ -320,7 +333,7 @@
             }
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Window groups created",
                 metadata: ["groupCount": "\(appGroups.count)"]
@@ -349,7 +362,7 @@
             // Log the result for debugging
             if result != .success {
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .debug,
                     message: "Failed to get windows for app",
                     metadata: [
@@ -362,7 +375,7 @@
 
             guard let windowArray = windowsRef as? [AXUIElement] else {
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .debug,
                     message: "Windows ref is not array",
                     metadata: ["app": app.localizedName ?? "Unknown"]
@@ -456,13 +469,16 @@
                 &focusedElement
             )
 
-            guard result == .success, let element = focusedElement else {
+            guard result == .success,
+                  let element = focusedElement,
+                  CFGetTypeID(element as CFTypeRef) == AXUIElementGetTypeID()
+            else {
                 // Try to get the main content area instead
                 return getMainContentElement(windowElement)
             }
 
-            // swiftlint:disable:next force_cast
-            return (element as! AXUIElement)
+            // Safe cast after type check - AXUIElement is a CFTypeRef alias
+            return unsafeBitCast(element, to: AXUIElement.self)
         }
 
         /// Attempts to find the main content element in a window.

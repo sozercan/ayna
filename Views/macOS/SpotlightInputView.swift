@@ -70,7 +70,8 @@
             .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
             .onAppear {
                 // Delay focus slightly to ensure panel is ready
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
                     isTextFieldFocused = true
                 }
                 checkAccessibilityAndLoadWindows()
@@ -512,7 +513,7 @@
             } else {
                 windowGroups = []
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .info,
                     message: "Accessibility permission not granted - cannot list windows"
                 )
@@ -523,7 +524,7 @@
             windowGroups = AccessibilityService.shared.getAllWindowsGroupedByApp()
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Loaded windows for picker",
                 metadata: [

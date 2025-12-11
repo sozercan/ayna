@@ -372,11 +372,11 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 @MainActor
 private func setupWorkWithApps(conversationManager: ConversationManager) {
-    guard AppPreferences.workWithAppsEnabled else {
+    guard AppPreferences.attachFromAppEnabled else {
         DiagnosticsLogger.log(
-            .workWithApps,
+            .attachFromApp,
             level: .info,
-            message: "Work with Apps is disabled"
+            message: "Attach from App is disabled"
         )
         return
     }
@@ -386,7 +386,7 @@ private func setupWorkWithApps(conversationManager: ConversationManager) {
         try GlobalHotkeyService.shared.registerDefault()
     } catch {
         DiagnosticsLogger.log(
-            .workWithApps,
+            .attachFromApp,
             level: .error,
             message: "Failed to register global hotkey",
             metadata: ["error": error.localizedDescription]
@@ -416,9 +416,9 @@ private func setupWorkWithApps(conversationManager: ConversationManager) {
     }
 
     DiagnosticsLogger.log(
-        .workWithApps,
+        .attachFromApp,
         level: .info,
-        message: "✅ Work with Apps initialized (Spotlight mode)"
+        message: "✅ Attach from App initialized (Spotlight mode)"
     )
 }
 
@@ -430,7 +430,7 @@ private func handleWorkWithAppsSubmit(
     openMainWindow: Bool
 ) {
     DiagnosticsLogger.log(
-        .workWithApps,
+        .attachFromApp,
         level: .info,
         message: "handleWorkWithAppsSubmit called",
         metadata: [
@@ -454,7 +454,7 @@ private func handleWorkWithAppsSubmit(
         conversationId = conversation.id
 
         DiagnosticsLogger.log(
-            .workWithApps,
+            .attachFromApp,
             level: .info,
             message: "Created conversation with app context",
             metadata: [
@@ -476,7 +476,7 @@ private func handleWorkWithAppsSubmit(
         }
 
         DiagnosticsLogger.log(
-            .workWithApps,
+            .attachFromApp,
             level: .info,
             message: "Created conversation without context",
             metadata: ["conversationId": conversationId?.uuidString ?? "nil"]
@@ -509,7 +509,7 @@ private func handleWorkWithAppsSubmit(
                     userInfo: ["conversationId": convId]
                 )
                 DiagnosticsLogger.log(
-                    .workWithApps,
+                    .attachFromApp,
                     level: .info,
                     message: "Posted sendPendingMessage notification",
                     metadata: ["conversationId": convId.uuidString]

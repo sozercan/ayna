@@ -23,15 +23,15 @@ private final class DefaultsState: @unchecked Sendable {
 enum AppPreferences {
     private static let state = DefaultsState()
     private static let globalSystemPromptKey = "globalSystemPrompt"
-    private static let workWithAppsEnabledKey = "workWithAppsEnabled"
-    private static let workWithAppsHotkeyKey = "workWithAppsHotkey"
+    private static let attachFromAppEnabledKey = "attachFromAppEnabled"
+    private static let attachFromAppHotkeyKey = "attachFromAppHotkey"
 
     private static var defaultValues: [String: Any] {
         [
             "autoGenerateTitle": true,
             globalSystemPromptKey: "",
-            workWithAppsEnabledKey: false,
-            workWithAppsHotkeyKey: "⌘⇧Space"
+            attachFromAppEnabledKey: false,
+            attachFromAppHotkeyKey: "⌘⇧Space"
         ]
     }
 
@@ -46,19 +46,19 @@ enum AppPreferences {
         set { storage.set(newValue, forKey: globalSystemPromptKey) }
     }
 
-    // MARK: - Work with Apps (macOS only)
+    // MARK: - Attach from App (macOS only)
 
-    /// Whether the "Work with Apps" feature is enabled.
+    /// Whether the "Attach from App" feature is enabled.
     /// When enabled, a global hotkey can be used to capture context from other apps.
-    static var workWithAppsEnabled: Bool {
-        get { storage.bool(forKey: workWithAppsEnabledKey) }
-        set { storage.set(newValue, forKey: workWithAppsEnabledKey) }
+    static var attachFromAppEnabled: Bool {
+        get { storage.bool(forKey: attachFromAppEnabledKey) }
+        set { storage.set(newValue, forKey: attachFromAppEnabledKey) }
     }
 
-    /// The hotkey string for "Work with Apps" (e.g., "⌘⇧Space").
-    static var workWithAppsHotkey: String {
-        get { storage.string(forKey: workWithAppsHotkeyKey) ?? "⌘⇧Space" }
-        set { storage.set(newValue, forKey: workWithAppsHotkeyKey) }
+    /// The hotkey string for "Attach from App" (e.g., "⌘⇧Space").
+    static var attachFromAppHotkey: String {
+        get { storage.string(forKey: attachFromAppHotkeyKey) ?? "⌘⇧Space" }
+        set { storage.set(newValue, forKey: attachFromAppHotkeyKey) }
     }
 
     static func registerDefaults() {

@@ -39,12 +39,8 @@
 
         private init() {}
 
-        deinit {
-            // Clean up on deallocation
-            MainActor.assumeIsolated {
-                unregister()
-            }
-        }
+        // Note: Since this is a singleton (static let shared), deinit is only called at app termination.
+        // The cleanup is handled by applicationWillTerminate calling unregister() explicitly.
 
         // MARK: - Registration
 
@@ -121,7 +117,7 @@
             }
 
             // Register the hotkey
-            var hotKeyID = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
+            let hotKeyID = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
 
             let registerStatus = RegisterEventHotKey(
                 keyCode,
@@ -144,7 +140,7 @@
             isRegistered = true
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Global hotkey registered",
                 metadata: [
@@ -169,7 +165,7 @@
             isRegistered = false
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Global hotkey unregistered"
             )
@@ -190,7 +186,7 @@
             }
 
             DiagnosticsLogger.log(
-                .workWithApps,
+                .attachFromApp,
                 level: .info,
                 message: "Global hotkey pressed",
                 metadata: [
