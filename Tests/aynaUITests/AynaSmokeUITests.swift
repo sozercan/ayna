@@ -93,18 +93,28 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Use coordinate-based tap for more reliable menu item clicking
         deleteMenuItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
-        // Wait a moment for deletion to process
-        Thread.sleep(forTimeInterval: 0.5)
+        // Wait for the menu to dismiss and deletion to process using predicate expectation
+        let menuDismissed = NSPredicate(format: "exists == false")
+        let menuExpectation = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
+        _ = XCTWaiter.wait(for: [menuExpectation], timeout: 2)
 
         // If context menu tap didn't work (known SwiftUI issue), fall back to keyboard delete
         if title.exists {
             // Dismiss any lingering menu
             app.typeKey(.escape, modifierFlags: [])
-            Thread.sleep(forTimeInterval: 0.2)
+
+            // Wait for menu to fully dismiss
+            let escapeHandled = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
+            _ = XCTWaiter.wait(for: [escapeHandled], timeout: 1)
 
             // Select and delete via keyboard
             title.click()
-            Thread.sleep(forTimeInterval: 0.3)
+
+            // Wait for selection
+            let selectedPredicate = NSPredicate(format: "isSelected == true OR isHittable == true")
+            let selectedExpectation = XCTNSPredicateExpectation(predicate: selectedPredicate, object: title)
+            _ = XCTWaiter.wait(for: [selectedExpectation], timeout: 1)
+
             app.typeKey(.delete, modifierFlags: [])
         }
 
@@ -184,10 +194,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         // We can use a predicate to exclude sidebar elements if needed, but simple existence check is a good start.
         // Since we clicked Alpha, we expect to see Alpha message.
 
-        // Wait a bit for switch
-        sleep(1)
-
-        // Check for message bubble content
+        // Check for message bubble content with proper wait
         // User message is an 'Other' element with label == content
         let messageBubble = app.otherElements.containing(
             NSPredicate(format: "label == %@", "Topic Alpha")

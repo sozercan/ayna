@@ -22,6 +22,7 @@ private var uiTestFallbackWindow: NSWindow?
 struct aynaApp: App {
     @NSApplicationDelegateAdaptor(AynaAppDelegate.self) private var appDelegate
     @StateObject private var conversationManager: ConversationManager
+    @StateObject private var floatingPanelController = FloatingPanelController.shared
 
     init() {
         AppPreferences.registerDefaults()
@@ -55,6 +56,13 @@ struct aynaApp: App {
                 metadata: ["toolCount": "\(MCPServerManager.shared.availableTools.count)"]
             )
         }
+
+        // Initialize "Work with Apps" if enabled
+        Task { @MainActor in
+            // Store reference to conversation manager for window creation
+            AynaAppDelegate.conversationManager = manager
+            setupWorkWithApps(conversationManager: manager)
+        }
     }
 
     var body: some Scene {
@@ -63,7 +71,7 @@ struct aynaApp: App {
                 .environmentObject(conversationManager)
                 .onAppear {
                     // Pass conversation manager to app delegate for deep link handling
-                    appDelegate.conversationManager = conversationManager
+                    AynaAppDelegate.conversationManager = conversationManager
 
                     // If running UI tests, ensure window is ready
                     if UITestEnvironment.isEnabled {
@@ -161,9 +169,18 @@ struct aynaApp: App {
 }
 
 @MainActor
-final class AynaAppDelegate: NSObject, NSApplicationDelegate {
-    /// Reference to the conversation manager for deep link handling
-    weak var conversationManager: ConversationManager?
+final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    /// Reference to manually created window (if any)
+    static var manualWindow: NSWindow?
+
+    /// Reference to the hosting controller to prevent deallocation
+    static var manualHostingController: NSHostingController<AnyView>?
+
+    /// Reference to the conversation manager for window creation
+    static weak var conversationManager: ConversationManager?
+
+    /// Shared instance for window delegate
+    static let shared = AynaAppDelegate()
 
     func applicationWillTerminate(_: Notification) {
         DiagnosticsLogger.log(
@@ -172,12 +189,109 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
             message: "🛑 Application terminating; disconnecting MCP servers"
         )
         MCPServerManager.shared.disconnectAllServers()
+
+        // Clean up Work with Apps
+        GlobalHotkeyService.shared.unregister()
+        AccessibilityService.shared.stopMonitoring()
     }
 
-    /// Called when the app is reactivated (e.g., clicked in dock) with no windows
-    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // If no visible windows, let the system create one
-        !flag
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "applicationShouldHandleReopen called",
+            metadata: ["hasVisibleWindows": "\(flag)"]
+        )
+        // Return true to let SwiftUI handle window creation
+        return true
+    }
+
+    /// Opens the main window, creating one if necessary
+    @MainActor
+    static func openMainWindow() async {
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Check if we have a main window (not panel, not settings window)
+        let existingWindow = NSApp.windows.first(where: { window in
+            !window.isKind(of: NSPanel.self) &&
+                window.contentViewController != nil &&
+                // Exclude settings window (has "Settings" or "Preferences" in identifier/title)
+                !(window.identifier?.rawValue.contains("settings") ?? false) &&
+                !(window.identifier?.rawValue.contains("Settings") ?? false) &&
+                !(window.title.contains("Settings")) &&
+                !(window.title.contains("Preferences")) &&
+                // Also check it's not a toolbar-only window
+                window.contentView != nil
+        })
+
+        if let window = existingWindow {
+            window.makeKeyAndOrderFront(nil)
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Opened existing main window"
+            )
+            return
+        }
+
+        // Check if our manual window exists and can be shown
+        if let window = manualWindow {
+            window.makeKeyAndOrderFront(nil)
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Opened existing manual window"
+            )
+            return
+        }
+
+        // No window exists - create one manually
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "No main window found, creating manually"
+        )
+
+        guard let manager = conversationManager else {
+            DiagnosticsLogger.log(
+                .app,
+                level: .error,
+                message: "Cannot create window - no conversation manager"
+            )
+            return
+        }
+
+        // Create window with SwiftUI content - wrap in AnyView
+        let contentView = AnyView(
+            MacContentView()
+                .environmentObject(manager)
+        )
+
+        let hostingController = NSHostingController(rootView: contentView)
+        manualHostingController = hostingController // Retain it!
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.contentViewController = hostingController
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false // Keep window alive when closed
+        window.center()
+        window.setFrameAutosaveName("MainWindow")
+        window.makeKeyAndOrderFront(nil)
+
+        manualWindow = window
+
+        DiagnosticsLogger.log(
+            .app,
+            level: .info,
+            message: "Created manual main window"
+        )
     }
 
     /// Handle deep link URLs at the app delegate level to prevent new window creation
@@ -223,7 +337,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
         // BUT only if there's no pending add-model confirmation (unified flow)
         if DeepLinkManager.shared.pendingAddModel == nil,
            let chatRequest = DeepLinkManager.shared.pendingChat,
-           let manager = conversationManager
+           let manager = Self.conversationManager
         {
             DiagnosticsLogger.log(
                 .app,
@@ -250,6 +364,157 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate {
                 window.deminiaturize(nil)
             }
             window.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+// MARK: - Work with Apps Setup
+
+@MainActor
+private func setupWorkWithApps(conversationManager: ConversationManager) {
+    guard AppPreferences.attachFromAppEnabled else {
+        DiagnosticsLogger.log(
+            .attachFromApp,
+            level: .info,
+            message: "Attach from App is disabled"
+        )
+        return
+    }
+
+    // Register the global hotkey
+    do {
+        try GlobalHotkeyService.shared.registerDefault()
+    } catch {
+        DiagnosticsLogger.log(
+            .attachFromApp,
+            level: .error,
+            message: "Failed to register global hotkey",
+            metadata: ["error": error.localizedDescription]
+        )
+        return
+    }
+
+    // Start accessibility permission monitoring
+    AccessibilityService.shared.startMonitoring()
+
+    // Set up hotkey handler - opens Spotlight-style panel (no auto-capture)
+    GlobalHotkeyService.shared.onHotkeyPressed = { _ in
+        Task { @MainActor in
+            // Simply show the Spotlight panel - user will manually attach context if needed
+            FloatingPanelController.shared.show(conversationManager: conversationManager)
+        }
+    }
+
+    // Set up floating panel submit handler
+    FloatingPanelController.shared.onSubmit = { question, contentResult in
+        handleWorkWithAppsSubmit(
+            question: question,
+            contentResult: contentResult,
+            conversationManager: conversationManager,
+            openMainWindow: true // Always open main window
+        )
+    }
+
+    DiagnosticsLogger.log(
+        .attachFromApp,
+        level: .info,
+        message: "✅ Attach from App initialized (Spotlight mode)"
+    )
+}
+
+@MainActor
+private func handleWorkWithAppsSubmit(
+    question: String,
+    contentResult: AppContentResult?,
+    conversationManager: ConversationManager,
+    openMainWindow: Bool
+) {
+    DiagnosticsLogger.log(
+        .attachFromApp,
+        level: .info,
+        message: "handleWorkWithAppsSubmit called",
+        metadata: [
+            "question": question,
+            "hasContent": "\(contentResult != nil)"
+        ]
+    )
+
+    var conversationId: UUID?
+
+    if let contentResult, case let .success(content) = contentResult {
+        // Create conversation with context
+        // Note: Smart truncation already applied by extractors, just redact secrets
+        let conversation = conversationManager.createConversationWithContext(
+            appName: content.appName,
+            windowTitle: content.windowTitle,
+            contentType: content.contentType.displayName,
+            content: content.redacted.content,
+            userMessage: question
+        )
+        conversationId = conversation.id
+
+        DiagnosticsLogger.log(
+            .attachFromApp,
+            level: .info,
+            message: "Created conversation with app context",
+            metadata: [
+                "conversationId": conversation.id.uuidString,
+                "appName": content.appName
+            ]
+        )
+    } else {
+        // Create regular conversation without context
+        conversationManager.createNewConversation(title: "Quick Chat")
+
+        if let conv = conversationManager.conversations.first {
+            let message = Message(role: .user, content: question)
+            conversationManager.addMessage(to: conv, message: message)
+            conversationId = conv.id
+
+            // Select this conversation
+            conversationManager.selectedConversationId = conv.id
+        }
+
+        DiagnosticsLogger.log(
+            .attachFromApp,
+            level: .info,
+            message: "Created conversation without context",
+            metadata: ["conversationId": conversationId?.uuidString ?? "nil"]
+        )
+    }
+
+    // Open main window if requested
+    if openMainWindow {
+        Task {
+            // Use the AppDelegate helper to open/create window
+            await AynaAppDelegate.openMainWindow()
+
+            // Wait for window to be ready
+            try? await Task.sleep(for: .milliseconds(500))
+
+            // Ensure main window (not settings) is visible and focused
+            if let window = NSApp.windows.first(where: {
+                !$0.isKind(of: NSPanel.self) &&
+                    !($0.title.contains("Settings") || $0.title.contains("Preferences"))
+            }) {
+                window.makeKeyAndOrderFront(nil)
+            }
+
+            // Trigger AI response
+            if let convId = conversationId {
+                try? await Task.sleep(for: .milliseconds(200))
+                NotificationCenter.default.post(
+                    name: .sendPendingMessage,
+                    object: nil,
+                    userInfo: ["conversationId": convId]
+                )
+                DiagnosticsLogger.log(
+                    .attachFromApp,
+                    level: .info,
+                    message: "Posted sendPendingMessage notification",
+                    metadata: ["conversationId": convId.uuidString]
+                )
+            }
         }
     }
 }

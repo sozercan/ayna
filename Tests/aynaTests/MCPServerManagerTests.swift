@@ -5,8 +5,7 @@ import XCTest
 final class MCPServerManagerTests: XCTestCase {
     private nonisolated(unsafe) var suiteName: String = ""
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
         continueAfterFailure = false
         suiteName = "MCPServerManagerTests-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -17,12 +16,11 @@ final class MCPServerManagerTests: XCTestCase {
         AppPreferences.use(defaults)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let defaults = UserDefaults(suiteName: suiteName) {
             defaults.removePersistentDomain(forName: suiteName)
         }
         AppPreferences.reset()
-        super.tearDown()
     }
 
     func testConnectRetriesUntilSuccess() async {
