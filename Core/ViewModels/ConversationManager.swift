@@ -613,6 +613,81 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    // MARK: - Attach from App Context
+
+    #if os(macOS)
+        /// Creates a new conversation with app context from "Attach from App" feature.
+        /// - Parameters:
+        ///   - appName: The name of the source application
+        ///   - windowTitle: The window title (optional)
+        ///   - contentType: The type of content extracted
+        ///   - content: The extracted content
+        ///   - userMessage: The user's question about the content
+        /// - Returns: The created conversation
+        @discardableResult
+        func createConversationWithContext(
+            appName: String,
+            windowTitle: String?,
+            contentType: String,
+            content: String,
+            userMessage: String
+        ) -> Conversation {
+            let defaultModel = OpenAIService.shared.selectedModel
+
+            // Build the system message with context
+            var systemContent = """
+            You have been given context from the user's \(appName) application.
+            """
+
+            if let windowTitle, !windowTitle.isEmpty {
+                systemContent += "\n\nWindow: \(windowTitle)"
+            }
+
+            systemContent += "\nContent Type: \(contentType)"
+            systemContent += "\n\n---\n\(content)\n---"
+            systemContent += "\n\nAnswer the user's question based on this context."
+
+            // Create conversation with custom system prompt
+            var conversation = Conversation(title: "New Conversation", model: defaultModel)
+            conversation.systemPromptMode = .custom(systemContent)
+
+            // Add the user message
+            let message = Message(role: .user, content: userMessage)
+            conversation.addMessage(message)
+
+            // Insert and save
+            conversations.insert(conversation, at: 0)
+            save(conversation)
+
+            // Select the new conversation
+            selectedConversationId = conversation.id
+
+            logManager(
+                "✅ Created conversation with app context",
+                level: .info,
+                metadata: [
+                    "appName": appName,
+                    "contentType": contentType,
+                    "contentLength": "\(content.count)"
+                ]
+            )
+
+            // Post notification to trigger AI response in the view
+            // Delay slightly to allow SwiftUI to instantiate the new MacChatView
+            let conversationId = conversation.id
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                NotificationCenter.default.post(
+                    name: .sendPendingMessage,
+                    object: nil,
+                    userInfo: ["conversationId": conversationId]
+                )
+            }
+
+            return conversation
+        }
+    #endif
+
     private func generateTitle(for conversation: Conversation) {
         guard let firstMessage = conversation.messages.first(where: { $0.role == .user }) else {
             return

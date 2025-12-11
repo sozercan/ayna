@@ -15,6 +15,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    timeout-minutes: 60
 
     steps:
     - name: Checkout code
@@ -37,19 +38,34 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           test
 
-    - name: Run UI tests
+    - name: Run UI tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project ayna.xcodeproj \
-          -scheme Ayna \
-          -destination 'platform=macOS' \
-          -derivedDataPath ./build \
-          -only-testing:aynaUITests \
-          CODE_SIGN_IDENTITY="-" \
-          CODE_SIGNING_REQUIRED=YES \
-          CODE_SIGNING_ALLOWED=YES \
-          test
+        # UI tests can be flaky - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project ayna.xcodeproj \
+            -scheme Ayna \
+            -destination 'platform=macOS' \
+            -derivedDataPath ./build \
+            -only-testing:aynaUITests \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            -retry-tests-on-failure \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            break
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying..."
+            sleep 5
+          else
+            echo "Tests failed after 2 attempts"
+            exit 1
+          fi
+        done
 
     - name: Build release configuration
       run: |

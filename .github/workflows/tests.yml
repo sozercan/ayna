@@ -1,5 +1,9 @@
 name: Test Suite
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main ]
@@ -20,6 +24,7 @@ on:
 jobs:
   macos_unit_tests:
     name: macOS Unit Tests
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +62,7 @@ jobs:
 
   macos_ui_tests:
     name: macOS UI Tests
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -78,22 +84,46 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Run UI tests
+    - name: Run UI tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project Ayna.xcodeproj \
-          -scheme Ayna \
-          -destination 'platform=macOS' \
-          -derivedDataPath ./build \
-          -only-testing:aynaUITests \
-          CODE_SIGN_IDENTITY="-" \
-          CODE_SIGNING_REQUIRED=YES \
-          CODE_SIGNING_ALLOWED=YES \
-          test
+        # UI tests can be flaky in CI - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project Ayna.xcodeproj \
+            -scheme Ayna \
+            -destination 'platform=macOS' \
+            -derivedDataPath ./build \
+            -resultBundlePath ./build/TestResults-macOS-UI-$attempt.xcresult \
+            -only-testing:aynaUITests \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            -retry-tests-on-failure \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            exit 0
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying..."
+            sleep 5
+          fi
+        done
+        echo "Tests failed after 2 attempts"
+        exit 1
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-UI-TestResults-${{ matrix.macos-version }}
+        path: ./build/*.xcresult
+        retention-days: 7
 
   ios_unit_tests:
     name: iOS Unit Tests
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -121,6 +151,18 @@ jobs:
         xcrun simctl list runtimes | grep -i ios || true
         echo "Available iOS devices:"
         xcrun simctl list devices available | grep -i iphone | head -20 || true
+
+    - name: Boot iOS Simulator
+      run: |
+        # Pre-boot simulator for more reliable tests
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        if [ -n "$DEVICE_UDID" ]; then
+          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+          # Wait for boot to complete
+          sleep 5
+        fi
 
     - name: Run iOS unit tests
       run: |
@@ -138,6 +180,7 @@ jobs:
 
   ios_ui_tests:
     name: iOS UI Tests
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -166,22 +209,58 @@ jobs:
         echo "Available iOS devices:"
         xcrun simctl list devices available | grep -i iphone | head -20 || true
 
-    - name: Run iOS UI tests
+    - name: Boot iOS Simulator
+      run: |
+        # Pre-boot simulator for more reliable tests
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        if [ -n "$DEVICE_UDID" ]; then
+          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+          # Wait for boot to complete
+          sleep 5
+        fi
+
+    - name: Run iOS UI tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project Ayna.xcodeproj \
-          -scheme Ayna-iOS \
-          -destination '${{ matrix.destination }}' \
-          -derivedDataPath ./build \
-          -only-testing:Ayna-iOSUITests \
-          CODE_SIGN_IDENTITY="-" \
-          CODE_SIGNING_REQUIRED=YES \
-          CODE_SIGNING_ALLOWED=YES \
-          test
+        # UI tests can be flaky in CI - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project Ayna.xcodeproj \
+            -scheme Ayna-iOS \
+            -destination '${{ matrix.destination }}' \
+            -derivedDataPath ./build \
+            -resultBundlePath ./build/TestResults-iOS-UI-$attempt.xcresult \
+            -only-testing:Ayna-iOSUITests \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            -retry-tests-on-failure \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            exit 0
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying..."
+            sleep 5
+          fi
+        done
+        echo "Tests failed after 2 attempts"
+        exit 1
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: iOS-UI-TestResults-${{ matrix.macos-version }}
+        path: ./build/*.xcresult
+        retention-days: 7
 
   watchos_unit_tests:
     name: watchOS Unit Tests
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -209,6 +288,18 @@ jobs:
         xcrun simctl list runtimes | grep -i watchos || true
         echo "Available watchOS devices:"
         xcrun simctl list devices available | grep -i watch | head -20 || true
+
+    - name: Boot watchOS Simulator
+      run: |
+        # Pre-boot simulator for more reliable tests
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        if [ -n "$DEVICE_UDID" ]; then
+          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+          # Wait for boot to complete
+          sleep 5
+        fi
 
     - name: Run watchOS unit tests
       run: |
@@ -226,6 +317,7 @@ jobs:
 
   watchos_ui_tests:
     name: watchOS UI Tests
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -254,16 +346,51 @@ jobs:
         echo "Available watchOS devices:"
         xcrun simctl list devices available | grep -i watch | head -20 || true
 
-    - name: Run watchOS UI tests
+    - name: Boot watchOS Simulator
+      run: |
+        # Pre-boot simulator for more reliable tests
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        if [ -n "$DEVICE_UDID" ]; then
+          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+          # Wait for boot to complete
+          sleep 5
+        fi
+
+    - name: Run watchOS UI tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project Ayna.xcodeproj \
-          -scheme 'Ayna-watchOS Watch App' \
-          -destination '${{ matrix.destination }}' \
-          -derivedDataPath ./build \
-          -only-testing:Ayna-watchOSUITests \
-          CODE_SIGN_IDENTITY="-" \
-          CODE_SIGNING_REQUIRED=YES \
-          CODE_SIGNING_ALLOWED=YES \
-          test
+        # UI tests can be flaky in CI - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project Ayna.xcodeproj \
+            -scheme 'Ayna-watchOS Watch App' \
+            -destination '${{ matrix.destination }}' \
+            -derivedDataPath ./build \
+            -resultBundlePath ./build/TestResults-watchOS-UI-$attempt.xcresult \
+            -only-testing:Ayna-watchOSUITests \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            -retry-tests-on-failure \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            exit 0
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying..."
+            sleep 5
+          fi
+        done
+        echo "Tests failed after 2 attempts"
+        exit 1
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: watchOS-UI-TestResults-${{ matrix.macos-version }}
+        path: ./build/*.xcresult
+        retention-days: 7

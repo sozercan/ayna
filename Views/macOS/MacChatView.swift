@@ -61,6 +61,10 @@ struct MacChatView: View {
     @State private var showModelSelector = false
     @State private var isToolSectionExpanded = false
 
+    // App content attachment (Work with Apps)
+    @State private var showAppContentPicker = false
+    @State private var attachedAppContent: AppContent?
+
     // Performance optimizations
     @State private var scrollDebounceTask: Task<Void, Never>?
     @State private var isNearBottom = true
@@ -455,6 +459,62 @@ struct MacChatView: View {
                         }
                     }
 
+                    // Attached app content preview
+                    if let appContent = attachedAppContent {
+                        HStack(spacing: Spacing.sm) {
+                            // App icon
+                            if let icon = appContent.appIcon {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 20, height: 20)
+                            } else {
+                                Image(systemName: "app.fill")
+                                    .frame(width: 20, height: 20)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+
+                            // App name and window title
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(appContent.appName)
+                                    .font(Typography.captionBold)
+                                    .foregroundStyle(Theme.textPrimary)
+
+                                if let windowTitle = appContent.windowTitle, !windowTitle.isEmpty {
+                                    Text(windowTitle)
+                                        .font(Typography.footnote)
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+
+                            Spacer()
+
+                            // Content type badge
+                            Text(appContent.contentType.displayName)
+                                .font(Typography.footnote)
+                                .foregroundStyle(Theme.textTertiary)
+                                .padding(.horizontal, Spacing.xs)
+                                .padding(.vertical, 2)
+                                .background(Theme.backgroundTertiary)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                            // Remove button
+                            Button {
+                                attachedAppContent = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: Typography.IconSize.md))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove app content")
+                        }
+                        .padding(Spacing.sm)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+                        .padding(.horizontal, Spacing.contentPadding)
+                    }
+
                     HStack(spacing: 0) {
                         ZStack(alignment: .bottomLeading) {
                             DynamicTextEditor(
@@ -471,14 +531,29 @@ struct MacChatView: View {
                             .padding(.vertical, Spacing.md)
                             .background(.clear)
 
-                            // Attach file button inside the text box (left side)
-                            Button(action: attachFile) {
+                            // Attach menu button inside the text box (left side)
+                            Menu {
+                                Button {
+                                    attachFile()
+                                } label: {
+                                    Label("Attach Files...", systemImage: "doc")
+                                }
+
+                                Button {
+                                    showAppContentPicker = true
+                                } label: {
+                                    Label("Attach from App...", systemImage: "macwindow")
+                                }
+                            } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: Typography.IconSize.xl))
                                     .foregroundStyle(Theme.textSecondary.opacity(0.7))
                             }
+                            .menuStyle(.button)
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Attach file")
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .accessibilityLabel("Attach")
                             .padding(.leading, Spacing.sm)
                             .padding(.bottom, Spacing.sm)
                         }
@@ -644,9 +719,37 @@ struct MacChatView: View {
             ConversationSystemPromptSheet(conversation: currentConversation)
                 .environmentObject(conversationManager)
         }
+        .sheet(isPresented: $showAppContentPicker) {
+            AppContentPickerView(
+                onSelect: { content in
+                    attachedAppContent = content
+                    showAppContentPicker = false
+                },
+                onDismiss: {
+                    showAppContentPicker = false
+                }
+            )
+        }
         .onAppear {
             isComposerFocused = true
             checkAndProcessPendingPrompt()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
+            // Handle Work with Apps: auto-send message when conversation is created with context
+            guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
+                  conversationId == conversation.id,
+                  !isGenerating
+            else { return }
+
+            // Check if there's a pending user message without assistant response
+            let messages = currentConversation.messages
+            if let lastMessage = messages.last,
+               lastMessage.role == .user,
+               !messages.contains(where: { $0.role == .assistant })
+            {
+                logChat("📤 Auto-sending message from Work with Apps", level: .info)
+                sendPendingUserMessage()
+            }
         }
     }
 
@@ -676,6 +779,38 @@ struct MacChatView: View {
             try? await Task.sleep(for: .milliseconds(100))
             sendMessage()
         }
+    }
+
+    /// Sends the last user message in the conversation (used for Work with Apps)
+    private func sendPendingUserMessage() {
+        guard let lastUserMessage = currentConversation.messages.last(where: { $0.role == .user }) else {
+            return
+        }
+
+        isGenerating = true
+
+        // Build messages for API using the same pattern as sendMessage
+        var messagesToSend = currentConversation.messages
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: currentConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        // Create assistant placeholder
+        let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        // Use unified tool collection (includes Tavily + MCP tools)
+        let tools = openAIService.getAllAvailableTools()
+
+        // Send to AI
+        sendMessageWithToolSupport(
+            messages: messagesToSend,
+            model: currentConversation.model,
+            temperature: currentConversation.temperature,
+            tools: tools,
+            isInitialRequest: true
+        )
     }
 
     private func calculateTextHeight() -> CGFloat {
@@ -1040,9 +1175,41 @@ struct MacChatView: View {
             metadata: ["model": activeModel]
         )
 
+        // Build message content, including app context inline if attached
+        let finalMessageContent: String
+        if let appContent = attachedAppContent {
+            // Format app content inline with the user's message
+            let contextHeader = "---\n**Context from \(appContent.appName)**"
+            let windowInfo = appContent.windowTitle.map { " (\($0))" } ?? ""
+            let contentType = " [\(appContent.contentType.displayName)]"
+
+            finalMessageContent = """
+            \(contextHeader)\(windowInfo)\(contentType)
+
+            ```
+            \(appContent.redacted.content)
+            ```
+            ---
+
+            \(messageText)
+            """
+
+            logChat(
+                "📎 Including app content in message",
+                level: .info,
+                metadata: [
+                    "appName": appContent.appName,
+                    "contentType": appContent.contentType.displayName,
+                    "contentLength": "\(appContent.content.count)"
+                ]
+            )
+        } else {
+            finalMessageContent = messageText
+        }
+
         let userMessage = Message(
             role: .user,
-            content: messageText,
+            content: finalMessageContent,
             attachments: attachments.isEmpty ? nil : attachments
         )
         logChat(
@@ -1056,6 +1223,7 @@ struct MacChatView: View {
         messageText = ""
         isComposerFocused = true
         attachedFiles = [] // Clear attached files after sending
+        attachedAppContent = nil // Clear app content after sending
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = promptText // Store for retry in case of failure

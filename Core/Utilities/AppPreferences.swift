@@ -23,11 +23,15 @@ private final class DefaultsState: @unchecked Sendable {
 enum AppPreferences {
     private static let state = DefaultsState()
     private static let globalSystemPromptKey = "globalSystemPrompt"
+    private static let attachFromAppEnabledKey = "attachFromAppEnabled"
+    private static let attachFromAppHotkeyKey = "attachFromAppHotkey"
 
     private static var defaultValues: [String: Any] {
         [
             "autoGenerateTitle": true,
-            globalSystemPromptKey: ""
+            globalSystemPromptKey: "",
+            attachFromAppEnabledKey: false,
+            attachFromAppHotkeyKey: "⌘⇧Space"
         ]
     }
 
@@ -40,6 +44,21 @@ enum AppPreferences {
     static var globalSystemPrompt: String {
         get { storage.string(forKey: globalSystemPromptKey) ?? "" }
         set { storage.set(newValue, forKey: globalSystemPromptKey) }
+    }
+
+    // MARK: - Attach from App (macOS only)
+
+    /// Whether the "Attach from App" feature is enabled.
+    /// When enabled, a global hotkey can be used to capture context from other apps.
+    static var attachFromAppEnabled: Bool {
+        get { storage.bool(forKey: attachFromAppEnabledKey) }
+        set { storage.set(newValue, forKey: attachFromAppEnabledKey) }
+    }
+
+    /// The hotkey string for "Attach from App" (e.g., "⌘⇧Space").
+    static var attachFromAppHotkey: String {
+        get { storage.string(forKey: attachFromAppHotkeyKey) ?? "⌘⇧Space" }
+        set { storage.set(newValue, forKey: attachFromAppHotkeyKey) }
     }
 
     static func registerDefaults() {

@@ -1,5 +1,9 @@
 name: SwiftLint
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main ]
@@ -17,6 +21,7 @@ on:
 jobs:
   lint:
     runs-on: macos-26
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
