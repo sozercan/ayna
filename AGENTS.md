@@ -159,6 +159,23 @@ This keeps the human informed and provides natural points to course-correct.
 
 7. **Swift Concurrency**: Always mark `@Observable` classes with `@MainActor`. Never use `DispatchQueue` — use Swift concurrency (`async`/`await`, `MainActor`).
 
+8. **XCTest with @MainActor**: For `@MainActor` test classes, use `async` setUp/tearDown **without** calling `super`:
+   ```swift
+   @MainActor
+   final class MyServiceTests: XCTestCase {
+       override func setUp() async throws {
+           // Do NOT call: try await super.setUp()
+           // Set up test fixtures here
+       }
+       
+       override func tearDown() async throws {
+           // Clean up here
+           // Do NOT call: try await super.tearDown()
+       }
+   }
+   ```
+   **Why?** `XCTestCase` is not `Sendable`. Calling `super.setUp()` from a `@MainActor` async context sends `self` across actor boundaries, causing Swift 6 strict concurrency errors. XCTest's base implementations are no-ops, so skipping them is safe.
+
 ## Quick Style Rules
 
 | ❌ Avoid | ✅ Prefer |
@@ -171,6 +188,7 @@ This keeps the human informed and provides natural points to course-correct.
 | `String(format: "%.2f", n)` | `Text(n, format: .number.precision(...))` |
 | `replacingOccurrences(of:with:)` | `replacing(_:with:)` |
 | Force unwraps (`!`) | Optional handling or `guard` |
+| `super.setUp()` in `@MainActor` tests | Omit super calls in async setUp/tearDown |
 
 ## Quick Reference
 
