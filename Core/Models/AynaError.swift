@@ -353,22 +353,22 @@ extension AynaError: Equatable {
              (.noModelSelected, .noModelSelected),
              (.cancelled, .cancelled):
             return true
-        case let (.missingAPIKey(l), .missingAPIKey(r)):
-            return l == r
-        case let (.invalidAPIKey(l), .invalidAPIKey(r)):
-            return l == r
-        case let (.modelNotFound(l), .modelNotFound(r)):
-            return l == r
-        case let (.toolNotFound(l), .toolNotFound(r)):
-            return l == r
-        case let (.contentFiltered(l), .contentFiltered(r)):
-            return l == r
-        case let (.apiError(l), .apiError(r)):
-            return l == r
+        case let (.missingAPIKey(lhs), .missingAPIKey(rhs)):
+            return lhs == rhs
+        case let (.invalidAPIKey(lhs), .invalidAPIKey(rhs)):
+            return lhs == rhs
+        case let (.modelNotFound(lhs), .modelNotFound(rhs)):
+            return lhs == rhs
+        case let (.toolNotFound(lhs), .toolNotFound(rhs)):
+            return lhs == rhs
+        case let (.contentFiltered(lhs), .contentFiltered(rhs)):
+            return lhs == rhs
+        case let (.apiError(lhs), .apiError(rhs)):
+            return lhs == rhs
         case let (.httpError(lCode, lMsg), .httpError(rCode, rMsg)):
             return lCode == rCode && lMsg == rMsg
-        case let (.rateLimited(l), .rateLimited(r)):
-            return l == r
+        case let (.rateLimited(lhs), .rateLimited(rhs)):
+            return lhs == rhs
         default:
             // For complex cases with underlying errors, compare descriptions
             return lhs.errorDescription == rhs.errorDescription

@@ -164,9 +164,9 @@ final class AynaErrorTests: XCTestCase {
     }
 
     func testFromHTTPResponse500WithJSONError() {
-        let json = """
+        let json = Data("""
         {"error": {"message": "Internal server error"}}
-        """.data(using: .utf8)
+        """.utf8)
 
         let error = AynaError.fromHTTPResponse(statusCode: 500, data: json)
 

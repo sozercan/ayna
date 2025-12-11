@@ -229,6 +229,9 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
 ## Key Files
 
 - `Core/Services/OpenAIService.swift` — Main AI service coordinator
+- `Core/Services/Providers/AIProviderProtocol.swift` — Provider abstraction protocol
 - `Core/ViewModels/ConversationManager.swift` — App-wide state management
 - `Core/Services/ConversationPersistenceCoordinator.swift` — Save/load orchestration
+- `Core/Models/AynaError.swift` — Unified error types
+- `Core/Utilities/ErrorPresenter.swift` — User-friendly error presentation
 - `Core/Diagnostics/DiagnosticsLogger.swift` — Logging (use this for all logs)
