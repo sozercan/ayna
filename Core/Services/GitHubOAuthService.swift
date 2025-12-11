@@ -774,7 +774,12 @@ class GitHubOAuthService: NSObject, ObservableObject {
                 self.currentUser = user
             }
         } catch {
-            print("Failed to fetch user info: \(error)")
+            DiagnosticsLogger.log(
+                .openAIService,
+                level: .error,
+                message: "Failed to fetch GitHub user info",
+                metadata: ["error": error.localizedDescription]
+            )
         }
     }
 

@@ -54,6 +54,10 @@ Decomposed into single-responsibility components:
 | `OpenAIStreamParser.swift` | SSE parsing, tool call handling |
 | `OpenAIRetryPolicy.swift` | Exponential backoff for transient failures |
 | `OpenAIImageService.swift` | DALL·E image generation |
+| `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
+| `Providers/OpenAIProvider.swift` | OpenAI API implementation |
+| `Providers/AzureOpenAIProvider.swift` | Azure OpenAI implementation |
+| `Providers/GitHubModelsProvider.swift` | GitHub Models implementation |
 
 ### Apple Intelligence Service
 
@@ -234,6 +238,46 @@ DiagnosticsLogger.log(.serviceName, level: .info, message: "✅ Action completed
 
 ## Error Handling
 
-- Use `OpenAIError` (conforms to `LocalizedError`) for AI-related errors
+### Unified Error Type
+
+The app uses `AynaError` as the unified error type for consistent error handling:
+
+- **File**: `Core/Models/AynaError.swift`
+- **Conforms to**: `LocalizedError`, `Sendable`, `Equatable`
+- **Categories**: Network, Authentication, Model/Provider, API Response, Tool Execution, Data/Storage, Conversation
+
+```swift
+// Example usage
+let error = AynaError.missingAPIKey(provider: "OpenAI")
+print(error.errorDescription)     // "OpenAI API key not configured"
+print(error.recoverySuggestion)   // "Add your OpenAI API key in Settings → Models"
+```
+
+### Error Wrapping
+
+```swift
+// Wrap any error into AynaError
+let aynaError = AynaError.wrap(urlError)  // Converts URLError.timedOut → .timeout
+
+// Create from HTTP response
+let error = AynaError.fromHTTPResponse(statusCode: 429, data: responseData)
+```
+
+### ErrorPresenter Utility
+
+- **File**: `Core/Utilities/ErrorPresenter.swift`
+- Provides user-friendly messages, recovery suggestions, and error categorization
+- Determines if errors are retryable or require user action
+
+```swift
+let message = ErrorPresenter.userMessage(for: error)
+let suggestion = ErrorPresenter.recoverySuggestion(for: error)
+let isRetryable = ErrorPresenter.isRetryable(error)
+let action = ErrorPresenter.suggestedAction(for: error)  // .retry, .openSettings, .dismiss
+```
+
+### Legacy Errors
+
+- `OpenAIService.OpenAIError` — Still used internally by OpenAI-related services
 - Display errors in UI with red text styling
 - Always log errors with context before handling
