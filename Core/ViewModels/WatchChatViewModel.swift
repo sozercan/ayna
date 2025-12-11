@@ -341,17 +341,14 @@
                                 "Tool not available on Apple Watch"
                             }
 
-                            // For web_search, skip creating a visible tool message
-                            let isWebSearch = toolName == "web_search"
-
                             await MainActor.run {
-                                if !isWebSearch {
-                                    // For non-web-search tools, add tool result as a tool message
-                                    let toolMessage = WatchMessage(
-                                        from: Message(role: .tool, content: result)
-                                    )
-                                    self.conversationStore.addMessage(toolMessage, to: conversationId)
-                                }
+                                // Add tool result message to local store for history consistency
+                                let toolMessage = WatchMessage(
+                                    from: Message(role: .tool, content: result)
+                                )
+                                self.conversationStore.addMessage(toolMessage, to: conversationId)
+                                // Sync tool message to iPhone to maintain conversation parity
+                                self.connectivityService.sendMessage(toolMessage, conversationId: conversationId)
 
                                 // Add new assistant message placeholder
                                 let newAssistantMessage = WatchMessage(
@@ -367,14 +364,8 @@
                                     return
                                 }
 
-                                // Build continuation messages
-                                var continuationMessages = updatedConv.messages.dropLast().map { $0.toMessage() }
-
-                                // For web_search, inject a synthetic tool message for the API
-                                if isWebSearch {
-                                    let syntheticToolMessage = Message(role: .tool, content: result)
-                                    continuationMessages.append(syntheticToolMessage)
-                                }
+                                // Build continuation messages (tool message is now in the store)
+                                let continuationMessages = updatedConv.messages.dropLast().map { $0.toMessage() }
 
                                 self.streamingContent = ""
 

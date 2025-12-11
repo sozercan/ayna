@@ -1040,6 +1040,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
 
         // Create placeholder messages for each model
         var messageIds: [String: UUID] = [:]
+        var placeholderMessages: [Message] = []
         for model in models {
             let messageId = UUID()
             messageIds[model] = messageId
@@ -1052,11 +1053,15 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 model: model,
                 responseGroupId: responseGroupId
             )
-            conversationManager.addMessage(to: targetConversation, message: placeholderMessage)
+            placeholderMessages.append(placeholderMessage)
         }
 
-        // Add response group
-        conversationManager.addResponseGroup(to: targetConversation, group: responseGroup)
+        // Add all messages and response group atomically to prevent UI flicker
+        conversationManager.addMultiModelResponse(
+            to: targetConversation,
+            messages: placeholderMessages,
+            responseGroup: responseGroup
+        )
 
         // Prepare messages
         guard let updatedConversation = conversation else { return }

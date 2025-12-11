@@ -41,6 +41,28 @@
 
                 Divider()
 
+                // Error banner
+                if let error = errorMessage {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Button {
+                            errorMessage = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(Spacing.sm)
+                    .background(Color.orange.opacity(0.1))
+                }
+
                 // Content
                 if !hasAccessibilityPermission {
                     accessibilityPrompt

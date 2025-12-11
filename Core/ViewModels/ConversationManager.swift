@@ -29,12 +29,68 @@ final class ConversationManager: ObservableObject {
     private var isLoaded = false
     private let saveDebounceDuration: Duration
 
+    // Performance: O(1) conversation index lookup cache
+    private var conversationIndexCache: [UUID: Int] = [:]
+
+    // Performance: Spotlight indexing debounce (3 seconds per conversation)
+    private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
+    private let indexingDebounceDuration: Duration = .seconds(3)
+
     private func logManager(
         _ message: String,
         level: OSLogType = .default,
         metadata: [String: String] = [:]
     ) {
         DiagnosticsLogger.log(.conversationManager, level: level, message: message, metadata: metadata)
+    }
+
+    // MARK: - Index Cache Management
+
+    /// Rebuilds the entire conversation index cache. Call after bulk operations.
+    private func rebuildIndexCache() {
+        conversationIndexCache.removeAll(keepingCapacity: true)
+        for (index, conversation) in conversations.enumerated() {
+            conversationIndexCache[conversation.id] = index
+        }
+    }
+
+    /// Gets the index for a conversation ID using O(1) cache lookup.
+    /// Falls back to O(n) search if not in cache.
+    private func getConversationIndex(for id: UUID) -> Int? {
+        if let cachedIndex = conversationIndexCache[id] {
+            // Verify cache is still valid
+            if cachedIndex < conversations.count, conversations[cachedIndex].id == id {
+                return cachedIndex
+            }
+            // Cache is stale, rebuild
+            rebuildIndexCache()
+            return conversationIndexCache[id]
+        }
+
+        // Not in cache, do linear search and cache result
+        if let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversationIndexCache[id] = index
+            return index
+        }
+
+        return nil
+    }
+
+    /// Updates the cache when a conversation is inserted at a specific index.
+    private func updateCacheForInsertion(at index: Int) {
+        // Update all indices >= insertion point
+        for idx in index ..< conversations.count {
+            conversationIndexCache[conversations[idx].id] = idx
+        }
+    }
+
+    /// Updates the cache when a conversation is removed.
+    private func updateCacheForRemoval(id: UUID, at index: Int) {
+        conversationIndexCache.removeValue(forKey: id)
+        // Update all indices > removal point
+        for idx in index ..< conversations.count {
+            conversationIndexCache[conversations[idx].id] = idx
+        }
     }
 
     init(
@@ -156,6 +212,9 @@ final class ConversationManager: ObservableObject {
             // Sort by updated date descending to ensure correct order
             conversations.sort { $0.updatedAt > $1.updatedAt }
 
+            // Rebuild the index cache after loading and sorting
+            rebuildIndexCache()
+
             isLoaded = true
 
             logManager(
@@ -177,6 +236,7 @@ final class ConversationManager: ObservableObject {
             logManager("⚠️ Clearing corrupted conversation data", level: .default)
             try? store.clear()
             conversations = []
+            conversationIndexCache.removeAll()
             isLoaded = true
         }
     }
@@ -190,6 +250,7 @@ final class ConversationManager: ObservableObject {
 
     func clearAllConversations() {
         conversations.removeAll()
+        conversationIndexCache.removeAll()
         Task {
             // Cancel all pending saves in the coordinator
             await persistenceCoordinator.cancelAllPendingSaves()
@@ -211,6 +272,7 @@ final class ConversationManager: ObservableObject {
         let defaultModel = OpenAIService.shared.selectedModel
         let conversation = Conversation(title: title, model: defaultModel)
         conversations.insert(conversation, at: 0)
+        updateCacheForInsertion(at: 0)
         save(conversation)
     }
 
@@ -251,6 +313,7 @@ final class ConversationManager: ObservableObject {
         }
 
         conversations.insert(conversation, at: 0)
+        updateCacheForInsertion(at: 0)
         selectedConversationId = conversation.id
         save(conversation)
 
@@ -269,24 +332,28 @@ final class ConversationManager: ObservableObject {
     }
 
     func deleteConversation(_ conversation: Conversation) {
-        conversations.removeAll { $0.id == conversation.id }
-        Task {
-            try? await store.delete(conversation.id)
-            #if !os(watchOS)
-                deindexConversation(id: conversation.id)
-            #endif
+        if let index = getConversationIndex(for: conversation.id) {
+            let id = conversation.id
+            conversations.remove(at: index)
+            updateCacheForRemoval(id: id, at: index)
+            Task {
+                try? await store.delete(id)
+                #if !os(watchOS)
+                    deindexConversation(id: id)
+                #endif
+            }
         }
     }
 
     func updateConversation(_ conversation: Conversation) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index] = conversation
             save(conversation)
         }
     }
 
     func renameConversation(_ conversation: Conversation, newTitle: String) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].title = newTitle
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -294,7 +361,7 @@ final class ConversationManager: ObservableObject {
     }
 
     func addMessage(to conversation: Conversation, message: Message) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].addMessage(message)
 
             // Auto-generate title from first user message
@@ -315,14 +382,14 @@ final class ConversationManager: ObservableObject {
     }
 
     func updateLastMessage(in conversation: Conversation, content: String) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].updateLastMessage(content)
             save(conversations[index])
         }
     }
 
     func updateMessage(in conversation: Conversation, messageId: UUID, update: (inout Message) -> Void) {
-        if let convIndex = conversations.firstIndex(where: { $0.id == conversation.id }),
+        if let convIndex = getConversationIndex(for: conversation.id),
            let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
         {
             var message = conversations[convIndex].messages[msgIndex]
@@ -337,7 +404,10 @@ final class ConversationManager: ObservableObject {
 
     /// Safely get a conversation by ID. Returns nil if not found.
     func conversation(byId id: UUID) -> Conversation? {
-        conversations.first { $0.id == id }
+        if let index = getConversationIndex(for: id) {
+            return conversations[index]
+        }
+        return nil
     }
 
     /// Safely update a message by IDs. Returns true if update succeeded.
@@ -347,7 +417,7 @@ final class ConversationManager: ObservableObject {
         messageId: UUID,
         update: (inout Message) -> Void
     ) -> Bool {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+        guard let convIndex = getConversationIndex(for: conversationId),
               let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
         else {
             return false
@@ -366,7 +436,7 @@ final class ConversationManager: ObservableObject {
         messageId: UUID,
         chunk: String
     ) -> Bool {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+        guard let convIndex = getConversationIndex(for: conversationId),
               let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
         else {
             return false
@@ -381,7 +451,7 @@ final class ConversationManager: ObservableObject {
         conversationId: UUID,
         messageId: UUID
     ) -> Bool {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+        guard let convIndex = getConversationIndex(for: conversationId),
               let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
         else {
             return false
@@ -399,7 +469,7 @@ final class ConversationManager: ObservableObject {
         messageId: UUID,
         status: ResponseGroupStatus
     ) -> Bool {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+        guard let convIndex = getConversationIndex(for: conversationId),
               var group = conversations[convIndex].getResponseGroup(responseGroupId)
         else {
             return false
@@ -410,7 +480,7 @@ final class ConversationManager: ObservableObject {
     }
 
     func clearMessages(in conversation: Conversation) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].messages.removeAll()
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -418,7 +488,7 @@ final class ConversationManager: ObservableObject {
     }
 
     func updateModel(for conversation: Conversation, model: String) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].model = model
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -426,7 +496,7 @@ final class ConversationManager: ObservableObject {
     }
 
     func updateSystemPromptMode(for conversation: Conversation, mode: SystemPromptMode) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].systemPromptMode = mode
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -437,7 +507,7 @@ final class ConversationManager: ObservableObject {
 
     /// Toggles multi-model mode for a conversation
     func setMultiModelEnabled(for conversation: Conversation, enabled: Bool) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].multiModelEnabled = enabled
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -446,8 +516,28 @@ final class ConversationManager: ObservableObject {
 
     /// Sets the active models for multi-model parallel queries
     func setActiveModels(for conversation: Conversation, models: [String]) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].activeModels = models
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+        }
+    }
+
+    /// Adds multiple messages and a response group atomically.
+    /// This ensures the UI updates once with all data ready, preventing visual glitches
+    /// where multi-model responses appear as separate messages briefly.
+    func addMultiModelResponse(
+        to conversation: Conversation,
+        messages: [Message],
+        responseGroup: ResponseGroup
+    ) {
+        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            // Add all messages
+            for message in messages {
+                conversations[index].messages.append(message)
+            }
+            // Add the response group
+            conversations[index].addResponseGroup(responseGroup)
             conversations[index].updatedAt = Date()
             save(conversations[index])
         }
@@ -455,7 +545,7 @@ final class ConversationManager: ObservableObject {
 
     /// Adds a response group to track parallel responses
     func addResponseGroup(to conversation: Conversation, group: ResponseGroup) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].addResponseGroup(group)
             save(conversations[index])
         }
@@ -463,7 +553,7 @@ final class ConversationManager: ObservableObject {
 
     /// Updates a response group (e.g., when streaming completes)
     func updateResponseGroup(in conversation: Conversation, group: ResponseGroup) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].updateResponseGroup(group)
             save(conversations[index])
         }
@@ -471,7 +561,7 @@ final class ConversationManager: ObservableObject {
 
     /// Selects a response from a response group, enabling deferred tool execution
     func selectResponse(in conversation: Conversation, groupId: UUID, messageId: UUID) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
+        if let index = getConversationIndex(for: conversation.id) {
             conversations[index].selectResponse(in: groupId, messageId: messageId)
             conversations[index].updatedAt = Date()
             save(conversations[index])
@@ -684,7 +774,60 @@ final class ConversationManager: ObservableObject {
             )
         }
 
+        /// Index a conversation with debouncing to avoid excessive Spotlight updates during streaming.
+        /// Uses a 3-second debounce per conversation to coalesce rapid updates.
         private func indexConversation(_ conversation: Conversation) {
+            let conversationId = conversation.id
+
+            // Cancel any existing debounce task for this conversation
+            indexingDebounceTasks[conversationId]?.cancel()
+
+            // Create new debounced indexing task
+            indexingDebounceTasks[conversationId] = Task { @MainActor in
+                // Wait for debounce duration
+                do {
+                    try await Task.sleep(for: indexingDebounceDuration)
+                } catch {
+                    // Task was cancelled, don't index
+                    return
+                }
+
+                // Clean up the task reference
+                indexingDebounceTasks.removeValue(forKey: conversationId)
+
+                // Get the latest version of the conversation
+                guard let latestConversation = getConversationIndex(for: conversationId)
+                    .map({ conversations[$0] })
+                else {
+                    return
+                }
+
+                // Perform the actual indexing on a background thread
+                let conversationCopy = latestConversation
+                Task.detached(priority: .utility) {
+                    let item = ConversationManager.createSearchableItem(for: conversationCopy)
+
+                    do {
+                        try await CSSearchableIndex.default().indexSearchableItems([item])
+                    } catch {
+                        DiagnosticsLogger.log(
+                            .conversationManager,
+                            level: .error,
+                            message: "❌ Spotlight indexing error",
+                            metadata: ["error": error.localizedDescription]
+                        )
+                    }
+                }
+            }
+        }
+
+        /// Index a conversation immediately without debouncing.
+        /// Used for final saves when streaming completes or conversation is deleted.
+        private func indexConversationImmediately(_ conversation: Conversation) {
+            // Cancel any pending debounced task
+            indexingDebounceTasks[conversation.id]?.cancel()
+            indexingDebounceTasks.removeValue(forKey: conversation.id)
+
             Task.detached(priority: .utility) {
                 let item = ConversationManager.createSearchableItem(for: conversation)
 
@@ -733,6 +876,10 @@ final class ConversationManager: ObservableObject {
         }
 
         private func deindexConversation(id: UUID) {
+            // Cancel any pending indexing task for this conversation
+            indexingDebounceTasks[id]?.cancel()
+            indexingDebounceTasks.removeValue(forKey: id)
+
             CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [id.uuidString]) { error in
                 if let error {
                     Task { @MainActor in

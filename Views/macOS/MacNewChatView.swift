@@ -393,6 +393,7 @@ struct MacNewChatView: View {
                         .font(.system(size: 24))
                         .foregroundStyle(Color.secondary.opacity(0.7))
                 }
+                .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .accessibilityLabel("Attach")

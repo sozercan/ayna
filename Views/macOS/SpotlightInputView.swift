@@ -56,6 +56,29 @@
 
         var body: some View {
             VStack(spacing: 0) {
+                // Error banner
+                if let error = errorMessage {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Button {
+                            errorMessage = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.orange.opacity(0.1))
+                }
+
                 // Input field
                 inputField
 
@@ -542,14 +565,28 @@
         private func selectWindow(_ window: AccessibilityService.WindowInfo) {
             selectedWindow = window
             isExtracting = true
+            errorMessage = nil
 
             Task {
                 let result = await AccessibilityService.shared.extractContent(from: window)
                 await MainActor.run {
-                    attachedContent = result
                     isExtracting = false
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        panelState = .withContext
+
+                    // Handle extraction result
+                    switch result {
+                    case .success:
+                        attachedContent = result
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            panelState = .withContext
+                        }
+                    case .permissionDenied:
+                        errorMessage = "Accessibility permission required."
+                    case .noFocusedApp:
+                        errorMessage = "No focused app found."
+                    case .noContentAvailable:
+                        errorMessage = "No extractable content in this window."
+                    case let .extractionFailed(reason):
+                        errorMessage = reason
                     }
                 }
             }
