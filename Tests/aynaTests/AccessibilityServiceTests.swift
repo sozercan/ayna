@@ -13,14 +13,14 @@
     final class AccessibilityServiceTests: XCTestCase {
         var service: AccessibilityService!
 
-        override func setUpWithError() throws {
-            try super.setUpWithError()
+    override func setUp() async throws {
+      try await super.setUp()
             service = AccessibilityService.shared
         }
 
-        override func tearDownWithError() throws {
+    override func tearDown() async throws {
             service.stopMonitoring()
-            try super.tearDownWithError()
+      try await super.tearDown()
         }
 
         // MARK: - Permission Tests
