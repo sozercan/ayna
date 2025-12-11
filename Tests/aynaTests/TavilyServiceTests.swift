@@ -6,8 +6,8 @@ final class TavilyServiceTests: XCTestCase {
     private var defaults: UserDefaults!
     private var keychain: InMemoryKeychainStorage!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         guard let suite = UserDefaults(suiteName: "TavilyServiceTests") else {
             fatalError("Failed to create UserDefaults suite for TavilyServiceTests")
         }
@@ -20,13 +20,13 @@ final class TavilyServiceTests: XCTestCase {
         TavilyMockURLProtocol.reset()
     }
 
-    override func tearDown() {
+    override func tearDownWithError() throws {
         AppPreferences.reset()
         defaults.removePersistentDomain(forName: "TavilyServiceTests")
         defaults = nil
         keychain = nil
         TavilyMockURLProtocol.reset()
-        super.tearDown()
+        try super.tearDownWithError()
     }
 
     private func makeService(apiKey: String = "tvly-test-key", enabled: Bool = true) -> TavilyService {

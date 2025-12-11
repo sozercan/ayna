@@ -5,8 +5,8 @@ import XCTest
 final class OpenAIServiceTests: XCTestCase {
     private var defaults: UserDefaults!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         guard let suite = UserDefaults(suiteName: "OpenAIServiceTests") else {
             fatalError("Failed to create UserDefaults suite for OpenAIServiceTests")
         }
@@ -20,13 +20,13 @@ final class OpenAIServiceTests: XCTestCase {
         MockURLProtocol.reset()
     }
 
-    override func tearDown() {
+    override func tearDownWithError() throws {
         AppPreferences.reset()
         defaults.removePersistentDomain(forName: "OpenAIServiceTests")
         defaults = nil
         OpenAIService.keychain = KeychainStorage.shared
         MockURLProtocol.reset()
-        super.tearDown()
+        try super.tearDownWithError()
     }
 
     private func makeService() -> OpenAIService {

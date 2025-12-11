@@ -10,8 +10,8 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
     private var defaults: UserDefaults!
     private var keychain: InMemoryKeychainStorage!
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         guard let suite = UserDefaults(suiteName: "WatchChatViewModelTests") else {
             fatalError("Failed to create UserDefaults suite")
         }
@@ -24,13 +24,13 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         WatchMockURLProtocol.reset()
     }
 
-    override func tearDown() {
+    override func tearDownWithError() throws {
         AppPreferences.reset()
         defaults.removePersistentDomain(forName: "WatchChatViewModelTests")
         defaults = nil
         keychain = nil
         WatchMockURLProtocol.reset()
-        super.tearDown()
+        try super.tearDownWithError()
     }
 
     // MARK: - Tool Integration Tests

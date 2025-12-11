@@ -13,8 +13,8 @@
     final class AppContentServiceTests: XCTestCase {
         var service: AppContentService!
 
-        override func setUp() {
-            super.setUp()
+        override func setUpWithError() throws {
+            try super.setUpWithError()
             service = AppContentService.shared
         }
 
