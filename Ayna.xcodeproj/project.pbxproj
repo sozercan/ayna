@@ -136,12 +136,16 @@
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
 		C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */; };
 		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
+		COUNCIL0TESTS13064F88B81C /* CouncilModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = COUNCIL0TESTS13064F88B81B /* CouncilModelsTests.swift */; };
 		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
 		C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */; };
 		C8C534D62ED40B4B003D2BAC /* AynaSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */; };
 		C8C534D72ED40B4B003D2BAC /* AynaUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */; };
 		CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */; };
 		CITATION0VIEW13064F88B81B01 /* CitationSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */; };
+		COUNCIL0MODELS13064F88B81C /* CouncilModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = COUNCIL0MODELS13064F88B81B /* CouncilModels.swift */; };
+		COUNCIL0MODELS13064F88B81D /* CouncilModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = COUNCIL0MODELS13064F88B81B /* CouncilModels.swift */; };
+		COUNCIL0MODELS13064F88B81E /* CouncilModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = COUNCIL0MODELS13064F88B81B /* CouncilModels.swift */; };
 		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
 		D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
 		D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
@@ -251,6 +255,7 @@
 		9674186935874CD2E9D32BD3 /* AccessibilityService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccessibilityService.swift; sourceTree = "<group>"; };
 		A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModel.swift; sourceTree = "<group>"; };
 		A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseGroup.swift; sourceTree = "<group>"; };
+		COUNCIL0MODELS13064F88B81B /* CouncilModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouncilModels.swift; sourceTree = "<group>"; };
 		A1B2C3D713064F88B81B4CA2 /* MultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiModelResponseView.swift; sourceTree = "<group>"; };
 		A1B2C3D913064F88B81B4CA2 /* IOSMultiModelResponseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMultiModelResponseView.swift; sourceTree = "<group>"; };
 		A778EF766A48372FF1B30067 /* FloatingPanelController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FloatingPanelController.swift; sourceTree = "<group>"; };
@@ -287,6 +292,7 @@
 		C81393CA2ED3DEB800F5E7F9 /* UITestEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestEnvironment.swift; sourceTree = "<group>"; };
 		C81393CC2ED3DEB800F5E7F9 /* ConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManager.swift; sourceTree = "<group>"; };
 		C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagerTests.swift; sourceTree = "<group>"; };
+		COUNCIL0TESTS13064F88B81B /* CouncilModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouncilModelsTests.swift; sourceTree = "<group>"; };
 		C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouperTests.swift; sourceTree = "<group>"; };
 		C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
 		C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
@@ -575,6 +581,7 @@
 			children = (
 				C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */,
 				C81393B42ED3DEB800F5E7F9 /* Conversation.swift */,
+				COUNCIL0MODELS13064F88B81B /* CouncilModels.swift */,
 				C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */,
 				C81393B62ED3DEB800F5E7F9 /* Message.swift */,
 				A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */,
@@ -662,6 +669,7 @@
 			isa = PBXGroup;
 			children = (
 				C855C17C2EE34C1E0073EB99 /* ConversationExporterIOSTests.swift */,
+				COUNCIL0TESTS13064F88B81B /* CouncilModelsTests.swift */,
 				C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */,
 				C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */,
 				C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */,
@@ -1075,6 +1083,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C81393FC2ED3DEB800F5E7F9 /* Conversation.swift in Sources */,
+				COUNCIL0MODELS13064F88B81C /* CouncilModels.swift in Sources */,
 				C81393FD2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */,
 				C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393FF2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,
@@ -1156,6 +1165,7 @@
 				C82E6B912EDBD7640055158F /* WatchConversationStore.swift in Sources */,
 				C82E6B972EDBD7A00055158F /* Message.swift in Sources */,
 				C82E6B982EDBD7A00055158F /* Conversation.swift in Sources */,
+				COUNCIL0MODELS13064F88B81E /* CouncilModels.swift in Sources */,
 				C82E6B992EDBD7A00055158F /* ResponseGroup.swift in Sources */,
 				C82E6B9A2EDBD7A00055158F /* ContentBlock.swift in Sources */,
 				C855BF482EE143310073EB99 /* TestIdentifiers.swift in Sources */,
@@ -1208,6 +1218,7 @@
 				C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */,
 				C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */,
 				C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */,
+				COUNCIL0TESTS13064F88B81C /* CouncilModelsTests.swift in Sources */,
 				C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */,
 				C8C534D52ED40B39003D2BAC /* MarkdownRendererTests.swift in Sources */,
 				TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */,
@@ -1228,6 +1239,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C81393DB2ED3DEB800F5E7F9 /* Conversation.swift in Sources */,
+				COUNCIL0MODELS13064F88B81D /* CouncilModels.swift in Sources */,
 				C81393DC2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */,
 				C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
 				C81393DE2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift in Sources */,

@@ -79,6 +79,9 @@ struct Conversation: Identifiable, Codable, Equatable {
     var activeModels: [String] // Models selected for parallel queries
     var responseGroups: [ResponseGroup] // Track all response groups
 
+    // Council mode support
+    var councilSessions: [CouncilSession] // Track all council deliberation sessions
+
     // Deep link support - transient, not persisted
     /// When set, the chat view should auto-send this prompt on load
     var pendingAutoSendPrompt: String?
@@ -94,7 +97,8 @@ struct Conversation: Identifiable, Codable, Equatable {
         temperature: Double = 0.7,
         multiModelEnabled: Bool = false,
         activeModels: [String] = [],
-        responseGroups: [ResponseGroup] = []
+        responseGroups: [ResponseGroup] = [],
+        councilSessions: [CouncilSession] = []
     ) {
         self.id = id
         self.title = title
@@ -107,6 +111,7 @@ struct Conversation: Identifiable, Codable, Equatable {
         self.multiModelEnabled = multiModelEnabled
         self.activeModels = activeModels
         self.responseGroups = responseGroups
+        self.councilSessions = councilSessions
     }
 
     // MARK: - Codable
@@ -115,6 +120,7 @@ struct Conversation: Identifiable, Codable, Equatable {
         case id, title, messages, createdAt, updatedAt, model
         case systemPromptMode, temperature
         case multiModelEnabled, activeModels, responseGroups
+        case councilSessions
     }
 
     init(from decoder: Decoder) throws {
@@ -131,6 +137,8 @@ struct Conversation: Identifiable, Codable, Equatable {
         multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
         activeModels = try container.decodeIfPresent([String].self, forKey: .activeModels) ?? []
         responseGroups = try container.decodeIfPresent([ResponseGroup].self, forKey: .responseGroups) ?? []
+        // Provide default for council sessions (backward compatibility)
+        councilSessions = try container.decodeIfPresent([CouncilSession].self, forKey: .councilSessions) ?? []
     }
 
     mutating func addMessage(_ message: Message) {
@@ -223,5 +231,36 @@ struct Conversation: Identifiable, Codable, Equatable {
             responseGroups[index] = group
             updatedAt = Date()
         }
+    }
+
+    // MARK: - Council Mode Support
+
+    /// Add a council session for a user message
+    mutating func addCouncilSession(_ session: CouncilSession) {
+        councilSessions.append(session)
+        updatedAt = Date()
+    }
+
+    /// Get the council session for a specific user message
+    func getCouncilSession(for userMessageId: UUID) -> CouncilSession? {
+        councilSessions.first { $0.userMessageId == userMessageId }
+    }
+
+    /// Get a council session by its ID
+    func getCouncilSession(byId sessionId: UUID) -> CouncilSession? {
+        councilSessions.first { $0.id == sessionId }
+    }
+
+    /// Update a council session
+    mutating func updateCouncilSession(_ session: CouncilSession) {
+        if let index = councilSessions.firstIndex(where: { $0.id == session.id }) {
+            councilSessions[index] = session
+            updatedAt = Date()
+        }
+    }
+
+    /// Check if a user message has an associated council session
+    func hasCouncilSession(for userMessageId: UUID) -> Bool {
+        councilSessions.contains { $0.userMessageId == userMessageId }
     }
 }
