@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 struct IOSChatView: View {
     let conversationId: UUID
     @EnvironmentObject var conversationManager: ConversationManager
-    @StateObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
     @ObservedObject private var gitHubOAuthService = GitHubOAuthService.shared
 
     @State private var isFileImporterPresented = false
@@ -180,12 +180,22 @@ struct IOSChatView: View {
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
                     .onChange(of: conversation.messages.last?.content) {
+                        // Only scroll during generation - use transaction to disable animations
+                        // This prevents janky scrolling during rapid streaming updates
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
-                            proxy.scrollTo(lastId, anchor: .bottom)
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
                         }
                     }
-                    .onChange(of: viewModel.isGenerating) { _, _ in
+                    .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
+                        // Scroll to bottom when generation starts
+                        if newValue, let lastId = conversation.messages.last?.id {
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
                     }
                     .onAppear {
                         DiagnosticsLogger.log(

@@ -49,6 +49,23 @@ struct MacNewChatView: View {
         return conversationManager.conversations.first(where: { $0.id == id })
     }
 
+    // MARK: - Multi-Model Display
+
+    /// Represents either a single message or a group of parallel responses
+    private enum DisplayableItem: Identifiable {
+        case message(Message)
+        case responseGroup(groupId: UUID, responses: [Message])
+
+        var id: String {
+            switch self {
+            case let .message(msg):
+                msg.id.uuidString
+            case let .responseGroup(groupId, _):
+                "group-\(groupId.uuidString)"
+            }
+        }
+    }
+
     // Get visible messages (filtering out system and tool messages)
     private var visibleMessages: [Message] {
         guard let conversation = currentConversation else { return [] }
@@ -76,6 +93,33 @@ struct MacNewChatView: View {
             }
             return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
         }
+    }
+
+    /// Converts visible messages into displayable items, grouping multi-model responses together
+    private var displayableItems: [DisplayableItem] {
+        var items: [DisplayableItem] = []
+        var processedGroupIds: Set<UUID> = []
+
+        for message in visibleMessages {
+            // Check if this message is part of a response group
+            if let groupId = message.responseGroupId {
+                // Only process each group once
+                guard !processedGroupIds.contains(groupId) else { continue }
+                processedGroupIds.insert(groupId)
+
+                // Collect all messages in this group
+                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
+
+                // Always show response groups as a group, even if only one response is currently visible
+                // This prevents UI jumping when responses arrive sequentially
+                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
+            } else {
+                // Regular message (not part of a response group)
+                items.append(.message(message))
+            }
+        }
+
+        return items
     }
 
     private var needsModelSetup: Bool {
@@ -142,23 +186,44 @@ struct MacNewChatView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 0) {
-                                ForEach(visibleMessages) { message in
-                                    MacMessageView(
-                                        message: message,
-                                        modelName: message.model,
-                                        onRetry: nil,
-                                        onSwitchModel: nil
-                                    )
-                                    .id(message.id)
+                                ForEach(displayableItems) { item in
+                                    switch item {
+                                    case let .message(message):
+                                        MacMessageView(
+                                            message: message,
+                                            modelName: message.model,
+                                            onRetry: nil,
+                                            onSwitchModel: nil
+                                        )
+                                        .id(message.id)
+                                    case let .responseGroup(groupId, responses):
+                                        if let conversation = currentConversation {
+                                            MultiModelResponseView(
+                                                responseGroupId: groupId,
+                                                responses: responses,
+                                                conversation: conversation,
+                                                onSelectResponse: { messageId in
+                                                    conversationManager.selectResponse(
+                                                        in: conversation,
+                                                        groupId: groupId,
+                                                        messageId: messageId
+                                                    )
+                                                },
+                                                onRetry: nil
+                                            )
+                                            .id(item.id)
+                                        }
+                                    }
                                 }
                             }
                             .padding(.horizontal, 24)
                             .padding(.vertical, 24)
                         }
-                        .onChange(of: visibleMessages.count) { _, _ in
-                            if let lastMessage = visibleMessages.last {
+                        .onChange(of: displayableItems.count) { _, _ in
+                            // Scroll to the last item
+                            if let lastItem = displayableItems.last {
                                 withAnimation {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                    proxy.scrollTo(lastItem.id, anchor: .bottom)
                                 }
                             }
                         }
