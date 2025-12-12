@@ -35,6 +35,10 @@ struct MacNewChatView: View {
     @State private var selectedModels: Set<String> = []
     @State private var isToolSectionExpanded = false
 
+    @State private var errorMessage: String?
+    @State private var errorRecoverySuggestion: String?
+    @State private var shouldOfferOpenSettings = false
+
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
@@ -258,6 +262,18 @@ struct MacNewChatView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 8)
                         .background(Color.accentColor.opacity(0.1))
+                    }
+
+                    if let errorMessage {
+                        ErrorBannerView(
+                            message: errorMessage,
+                            recoverySuggestion: errorRecoverySuggestion,
+                            openSettingsTab: shouldOfferOpenSettings ? SettingsTab.models : nil,
+                            onDismiss: { dismissError() },
+                            identifierPrefix: "newchat.error"
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
                     }
 
                     // Input Area
@@ -722,6 +738,7 @@ struct MacNewChatView: View {
     // MARK: - Send Message
 
     private func sendMessage() {
+        dismissError()
         if isGenerating {
             // Stop generation immediately
             logNewChat("🛑 Stop button clicked in NewChatView, cancelling...", level: .info)
@@ -739,6 +756,9 @@ struct MacNewChatView: View {
 
         guard let activeModel = resolveModelForSending() else {
             logNewChat("⚠️ Cannot send message: no model selected", level: .error)
+            errorMessage = "Select a model in Settings → Models"
+            errorRecoverySuggestion = "Add or select a model before sending your first message"
+            shouldOfferOpenSettings = true
             return
         }
 
@@ -1028,6 +1048,13 @@ struct MacNewChatView: View {
                         level: .error,
                         metadata: ["model": model, "error": error.localizedDescription]
                     )
+
+                    if errorMessage == nil {
+                        let safeMessage = ErrorPresenter.userMessage(for: error)
+                        errorMessage = "\"\(model)\" failed: \(safeMessage)"
+                        errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+                        shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
+                    }
                 }
             }
         )
@@ -1106,7 +1133,8 @@ struct MacNewChatView: View {
                             "error": error.localizedDescription
                         ]
                     )
-                    selectedConversationId = conversationId
+
+                    presentError(error)
                 }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
@@ -1132,7 +1160,9 @@ struct MacNewChatView: View {
                         logNewChat("⚠️ Max tool call depth reached in NewChatView", level: .error)
                         isGenerating = false
                         currentToolName = nil
-                        selectedConversationId = conversationId
+                        errorMessage = "Too many tool calls"
+                        errorRecoverySuggestion = "Try again, or disable tools in Settings"
+                        shouldOfferOpenSettings = true
                         return
                     }
 
@@ -1296,7 +1326,7 @@ struct MacNewChatView: View {
                                 )
                                 isGenerating = false
                                 currentToolName = nil
-                                selectedConversationId = conversationId
+                                presentError(error)
                             }
                         }
                     }
@@ -1318,6 +1348,19 @@ struct MacNewChatView: View {
             }
         )
     }
+
+    private func presentError(_ error: Error) {
+        errorMessage = ErrorPresenter.userMessage(for: error)
+        errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+        shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
+    }
+
+    private func dismissError() {
+        errorMessage = nil
+        errorRecoverySuggestion = nil
+        shouldOfferOpenSettings = false
+    }
+
 
     private func getMimeType(for url: URL) -> String {
         let pathExtension = url.pathExtension.lowercased()

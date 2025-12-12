@@ -1404,12 +1404,8 @@ struct MacChatView: View {
             onError: { error in
                 Task { @MainActor in
                     isGenerating = false
-                    errorMessage = error.localizedDescription
-
-                    // Extract recovery suggestion if available
-                    if let localizedError = error as? LocalizedError {
-                        errorRecoverySuggestion = localizedError.recoverySuggestion
-                    }
+                    errorMessage = ErrorPresenter.userMessage(for: error)
+                    errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
 
                     // Remove the empty assistant placeholder message since we show error in banner
                     if let index = conversationManager.conversations.firstIndex(where: {
@@ -1759,10 +1755,11 @@ struct MacChatView: View {
                         }),
                         currentIndex == conversationIndex
                     else {
+                        let safeMessage = ErrorPresenter.userMessage(for: error)
                         logChat(
-                            "❌ onError for conversation \(conversation.id) (background): \(error.localizedDescription)",
+                            "❌ onError for conversation \(conversation.id) (background): \(safeMessage)",
                             level: .error,
-                            metadata: ["error": error.localizedDescription]
+                            metadata: ["error": safeMessage]
                         )
                         return
                     }
@@ -1772,12 +1769,8 @@ struct MacChatView: View {
                     toolCallDepth = 0
                     toolChainTimeoutTask?.cancel()
                     toolChainTimeoutTask = nil
-                    errorMessage = error.localizedDescription
-
-                    // Extract recovery suggestion if available
-                    if let localizedError = error as? LocalizedError {
-                        errorRecoverySuggestion = localizedError.recoverySuggestion
-                    }
+                    errorMessage = ErrorPresenter.userMessage(for: error)
+                    errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
                 }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
