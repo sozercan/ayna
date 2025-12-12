@@ -91,7 +91,7 @@ struct IOSContentView: View {
 
 struct IOSNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @StateObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var openAIService = OpenAIService.shared
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false

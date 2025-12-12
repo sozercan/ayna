@@ -40,6 +40,9 @@ struct IOSMessageView: View {
         // Parse content synchronously on init to avoid flash of empty/raw text bubbles
         _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
         _lastContentHash = State(initialValue: message.content.hashValue)
+        // Pre-set hasAppeared to true for messages that are likely already in view
+        // This prevents janky animations when scrolling through existing messages
+        _hasAppeared = State(initialValue: !message.content.isEmpty)
     }
 
     @State private var isToolExpanded = false
@@ -559,40 +562,37 @@ struct IOSContentBlockView: View {
 }
 
 // Typing indicator for text responses (iOS version) - iMessage style wave
+// Uses phaseAnimator for efficient animation without Timer overhead
 struct IOSTypingIndicatorView: View {
-    @State private var animatingDot = 0
-
-    let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
-
     var body: some View {
         HStack(spacing: Spacing.xs) {
             ForEach(0 ..< 3, id: \.self) { index in
-                Circle()
-                    .fill(Theme.textSecondary.opacity(0.6))
-                    .frame(width: 8, height: 8)
-                    // Wave animation: Y offset for iMessage feel
-                    .offset(y: offsetForDot(at: index))
-                    .animation(.easeInOut(duration: 0.3), value: animatingDot)
+                TypingDot(index: index)
             }
         }
         .padding(.vertical, Spacing.xxs)
-        .onReceive(timer) { _ in
-            animatingDot = (animatingDot + 1) % 6
-        }
     }
+}
 
-    /// Calculate Y offset for wave effect
-    private func offsetForDot(at index: Int) -> CGFloat {
-        let activeIndex: Int = switch animatingDot {
-        case 0, 5:
-            0
-        case 1, 4:
-            1
-        case 2, 3:
-            2
-        default:
-            -1
-        }
-        return index == activeIndex ? -4 : 0
+/// Individual dot with staggered phase animation for wave effect
+private struct TypingDot: View {
+    let index: Int
+
+    @State private var isAnimating = false
+
+    var body: some View {
+        Circle()
+            .fill(Theme.textSecondary.opacity(0.6))
+            .frame(width: 8, height: 8)
+            .offset(y: isAnimating ? -4 : 0)
+            .animation(
+                .easeInOut(duration: 0.4)
+                    .repeatForever(autoreverses: true)
+                    .delay(Double(index) * 0.15),
+                value: isAnimating
+            )
+            .onAppear {
+                isAnimating = true
+            }
     }
 }
