@@ -13,11 +13,11 @@
     final class AccessibilityServiceTests: XCTestCase {
         var service: AccessibilityService!
 
-    override func setUp() async throws {
+        override func setUp() async throws {
             service = AccessibilityService.shared
         }
 
-    override func tearDown() async throws {
+        override func tearDown() async throws {
             service.stopMonitoring()
         }
 

@@ -177,7 +177,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static var manualHostingController: NSHostingController<AnyView>?
 
     /// Reference to the conversation manager for window creation
-    static weak var conversationManager: ConversationManager?
+    weak static var conversationManager: ConversationManager?
 
     /// Shared instance for window delegate
     static let shared = AynaAppDelegate()
@@ -195,7 +195,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         AccessibilityService.shared.stopMonitoring()
     }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         DiagnosticsLogger.log(
             .app,
             level: .info,

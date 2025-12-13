@@ -808,7 +808,7 @@ struct MacNewChatView: View {
         var attachments: [Message.FileAttachment] = []
         for fileURL in filesToSend {
             if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = getMimeType(for: fileURL)
+                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
                 let attachment = Message.FileAttachment(
                     fileName: fileURL.lastPathComponent,
                     mimeType: mimeType,
@@ -1359,75 +1359,5 @@ struct MacNewChatView: View {
         errorMessage = nil
         errorRecoverySuggestion = nil
         shouldOfferOpenSettings = false
-    }
-
-
-    private func getMimeType(for url: URL) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        switch pathExtension {
-        case "jpg", "jpeg":
-            return "image/jpeg"
-        case "png":
-            return "image/png"
-        case "gif":
-            return "image/gif"
-        case "webp":
-            return "image/webp"
-        case "pdf":
-            return "application/pdf"
-        case "txt":
-            return "text/plain"
-        case "json":
-            return "application/json"
-        case "xml":
-            return "application/xml"
-        default:
-            return "application/octet-stream"
-        }
-    }
-}
-
-// MARK: - Model Setup Prompt View
-
-private struct ModelSetupPromptView: View {
-    let issues: [String]
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 54))
-                .foregroundStyle(Color.accentColor)
-
-            VStack(spacing: 8) {
-                Text("Add a model to start chatting")
-                    .font(.title3.weight(.semibold))
-                Text(
-                    "Head to Settings → Model to connect OpenAI, Azure, or AIKit models before sending your first message."
-                )
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420)
-            }
-
-            if !issues.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(issues, id: \.self) { issue in
-                        Label(issue, systemImage: "exclamationmark.triangle")
-                            .labelStyle(.titleAndIcon)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: 420, alignment: .leading)
-            }
-
-            SettingsLink {
-                Label("Open Settings", systemImage: "slider.horizontal.3")
-            }
-            .routeSettings(to: .models)
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

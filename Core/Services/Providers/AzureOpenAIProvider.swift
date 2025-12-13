@@ -299,7 +299,7 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Error Handling
 
-    private func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int, request: URLRequest) async -> String {
+    private func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int, request _: URLRequest) async -> String {
         var errorData = Data()
         do {
             for try await byte in bytes {
@@ -320,19 +320,19 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
     private nonisolated func getHTTPErrorMessage(statusCode: Int) -> String {
         switch statusCode {
         case 400:
-            return "HTTP \(statusCode) - Invalid Azure deployment or API version."
+            "HTTP \(statusCode) - Invalid Azure deployment or API version."
         case 401:
-            return "HTTP \(statusCode) - Invalid API key. Check your Azure OpenAI key."
+            "HTTP \(statusCode) - Invalid API key. Check your Azure OpenAI key."
         case 403:
-            return "HTTP \(statusCode) - Access denied. Check your Azure OpenAI permissions."
+            "HTTP \(statusCode) - Access denied. Check your Azure OpenAI permissions."
         case 404:
-            return "HTTP \(statusCode) - Deployment not found. Check your Azure deployment name."
+            "HTTP \(statusCode) - Deployment not found. Check your Azure deployment name."
         case 429:
-            return "Too many requests. Please wait a minute before trying again."
+            "Too many requests. Please wait a minute before trying again."
         case 500, 502, 503, 504:
-            return "Server error (\(statusCode)). Please try again in a moment."
+            "Server error (\(statusCode)). Please try again in a moment."
         default:
-            return "HTTP \(statusCode)"
+            "HTTP \(statusCode)"
         }
     }
 

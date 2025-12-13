@@ -344,40 +344,40 @@ enum ErrorPresenter {
     private static func userMessage(for urlError: URLError) -> String {
         switch urlError.code {
         case .timedOut:
-            return "The request timed out"
+            "The request timed out"
         case .notConnectedToInternet:
-            return "No internet connection"
+            "No internet connection"
         case .networkConnectionLost:
-            return "Network connection was lost"
+            "Network connection was lost"
         case .cannotFindHost:
-            return "Could not find the server"
+            "Could not find the server"
         case .cannotConnectToHost:
-            return "Could not connect to the server"
+            "Could not connect to the server"
         case .secureConnectionFailed:
-            return "Secure connection failed"
+            "Secure connection failed"
         case .cancelled:
-            return "Request was cancelled"
+            "Request was cancelled"
         default:
-            return "Network error occurred"
+            "Network error occurred"
         }
     }
 
     private static func recoverySuggestion(for urlError: URLError) -> String? {
         switch urlError.code {
         case .timedOut:
-            return "Try again or use a shorter message"
+            "Try again or use a shorter message"
         case .notConnectedToInternet:
-            return "Check your internet connection"
+            "Check your internet connection"
         case .networkConnectionLost:
-            return "Check your connection and try again"
+            "Check your connection and try again"
         case .cannotFindHost, .cannotConnectToHost:
-            return "Check the server URL in Settings"
+            "Check the server URL in Settings"
         case .secureConnectionFailed:
-            return "The server's security certificate may be invalid"
+            "The server's security certificate may be invalid"
         case .cancelled:
-            return nil
+            nil
         default:
-            return "Try again in a moment"
+            "Try again in a moment"
         }
     }
 
@@ -414,7 +414,7 @@ enum ErrorPresenter {
 
     private static func redact(pattern: String, in text: String, replacement: String) -> String {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let range = NSRange(text.startIndex ..< text.endIndex, in: text)
         return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: replacement)
     }
 

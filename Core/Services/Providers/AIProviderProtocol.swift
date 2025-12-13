@@ -95,7 +95,7 @@ protocol AIProviderProtocol: AnyObject, Sendable {
 /// Default implementations for AIProviderProtocol
 extension AIProviderProtocol {
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error? {
-        if requiresAPIKey && config.apiKey.isEmpty {
+        if requiresAPIKey, config.apiKey.isEmpty {
             return OpenAIService.OpenAIError.missingAPIKey
         }
         if config.model.isEmpty {
@@ -117,13 +117,13 @@ enum AIProviderFactory {
     static func createProvider(for type: AIProvider, urlSession: URLSession) -> AIProviderProtocol {
         switch type {
         case .openai:
-            return OpenAIProvider(urlSession: urlSession)
+            OpenAIProvider(urlSession: urlSession)
         case .githubModels:
-            return GitHubModelsProvider(urlSession: urlSession)
+            GitHubModelsProvider(urlSession: urlSession)
         case .appleIntelligence, .aikit:
             // These providers are handled separately by their dedicated services
             // Return OpenAI provider as fallback (should not be used)
-            return OpenAIProvider(urlSession: urlSession)
+            OpenAIProvider(urlSession: urlSession)
         }
     }
 }
