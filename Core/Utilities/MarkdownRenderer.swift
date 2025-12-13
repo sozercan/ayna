@@ -11,14 +11,14 @@ enum MarkdownRenderer {
         return cache
     }()
 
-    private class ContentBlockWrapper {
+    private final class ContentBlockWrapper: @unchecked Sendable {
         let blocks: [ContentBlock]
-        init(blocks: [ContentBlock]) {
+        nonisolated init(blocks: [ContentBlock]) {
             self.blocks = blocks
         }
     }
 
-    static func parse(_ content: String) -> [ContentBlock] {
+    nonisolated static func parse(_ content: String) -> [ContentBlock] {
         var blocks: [ContentBlock] = []
 
         // Check cache first
@@ -149,7 +149,7 @@ enum MarkdownRenderer {
         return blocks
     }
 
-    private static func parseCodeBlock(
+    private nonisolated static func parseCodeBlock(
         lines: [String],
         index: inout Int,
         backtickCount: Int,
@@ -159,8 +159,6 @@ enum MarkdownRenderer {
         let fence = String(repeating: "`", count: backtickCount)
         var codeLines: [String] = []
         index += 1
-        var closed = false
-
         // Heuristic: If language is markdown, we track nested depth to support
         // nested code blocks even if the LLM uses the same number of backticks.
         let isMarkdown = language.lowercased() == "markdown" || language.lowercased() == "md"
@@ -187,7 +185,6 @@ enum MarkdownRenderer {
                     continue
                 } else {
                     // It's the closing fence for our block
-                    closed = true
                     index += 1
                     break
                 }
@@ -213,7 +210,7 @@ enum MarkdownRenderer {
         return ContentBlock(type: .code(code, language))
     }
 
-    private static func extractToolName(from line: String) -> String? {
+    private nonisolated static func extractToolName(from line: String) -> String? {
         guard let start = line.firstIndex(of: ":"), let end = line.lastIndex(of: "]") else {
             return nil
         }
@@ -222,19 +219,19 @@ enum MarkdownRenderer {
         return raw.trimmingCharacters(in: .whitespaces)
     }
 
-    private static func headingLevel(for line: String) -> Int? {
+    private nonisolated static func headingLevel(for line: String) -> Int? {
         let level = line.prefix { $0 == "#" }.count
         return level > 0 && level <= 6 && line.count > level ? level : nil
     }
 
-    private static func isHorizontalRule(_ line: String) -> Bool {
+    private nonisolated static func isHorizontalRule(_ line: String) -> Bool {
         if line.count < 3 { return false }
         let allowed = CharacterSet(charactersIn: "-_* ")
         return line.trimmingCharacters(in: allowed).isEmpty
             && line.replacingOccurrences(of: " ", with: "").count >= 3
     }
 
-    private static func parseBlockquote(from lines: [String], startingAt index: Int) -> (
+    private nonisolated static func parseBlockquote(from lines: [String], startingAt index: Int) -> (
         attributed: AttributedString, nextIndex: Int
     )? {
         var collected: [String] = []
@@ -257,7 +254,7 @@ enum MarkdownRenderer {
         return (attributed, current)
     }
 
-    private static func parseList(from lines: [String], startingAt index: Int) -> (
+    private nonisolated static func parseList(from lines: [String], startingAt index: Int) -> (
         block: ContentBlock, nextIndex: Int
     )? {
         var items: [AttributedString] = []
@@ -297,7 +294,7 @@ enum MarkdownRenderer {
         return (ContentBlock(type: blockType), current)
     }
 
-    private static func parseTable(from lines: [String], startingAt index: Int) -> (
+    private nonisolated static func parseTable(from lines: [String], startingAt index: Int) -> (
         table: MarkdownTable, nextIndex: Int
     )? {
         guard index + 1 < lines.count else { return nil }
@@ -351,7 +348,7 @@ enum MarkdownRenderer {
         return (table, current)
     }
 
-    private static func splitTableLine(_ line: String) -> [String] {
+    private nonisolated static func splitTableLine(_ line: String) -> [String] {
         var cells: [String] = []
         var current = ""
         var iterator = line.trimmingCharacters(in: .whitespaces)
@@ -369,7 +366,7 @@ enum MarkdownRenderer {
         return cells
     }
 
-    private static func makeInlineAttributedString(from markdown: String) -> AttributedString {
+    private nonisolated static func makeInlineAttributedString(from markdown: String) -> AttributedString {
         var options = AttributedString.MarkdownParsingOptions()
         options.interpretedSyntax = .inlineOnlyPreservingWhitespace
         return (try? AttributedString(markdown: markdown, options: options))

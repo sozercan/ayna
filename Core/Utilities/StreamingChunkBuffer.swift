@@ -51,8 +51,8 @@ final class StreamingChunkBuffer {
 
     // MARK: - Initialization
 
-    init(config: Config = .default, onDeliver: @escaping (String) -> Void) {
-        self.config = config
+    init(config: Config? = nil, onDeliver: @escaping (String) -> Void) {
+        self.config = config ?? .default
         self.onDeliver = onDeliver
     }
 
@@ -152,8 +152,8 @@ final class MultiModelStreamingBuffer {
     private var buffers: [String: StreamingChunkBuffer] = [:]
     private let config: StreamingChunkBuffer.Config
 
-    init(config: StreamingChunkBuffer.Config = .multiModel) {
-        self.config = config
+    init(config: StreamingChunkBuffer.Config? = nil) {
+        self.config = config ?? .multiModel
     }
 
     /// Get or create a buffer for a specific model

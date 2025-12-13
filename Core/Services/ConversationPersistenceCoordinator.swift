@@ -96,6 +96,12 @@ actor ConversationPersistenceCoordinator {
         pendingSaves.removeAll()
     }
 
+    /// Returns the set of conversation IDs that currently have a pending save queued.
+    /// Used to implement "dirty-wins" reload reconciliation.
+    func pendingConversationIds() -> Set<UUID> {
+        Set(pendingSaves.keys)
+    }
+
     // MARK: - Private
 
     private func performSave() async {

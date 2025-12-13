@@ -612,13 +612,14 @@ class OpenAIService: ObservableObject {
         }
     }
 
-    /// Checks if GitHub Models rate limit is currently blocking requests.
+    /// Checks if GitHub Models rate limit is currently blocking requests for the given access token.
     /// Returns an error message if rate-limited, nil if requests can proceed.
-    private func checkGitHubModelsRateLimit() -> String? {
+    private func checkGitHubModelsRateLimit(accessToken: String) -> String? {
+        guard !accessToken.isEmpty else { return nil }
         let oauthService = GitHubOAuthService.shared
 
         // Check if we have an active retry-after from a previous 429/403
-        if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
+        if let retryAfter = oauthService.retryAfterDate(forAccessToken: accessToken), retryAfter > Date() {
             let secondsRemaining = Int(retryAfter.timeIntervalSinceNow)
             if secondsRemaining > 60 {
                 let minutesRemaining = secondsRemaining / 60
@@ -629,7 +630,7 @@ class OpenAIService: ObservableObject {
         }
 
         // Check if rate limit is exhausted
-        if let rateLimitInfo = oauthService.rateLimitInfo, rateLimitInfo.isExhausted {
+        if let rateLimitInfo = oauthService.rateLimitInfo(forAccessToken: accessToken), rateLimitInfo.isExhausted {
             return "Rate limit exhausted. Resets \(rateLimitInfo.formattedReset)."
         }
 
@@ -738,9 +739,11 @@ class OpenAIService: ObservableObject {
             return
         }
 
+        let modelAPIKey = getAPIKey(for: requestModel)
+
         // Check GitHub Models rate limit before making request
         if effectiveProvider == .githubModels {
-            if let rateLimitError = checkGitHubModelsRateLimit() {
+            if let rateLimitError = checkGitHubModelsRateLimit(accessToken: modelAPIKey) {
                 onError(OpenAIError.apiError(rateLimitError))
                 return
             }
@@ -778,7 +781,6 @@ class OpenAIService: ObservableObject {
             return
         }
 
-        let modelAPIKey = getAPIKey(for: requestModel)
         let needsAuth = effectiveProvider == .openai || effectiveProvider == .githubModels
         let isGitHubModels = effectiveProvider == .githubModels
 
@@ -916,46 +918,89 @@ class OpenAIService: ObservableObject {
                                     return
                                 }
 
-                                self.sendMessage(
-                                    messages: messages,
-                                    model: model,
-                                    temperature: temperature,
-                                    stream: true,
-                                    tools: nil, // Tools disabled in multi-model mode - deferred
-                                    conversationId: nil,
-                                    isMultiModelRequest: true,
-                                    onChunk: { chunk in
-                                        onChunk(model, chunk)
-                                    },
-                                    onComplete: {
-                                        DiagnosticsLogger.log(
-                                            .openAIService,
-                                            level: .info,
-                                            message: "✅ Model completed in multi-model request",
-                                            metadata: ["model": model]
-                                        )
-                                        onModelComplete(model)
+                                // Concurrency gate for GitHub Models in multi-model mode.
+                                // GitHub Models rate limits are scoped per token/user, so we serialize per-token.
+                                let effectiveProvider = self.modelProviders[model] ?? self.provider
+                                let accessTokenForGate = (effectiveProvider == .githubModels)
+                                    ? self.getAPIKey(for: model)
+                                    : ""
+
+                                @MainActor
+                                func sendWithGate(_ gateRelease: OneShot?) {
+                                    self.sendMessage(
+                                        messages: messages,
+                                        model: model,
+                                        temperature: temperature,
+                                        stream: true,
+                                        tools: nil, // Tools disabled in multi-model mode - deferred
+                                        conversationId: nil,
+                                        isMultiModelRequest: true,
+                                        onChunk: { chunk in
+                                            onChunk(model, chunk)
+                                        },
+                                        onComplete: { [gateRelease] in
+                                            DiagnosticsLogger.log(
+                                                .openAIService,
+                                                level: .info,
+                                                message: "✅ Model completed in multi-model request",
+                                                metadata: ["model": model]
+                                            )
+                                            gateRelease?.run()
+                                            onModelComplete(model)
+                                            continuation.resume()
+                                        },
+                                        onError: { [gateRelease] error in
+                                            DiagnosticsLogger.log(
+                                                .openAIService,
+                                                level: .error,
+                                                message: "❌ Model failed in multi-model request",
+                                                metadata: ["model": model, "error": error.localizedDescription]
+                                            )
+                                            gateRelease?.run()
+                                            onError(model, error)
+                                            continuation.resume()
+                                        },
+                                        onToolCall: nil, // Deferred - not executed during multi-model
+                                        onToolCallRequested: { toolId, toolName, arguments in
+                                            // Report the tool call as pending (will execute after selection)
+                                            onPendingToolCall?(model, toolId, toolName, arguments)
+                                        },
+                                        onReasoning: { reasoning in
+                                            onReasoning?(model, reasoning)
+                                        }
+                                    )
+                                }
+
+                                if effectiveProvider == .githubModels, !accessTokenForGate.isEmpty {
+                                    let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: accessTokenForGate)
+                                    do {
+                                        try await GitHubModelsRequestGate.shared.acquire(key: gateKey)
+                                    } catch {
                                         continuation.resume()
-                                    },
-                                    onError: { error in
-                                        DiagnosticsLogger.log(
-                                            .openAIService,
-                                            level: .error,
-                                            message: "❌ Model failed in multi-model request",
-                                            metadata: ["model": model, "error": error.localizedDescription]
-                                        )
-                                        onError(model, error)
-                                        continuation.resume()
-                                    },
-                                    onToolCall: nil, // Deferred - not executed during multi-model
-                                    onToolCallRequested: { toolId, toolName, arguments in
-                                        // Report the tool call as pending (will execute after selection)
-                                        onPendingToolCall?(model, toolId, toolName, arguments)
-                                    },
-                                    onReasoning: { reasoning in
-                                        onReasoning?(model, reasoning)
+                                        return
                                     }
-                                )
+
+                                    let gateRelease = OneShot {
+                                        Task { await GitHubModelsRequestGate.shared.release(key: gateKey) }
+                                    }
+
+                                    if Task.isCancelled {
+                                        gateRelease.run()
+                                        continuation.resume()
+                                        return
+                                    }
+
+                                    if let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: accessTokenForGate) {
+                                        gateRelease.run()
+                                        onError(model, OpenAIError.apiError(rateLimitError))
+                                        continuation.resume()
+                                        return
+                                    }
+
+                                    sendWithGate(gateRelease)
+                                } else {
+                                    sendWithGate(nil)
+                                }
                             }
                         }
                     }
@@ -990,8 +1035,8 @@ class OpenAIService: ObservableObject {
     private func simulateUITestResponse(
         messages: [Message],
         stream: Bool,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void
     ) {
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
@@ -1034,10 +1079,10 @@ class OpenAIService: ObservableObject {
     private func responsesAPIRequest(
         messages: [Message],
         model: String,
-        onChunk: @escaping (String) -> Void,
-        onComplete: @escaping () -> Void,
-        onError: @escaping (Error) -> Void,
-        onReasoning: ((String) -> Void)? = nil,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
     ) {
         // Check if this model has a provider override
@@ -1074,9 +1119,12 @@ class OpenAIService: ObservableObject {
         }
 
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
+            let selfRef = self
             Task { @MainActor in
+                guard let self = selfRef else { return }
+
                 // Clear the task reference
-                self?.currentTask = nil
+                self.currentTask = nil
 
                 if let error {
                     // Don't report error if it was cancelled
@@ -1084,26 +1132,25 @@ class OpenAIService: ObservableObject {
                         return
                     }
 
-                    if self?.shouldRetry(error: error, attempt: attempt) == true {
+                    if self.shouldRetry(error: error, attempt: attempt) {
                         DiagnosticsLogger.log(
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
                             metadata: ["error": error.localizedDescription]
                         )
-                        Task {
-                            await self?.delay(for: attempt)
-                            await MainActor.run {
-                                self?.responsesAPIRequest(
-                                    messages: messages,
-                                    model: model,
-                                    onChunk: onChunk,
-                                    onComplete: onComplete,
-                                    onError: onError,
-                                    onReasoning: onReasoning,
-                                    attempt: attempt + 1
-                                )
-                            }
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            await self.delay(for: attempt)
+                            self.responsesAPIRequest(
+                                messages: messages,
+                                model: model,
+                                onChunk: onChunk,
+                                onComplete: onComplete,
+                                onError: onError,
+                                onReasoning: onReasoning,
+                                attempt: attempt + 1
+                            )
                         }
                         return
                     }
@@ -1296,17 +1343,21 @@ class OpenAIService: ObservableObject {
                             // Ignore errors reading error body
                         }
 
-                        // Capture rate limit headers for GitHub Models (even on error)
-                        if self.provider == .githubModels {
+                        // Capture rate limit headers for GitHub Models (even on error), scoped per token.
+                        let isGitHubModelsRequest = request.url?.host?.contains("models.github.ai") == true
+                        let accessToken = request.value(forHTTPHeaderField: "Authorization")
+                            .map { $0.replacingOccurrences(of: "Bearer ", with: "") }
+
+                        if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
                             await MainActor.run {
-                                GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
+                                GitHubOAuthService.shared.updateRateLimit(from: httpResponse, forAccessToken: accessToken)
 
                                 // Check if this is a rate limit error (429 or 403 with rate limit message)
                                 let statusCode = httpResponse.statusCode
                                 if statusCode == 429 ||
                                     (statusCode == 403 && self.isRateLimitErrorBody(errorData))
                                 {
-                                    GitHubOAuthService.shared.updateRetryAfter(from: httpResponse)
+                                    GitHubOAuthService.shared.updateRetryAfter(from: httpResponse, forAccessToken: accessToken)
                                 }
                             }
                         }
@@ -1335,11 +1386,14 @@ class OpenAIService: ObservableObject {
                         throw OpenAIError.apiError(errorMessage)
                     }
 
-                    // Capture rate limit headers on success for GitHub Models
-                    if self.provider == .githubModels {
+                    // Capture rate limit headers on success for GitHub Models (scoped per token).
+                    let isGitHubModelsRequest = request.url?.host?.contains("models.github.ai") == true
+                    let accessToken = request.value(forHTTPHeaderField: "Authorization")
+                        .map { $0.replacingOccurrences(of: "Bearer ", with: "") }
+                    if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
                         await MainActor.run {
-                            GitHubOAuthService.shared.updateRateLimit(from: httpResponse)
-                            GitHubOAuthService.shared.clearRetryAfter()
+                            GitHubOAuthService.shared.updateRateLimit(from: httpResponse, forAccessToken: accessToken)
+                            GitHubOAuthService.shared.clearRetryAfter(forAccessToken: accessToken)
                         }
                     }
 
@@ -1592,9 +1646,18 @@ class OpenAIService: ObservableObject {
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
             // Get retry-after date for GitHub Models rate limits
-            let retryAfterDate = (provider == .githubModels)
-                ? await MainActor.run { GitHubOAuthService.shared.retryAfterDate }
-                : nil
+            let isGitHubModelsRequest = request.url?.host?.contains("models.github.ai") == true
+            let accessToken = request.value(forHTTPHeaderField: "Authorization")
+                .map { $0.replacingOccurrences(of: "Bearer ", with: "") }
+
+            let retryAfterDate: Date?
+            if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
+                retryAfterDate = await MainActor.run {
+                    GitHubOAuthService.shared.retryAfterDate(forAccessToken: accessToken)
+                }
+            } else {
+                retryAfterDate = nil
+            }
 
             DiagnosticsLogger.log(
                 .openAIService,
@@ -1656,28 +1719,29 @@ class OpenAIService: ObservableObject {
         attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
+            let selfRef = self
             Task { @MainActor in
+                guard let self = selfRef else { return }
                 if let error {
-                    if self?.shouldRetry(error: error, attempt: attempt) == true {
+                    if self.shouldRetry(error: error, attempt: attempt) {
                         DiagnosticsLogger.log(
                             .openAIService,
                             level: .info,
                             message: "⚠️ Retrying non-stream request (attempt \(attempt + 1))",
                             metadata: ["error": error.localizedDescription]
                         )
-                        Task {
-                            await self?.delay(for: attempt)
-                            await MainActor.run {
-                                self?.nonStreamResponse(
-                                    request: request,
-                                    onChunk: onChunk,
-                                    onComplete: onComplete,
-                                    onError: onError,
-                                    onToolCall: onToolCall,
-                                    onReasoning: onReasoning,
-                                    attempt: attempt + 1
-                                )
-                            }
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            await self.delay(for: attempt)
+                            self.nonStreamResponse(
+                                request: request,
+                                onChunk: onChunk,
+                                onComplete: onComplete,
+                                onError: onError,
+                                onToolCall: onToolCall,
+                                onReasoning: onReasoning,
+                                attempt: attempt + 1
+                            )
                         }
                         return
                     }

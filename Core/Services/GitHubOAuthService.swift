@@ -98,6 +98,77 @@ struct GitHubRateLimitInfo {
     }
 }
 
+// MARK: - Concurrency Gate
+
+/// Runs an action at most once.
+final class OneShot: @unchecked Sendable {
+    private let lock = NSLock()
+    nonisolated(unsafe) private var didRun = false
+    private let action: @Sendable () -> Void
+
+    nonisolated init(_ action: @escaping @Sendable () -> Void) {
+        self.action = action
+    }
+
+    nonisolated func run() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !didRun else { return }
+        didRun = true
+        action()
+    }
+}
+
+/// Serializes GitHub Models requests per token identity.
+///
+/// Purpose: avoid parallel bursts in multi-model mode that trigger 429s.
+actor GitHubModelsRequestGate {
+    static let shared = GitHubModelsRequestGate()
+
+    private var activeKeys: Set<String> = []
+    private var waiters: [String: [(id: UUID, cont: CheckedContinuation<Void, any Error>)]] = [:]
+
+    func acquire(key: String) async throws {
+        try Task.checkCancellation()
+
+        if !activeKeys.contains(key) {
+            activeKeys.insert(key)
+            return
+        }
+
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                waiters[key, default: []].append((id: id, cont: cont))
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(key: key, id: id) }
+        }
+    }
+
+    func release(key: String) {
+        if var queue = waiters[key], !queue.isEmpty {
+            let next = queue.removeFirst()
+            waiters[key] = queue
+            next.cont.resume()
+            return
+        }
+
+        waiters[key] = nil
+        activeKeys.remove(key)
+    }
+
+    private func cancelWaiter(key: String, id: UUID) {
+        guard var queue = waiters[key] else { return }
+        if let index = queue.firstIndex(where: { $0.id == id }) {
+            let waiter = queue.remove(at: index)
+            waiters[key] = queue.isEmpty ? nil : queue
+            waiter.cont.resume(throwing: CancellationError())
+        }
+    }
+}
+
 // MARK: - Auth Errors
 
 enum GitHubAuthError: LocalizedError {
@@ -133,6 +204,9 @@ enum GitHubAuthError: LocalizedError {
 class GitHubOAuthService: NSObject, ObservableObject {
     static let shared = GitHubOAuthService()
 
+    /// Injectable for tests. Defaults to the system keychain.
+    static var keychain: KeychainStoring = KeychainStorage.shared
+
     // Configuration
     private let clientId = "Iv23liyO8rlOYBXFGZXW"
     private let tokenExchangeProxyURL = "https://ayna.sozercan.workers.dev/auth/github/exchange"
@@ -161,6 +235,13 @@ class GitHubOAuthService: NSObject, ObservableObject {
     @Published var rateLimitInfo: GitHubRateLimitInfo?
     /// Retry-After date from a rate limit error (nil if not rate-limited)
     @Published var retryAfterDate: Date?
+
+    private struct RateLimitState: Sendable {
+        var info: GitHubRateLimitInfo?
+        var retryAfterDate: Date?
+    }
+
+    private var rateLimitStateByKey: [String: RateLimitState] = [:]
 
     // Web Auth Flow State (PKCE)
     private var webAuthSession: ASWebAuthenticationSession?
@@ -257,13 +338,18 @@ class GitHubOAuthService: NSObject, ObservableObject {
     }
 
     func signOut() {
-        try? KeychainStorage.shared.removeValue(for: keychainTokenInfoKey)
-        try? KeychainStorage.shared.removeValue(for: keychainKey)
-        try? KeychainStorage.shared.removeValue(for: keychainUserKey)
+        try? Self.keychain.removeValue(for: keychainTokenInfoKey)
+        try? Self.keychain.removeValue(for: keychainKey)
+        try? Self.keychain.removeValue(for: keychainUserKey)
         isAuthenticated = false
         currentUser = nil
         tokenExpiresAt = nil
         availableModels = []
+
+        rateLimitStateByKey.removeAll()
+        rateLimitInfo = nil
+        retryAfterDate = nil
+
         DiagnosticsLogger.log(.app, level: .info, message: "🚪 Signed out of GitHub")
     }
 
@@ -279,9 +365,9 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
     private func saveTokenInfo(_ info: GitHubTokenInfo) throws {
         let data = try JSONEncoder().encode(info)
-        try KeychainStorage.shared.setData(data, for: keychainTokenInfoKey)
+        try Self.keychain.setData(data, for: keychainTokenInfoKey)
         // Also save access token to old key for backward compatibility
-        try KeychainStorage.shared.setString(info.accessToken, for: keychainKey)
+        try Self.keychain.setString(info.accessToken, for: keychainKey)
 
         // Update published state
         tokenExpiresAt = info.expiresAt
@@ -299,14 +385,14 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
     private func loadTokenInfo() -> GitHubTokenInfo? {
         // Try loading from new key first
-        if let data = try? KeychainStorage.shared.data(for: keychainTokenInfoKey),
+        if let data = try? Self.keychain.data(for: keychainTokenInfoKey),
            let info = try? JSONDecoder().decode(GitHubTokenInfo.self, from: data)
         {
             return info
         }
 
         // Fallback: Try loading from old key (migration path)
-        if let token = try? KeychainStorage.shared.string(for: keychainKey) {
+        if let token = try? Self.keychain.string(for: keychainKey) {
             DiagnosticsLogger.log(.app, level: .debug, message: "📦 Migrating from legacy token storage")
             return GitHubTokenInfo(accessToken: token, refreshToken: nil, expiresAt: nil, scope: nil)
         }
@@ -417,10 +503,32 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
     // MARK: - Rate Limit Management
 
-    /// Update rate limit state from API response headers
-    func updateRateLimit(from response: HTTPURLResponse) {
+    nonisolated static func rateLimitKey(forAccessToken accessToken: String) -> String {
+        let hash = SHA256.hash(data: Data(accessToken.utf8))
+        let hex = hash.map { String(format: "%02x", $0) }.joined()
+        return String(hex.prefix(16))
+    }
+
+    func rateLimitInfo(forAccessToken accessToken: String) -> GitHubRateLimitInfo? {
+        rateLimitStateByKey[Self.rateLimitKey(forAccessToken: accessToken)]?.info
+    }
+
+    func retryAfterDate(forAccessToken accessToken: String) -> Date? {
+        rateLimitStateByKey[Self.rateLimitKey(forAccessToken: accessToken)]?.retryAfterDate
+    }
+
+    /// Update rate limit state from API response headers (scoped per access token).
+    func updateRateLimit(from response: HTTPURLResponse, forAccessToken accessToken: String) {
         let info = GitHubRateLimitInfo.parse(from: response.allHeaderFields)
-        rateLimitInfo = info
+        let key = Self.rateLimitKey(forAccessToken: accessToken)
+        var state = rateLimitStateByKey[key] ?? RateLimitState()
+        state.info = info
+        rateLimitStateByKey[key] = state
+
+        // Keep published properties in sync for the currently-active token.
+        if loadTokenInfo()?.accessToken == accessToken {
+            rateLimitInfo = info
+        }
 
         if let info {
             DiagnosticsLogger.log(
@@ -436,8 +544,14 @@ class GitHubOAuthService: NSObject, ObservableObject {
         }
     }
 
-    /// Update retry-after from 429/403 response
-    func updateRetryAfter(from response: HTTPURLResponse) {
+    /// Backward-compatible overload that updates the current token's state (if available).
+    func updateRateLimit(from response: HTTPURLResponse) {
+        guard let token = loadTokenInfo()?.accessToken else { return }
+        updateRateLimit(from: response, forAccessToken: token)
+    }
+
+    /// Update retry-after from 429/403 response (scoped per access token).
+    func updateRetryAfter(from response: HTTPURLResponse, forAccessToken accessToken: String) {
         let headers = response.allHeaderFields
 
         // Case-insensitive lookup for retry-after
@@ -452,7 +566,14 @@ class GitHubOAuthService: NSObject, ObservableObject {
         }
 
         guard let retryAfter = retryAfterStr else {
-            retryAfterDate = nil
+            let key = Self.rateLimitKey(forAccessToken: accessToken)
+            var state = rateLimitStateByKey[key] ?? RateLimitState()
+            state.retryAfterDate = nil
+            rateLimitStateByKey[key] = state
+
+            if loadTokenInfo()?.accessToken == accessToken {
+                retryAfterDate = nil
+            }
             return
         }
 
@@ -467,7 +588,14 @@ class GitHubOAuthService: NSObject, ObservableObject {
             retryDate = formatter.date(from: retryAfter)
         }
 
-        retryAfterDate = retryDate
+        let key = Self.rateLimitKey(forAccessToken: accessToken)
+        var state = rateLimitStateByKey[key] ?? RateLimitState()
+        state.retryAfterDate = retryDate
+        rateLimitStateByKey[key] = state
+
+        if loadTokenInfo()?.accessToken == accessToken {
+            retryAfterDate = retryDate
+        }
 
         if let date = retryDate {
             DiagnosticsLogger.log(
@@ -479,22 +607,41 @@ class GitHubOAuthService: NSObject, ObservableObject {
         }
     }
 
+    /// Backward-compatible overload that updates the current token's state (if available).
+    func updateRetryAfter(from response: HTTPURLResponse) {
+        guard let token = loadTokenInfo()?.accessToken else { return }
+        updateRetryAfter(from: response, forAccessToken: token)
+    }
+
     /// Clear retry-after state (call after successful request)
-    func clearRetryAfter() {
-        if retryAfterDate != nil {
-            retryAfterDate = nil
+    func clearRetryAfter(forAccessToken accessToken: String) {
+        let key = Self.rateLimitKey(forAccessToken: accessToken)
+        if rateLimitStateByKey[key]?.retryAfterDate != nil {
+            var state = rateLimitStateByKey[key] ?? RateLimitState()
+            state.retryAfterDate = nil
+            rateLimitStateByKey[key] = state
+            if loadTokenInfo()?.accessToken == accessToken {
+                retryAfterDate = nil
+            }
             DiagnosticsLogger.log(.app, level: .debug, message: "✅ Rate limit cleared")
         }
+    }
+
+    func clearRetryAfter() {
+        guard let token = loadTokenInfo()?.accessToken else { return }
+        clearRetryAfter(forAccessToken: token)
     }
 
     // MARK: - Authorization Code Flow (Web) with PKCE
 
     #if !os(watchOS)
-        func startWebFlow(contextProvider: ASWebAuthenticationPresentationContextProviding = DefaultPresentationContextProvider()) {
+        func startWebFlow(contextProvider: (any ASWebAuthenticationPresentationContextProviding)? = nil) {
             // Cancel any existing auth flow before starting new one to prevent state mismatch
             cancelAuthentication()
 
-            presentationContextProvider = contextProvider
+            let resolvedContextProvider = contextProvider ?? DefaultPresentationContextProvider()
+
+            presentationContextProvider = resolvedContextProvider
             isAuthenticating = true
             authError = nil
 
@@ -537,7 +684,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
             // Store session to prevent deallocation
             webAuthSession = session
-            session.presentationContextProvider = contextProvider
+            session.presentationContextProvider = resolvedContextProvider
             session.prefersEphemeralWebBrowserSession = false // Allow SSO
 
             if !session.start() {
@@ -767,7 +914,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
 
             // Save user info
             if let userData = try? JSONEncoder().encode(user) {
-                try KeychainStorage.shared.setData(userData, for: keychainUserKey)
+                try Self.keychain.setData(userData, for: keychainUserKey)
             }
 
             await MainActor.run {
@@ -790,7 +937,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
         tokenExpiresAt = tokenInfo.expiresAt
 
         // Load user info from keychain
-        if let userData = try? KeychainStorage.shared.data(for: keychainUserKey),
+        if let userData = try? Self.keychain.data(for: keychainUserKey),
            let user = try? JSONDecoder().decode(GitHubUser.self, from: userData)
         {
             currentUser = user

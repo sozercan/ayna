@@ -57,12 +57,13 @@ final class TavilyService: ObservableObject {
 
     // MARK: - Initialization
 
-    init(keychain: KeychainStoring = KeychainStorage.shared, urlSession: URLSession = .shared) {
-        self.keychain = keychain
+    init(keychain: KeychainStoring? = nil, urlSession: URLSession = .shared) {
+        let effectiveKeychain = keychain ?? KeychainStorage.shared
+        self.keychain = effectiveKeychain
         self.urlSession = urlSession
 
         // Load saved API key
-        apiKey = (try? keychain.string(for: Constants.keychainAPIKey)) ?? ""
+        apiKey = (try? effectiveKeychain.string(for: Constants.keychainAPIKey)) ?? ""
 
         // Load enabled state
         isEnabled = UserDefaults.standard.bool(forKey: Constants.defaultsEnabledKey)
@@ -94,6 +95,17 @@ final class TavilyService: ObservableObject {
             throw TavilyError.notConfigured
         }
 
+        let url = URL(string: Constants.apiEndpoint)!
+        let circuitKey = NetworkCircuitBreaker.key(for: url, label: "tavily.search")
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Web search temporarily unavailable. Please try again in \(seconds)s."
+                : "Web search temporarily unavailable. Please try again shortly."
+            throw TavilyError.apiError(message)
+        }
+
         log(.info, "🔍 Performing web search", metadata: ["query": query])
 
         let request = TavilySearchRequest(
@@ -107,7 +119,7 @@ final class TavilyService: ObservableObject {
             includeImages: false
         )
 
-        var urlRequest = URLRequest(url: URL(string: Constants.apiEndpoint)!)
+        var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -123,6 +135,7 @@ final class TavilyService: ObservableObject {
 
             switch httpResponse.statusCode {
             case 200:
+                NetworkCircuitBreaker.recordSuccess(key: circuitKey)
                 let decoder = JSONDecoder()
                 do {
                     let searchResponse = try decoder.decode(TavilySearchResponse.self, from: data)
@@ -147,9 +160,13 @@ final class TavilyService: ObservableObject {
 
             case 429:
                 log(.default, "⚠️ Tavily rate limit exceeded")
+                NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 throw TavilyError.rateLimitExceeded
 
             default:
+                if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
                 // Try to parse error message from response
                 let rawResponse = String(data: data, encoding: .utf8) ?? "<unable to decode>"
                 log(.error, "❌ Tavily API error", metadata: [
@@ -165,6 +182,9 @@ final class TavilyService: ObservableObject {
             throw error
         } catch {
             log(.error, "❌ Network error during web search", metadata: ["error": error.localizedDescription])
+            if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                NetworkCircuitBreaker.recordFailure(key: circuitKey)
+            }
             throw TavilyError.networkError(error)
         }
     }

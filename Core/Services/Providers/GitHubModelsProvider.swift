@@ -35,13 +35,24 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks
     ) {
         // Check rate limit before making request
-        if let rateLimitError = checkRateLimit() {
+        if let rateLimitError = checkRateLimit(accessToken: config.apiKey) {
             callbacks.onError(OpenAIService.OpenAIError.apiError(rateLimitError))
             return
         }
 
         guard let url = URL(string: Self.chatCompletionsURL) else {
             callbacks.onError(OpenAIService.OpenAIError.invalidURL)
+            return
+        }
+
+        let circuitKey = NetworkCircuitBreaker.key(for: url, label: "github.models.chat")
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
             return
         }
 
@@ -71,9 +82,9 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
         )
 
         if stream {
-            streamResponse(request: request, callbacks: callbacks)
+            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
         } else {
-            nonStreamResponse(request: request, callbacks: callbacks)
+            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
         }
     }
 
@@ -84,10 +95,11 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Rate Limit Handling
 
-    private func checkRateLimit() -> String? {
+    private func checkRateLimit(accessToken: String) -> String? {
+        guard !accessToken.isEmpty else { return nil }
         let oauthService = GitHubOAuthService.shared
 
-        if let retryAfter = oauthService.retryAfterDate, retryAfter > Date() {
+        if let retryAfter = oauthService.retryAfterDate(forAccessToken: accessToken), retryAfter > Date() {
             let secondsRemaining = Int(retryAfter.timeIntervalSinceNow)
             if secondsRemaining > 60 {
                 let minutesRemaining = secondsRemaining / 60
@@ -97,21 +109,22 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             }
         }
 
-        if let rateLimitInfo = oauthService.rateLimitInfo, rateLimitInfo.isExhausted {
+        if let rateLimitInfo = oauthService.rateLimitInfo(forAccessToken: accessToken), rateLimitInfo.isExhausted {
             return "Rate limit exhausted. Resets \(rateLimitInfo.formattedReset)."
         }
 
         return nil
     }
 
-    private func updateRateLimitFromResponse(_ response: HTTPURLResponse, errorData: Data? = nil) {
-        GitHubOAuthService.shared.updateRateLimit(from: response)
+    private func updateRateLimitFromResponse(_ response: HTTPURLResponse, accessToken: String, errorData: Data? = nil) {
+        guard !accessToken.isEmpty else { return }
+        GitHubOAuthService.shared.updateRateLimit(from: response, forAccessToken: accessToken)
 
         let statusCode = response.statusCode
         if statusCode == 429 || (statusCode == 403 && isRateLimitErrorBody(errorData)) {
-            GitHubOAuthService.shared.updateRetryAfter(from: response)
+            GitHubOAuthService.shared.updateRetryAfter(from: response, forAccessToken: accessToken)
         } else if statusCode == 200 {
-            GitHubOAuthService.shared.clearRetryAfter()
+            GitHubOAuthService.shared.clearRetryAfter(forAccessToken: accessToken)
         }
     }
 
@@ -126,8 +139,24 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Streaming
 
-    private func streamResponse(request: URLRequest, callbacks: AIProviderStreamCallbacks, attempt: Int = 0) {
+    private func streamResponse(
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String,
+        accessToken: String,
+        attempt: Int = 0
+    ) {
         currentStreamTask?.cancel()
+
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            return
+        }
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -148,15 +177,22 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                             httpResponse: httpResponse
                         )
                         await MainActor.run {
-                            self.updateRateLimitFromResponse(httpResponse, errorData: errorData)
+                            self.updateRateLimitFromResponse(httpResponse, accessToken: accessToken, errorData: errorData)
                         }
+
+                        if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                            NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                        }
+
                         throw OpenAIService.OpenAIError.apiError(errorMessage)
                     }
 
                     // Update rate limit on success
                     await MainActor.run {
-                        self.updateRateLimitFromResponse(httpResponse)
+                        self.updateRateLimitFromResponse(httpResponse, accessToken: accessToken)
                     }
+
+                    NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
                     var buffer = Data()
                     var currentToolCallBuffer: [String: Any] = [:]
@@ -250,31 +286,61 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             } catch is CancellationError {
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
+                if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
                 await handleStreamError(
                     error: error,
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
                     request: request,
-                    callbacks: callbacks
+                    callbacks: callbacks,
+                    accessToken: accessToken,
+                    circuitKey: circuitKey
                 )
             }
         }
         currentStreamTask = task
     }
 
-    private func nonStreamResponse(request: URLRequest, callbacks: AIProviderStreamCallbacks, attempt: Int = 0) {
+    private func nonStreamResponse(
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String,
+        accessToken: String,
+        attempt: Int = 0
+    ) {
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            return
+        }
+
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor in
                 if let httpResponse = response as? HTTPURLResponse {
-                    self?.updateRateLimitFromResponse(httpResponse, errorData: data)
+                    self?.updateRateLimitFromResponse(httpResponse, accessToken: accessToken, errorData: data)
                 }
 
                 if let error {
+                    if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                    }
                     if self?.shouldRetry(error: error, attempt: attempt) == true {
                         Task {
                             await self?.delay(for: attempt)
                             await MainActor.run {
-                                self?.nonStreamResponse(request: request, callbacks: callbacks, attempt: attempt + 1)
+                                self?.nonStreamResponse(
+                                    request: request,
+                                    callbacks: callbacks,
+                                    circuitKey: circuitKey,
+                                    accessToken: accessToken,
+                                    attempt: attempt + 1
+                                )
                             }
                         }
                         return
@@ -283,9 +349,30 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     return
                 }
 
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
+                    return
+                }
+
                 guard let data else {
                     callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
                     return
+                }
+
+                guard httpResponse.statusCode == 200 else {
+                    if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                    }
+                    let message = self?.extractAPIErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                        ?? "HTTP \(httpResponse.statusCode)"
+                    callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+                    return
+                }
+
+                NetworkCircuitBreaker.recordSuccess(key: circuitKey)
+
+                if !accessToken.isEmpty {
+                    GitHubOAuthService.shared.clearRetryAfter(forAccessToken: accessToken)
                 }
 
                 do {
@@ -416,14 +503,24 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int,
         hasReceivedData: Bool,
         request: URLRequest,
-        callbacks: AIProviderStreamCallbacks
+        callbacks: AIProviderStreamCallbacks,
+        accessToken: String,
+        circuitKey: String
     ) async {
-        let retryAfterDate = await MainActor.run { GitHubOAuthService.shared.retryAfterDate }
+        let retryAfterDate = accessToken.isEmpty
+            ? nil
+            : await MainActor.run { GitHubOAuthService.shared.retryAfterDate(forAccessToken: accessToken) }
 
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
             await delay(for: attempt, retryAfterDate: retryAfterDate)
             await MainActor.run {
-                streamResponse(request: request, callbacks: callbacks, attempt: attempt + 1)
+                streamResponse(
+                    request: request,
+                    callbacks: callbacks,
+                    circuitKey: circuitKey,
+                    accessToken: accessToken,
+                    attempt: attempt + 1
+                )
             }
         } else {
             await MainActor.run {
