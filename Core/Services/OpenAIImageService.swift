@@ -158,8 +158,24 @@ final class OpenAIImageService: @unchecked Sendable {
         onError: @escaping @Sendable (Error) -> Void,
         attempt: Int
     ) {
-        urlSession.dataTask(with: request) { [weak self] data, _, error in
+        let circuitKey = NetworkCircuitBreaker.key(for: request.url, label: "openai.image")
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Image generation temporarily unavailable. Please try again in \(seconds)s."
+                : "Image generation temporarily unavailable. Please try again shortly."
+            Task { @MainActor in
+                onError(OpenAIService.OpenAIError.apiError(message))
+            }
+            return
+        }
+
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
             if let error {
+                if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
                 self?.handleError(
                     error,
                     prompt: prompt,
@@ -169,6 +185,13 @@ final class OpenAIImageService: @unchecked Sendable {
                     onError: onError,
                     attempt: attempt
                 )
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                Task { @MainActor in
+                    onError(OpenAIService.OpenAIError.invalidResponse)
+                }
                 return
             }
 
@@ -183,6 +206,29 @@ final class OpenAIImageService: @unchecked Sendable {
                 }
                 return
             }
+
+            guard httpResponse.statusCode == 200 else {
+                if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
+
+                let message: String = {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let errorDict = json["error"] as? [String: Any],
+                       let errorMessage = errorDict["message"] as? String
+                    {
+                        return errorMessage
+                    }
+                    return "HTTP \(httpResponse.statusCode)"
+                }()
+
+                Task { @MainActor in
+                    onError(OpenAIService.OpenAIError.apiError(message))
+                }
+                return
+            }
+
+            NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
             self?.parseResponse(data, onComplete: onComplete, onError: onError)
         }.resume()

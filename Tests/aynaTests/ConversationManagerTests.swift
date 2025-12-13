@@ -130,4 +130,59 @@ final class ConversationManagerTests: XCTestCase {
         XCTAssertEqual(newManager.conversations.count, 1)
         XCTAssertEqual(newManager.conversations.first?.messages.last?.content, "Partial content")
     }
+
+    @MainActor
+    func testReloadConversationsRemovesStaleNonDirtyConversations() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-reconcile-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+
+        let kept = TestHelpers.sampleConversation(title: "Kept")
+        try await store.save([kept])
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await manager.loadingTask?.value
+
+        XCTAssertEqual(manager.conversations.count, 1)
+        XCTAssertEqual(manager.conversations.first?.id, kept.id)
+
+        let stale = TestHelpers.sampleConversation(title: "Stale")
+        manager.conversations.append(stale)
+        XCTAssertEqual(manager.conversations.count, 2)
+
+        await manager.reloadConversations()
+
+        XCTAssertTrue(manager.conversations.contains(where: { $0.id == kept.id }))
+        XCTAssertFalse(manager.conversations.contains(where: { $0.id == stale.id }))
+    }
+
+    @MainActor
+    func testReloadConversationsPreservesDirtyInMemoryConversationsNotYetOnDisk() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-dirty-wins-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let dirty = TestHelpers.sampleConversation(title: "Dirty")
+        manager.conversations = [dirty]
+        manager.save(dirty)
+
+        // Give the save() Task time to enqueue the pending save.
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Confirm it's not on disk yet (debounce is long)
+        let diskBefore = try await store.loadConversations()
+        XCTAssertTrue(diskBefore.isEmpty)
+
+        await manager.reloadConversations()
+
+        XCTAssertTrue(manager.conversations.contains(where: { $0.id == dirty.id }))
+
+        // Clean up pending saves to avoid test cross-talk.
+        manager.clearAllConversations()
+    }
 }

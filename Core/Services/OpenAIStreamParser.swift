@@ -82,11 +82,16 @@ enum OpenAIStreamParser {
 
         // Log all non-empty lines to track what we receive
         if !trimmedLine.isEmpty {
-            DiagnosticsLogger.log(
+            DiagnosticsLogger.logThrottled(
                 .openAIService,
                 level: .debug,
+                throttleKey: "stream.parser.processingLine",
+                interval: 2.0,
                 message: "📍 Parser: Processing line",
-                metadata: ["lineLength": String(trimmedLine.count), "hasDataPrefix": String(trimmedLine.hasPrefix("data: "))]
+                metadata: [
+                    "lineLength": String(trimmedLine.count),
+                    "hasDataPrefix": String(trimmedLine.hasPrefix("data: "))
+                ]
             )
         }
 
@@ -127,9 +132,11 @@ enum OpenAIStreamParser {
         else {
             // Log unparseable lines for debugging
             if !jsonString.isEmpty, jsonString != "[DONE]" {
-                DiagnosticsLogger.log(
+                DiagnosticsLogger.logThrottled(
                     .openAIService,
                     level: .debug,
+                    throttleKey: "stream.parser.unparseable",
+                    interval: 2.0,
                     message: "📍 Parser: Could not parse line",
                     metadata: ["linePreview": String(jsonString.prefix(100))]
                 )
@@ -153,9 +160,11 @@ enum OpenAIStreamParser {
 
             if !textSegments.isEmpty {
                 extractedContent = textSegments.joined()
-                DiagnosticsLogger.log(
+                DiagnosticsLogger.logThrottled(
                     .openAIService,
                     level: .debug,
+                    throttleKey: "stream.parser.extractedContent",
+                    interval: 1.0,
                     message: "📍 Parser: Extracted content chunk",
                     metadata: ["chunkLength": String(extractedContent?.count ?? 0)]
                 )
@@ -298,27 +307,27 @@ enum OpenAIStreamParser {
         // Array of content blocks
         if let contentArray = contentField as? [[String: Any]] {
             let meta = mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"])
-            Task { @MainActor in
-                DiagnosticsLogger.log(
-                    .openAIService,
-                    level: .debug,
-                    message: "🧩 Received structured content array",
-                    metadata: meta
-                )
-            }
+            DiagnosticsLogger.logThrottled(
+                .openAIService,
+                level: .debug,
+                throttleKey: "stream.parser.structuredContentArray",
+                interval: 5.0,
+                message: "🧩 Received structured content array",
+                metadata: meta
+            )
 
             var segments: [String] = []
             for (index, part) in contentArray.enumerated() {
                 guard let type = part["type"] as? String else {
                     let meta = mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"])
-                    Task { @MainActor in
-                        DiagnosticsLogger.log(
-                            .openAIService,
-                            level: .debug,
-                            message: "⚠️ Structured content part missing type",
-                            metadata: meta
-                        )
-                    }
+                    DiagnosticsLogger.logThrottled(
+                        .openAIService,
+                        level: .debug,
+                        throttleKey: "stream.parser.structuredMissingType",
+                        interval: 5.0,
+                        message: "⚠️ Structured content part missing type",
+                        metadata: meta
+                    )
                     continue
                 }
 
@@ -346,14 +355,14 @@ enum OpenAIStreamParser {
                         "index": "\(index)"
                     ]
                 )
-                Task { @MainActor in
-                    DiagnosticsLogger.log(
-                        .openAIService,
-                        level: .debug,
-                        message: "⚠️ Structured content part missing text",
-                        metadata: meta
-                    )
-                }
+                DiagnosticsLogger.logThrottled(
+                    .openAIService,
+                    level: .debug,
+                    throttleKey: "stream.parser.structuredMissingText",
+                    interval: 5.0,
+                    message: "⚠️ Structured content part missing text",
+                    metadata: meta
+                )
             }
 
             return segments
@@ -370,14 +379,14 @@ enum OpenAIStreamParser {
                 metadata,
                 additions: ["source": source, "payloadType": "\(type(of: contentField))"]
             )
-            Task { @MainActor in
-                DiagnosticsLogger.log(
-                    .openAIService,
-                    level: .debug,
-                    message: "⚠️ Unsupported content payload",
-                    metadata: meta
-                )
-            }
+            DiagnosticsLogger.logThrottled(
+                .openAIService,
+                level: .debug,
+                throttleKey: "stream.parser.unsupportedContentPayload",
+                interval: 5.0,
+                message: "⚠️ Unsupported content payload",
+                metadata: meta
+            )
         }
 
         return []

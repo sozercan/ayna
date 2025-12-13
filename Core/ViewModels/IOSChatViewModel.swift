@@ -13,9 +13,9 @@ import SwiftUI
 
 /// A wrapper to make non-Sendable types Sendable by unchecked conformance.
 /// Use this only when you are sure the value is thread-safe or accessed safely.
-private final class UncheckedSendable<T>: @unchecked Sendable {
-    let value: T
-    init(_ value: T) {
+private struct UncheckedSendable<T>: @unchecked Sendable {
+    nonisolated(unsafe) let value: T
+    nonisolated init(_ value: T) {
         self.value = value
     }
 }
@@ -82,7 +82,7 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     static func placeholder() -> IOSChatViewModel {
         IOSChatViewModel(
             conversationManager: ConversationManager(),
-            openAIService: .shared
+            openAIService: nil
         )
     }
 
@@ -90,27 +90,29 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     init(
         conversationId: UUID,
         conversationManager: ConversationManager,
-        openAIService: OpenAIService = .shared
+        openAIService: OpenAIService? = nil
     ) {
+        let resolvedOpenAIService = openAIService ?? .shared
         self.conversationId = conversationId
         isNewChatMode = false
         self.conversationManager = conversationManager
-        self.openAIService = openAIService
-        selectedModel = openAIService.selectedModel
-        selectedModels = [openAIService.selectedModel]
+        self.openAIService = resolvedOpenAIService
+        selectedModel = resolvedOpenAIService.selectedModel
+        selectedModels = [resolvedOpenAIService.selectedModel]
     }
 
     /// Initialize for a new chat (no conversation yet).
     init(
         conversationManager: ConversationManager,
-        openAIService: OpenAIService = .shared
+        openAIService: OpenAIService? = nil
     ) {
+        let resolvedOpenAIService = openAIService ?? .shared
         conversationId = nil
         isNewChatMode = true
         self.conversationManager = conversationManager
-        self.openAIService = openAIService
-        selectedModel = openAIService.selectedModel
-        selectedModels = [openAIService.selectedModel]
+        self.openAIService = resolvedOpenAIService
+        selectedModel = resolvedOpenAIService.selectedModel
+        selectedModels = [resolvedOpenAIService.selectedModel]
     }
 
     // MARK: - Computed Properties
@@ -541,8 +543,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             stream: true,
             tools: tools,
             onChunk: { [weak self] chunk in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
                     // Log first chunk received
                     if !chunk.isEmpty {
                         DiagnosticsLogger.log(
@@ -567,8 +570,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onComplete: { [weak self] in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
 
                     DiagnosticsLogger.log(
                         .chatView,
@@ -617,8 +621,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onError: { [weak self] error in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
 
                     DiagnosticsLogger.log(
                         .chatView,
@@ -668,9 +673,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                let selfRef = self
                 let argumentsWrapper = UncheckedSendable(arguments)
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
                     let arguments = argumentsWrapper.value
 
                     // Validate conversation still exists
@@ -1079,8 +1085,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             models: models,
             temperature: updatedConversation.temperature,
             onChunk: { [weak self] model, chunk in
+                let selfRef = self
                 Task { @MainActor in
-                    self?.handleMultiModelChunk(
+                    guard let self = selfRef else { return }
+                    self.handleMultiModelChunk(
                         model: model,
                         chunk: chunk,
                         messageIds: messageIds,
@@ -1089,8 +1097,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onModelComplete: { [weak self] model in
+                let selfRef = self
                 Task { @MainActor in
-                    self?.handleMultiModelCompletion(
+                    guard let self = selfRef else { return }
+                    self.handleMultiModelCompletion(
                         model: model,
                         messageIds: messageIds,
                         conversationId: conversationId,
@@ -1099,8 +1109,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onAllComplete: { [weak self] in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
                     self.isGenerating = false
                     if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
                         self.conversationManager.save(self.conversationManager.conversations[convIndex])
@@ -1113,8 +1124,10 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onError: { [weak self] model, error in
+                let selfRef = self
                 Task { @MainActor in
-                    self?.handleMultiModelError(
+                    guard let self = selfRef else { return }
+                    self.handleMultiModelError(
                         model: model,
                         error: error,
                         messageIds: messageIds,
@@ -1237,8 +1250,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
             prompt: text,
             model: conversation.model,
             onComplete: { [weak self] data in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
                     if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
                        let msgIndex = self.conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
                     {
@@ -1264,8 +1278,9 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onError: { [weak self] error in
+                let selfRef = self
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self = selfRef else { return }
                     self.isGenerating = false
                     self.errorMessage = error.localizedDescription
 

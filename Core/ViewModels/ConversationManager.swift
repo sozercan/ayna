@@ -94,13 +94,14 @@ final class ConversationManager: ObservableObject {
     }
 
     init(
-        store: EncryptedConversationStore = .shared,
+        store: EncryptedConversationStore? = nil,
         saveDebounceDuration: Duration = .milliseconds(200)
     ) {
-        self.store = store
+        let effectiveStore = store ?? .shared
+        self.store = effectiveStore
         self.saveDebounceDuration = saveDebounceDuration
         persistenceCoordinator = ConversationPersistenceCoordinator(
-            store: store,
+            store: effectiveStore,
             debounceDuration: saveDebounceDuration
         )
         loadingTask = Task {
@@ -189,28 +190,58 @@ final class ConversationManager: ObservableObject {
 
     private func loadConversations() async {
         do {
-            var decoded = try await store.loadConversations()
+            var decodedFromDisk = try await store.loadConversations()
 
             // Validate and fix models that no longer exist
             let availableModels = OpenAIService.shared.customModels
             let defaultModel = OpenAIService.shared.selectedModel
 
-            for index in decoded.indices where !availableModels.contains(decoded[index].model) {
+            for index in decodedFromDisk.indices where !availableModels.contains(decodedFromDisk[index].model) {
                 // Model no longer exists, update to default
-                decoded[index].model = defaultModel
-                let conversationToSave = decoded[index]
+                decodedFromDisk[index].model = defaultModel
+                let conversationToSave = decodedFromDisk[index]
                 Task {
                     try? await store.save(conversationToSave)
                 }
             }
 
-            // Merge with any conversations created while loading
-            let existingIds = Set(conversations.map(\.id))
-            let newFromDisk = decoded.filter { !existingIds.contains($0.id) }
-            conversations.append(contentsOf: newFromDisk)
+            // Dirty-wins reconciliation:
+            // - Disk is the authoritative snapshot for non-dirty conversations
+            // - In-memory wins for conversations that have pending saves queued
+            let dirtyIds = await persistenceCoordinator.pendingConversationIds()
+            let memoryById = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
+            let diskById = Dictionary(uniqueKeysWithValues: decodedFromDisk.map { ($0.id, $0) })
+
+            var reconciled: [Conversation] = []
+            reconciled.reserveCapacity(max(memoryById.count, diskById.count))
+
+            // Start from disk snapshot
+            for diskConversation in decodedFromDisk {
+                if dirtyIds.contains(diskConversation.id), let memoryConversation = memoryById[diskConversation.id] {
+                    reconciled.append(memoryConversation)
+                } else {
+                    reconciled.append(diskConversation)
+                }
+            }
+
+            // Add any dirty in-memory conversations not present on disk yet (e.g., newly created)
+            for dirtyId in dirtyIds {
+                if diskById[dirtyId] == nil, let memoryConversation = memoryById[dirtyId] {
+                    reconciled.append(memoryConversation)
+                }
+            }
 
             // Sort by updated date descending to ensure correct order
-            conversations.sort { $0.updatedAt > $1.updatedAt }
+            reconciled.sort { $0.updatedAt > $1.updatedAt }
+
+            conversations = reconciled
+
+            // If selected conversation no longer exists, clear selection
+            if let selectedId = selectedConversationId,
+               !conversations.contains(where: { $0.id == selectedId })
+            {
+                selectedConversationId = nil
+            }
 
             // Rebuild the index cache after loading and sorting
             rebuildIndexCache()
@@ -710,7 +741,9 @@ final class ConversationManager: ObservableObject {
                 accumulator.title += chunk
             },
             onComplete: { [weak self] in
+                let selfRef = self
                 Task { @MainActor in
+                    guard let self = selfRef else { return }
                     // Use the AI-generated title, trimmed and cleaned
                     let cleanTitle = accumulator.title
                         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -718,24 +751,26 @@ final class ConversationManager: ObservableObject {
                         .replacingOccurrences(of: "\n", with: " ")
 
                     if !cleanTitle.isEmpty {
-                        self?.renameConversation(conversation, newTitle: cleanTitle)
+                        self.renameConversation(conversation, newTitle: cleanTitle)
                     } else {
                         // Fallback to simple title if empty
                         let fallbackTitle = String(content.prefix(50))
-                        self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+                        self.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
                     }
                 }
             },
             onError: { [weak self] error in
+                let selfRef = self
                 Task { @MainActor in
+                    guard let self = selfRef else { return }
                     // Fallback to simple title if AI fails
-                    self?.logManager(
+                    self.logManager(
                         "⚠️ Failed to generate AI title",
                         level: .error,
                         metadata: ["error": error.localizedDescription, "conversationId": conversation.id.uuidString]
                     )
                     let fallbackTitle = String(content.prefix(50))
-                    self?.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+                    self.renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
                 }
             },
             onReasoning: nil
@@ -962,5 +997,5 @@ final class ConversationManager: ObservableObject {
 
 // Helper class for title generation
 private class TitleAccumulator: @unchecked Sendable {
-    var title = ""
+    nonisolated(unsafe) var title = ""
 }

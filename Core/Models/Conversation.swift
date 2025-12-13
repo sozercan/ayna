@@ -8,14 +8,14 @@
 import Foundation
 import UniformTypeIdentifiers
 
-extension UTType {
+nonisolated extension UTType {
     static let aynaConversation = UTType(
         exportedAs: "com.sertacozercan.ayna.conversation", conformingTo: .content
     )
 }
 
 /// Defines how the system prompt is resolved for a conversation.
-enum SystemPromptMode: Codable, Equatable {
+enum SystemPromptMode: Equatable {
     /// Use the global system prompt from AppPreferences
     case inheritGlobal
     /// Use a custom system prompt specific to this conversation
@@ -36,7 +36,7 @@ enum SystemPromptMode: Codable, Equatable {
         case disabled
     }
 
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ModeType.self, forKey: .type)
         switch type {
@@ -50,7 +50,7 @@ enum SystemPromptMode: Codable, Equatable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    nonisolated func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .inheritGlobal:
@@ -64,7 +64,9 @@ enum SystemPromptMode: Codable, Equatable {
     }
 }
 
-struct Conversation: Identifiable, Codable, Equatable {
+nonisolated extension SystemPromptMode: Codable {}
+
+struct Conversation: Identifiable, Equatable {
     let id: UUID
     var title: String
     var messages: [Message]
@@ -117,7 +119,7 @@ struct Conversation: Identifiable, Codable, Equatable {
         case multiModelEnabled, activeModels, responseGroups
     }
 
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
@@ -225,3 +227,5 @@ struct Conversation: Identifiable, Codable, Equatable {
         }
     }
 }
+
+nonisolated extension Conversation: Codable {}

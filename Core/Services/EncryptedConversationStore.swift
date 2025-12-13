@@ -24,7 +24,7 @@ enum EncryptedStoreError: LocalizedError {
 }
 
 final class EncryptedConversationStore: Sendable {
-    static let shared = EncryptedConversationStore()
+    nonisolated static let shared = EncryptedConversationStore()
 
     private let directoryURL: URL
     private let legacyFileURL: URL
@@ -183,7 +183,7 @@ final class EncryptedConversationStore: Sendable {
 
     // MARK: - Helpers
 
-    private static func getEncryptionKey(keyIdentifier: String, keychain: KeychainStoring) throws
+    private nonisolated static func getEncryptionKey(keyIdentifier: String, keychain: KeychainStoring) throws
         -> SymmetricKey
     {
         let flagKey = "\(keyIdentifier)_initialized"
@@ -212,7 +212,7 @@ final class EncryptedConversationStore: Sendable {
         return newKey
     }
 
-    private static func loadLegacyFile(at url: URL, keyIdentifier: String, keychain: KeychainStoring)
+    private nonisolated static func loadLegacyFile(at url: URL, keyIdentifier: String, keychain: KeychainStoring)
         throws -> [Conversation]
     {
         let encryptedData = try Data(contentsOf: url)
@@ -222,7 +222,7 @@ final class EncryptedConversationStore: Sendable {
         return try JSONDecoder().decode([Conversation].self, from: plaintext)
     }
 
-    private static func load(from url: URL, keyIdentifier: String, keychain: KeychainStoring) throws
+    private nonisolated static func load(from url: URL, keyIdentifier: String, keychain: KeychainStoring) throws
         -> Conversation
     {
         let encryptedData = try Data(contentsOf: url)
@@ -232,7 +232,7 @@ final class EncryptedConversationStore: Sendable {
         return try JSONDecoder().decode(Conversation.self, from: plaintext)
     }
 
-    private static func save(
+    private nonisolated static func save(
         _ conversation: Conversation, to directory: URL, keyIdentifier: String,
         keychain: KeychainStoring
     ) throws {

@@ -42,7 +42,7 @@ struct Breadcrumb: Codable, Identifiable {
     let message: String
     let metadata: [String: String]
 
-    init(
+    nonisolated init(
         id: UUID = UUID(),
         timestamp: Date = Date(),
         category: DiagnosticsCategory,
@@ -59,13 +59,14 @@ struct Breadcrumb: Codable, Identifiable {
     }
 }
 
-final class BreadcrumbStore: @unchecked Sendable {
+actor BreadcrumbStore {
     static let shared = BreadcrumbStore()
 
     private let maxEntries = 200
-    private let queue = DispatchQueue(label: "com.sertacozercan.ayna.breadcrumbs", qos: .utility)
+    private let persistDebounce: Duration = .seconds(1)
     private let storageURL: URL
     private var entries: [Breadcrumb] = []
+    private var persistTask: Task<Void, Never>?
 
     private init(fileManager: FileManager = .default) {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -91,27 +92,37 @@ final class BreadcrumbStore: @unchecked Sendable {
         message: String,
         metadata: [String: String]
     ) {
-        queue.async {
-            let breadcrumb = Breadcrumb(category: category, level: level, message: message, metadata: metadata)
-            self.entries.append(breadcrumb)
-            if self.entries.count > self.maxEntries {
-                self.entries.removeFirst(self.entries.count - self.maxEntries)
-            }
-            self.persistLocked()
+        let breadcrumb = Breadcrumb(category: category, level: level, message: message, metadata: metadata)
+        entries.append(breadcrumb)
+        if entries.count > maxEntries {
+            entries.removeFirst(entries.count - maxEntries)
         }
+
+        schedulePersist()
     }
 
     func latest(limit: Int? = nil) -> [Breadcrumb] {
-        queue.sync {
-            let snapshot = entries
-            if let limit, limit < snapshot.count {
-                return Array(snapshot.suffix(limit))
+        if let limit, limit < entries.count {
+            return Array(entries.suffix(limit))
+        }
+        return entries
+    }
+
+    // MARK: - Private
+
+    private func schedulePersist() {
+        persistTask?.cancel()
+        persistTask = Task { [storageURL, persistDebounce] in
+            do {
+                try await Task.sleep(for: persistDebounce)
+            } catch {
+                return
             }
-            return snapshot
+            await BreadcrumbStore.shared.persistNow(storageURL: storageURL)
         }
     }
 
-    private func persistLocked() {
+    private func persistNow(storageURL: URL) {
         do {
             let data = try JSONEncoder().encode(entries)
             try data.write(to: storageURL, options: .atomic)
@@ -121,9 +132,30 @@ final class BreadcrumbStore: @unchecked Sendable {
     }
 }
 
+final class LogThrottle: @unchecked Sendable {
+    nonisolated static let shared = LogThrottle()
+
+    nonisolated private let lock = NSLock()
+    nonisolated(unsafe) private var lastLogByKey: [String: Date] = [:]
+
+    nonisolated func shouldLog(key: String, interval: TimeInterval) -> Bool {
+        let now = Date()
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let last = lastLogByKey[key], now.timeIntervalSince(last) < interval {
+            return false
+        }
+
+        lastLogByKey[key] = now
+        return true
+    }
+}
+
 enum DiagnosticsLogger {
-    private static let subsystem = "com.sertacozercan.ayna"
-    private static let loggers: [DiagnosticsCategory: Logger] = {
+    private nonisolated static let subsystem = "com.sertacozercan.ayna"
+    private nonisolated static let loggers: [DiagnosticsCategory: Logger] = {
         var dictionary: [DiagnosticsCategory: Logger] = [:]
         for category in DiagnosticsCategory.allCases {
             dictionary[category] = Logger(subsystem: subsystem, category: category.rawValue)
@@ -131,7 +163,7 @@ enum DiagnosticsLogger {
         return dictionary
     }()
 
-    static func log(
+    nonisolated static func log(
         _ category: DiagnosticsCategory,
         level: OSLogType = .default,
         message: String,
@@ -148,17 +180,36 @@ enum DiagnosticsLogger {
             logger.log(level: level, "\(message, privacy: .public) [\(metaString, privacy: .public)]")
         }
 
-        BreadcrumbStore.shared.record(
-            category: category,
-            level: level.breadcrumbLevel,
-            message: message,
-            metadata: metadata
-        )
+        // Persisting high-frequency logs (e.g. streaming debug) can be noisy and expensive.
+        // By default, we only record breadcrumbs for info+.
+        if level != .debug {
+            Task {
+                await BreadcrumbStore.shared.record(
+                    category: category,
+                    level: level.breadcrumbLevel,
+                    message: message,
+                    metadata: metadata
+                )
+            }
+        }
+    }
+
+    nonisolated static func logThrottled(
+        _ category: DiagnosticsCategory,
+        level: OSLogType = .default,
+        throttleKey: String,
+        interval: TimeInterval,
+        message: String,
+        metadata: [String: String] = [:]
+    ) {
+        let key = "\(category.rawValue)|\(level.breadcrumbLevel.rawValue)|\(throttleKey)"
+        guard LogThrottle.shared.shouldLog(key: key, interval: interval) else { return }
+        log(category, level: level, message: message, metadata: metadata)
     }
 }
 
 private extension OSLogType {
-    var breadcrumbLevel: BreadcrumbLevel {
+    nonisolated var breadcrumbLevel: BreadcrumbLevel {
         switch self {
         case .debug:
             .debug

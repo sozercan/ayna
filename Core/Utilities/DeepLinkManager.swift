@@ -132,8 +132,8 @@ final class DeepLinkManager: ObservableObject {
 
     private let openAIService: OpenAIService
 
-    init(openAIService: OpenAIService = .shared) {
-        self.openAIService = openAIService
+    init(openAIService: OpenAIService? = nil) {
+        self.openAIService = openAIService ?? .shared
     }
 
     // MARK: - Public Methods

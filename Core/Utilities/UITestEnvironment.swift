@@ -6,7 +6,6 @@ enum UITestEnvironment {
     private static let flag = "AYNA_UI_TESTING"
     private static let launchArgument = "--ui-testing"
     private static let userDefaultsArgument = "-\(flag)"
-    private static let xctestConfigurationKey = "XCTestConfigurationFilePath"
     private static let defaultModel = "ui-test-model"
 
     static var isEnabled: Bool {
@@ -14,7 +13,8 @@ enum UITestEnvironment {
         if processInfo.environment[flag] == "1" { return true }
         if processInfo.arguments.contains(launchArgument) { return true }
         if processInfo.arguments.contains(userDefaultsArgument) { return true }
-        return UserDefaults.standard.bool(forKey: flag)
+        // Avoid persisting UI-test mode across launches via UserDefaults.
+        return false
     }
 
     /// Call once during app initialization to swap out side-effectful dependencies.
