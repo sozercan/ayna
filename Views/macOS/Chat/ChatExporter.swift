@@ -15,14 +15,14 @@ enum ExportFormat {
 }
 
 /// Helper for exporting conversations to various formats
-struct ChatExportHelper {
+enum ChatExportHelper {
     /// Export conversation to the specified format
     static func exportConversation(_ conversation: Conversation, format: ExportFormat) -> URL? {
         switch format {
         case .markdown:
-            return exportAsMarkdown(conversation)
+            exportAsMarkdown(conversation)
         case .pdf:
-            return ConversationExporter.generatePDF(for: conversation)
+            ConversationExporter.generatePDF(for: conversation)
         }
     }
 
@@ -57,7 +57,7 @@ struct ChatExportHelper {
 }
 
 /// Helper to get MIME type from file URL
-struct MIMETypeHelper {
+enum MIMETypeHelper {
     static func getMimeType(for url: URL) -> String {
         let pathExtension = url.pathExtension.lowercased()
         switch pathExtension {

@@ -90,7 +90,7 @@ struct ChatMessageList: View {
                 scrollToBottomIfNeeded(proxy: proxy)
             }
             .onChange(of: conversation.messages.last?.content) { _, _ in
-                if isGenerating && isNearBottom {
+                if isGenerating, isNearBottom {
                     scrollToLastMessage(proxy: proxy)
                 }
             }
@@ -135,11 +135,11 @@ struct ChatMessageList: View {
 }
 
 /// Helper to update displayable items from visible messages
-struct DisplayableItemsBuilder {
+enum DisplayableItemsBuilder {
     /// Updates cached displayable items from visible messages
     static func buildDisplayableItems(
         from messages: [Message],
-        conversation: Conversation,
+        conversation _: Conversation,
         isGenerating: Bool
     ) -> [DisplayableItem] {
         let visibleMessages = messages.filter { message in

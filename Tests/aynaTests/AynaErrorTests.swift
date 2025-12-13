@@ -226,6 +226,17 @@ final class ErrorPresenterTests: XCTestCase {
         XCTAssertEqual(message, "No internet connection")
     }
 
+    func testUserMessageSanitizesIncorrectAPIKeyMessage() {
+        let leakingMessage = "Incorrect API key provided: sk-proj-1234567890ABCDEFGH. You can find your API key at https://platform.openai.com/account/api-keys."
+        let error = OpenAIService.OpenAIError.apiError(leakingMessage)
+
+        let message = ErrorPresenter.userMessage(for: error)
+
+        XCTAssertEqual(message, "Invalid API key")
+        XCTAssertFalse(message.contains("sk-proj-"))
+        XCTAssertFalse(message.contains("platform.openai.com"))
+    }
+
     func testRecoverySuggestionForAynaError() {
         let error = AynaError.missingAPIKey(provider: "OpenAI")
         let suggestion = ErrorPresenter.recoverySuggestion(for: error)

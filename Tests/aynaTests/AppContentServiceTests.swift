@@ -13,7 +13,7 @@
     final class AppContentServiceTests: XCTestCase {
         var service: AppContentService!
 
-    override func setUp() async throws {
+        override func setUp() async throws {
             service = AppContentService.shared
         }
 

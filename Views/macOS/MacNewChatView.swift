@@ -35,6 +35,10 @@ struct MacNewChatView: View {
     @State private var selectedModels: Set<String> = []
     @State private var isToolSectionExpanded = false
 
+    @State private var errorMessage: String?
+    @State private var errorRecoverySuggestion: String?
+    @State private var shouldOfferOpenSettings = false
+
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
@@ -258,6 +262,18 @@ struct MacNewChatView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 8)
                         .background(Color.accentColor.opacity(0.1))
+                    }
+
+                    if let errorMessage {
+                        ErrorBannerView(
+                            message: errorMessage,
+                            recoverySuggestion: errorRecoverySuggestion,
+                            openSettingsTab: shouldOfferOpenSettings ? SettingsTab.models : nil,
+                            onDismiss: { dismissError() },
+                            identifierPrefix: "newchat.error"
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
                     }
 
                     // Input Area
@@ -722,6 +738,7 @@ struct MacNewChatView: View {
     // MARK: - Send Message
 
     private func sendMessage() {
+        dismissError()
         if isGenerating {
             // Stop generation immediately
             logNewChat("🛑 Stop button clicked in NewChatView, cancelling...", level: .info)
@@ -739,6 +756,9 @@ struct MacNewChatView: View {
 
         guard let activeModel = resolveModelForSending() else {
             logNewChat("⚠️ Cannot send message: no model selected", level: .error)
+            errorMessage = "Select a model in Settings → Models"
+            errorRecoverySuggestion = "Add or select a model before sending your first message"
+            shouldOfferOpenSettings = true
             return
         }
 
@@ -788,7 +808,7 @@ struct MacNewChatView: View {
         var attachments: [Message.FileAttachment] = []
         for fileURL in filesToSend {
             if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = getMimeType(for: fileURL)
+                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
                 let attachment = Message.FileAttachment(
                     fileName: fileURL.lastPathComponent,
                     mimeType: mimeType,
@@ -1028,6 +1048,13 @@ struct MacNewChatView: View {
                         level: .error,
                         metadata: ["model": model, "error": error.localizedDescription]
                     )
+
+                    if errorMessage == nil {
+                        let safeMessage = ErrorPresenter.userMessage(for: error)
+                        errorMessage = "\"\(model)\" failed: \(safeMessage)"
+                        errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+                        shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
+                    }
                 }
             }
         )
@@ -1106,7 +1133,8 @@ struct MacNewChatView: View {
                             "error": error.localizedDescription
                         ]
                     )
-                    selectedConversationId = conversationId
+
+                    presentError(error)
                 }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
@@ -1132,7 +1160,9 @@ struct MacNewChatView: View {
                         logNewChat("⚠️ Max tool call depth reached in NewChatView", level: .error)
                         isGenerating = false
                         currentToolName = nil
-                        selectedConversationId = conversationId
+                        errorMessage = "Too many tool calls"
+                        errorRecoverySuggestion = "Try again, or disable tools in Settings"
+                        shouldOfferOpenSettings = true
                         return
                     }
 
@@ -1296,7 +1326,7 @@ struct MacNewChatView: View {
                                 )
                                 isGenerating = false
                                 currentToolName = nil
-                                selectedConversationId = conversationId
+                                presentError(error)
                             }
                         }
                     }
@@ -1319,72 +1349,15 @@ struct MacNewChatView: View {
         )
     }
 
-    private func getMimeType(for url: URL) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        switch pathExtension {
-        case "jpg", "jpeg":
-            return "image/jpeg"
-        case "png":
-            return "image/png"
-        case "gif":
-            return "image/gif"
-        case "webp":
-            return "image/webp"
-        case "pdf":
-            return "application/pdf"
-        case "txt":
-            return "text/plain"
-        case "json":
-            return "application/json"
-        case "xml":
-            return "application/xml"
-        default:
-            return "application/octet-stream"
-        }
+    private func presentError(_ error: Error) {
+        errorMessage = ErrorPresenter.userMessage(for: error)
+        errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+        shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
     }
-}
 
-// MARK: - Model Setup Prompt View
-
-private struct ModelSetupPromptView: View {
-    let issues: [String]
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 54))
-                .foregroundStyle(Color.accentColor)
-
-            VStack(spacing: 8) {
-                Text("Add a model to start chatting")
-                    .font(.title3.weight(.semibold))
-                Text(
-                    "Head to Settings → Model to connect OpenAI, Azure, or AIKit models before sending your first message."
-                )
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420)
-            }
-
-            if !issues.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(issues, id: \.self) { issue in
-                        Label(issue, systemImage: "exclamationmark.triangle")
-                            .labelStyle(.titleAndIcon)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: 420, alignment: .leading)
-            }
-
-            SettingsLink {
-                Label("Open Settings", systemImage: "slider.horizontal.3")
-            }
-            .routeSettings(to: .models)
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func dismissError() {
+        errorMessage = nil
+        errorRecoverySuggestion = nil
+        shouldOfferOpenSettings = false
     }
 }

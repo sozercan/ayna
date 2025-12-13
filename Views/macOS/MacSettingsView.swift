@@ -2219,7 +2219,7 @@ struct AIKitConfigurationView: View {
             } catch {
                 await MainActor.run {
                     isRunning = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }
@@ -2240,7 +2240,7 @@ struct AIKitConfigurationView: View {
             } catch {
                 await MainActor.run {
                     isRunning = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }

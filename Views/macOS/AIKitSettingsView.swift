@@ -268,7 +268,7 @@ struct AIKitSettingsView: View {
             } catch {
                 await MainActor.run {
                     isPulling = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }
@@ -287,7 +287,7 @@ struct AIKitSettingsView: View {
             } catch {
                 await MainActor.run {
                     isRunning = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }
@@ -306,7 +306,7 @@ struct AIKitSettingsView: View {
             } catch {
                 await MainActor.run {
                     isStopping = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }
@@ -320,7 +320,7 @@ struct AIKitSettingsView: View {
                 try await aikitService.deleteImage()
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorPresenter.userMessage(for: error)
                 }
             }
         }

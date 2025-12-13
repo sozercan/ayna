@@ -126,7 +126,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Request timed out"
         case .rateLimited:
             return "Rate limit exceeded. Please wait before trying again."
-
         // Authentication
         case let .missingAPIKey(provider):
             return "\(provider) API key not configured"
@@ -136,7 +135,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Missing configuration: \(detail)"
         case let .authenticationFailed(reason):
             return "Authentication failed: \(reason)"
-
         // Model
         case .noModelSelected:
             return "No model selected"
@@ -146,7 +144,6 @@ enum AynaError: LocalizedError, Sendable {
             return "\(operation) is not supported for \(provider)"
         case let .capabilityMismatch(expected, actual):
             return "Expected \(expected) model, but got \(actual)"
-
         // API Response
         case let .invalidResponse(detail):
             if let detail {
@@ -157,7 +154,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Content filtered: \(reason)"
         case let .apiError(message):
             return message
-
         // Tool
         case let .toolNotFound(toolName):
             return "Tool '\(toolName)' not found"
@@ -165,7 +161,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Tool '\(toolName)' failed: \(reason)"
         case let .toolChainDepthExceeded(maxDepth):
             return "Tool chain exceeded maximum depth of \(maxDepth)"
-
         // Data
         case let .encodingFailed(detail):
             return "Failed to encode data: \(detail)"
@@ -181,13 +176,11 @@ enum AynaError: LocalizedError, Sendable {
                 return "Keychain \(operation) failed (status: \(status))"
             }
             return "Keychain \(operation) failed"
-
         // Conversation
         case .conversationNotFound:
             return "Conversation not found"
         case .messageNotFound:
             return "Message not found"
-
         // Generic
         case .cancelled:
             return "Operation was cancelled"
@@ -213,7 +206,6 @@ enum AynaError: LocalizedError, Sendable {
                 return "Wait \(Int(seconds)) seconds before trying again"
             }
             return "Wait a moment before trying again"
-
         // Authentication
         case let .missingAPIKey(provider):
             return "Add your \(provider) API key in Settings → Models"
@@ -223,7 +215,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Check Settings to complete configuration"
         case .authenticationFailed:
             return "Try signing in again"
-
         // Model
         case .noModelSelected:
             return "Select a model in Settings → Models"
@@ -233,7 +224,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Switch to a compatible model"
         case .capabilityMismatch:
             return "Select a model with the right capabilities"
-
         // API Response
         case .invalidResponse:
             return "Try again. If the issue persists, the API may be having problems."
@@ -241,7 +231,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Try rephrasing your message"
         case .apiError:
             return "Check your configuration or try again later"
-
         // Tool
         case .toolNotFound:
             return "Check that the required tool is configured in Settings → Tools"
@@ -249,7 +238,6 @@ enum AynaError: LocalizedError, Sendable {
             return "The tool encountered an error. Try again or use a different approach."
         case .toolChainDepthExceeded:
             return "Simplify your request to reduce tool usage"
-
         // Data
         case .encodingFailed, .decodingFailed:
             return "The data may be corrupted. Try again with fresh data."
@@ -257,13 +245,11 @@ enum AynaError: LocalizedError, Sendable {
             return "Check file permissions and disk space"
         case .keychainError:
             return "Check that the app has keychain access"
-
         // Conversation
         case .conversationNotFound:
             return "The conversation may have been deleted"
         case .messageNotFound:
             return "The message may have been deleted"
-
         // Generic
         case .cancelled:
             return nil
@@ -352,26 +338,26 @@ extension AynaError: Equatable {
         case (.timeout, .timeout),
              (.noModelSelected, .noModelSelected),
              (.cancelled, .cancelled):
-            return true
+            true
         case let (.missingAPIKey(lhs), .missingAPIKey(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.invalidAPIKey(lhs), .invalidAPIKey(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.modelNotFound(lhs), .modelNotFound(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.toolNotFound(lhs), .toolNotFound(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.contentFiltered(lhs), .contentFiltered(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.apiError(lhs), .apiError(rhs)):
-            return lhs == rhs
+            lhs == rhs
         case let (.httpError(lCode, lMsg), .httpError(rCode, rMsg)):
-            return lCode == rCode && lMsg == rMsg
+            lCode == rCode && lMsg == rMsg
         case let (.rateLimited(lhs), .rateLimited(rhs)):
-            return lhs == rhs
+            lhs == rhs
         default:
             // For complex cases with underlying errors, compare descriptions
-            return lhs.errorDescription == rhs.errorDescription
+            lhs.errorDescription == rhs.errorDescription
         }
     }
 }

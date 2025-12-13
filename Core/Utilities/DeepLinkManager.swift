@@ -228,12 +228,13 @@ final class DeepLinkManager: ObservableObject {
                 metadata: ["error": error.errorDescription ?? "Unknown"]
             )
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorPresenter.userMessage(for: error)
+            errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
             DiagnosticsLogger.log(
                 .app,
                 level: .error,
                 message: "🔗 Deep link error",
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": ErrorPresenter.userMessage(for: error)]
             )
         }
     }
@@ -258,7 +259,8 @@ final class DeepLinkManager: ObservableObject {
             // Clear pending chat on error since the model wasn't added
             pendingChat = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorPresenter.userMessage(for: error)
+            errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
             pendingChat = nil
         }
 
