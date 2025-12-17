@@ -115,7 +115,7 @@ jobs:
 
     - name: Upload test results on failure
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: macOS-UI-TestResults-${{ matrix.macos-version }}
         path: ./build/*.xcresult
@@ -252,7 +252,7 @@ jobs:
 
     - name: Upload test results on failure
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: iOS-UI-TestResults-${{ matrix.macos-version }}
         path: ./build/*.xcresult
@@ -389,7 +389,7 @@ jobs:
 
     - name: Upload test results on failure
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: watchOS-UI-TestResults-${{ matrix.macos-version }}
         path: ./build/*.xcresult
