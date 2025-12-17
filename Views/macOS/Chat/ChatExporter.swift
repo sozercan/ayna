@@ -15,6 +15,7 @@ enum ExportFormat {
 }
 
 /// Helper for exporting conversations to various formats
+@MainActor
 enum ChatExportHelper {
     /// Export conversation to the specified format
     static func exportConversation(_ conversation: Conversation, format: ExportFormat) -> URL? {
