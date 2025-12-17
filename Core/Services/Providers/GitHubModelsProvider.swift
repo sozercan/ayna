@@ -423,7 +423,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     private func handleHTTPError(
         bytes: URLSession.AsyncBytes,
         statusCode: Int,
-        httpResponse: HTTPURLResponse
+        httpResponse _: HTTPURLResponse
     ) async -> (String, Data?) {
         var errorData = Data()
         do {
@@ -445,15 +445,15 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     private nonisolated func getHTTPErrorMessage(statusCode: Int) -> String {
         switch statusCode {
         case 400:
-            return "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
+            "HTTP \(statusCode) - Invalid request. Check your model name and parameters."
         case 429:
-            return "Too many requests. Please wait a minute before trying again."
+            "Too many requests. Please wait a minute before trying again."
         case 403:
-            return "Rate limit exceeded. GitHub Models has usage limits. Please wait a few minutes."
+            "Rate limit exceeded. GitHub Models has usage limits. Please wait a few minutes."
         case 500, 502, 503, 504:
-            return "Server error (\(statusCode)). Please try again in a moment."
+            "Server error (\(statusCode)). Please try again in a moment."
         default:
-            return "HTTP \(statusCode)"
+            "HTTP \(statusCode)"
         }
     }
 

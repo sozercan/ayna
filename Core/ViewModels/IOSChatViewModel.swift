@@ -630,7 +630,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         level: .error,
                         message: "🚨 onError callback fired",
                         metadata: [
-                            "error": error.localizedDescription,
+                            "error": ErrorPresenter.userMessage(for: error),
                             "assistantMessageId": assistantMessageId.uuidString
                         ]
                     )
@@ -642,12 +642,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
                     self.currentToolName = nil
                     self.toolCallDepth = 0
-                    self.errorMessage = error.localizedDescription
-
-                    // Extract recovery suggestion if available
-                    if let localizedError = error as? LocalizedError {
-                        self.errorRecoverySuggestion = localizedError.recoverySuggestion
-                    }
+                    self.errorMessage = ErrorPresenter.userMessage(for: error)
+                    self.errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
 
                     // Store the failed message for retry
                     self.failedMessage = self.pendingUserMessage
@@ -667,7 +663,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
-                        message: "❌ Message generation failed: \(error.localizedDescription)",
+                        message: "❌ Message generation failed: \(ErrorPresenter.userMessage(for: error))",
                         metadata: ["conversationId": conversationId.uuidString]
                     )
                 }
