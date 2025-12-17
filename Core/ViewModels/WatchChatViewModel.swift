@@ -270,7 +270,7 @@
                         self.isStreaming = false
                         self.currentToolName = nil
                         self.toolCallDepth = 0
-                        self.errorMessage = error.localizedDescription
+                        self.errorMessage = ErrorPresenter.userMessage(for: error)
 
                         // Store the failed message for retry
                         self.failedMessage = userContent
@@ -297,7 +297,7 @@
                             .chatView,
                             level: .error,
                             message: "⌚ Request failed",
-                            metadata: ["error": error.localizedDescription]
+                            metadata: ["error": ErrorPresenter.userMessage(for: error)]
                         )
                     }
                 },

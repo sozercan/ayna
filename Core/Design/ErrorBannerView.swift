@@ -37,6 +37,16 @@ public struct ErrorBannerView: View {
     /// Optional retry action - if provided, shows a retry button
     let onRetry: (() -> Void)?
 
+    /// Optional open-settings action - if provided, shows an "Open Settings" button
+    let onOpenSettings: (() -> Void)?
+
+    /// Optional settings destination to open on macOS via `SettingsLink`.
+    ///
+    /// Stored as `AnyHashable` to keep this view cross-platform; interpreted as `SettingsTab`
+    /// only on macOS.
+    /// If set on macOS, this takes precedence over `onOpenSettings`.
+    let openSettingsTab: AnyHashable?
+
     /// Dismiss action - always required to clear the error
     let onDismiss: () -> Void
 
@@ -48,18 +58,24 @@ public struct ErrorBannerView: View {
     ///   - message: The primary error message
     ///   - recoverySuggestion: Optional recovery guidance (e.g., "Check your API key in Settings")
     ///   - onRetry: Optional retry action closure
+    ///   - onOpenSettings: Optional open-settings action closure
+    ///   - openSettingsTab: Optional settings destination (macOS-only behavior)
     ///   - onDismiss: Dismiss action closure (required)
     ///   - identifierPrefix: Accessibility identifier prefix for testing
     public init(
         message: String,
         recoverySuggestion: String? = nil,
         onRetry: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil,
+        openSettingsTab: AnyHashable? = nil,
         onDismiss: @escaping () -> Void,
         identifierPrefix: String = "error.banner"
     ) {
         self.message = message
         self.recoverySuggestion = recoverySuggestion
         self.onRetry = onRetry
+        self.onOpenSettings = onOpenSettings
+        self.openSettingsTab = openSettingsTab
         self.onDismiss = onDismiss
         self.identifierPrefix = identifierPrefix
     }
@@ -75,34 +91,74 @@ public struct ErrorBannerView: View {
     // MARK: - Standard Layout (iOS/macOS)
 
     private var standardLayout: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            // Primary error row with icon and dismiss
-            HStack(alignment: .top, spacing: Spacing.sm) {
-                // Warning icon
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: Typography.IconSize.lg))
-                    .foregroundStyle(Theme.statusError)
-                    .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: Typography.IconSize.md, weight: .semibold))
+                .foregroundStyle(Theme.statusError)
+                .accessibilityHidden(true)
 
-                // Message text
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text(message)
-                        .font(Typography.body)
-                        .foregroundStyle(Theme.statusError)
-                        .lineLimit(3)
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                Text(message)
+                    .font(Typography.body)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
 
-                    // Recovery suggestion (secondary text)
-                    if let suggestion = recoverySuggestion {
-                        Text(suggestion)
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(2)
+                if let suggestion = recoverySuggestion {
+                    Text(suggestion)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: Spacing.sm)
+
+            HStack(spacing: Spacing.xs) {
+                #if os(macOS)
+                    if let tab = openSettingsTab as? SettingsTab {
+                        SettingsLink {
+                            Text("Open Settings")
+                                .font(Typography.buttonSmall)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .routeSettings(to: tab)
+                        .buttonStyle(.plain)
+                        .frame(minHeight: Spacing.minTouchTarget)
+                        .accessibilityIdentifier("\(identifierPrefix).openSettings")
+                    } else if let openSettings = onOpenSettings {
+                        Button("Open Settings", action: openSettings)
+                            .font(Typography.buttonSmall)
+                            .foregroundStyle(Theme.accent)
+                            .buttonStyle(.plain)
+                            .frame(minHeight: Spacing.minTouchTarget)
+                            .accessibilityIdentifier("\(identifierPrefix).openSettings")
                     }
+                #else
+                    if let openSettings = onOpenSettings {
+                        Button("Open Settings", action: openSettings)
+                            .font(Typography.buttonSmall)
+                            .foregroundStyle(Theme.accent)
+                            .buttonStyle(.plain)
+                            .frame(minHeight: Spacing.minTouchTarget)
+                            .accessibilityIdentifier("\(identifierPrefix).openSettings")
+                    }
+                #endif
+                if let retry = onRetry {
+                    Button(action: retry) {
+                        HStack(spacing: Spacing.xxs) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: Typography.IconSize.sm))
+                            Text("Retry")
+                                .font(Typography.buttonSmall)
+                        }
+                    }
+                    .foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain)
+                    .frame(minHeight: Spacing.minTouchTarget)
+                    .accessibilityLabel("Retry")
+                    .accessibilityIdentifier("\(identifierPrefix).retry")
                 }
 
-                Spacer(minLength: Spacing.sm)
-
-                // Dismiss button
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: Typography.IconSize.md, weight: .medium))
@@ -114,31 +170,23 @@ public struct ErrorBannerView: View {
                 .accessibilityLabel("Dismiss error")
                 .accessibilityIdentifier("\(identifierPrefix).dismiss")
             }
-
-            // Retry button row (if retry action provided)
-            if let retry = onRetry {
-                HStack {
-                    Spacer()
-                    Button(action: retry) {
-                        HStack(spacing: Spacing.xxs) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: Typography.IconSize.sm))
-                            Text("Retry")
-                                .font(Typography.buttonSmall)
-                        }
-                        .foregroundStyle(Theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(minHeight: Spacing.minTouchTarget)
-                    .accessibilityLabel("Retry")
-                    .accessibilityIdentifier("\(identifierPrefix).retry")
-                }
-            }
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(Theme.statusError.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
+        .background(
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                    .fill(Theme.statusError.opacity(0.10))
+                Rectangle()
+                    .fill(Theme.statusError)
+                    .frame(width: 3)
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                .stroke(Theme.border, lineWidth: Spacing.Border.standard)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityMessage)
         .accessibilityIdentifier("\(identifierPrefix).container")
@@ -148,48 +196,45 @@ public struct ErrorBannerView: View {
 
     private var watchOSLayout: some View {
         VStack(spacing: Spacing.sm) {
-            // Error message
-            Text(message)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.statusError)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.statusError)
+                    .accessibilityHidden(true)
 
-            // Recovery suggestion
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+
+                Spacer(minLength: 0)
+            }
+
             if let suggestion = recoverySuggestion {
                 Text(suggestion)
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
                     .lineLimit(2)
             }
 
-            // Action buttons
-            HStack(spacing: Spacing.md) {
+            HStack(spacing: Spacing.sm) {
                 if let retry = onRetry {
-                    Button(action: retry) {
-                        HStack(spacing: Spacing.xxs) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Retry")
-                        }
-                        .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-                    .accessibilityIdentifier("\(identifierPrefix).retry")
+                    Button("Retry", action: retry)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+                        .accessibilityIdentifier("\(identifierPrefix).retry")
                 }
 
-                Button(action: onDismiss) {
-                    Text("Dismiss")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("\(identifierPrefix).dismiss")
+                Button("Dismiss", action: onDismiss)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("\(identifierPrefix).dismiss")
             }
         }
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.sm)
-        .background(Theme.statusError.opacity(0.15))
+        .background(Theme.statusError.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityElement(children: .combine)
@@ -214,6 +259,7 @@ public extension ErrorBannerView {
     init(
         error: some LocalizedError,
         onRetry: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil,
         onDismiss: @escaping () -> Void,
         identifierPrefix: String = "error.banner"
     ) {
@@ -221,6 +267,7 @@ public extension ErrorBannerView {
             message: error.errorDescription ?? error.localizedDescription,
             recoverySuggestion: error.recoverySuggestion,
             onRetry: onRetry,
+            onOpenSettings: onOpenSettings,
             onDismiss: onDismiss,
             identifierPrefix: identifierPrefix
         )
