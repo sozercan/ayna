@@ -8,7 +8,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-nonisolated extension UTType {
+extension UTType {
     static let aynaConversation = UTType(
         exportedAs: "com.sertacozercan.ayna.conversation", conformingTo: .content
     )
@@ -36,7 +36,7 @@ enum SystemPromptMode: Equatable {
         case disabled
     }
 
-    nonisolated init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(ModeType.self, forKey: .type)
         switch type {
@@ -50,7 +50,7 @@ enum SystemPromptMode: Equatable {
         }
     }
 
-    nonisolated func encode(to encoder: Encoder) throws {
+    func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .inheritGlobal:
@@ -64,7 +64,7 @@ enum SystemPromptMode: Equatable {
     }
 }
 
-nonisolated extension SystemPromptMode: Codable {}
+extension SystemPromptMode: Codable {}
 
 struct Conversation: Identifiable, Equatable {
     let id: UUID
@@ -119,7 +119,7 @@ struct Conversation: Identifiable, Equatable {
         case multiModelEnabled, activeModels, responseGroups
     }
 
-    nonisolated init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
@@ -228,4 +228,4 @@ struct Conversation: Identifiable, Equatable {
     }
 }
 
-nonisolated extension Conversation: Codable {}
+extension Conversation: Codable {}
