@@ -38,6 +38,7 @@ struct MacNewChatView: View {
     @State private var errorMessage: String?
     @State private var errorRecoverySuggestion: String?
     @State private var shouldOfferOpenSettings = false
+    @State private var liquidGlassEnabled = AppPreferences.liquidGlassEnabled
 
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
@@ -171,16 +172,22 @@ struct MacNewChatView: View {
 
     var body: some View {
         ZStack {
-            // Chat background with subtle gradient
-            LinearGradient(
-                colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Chat background with subtle gradient (semi-transparent when Liquid Glass is enabled)
+            if liquidGlassEnabled {
+                Color(nsColor: .windowBackgroundColor)
+                    .opacity(0.9)
+                    .ignoresSafeArea()
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(nsColor: .windowBackgroundColor),
+                        Color(nsColor: .windowBackgroundColor).opacity(0.95)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
 
             if needsModelSetup {
                 ModelSetupPromptView(issues: modelSetupIssues)
@@ -302,6 +309,9 @@ struct MacNewChatView: View {
                     showAppContentPicker = false
                 }
             )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liquidGlassPreferenceChanged)) { _ in
+            liquidGlassEnabled = AppPreferences.liquidGlassEnabled
         }
     }
 

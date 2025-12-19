@@ -55,6 +55,7 @@ struct MacChatView: View {
     @State private var isComposerFocused = true
     @State private var toolChainTimeoutTask: Task<Void, Never>?
     @State private var showingSystemPromptSheet = false
+    @State private var liquidGlassEnabled = AppPreferences.liquidGlassEnabled
 
     // Multi-model support (unified selection - 1 model = single, 2+ = multi)
     @State private var selectedModels: Set<String> = []
@@ -220,16 +221,22 @@ struct MacChatView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // Chat background with subtle gradient
-            LinearGradient(
-                colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // Chat background with subtle gradient (semi-transparent when Liquid Glass is enabled)
+            if liquidGlassEnabled {
+                Color(nsColor: .windowBackgroundColor)
+                    .opacity(0.9)
+                    .ignoresSafeArea()
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(nsColor: .windowBackgroundColor),
+                        Color(nsColor: .windowBackgroundColor).opacity(0.95)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
 
             VStack(spacing: 0) {
                 // Messages
@@ -750,6 +757,9 @@ struct MacChatView: View {
                 logChat("📤 Auto-sending message from Work with Apps", level: .info)
                 sendPendingUserMessage()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liquidGlassPreferenceChanged)) { _ in
+            liquidGlassEnabled = AppPreferences.liquidGlassEnabled
         }
     }
 

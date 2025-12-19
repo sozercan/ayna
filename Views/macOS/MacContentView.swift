@@ -18,42 +18,20 @@ extension Notification.Name {
 struct MacContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+    @State private var liquidGlassEnabled = AppPreferences.liquidGlassEnabled
 
     var body: some View {
         ZStack {
             NavigationSplitView {
-                MacSidebarView(selectedConversationId: $conversationManager.selectedConversationId)
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+                sidebarContent
             } detail: {
-                Group {
-                    if let conversationId = conversationManager.selectedConversationId,
-                       let conversation = conversationManager.conversations.first(where: {
-                           $0.id == conversationId
-                       })
-                    {
-                        MacChatView(conversation: conversation)
-                            .id(conversationId)
-                    } else {
-                        MacNewChatView(
-                            selectedConversationId: $conversationManager.selectedConversationId
-                        )
-                    }
-                }
-                .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        Button(action: {
-                            conversationManager.selectedConversationId = nil
-                            NotificationCenter.default.post(name: .newConversationRequested, object: nil)
-                        }) {
-                            Image(systemName: "square.and.pencil")
-                        }
-                        .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
-                    }
-                }
+                detailContent
             }
             .transaction { transaction in
                 transaction.disablesAnimations = true
             }
+            .navigationSplitViewStyle(.balanced)
+            .scrollContentBackground(liquidGlassEnabled ? .hidden : .automatic)
             .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
                 conversationManager.selectedConversationId = nil
             }
@@ -116,6 +94,50 @@ struct MacContentView: View {
                     )
                 }
                 deepLinkManager.clearPendingChat()
+            }
+        }
+        // Listen for Liquid Glass preference changes
+        .onReceive(NotificationCenter.default.publisher(for: .liquidGlassPreferenceChanged)) { _ in
+            liquidGlassEnabled = AppPreferences.liquidGlassEnabled
+        }
+        // Apply transparent background when Liquid Glass is enabled
+        .background(liquidGlassEnabled ? Color.clear : Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Content Views
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        MacSidebarView(selectedConversationId: $conversationManager.selectedConversationId)
+            .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+            .background(liquidGlassEnabled ? Color(nsColor: .windowBackgroundColor).opacity(0.85) : Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        Group {
+            if let conversationId = conversationManager.selectedConversationId,
+               let conversation = conversationManager.conversations.first(where: {
+                   $0.id == conversationId
+               })
+            {
+                MacChatView(conversation: conversation)
+                    .id(conversationId)
+            } else {
+                MacNewChatView(
+                    selectedConversationId: $conversationManager.selectedConversationId
+                )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button(action: {
+                    conversationManager.selectedConversationId = nil
+                    NotificationCenter.default.post(name: .newConversationRequested, object: nil)
+                }) {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
             }
         }
     }

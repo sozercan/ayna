@@ -1,6 +1,16 @@
 import Foundation
 import os
 
+#if os(macOS)
+
+    // MARK: - Notification Names (macOS only)
+
+    extension Notification.Name {
+        /// Posted when the liquid glass preference changes.
+        static let liquidGlassPreferenceChanged = Notification.Name("liquidGlassPreferenceChanged")
+    }
+#endif
+
 /// Centralizes access to UserDefaults so tests can swap in isolated suites
 /// without mutating the real application preferences.
 private final class DefaultsState: @unchecked Sendable {
@@ -25,13 +35,15 @@ enum AppPreferences {
     private static let globalSystemPromptKey = "globalSystemPrompt"
     private static let attachFromAppEnabledKey = "attachFromAppEnabled"
     private static let attachFromAppHotkeyKey = "attachFromAppHotkey"
+    private static let liquidGlassEnabledKey = "liquidGlassEnabled"
 
     private static var defaultValues: [String: Any] {
         [
             "autoGenerateTitle": true,
             globalSystemPromptKey: "",
             attachFromAppEnabledKey: false,
-            attachFromAppHotkeyKey: "⌘⇧Space"
+            attachFromAppHotkeyKey: "⌘⇧Space",
+            liquidGlassEnabledKey: false
         ]
     }
 
@@ -59,6 +71,20 @@ enum AppPreferences {
     static var attachFromAppHotkey: String {
         get { storage.string(forKey: attachFromAppHotkeyKey) ?? "⌘⇧Space" }
         set { storage.set(newValue, forKey: attachFromAppHotkeyKey) }
+    }
+
+    // MARK: - Appearance (macOS only)
+
+    /// Whether the Liquid Glass window background effect is enabled.
+    /// Only applies on macOS 26 (Tahoe) and later.
+    static var liquidGlassEnabled: Bool {
+        get { storage.bool(forKey: liquidGlassEnabledKey) }
+        set {
+            storage.set(newValue, forKey: liquidGlassEnabledKey)
+            #if os(macOS)
+                NotificationCenter.default.post(name: .liquidGlassPreferenceChanged, object: nil)
+            #endif
+        }
     }
 
     static func registerDefaults() {

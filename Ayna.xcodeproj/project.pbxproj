@@ -20,6 +20,7 @@
 		7F38CD598966A6C637C30B17 /* AccessibilityServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F007AD97FB2A82E9E1B03F1E /* AccessibilityServiceTests.swift */; };
 		880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		8B4F193BE17779C03A24FC96 /* QuickInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5041140C587A1567CE78F530 /* QuickInputView.swift */; };
+		8E46F7415447AD293DC27787 /* WindowGlassManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C47D6A86C5E8C319F77430 /* WindowGlassManager.swift */; };
 		91C4E9BA7595E165BC7AB0E6 /* AppContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33489971934EE44DC46D121 /* AppContent.swift */; };
 		9BD236961810E673CA94BC8A /* AppContentServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EB7A400D037C175556BE0E2 /* AppContentServiceTests.swift */; };
 		A1B2C3D513064F88B81B4CA2 /* IOSChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA1 /* IOSChatViewModel.swift */; };
@@ -261,6 +262,7 @@
 		ABCDEF123456789012345679 /* AppContentPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentPickerView.swift; sourceTree = "<group>"; };
 		AF7CFB8FBA4B848BF47B1E32 /* MacNewChatView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacNewChatView.swift; sourceTree = "<group>"; };
 		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
+		C0C47D6A86C5E8C319F77430 /* WindowGlassManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WindowGlassManager.swift; sourceTree = "<group>"; };
 		C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
 		C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
@@ -613,6 +615,7 @@
 				9674186935874CD2E9D32BD3 /* AccessibilityService.swift */,
 				63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */,
 				641FA21A37F471566BE66A6F /* AppContentService.swift */,
+				C0C47D6A86C5E8C319F77430 /* WindowGlassManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1153,6 +1156,7 @@
 				2DA86046DCB0F7148DE5B322 /* MacNewChatView.swift in Sources */,
 				6757A0539E340F4C075BA2BB /* ModelSetupPromptView.swift in Sources */,
 				BC614F40F02A2000CEABC5A0 /* ChatExporter.swift in Sources */,
+				8E46F7415447AD293DC27787 /* WindowGlassManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

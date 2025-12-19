@@ -28,6 +28,9 @@ struct aynaApp: App {
         AppPreferences.registerDefaults()
         UITestEnvironment.configureIfNeeded()
 
+        // Initialize WindowGlassManager early so it can observe preference changes
+        _ = WindowGlassManager.shared
+
         // Configure attachment loader
         Message.attachmentLoader = { path in
             AttachmentStorage.shared.load(path: path)
@@ -283,6 +286,15 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false // Keep window alive when closed
         window.center()
         window.setFrameAutosaveName("MainWindow")
+
+        // Apply Liquid Glass effect if enabled
+        if AppPreferences.liquidGlassEnabled {
+            WindowGlassManager.shared.applyGlassIfEnabled(to: window)
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = NSColor.windowBackgroundColor
+        }
+
         window.makeKeyAndOrderFront(nil)
 
         manualWindow = window
@@ -592,9 +604,17 @@ private func configureWindowAppearance(_ window: NSWindow) {
     window.styleMask.insert([.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView])
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
-    window.isOpaque = true
-    window.backgroundColor = NSColor.windowBackgroundColor
     window.title = ""
+
+    // Apply Liquid Glass effect if enabled (handles isOpaque and backgroundColor)
+    // Otherwise, set standard opaque appearance
+    if AppPreferences.liquidGlassEnabled {
+        WindowGlassManager.shared.applyGlassIfEnabled(to: window)
+    } else {
+        window.isOpaque = true
+        window.backgroundColor = NSColor.windowBackgroundColor
+    }
+
     window.makeKeyAndOrderFront(nil)
 }
 

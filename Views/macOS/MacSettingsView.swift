@@ -132,6 +132,9 @@ struct GeneralSettingsView: View {
                     .font(Typography.caption)
             }
 
+            // Appearance Section
+            AppearanceSettingsSection()
+
             // Attach from App Section
             AttachFromAppSettingsSection(isEnabled: $attachFromAppEnabled)
 
@@ -300,6 +303,63 @@ struct AttachFromAppSettingsSection: View {
         .onReceive(NotificationCenter.default.publisher(for: .accessibilityPermissionChanged)) { notification in
             if let enabled = notification.userInfo?["enabled"] as? Bool {
                 accessibilityEnabled = enabled
+            }
+        }
+    }
+}
+
+/// Settings section for window appearance (Liquid Glass)
+struct AppearanceSettingsSection: View {
+    @State private var liquidGlassEnabled = AppPreferences.liquidGlassEnabled
+    @State private var reduceTransparencyEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+
+    var body: some View {
+        Section {
+            if #available(macOS 26.0, *) {
+                Toggle("Use Liquid Glass background", isOn: $liquidGlassEnabled)
+                    .help("Apply the macOS Tahoe translucent glass effect to the main window")
+                    .accessibilityIdentifier("settings.appearance.liquidGlass.toggle")
+                    .disabled(reduceTransparencyEnabled)
+                    .onChange(of: liquidGlassEnabled) { _, newValue in
+                        AppPreferences.liquidGlassEnabled = newValue
+                    }
+
+                if reduceTransparencyEnabled {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(Theme.textSecondary)
+                            .font(Typography.caption)
+                        Text("Disabled because \"Reduce Transparency\" is enabled in System Settings → Accessibility → Display.")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            } else {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("Liquid Glass requires macOS 26 (Tahoe) or later.")
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        } header: {
+            Text("Appearance")
+        } footer: {
+            if #available(macOS 26.0, *) {
+                Text("The Liquid Glass effect creates a translucent window background that shows content behind the app.")
+                    .font(Typography.caption)
+            }
+        }
+        .onAppear {
+            reduceTransparencyEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)) { _ in
+            reduceTransparencyEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            // If Reduce Transparency is now enabled, turn off liquid glass
+            if reduceTransparencyEnabled, liquidGlassEnabled {
+                liquidGlassEnabled = false
+                AppPreferences.liquidGlassEnabled = false
             }
         }
     }
