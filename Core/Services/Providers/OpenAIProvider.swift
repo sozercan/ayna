@@ -45,6 +45,17 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
+        let circuitKey = NetworkCircuitBreaker.key(for: url, label: "openai.chat")
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            return
+        }
+
         let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(config.customEndpoint)
 
         guard let request = OpenAIRequestBuilder.createChatCompletionsRequest(
@@ -79,9 +90,9 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         )
 
         if stream {
-            streamResponse(request: request, callbacks: callbacks)
+            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
         } else {
-            nonStreamResponse(request: request, callbacks: callbacks)
+            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
         }
     }
 
@@ -102,8 +113,23 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         return OpenAIEndpointResolver.chatCompletionsURL(for: endpointConfig)
     }
 
-    private func streamResponse(request: URLRequest, callbacks: AIProviderStreamCallbacks, attempt: Int = 0) {
+    private func streamResponse(
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String,
+        attempt: Int = 0
+    ) {
         currentStreamTask?.cancel()
+
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            return
+        }
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -123,8 +149,15 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                             statusCode: httpResponse.statusCode,
                             request: request
                         )
+
+                        if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                            NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                        }
+
                         throw OpenAIService.OpenAIError.apiError(errorMessage)
                     }
+
+                    NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
                     var buffer = Data()
                     var currentToolCallBuffer: [String: Any] = [:]
@@ -218,6 +251,9 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             } catch is CancellationError {
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
+                if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
                 await handleStreamError(
                     error: error,
                     attempt: attempt,
@@ -230,15 +266,38 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask = task
     }
 
-    private func nonStreamResponse(request: URLRequest, callbacks: AIProviderStreamCallbacks, attempt: Int = 0) {
-        let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
+    private func nonStreamResponse(
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String,
+        attempt: Int = 0
+    ) {
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Service temporarily unavailable. Please try again in \(seconds)s."
+                : "Service temporarily unavailable. Please try again shortly."
+            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            return
+        }
+
+        let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor in
                 if let error {
+                    if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                    }
                     if self?.shouldRetry(error: error, attempt: attempt) == true {
                         Task {
                             await self?.delay(for: attempt)
                             await MainActor.run {
-                                self?.nonStreamResponse(request: request, callbacks: callbacks, attempt: attempt + 1)
+                                self?.nonStreamResponse(
+                                    request: request,
+                                    callbacks: callbacks,
+                                    circuitKey: circuitKey,
+                                    attempt: attempt + 1
+                                )
                             }
                         }
                         return
@@ -247,10 +306,27 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                     return
                 }
 
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
+                    return
+                }
+
                 guard let data else {
                     callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
                     return
                 }
+
+                guard httpResponse.statusCode == 200 else {
+                    if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                    }
+                    let message = self?.extractAPIErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                        ?? "HTTP \(httpResponse.statusCode)"
+                    callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+                    return
+                }
+
+                NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
                 do {
                     let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]

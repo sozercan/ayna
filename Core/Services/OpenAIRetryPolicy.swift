@@ -6,21 +6,21 @@
 //
 
 import Foundation
-#if !os(watchOS)
-    import os
+
+#if canImport(os)
+import os
 #endif
 
 // MARK: - Circuit Breaker
 
-#if !os(watchOS)
-    /// Thread-safe circuit breaker that prevents hammering failing endpoints.
-    /// States: Closed (normal) → Open (failing fast) → Half-Open (testing recovery)
-    final class CircuitBreaker: @unchecked Sendable {
-        enum State: Sendable {
-            case closed
-            case open(until: Date)
-            case halfOpen
-        }
+/// Thread-safe circuit breaker that prevents hammering failing endpoints.
+/// States: Closed (normal) → Open (failing fast) → Half-Open (testing recovery)
+final class CircuitBreaker: @unchecked Sendable {
+    enum State: Sendable {
+        case closed
+        case open(until: Date)
+        case halfOpen
+    }
 
         struct Config: Sendable {
             /// Number of consecutive failures before opening the circuit
@@ -30,7 +30,7 @@ import Foundation
             /// Number of successes needed in half-open state to close
             let successThreshold: Int
 
-            static let `default` = Config(
+            nonisolated static let `default` = Config(
                 failureThreshold: 3,
                 openDuration: 30.0,
                 successThreshold: 2
@@ -153,43 +153,112 @@ import Foundation
         }
     }
 
-    // MARK: - Circuit Breaker Registry
+// MARK: - Circuit Breaker Registry
 
-    /// Manages circuit breakers per endpoint/provider to isolate failures
-    final class CircuitBreakerRegistry: @unchecked Sendable {
-        static let shared = CircuitBreakerRegistry()
+/// Manages circuit breakers per endpoint/provider to isolate failures
+final class CircuitBreakerRegistry: @unchecked Sendable {
+    static let shared = CircuitBreakerRegistry()
 
-        private let lock = NSLock()
-        private var breakers: [String: CircuitBreaker] = [:]
-        private let defaultConfig: CircuitBreaker.Config
+    private let lock = NSLock()
+    private var breakers: [String: CircuitBreaker] = [:]
+    private let defaultConfig: CircuitBreaker.Config
 
-        init(config: CircuitBreaker.Config = .default) {
-            defaultConfig = config
+    init(config: CircuitBreaker.Config = .default) {
+        defaultConfig = config
+    }
+
+    /// Get or create a circuit breaker for a specific endpoint
+    func breaker(for endpoint: String) -> CircuitBreaker {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let existing = breakers[endpoint] {
+            return existing
         }
 
-        /// Get or create a circuit breaker for a specific endpoint
-        func breaker(for endpoint: String) -> CircuitBreaker {
-            lock.lock()
-            defer { lock.unlock() }
+        let newBreaker = CircuitBreaker(config: defaultConfig)
+        breakers[endpoint] = newBreaker
+        return newBreaker
+    }
 
-            if let existing = breakers[endpoint] {
-                return existing
-            }
+    /// Reset all circuit breakers (for testing)
+    func resetAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        breakers.values.forEach { $0.reset() }
+        breakers.removeAll()
+    }
+}
 
-            let newBreaker = CircuitBreaker(config: defaultConfig)
-            breakers[endpoint] = newBreaker
-            return newBreaker
+// MARK: - Circuit Breaker Convenience
+
+/// Thin convenience wrapper around the app's circuit breaker implementation.
+///
+/// Providers can use this to fail fast when an endpoint is consistently failing,
+/// and to record success/failure signals to close/open the breaker.
+enum NetworkCircuitBreaker {
+    static func key(for url: URL?, label: String) -> String {
+        guard let url else { return label }
+
+        var key = label
+        if let scheme = url.scheme {
+            key += "|\(scheme)"
         }
+        if let host = url.host {
+            key += "|\(host)"
+        }
+        if let port = url.port {
+            key += ":\(port)"
+        }
+        return key
+    }
 
-        /// Reset all circuit breakers (for testing)
-        func resetAll() {
-            lock.lock()
-            defer { lock.unlock() }
-            breakers.values.forEach { $0.reset() }
-            breakers.removeAll()
+    static func shouldAllowRequest(key: String) -> (allowed: Bool, retryAfterSeconds: TimeInterval?) {
+        let breaker = CircuitBreakerRegistry.shared.breaker(for: key)
+        guard breaker.shouldAllowRequest else {
+            return (false, breaker.timeUntilHalfOpen)
+        }
+        return (true, nil)
+    }
+
+    static func recordSuccess(key: String) {
+        CircuitBreakerRegistry.shared.breaker(for: key).recordSuccess()
+    }
+
+    static func recordFailure(key: String) {
+        CircuitBreakerRegistry.shared.breaker(for: key).recordFailure()
+    }
+
+    static func shouldRecordFailure(statusCode: Int) -> Bool {
+        switch statusCode {
+        case 408, 429:
+            true
+        case 500 ... 599:
+            true
+        default:
+            false
         }
     }
-#endif
+
+    static func shouldRecordFailure(error: Error) -> Bool {
+        if error is CancellationError { return false }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut,
+                 .cannotFindHost,
+                 .cannotConnectToHost,
+                 .networkConnectionLost,
+                 .dnsLookupFailed:
+                return true
+            default:
+                return false
+            }
+        }
+
+        return false
+    }
+}
 
 /// Stateless helper that determines retry behavior for API requests.
 /// Implements exponential backoff with jitter for transient failures.
@@ -201,7 +270,7 @@ enum OpenAIRetryPolicy {
         let initialDelay: TimeInterval
         let maxDelay: TimeInterval
 
-        static let `default` = Config(
+        nonisolated static let `default` = Config(
             maxRetries: 3,
             initialDelay: 1.0,
             maxDelay: 8.0

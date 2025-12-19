@@ -10,11 +10,11 @@ import os.log
 import Security
 
 protocol KeychainStoring: Sendable {
-    func setString(_ value: String, for key: String) throws
-    func string(for key: String) throws -> String?
-    func setData(_ data: Data, for key: String) throws
-    func data(for key: String) throws -> Data?
-    func removeValue(for key: String) throws
+    nonisolated func setString(_ value: String, for key: String) throws
+    nonisolated func string(for key: String) throws -> String?
+    nonisolated func setData(_ data: Data, for key: String) throws
+    nonisolated func data(for key: String) throws -> Data?
+    nonisolated func removeValue(for key: String) throws
 }
 
 enum KeychainStorageError: LocalizedError {
@@ -32,7 +32,7 @@ enum KeychainStorageError: LocalizedError {
 }
 
 final class KeychainStorage: Sendable {
-    static let shared = KeychainStorage()
+    nonisolated static let shared = KeychainStorage()
 
     private let serviceIdentifier = "com.sertacozercan.ayna"
     // Note: Shared keychain access groups require a paid developer account.
@@ -43,7 +43,7 @@ final class KeychainStorage: Sendable {
     // #endif
     private init() {}
 
-    private func log(
+    private nonisolated func log(
         _ message: String,
         level: OSLogType = .default,
         metadata: [String: String] = [:]
@@ -51,19 +51,19 @@ final class KeychainStorage: Sendable {
         DiagnosticsLogger.log(.keychain, level: level, message: message, metadata: metadata)
     }
 
-    func setString(_ value: String, for key: String) throws {
+    nonisolated func setString(_ value: String, for key: String) throws {
         guard let data = value.data(using: .utf8) else {
             throw KeychainStorageError.unexpectedStatus(errSecParam)
         }
         try setData(data, for: key)
     }
 
-    func string(for key: String) throws -> String? {
+    nonisolated func string(for key: String) throws -> String? {
         guard let data = try data(for: key) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    func setData(_ data: Data, for key: String) throws {
+    nonisolated func setData(_ data: Data, for key: String) throws {
         var query = baseQuery(for: key)
         let updateAttributes = [kSecValueData as String: data]
         let status = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
@@ -93,7 +93,7 @@ final class KeychainStorage: Sendable {
         }
     }
 
-    func data(for key: String) throws -> Data? {
+    nonisolated func data(for key: String) throws -> Data? {
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -115,7 +115,7 @@ final class KeychainStorage: Sendable {
         return data
     }
 
-    func removeValue(for key: String) throws {
+    nonisolated func removeValue(for key: String) throws {
         let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             log(
@@ -127,7 +127,7 @@ final class KeychainStorage: Sendable {
         }
     }
 
-    private func baseQuery(for key: String) -> [String: Any] {
+    private nonisolated func baseQuery(for key: String) -> [String: Any] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceIdentifier,

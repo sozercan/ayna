@@ -1426,7 +1426,6 @@ struct MacChatView: View {
 
     // MARK: - Multi-Model Message Sending
 
-    // swiftlint:disable:next function_body_length
     private func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],

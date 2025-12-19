@@ -16,6 +16,7 @@ final class OpenAIServiceTests: XCTestCase {
 
         // Use in-memory keychain to avoid touching the real Keychain in tests
         OpenAIService.keychain = InMemoryKeychainStorage()
+        GitHubOAuthService.keychain = InMemoryKeychainStorage()
         MockURLProtocol.reset()
     }
 
@@ -24,6 +25,7 @@ final class OpenAIServiceTests: XCTestCase {
         defaults.removePersistentDomain(forName: "OpenAIServiceTests")
         defaults = nil
         OpenAIService.keychain = KeychainStorage.shared
+        GitHubOAuthService.keychain = KeychainStorage.shared
         MockURLProtocol.reset()
     }
 
@@ -199,6 +201,65 @@ final class OpenAIServiceTests: XCTestCase {
         )
 
         wait(for: [completionExpectation], timeout: 1)
+    }
+
+    func testGitHubModelsRateLimitTrackingIsPerToken() {
+        let oauth = GitHubOAuthService()
+
+        let url = URL(string: "https://models.github.ai/inference/chat/completions")!
+        let now = Date()
+
+        let responseA = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "X-RateLimit-Limit": "100",
+                "X-RateLimit-Remaining": "10",
+                "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(60).timeIntervalSince1970))",
+                "X-RateLimit-Resource": "ai-inference"
+            ]
+        )!
+
+        let responseB = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "X-RateLimit-Limit": "100",
+                "X-RateLimit-Remaining": "3",
+                "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(120).timeIntervalSince1970))",
+                "X-RateLimit-Resource": "ai-inference"
+            ]
+        )!
+
+        oauth.updateRateLimit(from: responseA, forAccessToken: "token-A")
+        oauth.updateRateLimit(from: responseB, forAccessToken: "token-B")
+
+        XCTAssertEqual(oauth.rateLimitInfo(forAccessToken: "token-A")?.remaining, 10)
+        XCTAssertEqual(oauth.rateLimitInfo(forAccessToken: "token-B")?.remaining, 3)
+    }
+
+    func testGitHubModelsRetryAfterIsPerToken() {
+        let oauth = GitHubOAuthService()
+
+        let url = URL(string: "https://models.github.ai/inference/chat/completions")!
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 429,
+            httpVersion: nil,
+            headerFields: [
+                "Retry-After": "60"
+            ]
+        )!
+
+        oauth.updateRetryAfter(from: response, forAccessToken: "token-A")
+
+        XCTAssertNotNil(oauth.retryAfterDate(forAccessToken: "token-A"))
+        XCTAssertNil(oauth.retryAfterDate(forAccessToken: "token-B"))
+
+        oauth.clearRetryAfter(forAccessToken: "token-A")
+        XCTAssertNil(oauth.retryAfterDate(forAccessToken: "token-A"))
     }
 }
 

@@ -15,7 +15,7 @@ extension UTType {
 }
 
 /// Defines how the system prompt is resolved for a conversation.
-enum SystemPromptMode: Codable, Equatable {
+enum SystemPromptMode: Equatable {
     /// Use the global system prompt from AppPreferences
     case inheritGlobal
     /// Use a custom system prompt specific to this conversation
@@ -64,7 +64,9 @@ enum SystemPromptMode: Codable, Equatable {
     }
 }
 
-struct Conversation: Identifiable, Codable, Equatable {
+extension SystemPromptMode: Codable {}
+
+struct Conversation: Identifiable, Equatable {
     let id: UUID
     var title: String
     var messages: [Message]
@@ -225,3 +227,5 @@ struct Conversation: Identifiable, Codable, Equatable {
         }
     }
 }
+
+extension Conversation: Codable {}
