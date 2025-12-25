@@ -2,6 +2,18 @@
 
 This document covers testing strategies, commands, and best practices for Ayna.
 
+## Test Framework
+
+**Unit tests use [Swift Testing](https://developer.apple.com/documentation/testing)** (not XCTest).
+
+- `@Suite` for test groupings
+- `@Test` for individual tests
+- `#expect()` for assertions
+- `Issue.record()` for failures
+- `confirmation()` for async callback verification
+
+**UI tests remain on XCTest** (Swift Testing does not support `XCUIApplication`).
+
 ## Test Commands
 
 ### Unit Tests (Logic/Backend)
@@ -36,27 +48,30 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
    - Add to the `aynaTests` group
 3. Run tests to verify: `xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests`
 
-### Test File Template
+### Test File Template (Swift Testing)
 
 ```swift
-import XCTest
+import Foundation
+import Testing
+
 @testable import Ayna
 
-final class MyServiceTests: XCTestCase {
-    var sut: MyService!
+@Suite("MyService Tests")
+struct MyServiceTests {
+    private var sut: MyService
+    private let keychain: InMemoryKeychainStorage
 
-    override func setUp() {
-        super.setUp()
+    init() {
+        keychain = InMemoryKeychainStorage()
         // Use mocks for isolation
-        sut = MyService(urlSession: MockURLProtocol.session())
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        sut = MyService(keychain: keychain, urlSession: session)
     }
 
-    override func tearDown() {
-        sut = nil
-        super.tearDown()
-    }
-
-    func testSomething() async throws {
+    @Test("Something works correctly")
+    func somethingWorksCorrectly() async throws {
         // Arrange
         MockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
@@ -67,7 +82,81 @@ final class MyServiceTests: XCTestCase {
         let result = try await sut.doSomething()
 
         // Assert
-        XCTAssertNotNil(result)
+        #expect(result != nil)
+    }
+}
+
+// MARK: - Mock URL Protocol
+
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    static func reset() {
+        requestHandler = nil
+    }
+
+    override static func canInit(with _: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = MockURLProtocol.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: NSError(domain: "MockURLProtocol", code: 0))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+```
+
+### MainActor Tests
+
+For tests that need `@MainActor`, annotate the struct:
+
+```swift
+@Suite("MyViewModel Tests")
+@MainActor
+struct MyViewModelTests {
+    private var defaults: UserDefaults
+    
+    init() {
+        guard let suite = UserDefaults(suiteName: "MyViewModelTests") else {
+            fatalError("Failed to create UserDefaults suite")
+        }
+        defaults = suite
+        defaults.removePersistentDomain(forName: "MyViewModelTests")
+        AppPreferences.use(defaults)
+    }
+    
+    @Test("Initial state is correct")
+    func initialState() {
+        let vm = MyViewModel()
+        #expect(vm.isLoading == false)
+    }
+}
+```
+
+### Async Callback Tests
+
+Use `confirmation()` for callback-based APIs:
+
+```swift
+@Test("Callback is invoked")
+func callbackIsInvoked() async {
+    await confirmation { confirm in
+        service.doSomethingAsync { result in
+            #expect(result != nil)
+            confirm()
+        }
+        try? await Task.sleep(for: .milliseconds(100))
     }
 }
 ```

@@ -1,10 +1,14 @@
-@testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
-final class CitationReferenceTests: XCTestCase {
+@testable import Ayna
+
+@Suite("CitationReference Tests")
+struct CitationReferenceTests {
     // MARK: - Initialization Tests
 
-    func testInitWithAllProperties() {
+    @Test("Init with all properties")
+    func initWithAllProperties() {
         let citation = CitationReference(
             number: 1,
             title: "Test Title",
@@ -12,28 +16,30 @@ final class CitationReferenceTests: XCTestCase {
             favicon: "https://example.com/favicon.ico"
         )
 
-        XCTAssertEqual(citation.number, 1)
-        XCTAssertEqual(citation.title, "Test Title")
-        XCTAssertEqual(citation.url, "https://example.com")
-        XCTAssertEqual(citation.favicon, "https://example.com/favicon.ico")
+        #expect(citation.number == 1)
+        #expect(citation.title == "Test Title")
+        #expect(citation.url == "https://example.com")
+        #expect(citation.favicon == "https://example.com/favicon.ico")
     }
 
-    func testInitWithoutFavicon() {
+    @Test("Init without favicon")
+    func initWithoutFavicon() {
         let citation = CitationReference(
             number: 2,
             title: "No Favicon",
             url: "https://example.org"
         )
 
-        XCTAssertEqual(citation.number, 2)
-        XCTAssertEqual(citation.title, "No Favicon")
-        XCTAssertEqual(citation.url, "https://example.org")
-        XCTAssertNil(citation.favicon)
+        #expect(citation.number == 2)
+        #expect(citation.title == "No Favicon")
+        #expect(citation.url == "https://example.org")
+        #expect(citation.favicon == nil)
     }
 
     // MARK: - Codable Tests
 
-    func testEncodeDecode() throws {
+    @Test("Encode and decode round trip")
+    func encodeDecode() throws {
         let original = CitationReference(
             number: 3,
             title: "Encoded Title",
@@ -47,13 +53,14 @@ final class CitationReferenceTests: XCTestCase {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(CitationReference.self, from: data)
 
-        XCTAssertEqual(decoded.number, original.number)
-        XCTAssertEqual(decoded.title, original.title)
-        XCTAssertEqual(decoded.url, original.url)
-        XCTAssertEqual(decoded.favicon, original.favicon)
+        #expect(decoded.number == original.number)
+        #expect(decoded.title == original.title)
+        #expect(decoded.url == original.url)
+        #expect(decoded.favicon == original.favicon)
     }
 
-    func testDecodeWithNullFavicon() throws {
+    @Test("Decode with null favicon")
+    func decodeWithNullFavicon() throws {
         let json = """
         {
             "number": 1,
@@ -67,10 +74,11 @@ final class CitationReferenceTests: XCTestCase {
         let decoder = JSONDecoder()
         let citation = try decoder.decode(CitationReference.self, from: data)
 
-        XCTAssertNil(citation.favicon)
+        #expect(citation.favicon == nil)
     }
 
-    func testDecodeWithMissingFavicon() throws {
+    @Test("Decode with missing favicon")
+    func decodeWithMissingFavicon() throws {
         let json = """
         {
             "number": 1,
@@ -83,12 +91,13 @@ final class CitationReferenceTests: XCTestCase {
         let decoder = JSONDecoder()
         let citation = try decoder.decode(CitationReference.self, from: data)
 
-        XCTAssertNil(citation.favicon)
+        #expect(citation.favicon == nil)
     }
 
     // MARK: - Equatable Tests
 
-    func testEquality() {
+    @Test("Equality")
+    func equality() {
         let citation1 = CitationReference(
             number: 1,
             title: "Same",
@@ -103,40 +112,45 @@ final class CitationReferenceTests: XCTestCase {
             favicon: "https://same.com/icon.ico"
         )
 
-        XCTAssertEqual(citation1, citation2)
+        #expect(citation1 == citation2)
     }
 
-    func testInequalityDifferentNumber() {
+    @Test("Inequality with different number")
+    func inequalityDifferentNumber() {
         let citation1 = CitationReference(number: 1, title: "Test", url: "https://test.com")
         let citation2 = CitationReference(number: 2, title: "Test", url: "https://test.com")
 
-        XCTAssertNotEqual(citation1, citation2)
+        #expect(citation1 != citation2)
     }
 
-    func testInequalityDifferentTitle() {
+    @Test("Inequality with different title")
+    func inequalityDifferentTitle() {
         let citation1 = CitationReference(number: 1, title: "Title A", url: "https://test.com")
         let citation2 = CitationReference(number: 1, title: "Title B", url: "https://test.com")
 
-        XCTAssertNotEqual(citation1, citation2)
+        #expect(citation1 != citation2)
     }
 
-    func testInequalityDifferentFavicon() {
+    @Test("Inequality with different favicon")
+    func inequalityDifferentFavicon() {
         let citation1 = CitationReference(number: 1, title: "Test", url: "https://test.com", favicon: "https://a.com/icon.ico")
         let citation2 = CitationReference(number: 1, title: "Test", url: "https://test.com", favicon: "https://b.com/icon.ico")
 
-        XCTAssertNotEqual(citation1, citation2)
+        #expect(citation1 != citation2)
     }
 
-    func testInequalityNilVsNonNilFavicon() {
+    @Test("Inequality with nil vs non-nil favicon")
+    func inequalityNilVsNonNilFavicon() {
         let citation1 = CitationReference(number: 1, title: "Test", url: "https://test.com", favicon: nil)
         let citation2 = CitationReference(number: 1, title: "Test", url: "https://test.com", favicon: "https://test.com/icon.ico")
 
-        XCTAssertNotEqual(citation1, citation2)
+        #expect(citation1 != citation2)
     }
 
     // MARK: - Message Integration Tests
 
-    func testMessageWithCitations() {
+    @Test("Message with citations")
+    func messageWithCitations() {
         let citations = [
             CitationReference(number: 1, title: "Source 1", url: "https://source1.com"),
             CitationReference(number: 2, title: "Source 2", url: "https://source2.com")
@@ -148,21 +162,23 @@ final class CitationReferenceTests: XCTestCase {
             citations: citations
         )
 
-        XCTAssertEqual(message.citations?.count, 2)
-        XCTAssertEqual(message.citations?[0].title, "Source 1")
-        XCTAssertEqual(message.citations?[1].title, "Source 2")
+        #expect(message.citations?.count == 2)
+        #expect(message.citations?[0].title == "Source 1")
+        #expect(message.citations?[1].title == "Source 2")
     }
 
-    func testMessageWithoutCitations() {
+    @Test("Message without citations")
+    func messageWithoutCitations() {
         let message = Message(
             role: .assistant,
             content: "This is a response without citations."
         )
 
-        XCTAssertNil(message.citations)
+        #expect(message.citations == nil)
     }
 
-    func testMessageCitationsEncodeDecode() throws {
+    @Test("Message citations encode and decode")
+    func messageCitationsEncodeDecode() throws {
         let citations = [
             CitationReference(number: 1, title: "Test Source", url: "https://test.com", favicon: "https://test.com/icon.ico")
         ]
@@ -179,14 +195,15 @@ final class CitationReferenceTests: XCTestCase {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(Message.self, from: data)
 
-        XCTAssertEqual(decoded.citations?.count, 1)
-        XCTAssertEqual(decoded.citations?[0].number, 1)
-        XCTAssertEqual(decoded.citations?[0].title, "Test Source")
-        XCTAssertEqual(decoded.citations?[0].url, "https://test.com")
-        XCTAssertEqual(decoded.citations?[0].favicon, "https://test.com/icon.ico")
+        #expect(decoded.citations?.count == 1)
+        #expect(decoded.citations?[0].number == 1)
+        #expect(decoded.citations?[0].title == "Test Source")
+        #expect(decoded.citations?[0].url == "https://test.com")
+        #expect(decoded.citations?[0].favicon == "https://test.com/icon.ico")
     }
 
-    func testMessageWithNilCitationsDecodesFromLegacyJSON() throws {
+    @Test("Message with nil citations decodes from legacy JSON")
+    func messageWithNilCitationsDecodesFromLegacyJSON() throws {
         // Simulate a legacy message JSON without the citations field
         let json = """
         {
@@ -202,7 +219,7 @@ final class CitationReferenceTests: XCTestCase {
         let decoder = JSONDecoder()
         let message = try decoder.decode(Message.self, from: data)
 
-        XCTAssertNil(message.citations)
-        XCTAssertEqual(message.content, "Legacy message")
+        #expect(message.citations == nil)
+        #expect(message.content == "Legacy message")
     }
 }

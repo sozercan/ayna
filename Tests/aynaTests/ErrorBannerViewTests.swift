@@ -7,13 +7,15 @@
 
 @testable import Ayna
 import SwiftUI
-import XCTest
+import Testing
 
+@Suite("ErrorBannerView Tests")
 @MainActor
-final class ErrorBannerViewTests: XCTestCase {
+struct ErrorBannerViewTests {
     // MARK: - Initialization Tests
 
-    func testInitWithBasicMessage() {
+    @Test("Init with basic message")
+    func initWithBasicMessage() {
         // Given
         let message = "Test error message"
 
@@ -24,10 +26,11 @@ final class ErrorBannerViewTests: XCTestCase {
         )
 
         // Then - View should be created successfully
-        XCTAssertNotNil(view)
+        #expect(view != nil)
     }
 
-    func testInitWithRecoverySuggestion() {
+    @Test("Init with recovery suggestion")
+    func initWithRecoverySuggestion() {
         // Given
         let message = "API Error"
         let suggestion = "Check your API key"
@@ -40,10 +43,11 @@ final class ErrorBannerViewTests: XCTestCase {
         )
 
         // Then - View should be created successfully
-        XCTAssertNotNil(view)
+        #expect(view != nil)
     }
 
-    func testInitWithRetryAction() {
+    @Test("Init with retry action")
+    func initWithRetryAction() {
         // Given
         let message = "Network error"
 
@@ -55,10 +59,11 @@ final class ErrorBannerViewTests: XCTestCase {
         )
 
         // Then - View should be created successfully
-        XCTAssertNotNil(view)
+        #expect(view != nil)
     }
 
-    func testInitWithAllParameters() {
+    @Test("Init with all parameters")
+    func initWithAllParameters() {
         // Given
         let message = "Connection failed"
         let suggestion = "Check your internet connection"
@@ -74,107 +79,119 @@ final class ErrorBannerViewTests: XCTestCase {
         )
 
         // Then - View should be created successfully
-        XCTAssertNotNil(view)
+        #expect(view != nil)
     }
 }
 
 // MARK: - Error Enum Recovery Suggestion Tests
 
-final class ErrorRecoverySuggestionTests: XCTestCase {
+@Suite("Error Recovery Suggestion Tests")
+struct ErrorRecoverySuggestionTests {
     // MARK: - OpenAIError Tests
 
-    func testOpenAIErrorMissingAPIKeyHasRecoverySuggestion() {
+    @Test("OpenAIError missingAPIKey has recovery suggestion")
+    func openAIErrorMissingAPIKeyHasRecoverySuggestion() {
         // Given
         let error = OpenAIService.OpenAIError.missingAPIKey
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("Settings") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("Settings") ?? false)
     }
 
-    func testOpenAIErrorMissingModelHasRecoverySuggestion() {
+    @Test("OpenAIError missingModel has recovery suggestion")
+    func openAIErrorMissingModelHasRecoverySuggestion() {
         // Given
         let error = OpenAIService.OpenAIError.missingModel
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("Models") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("Models") ?? false)
     }
 
-    func testOpenAIErrorInvalidResponseHasRecoverySuggestion() {
+    @Test("OpenAIError invalidResponse has recovery suggestion")
+    func openAIErrorInvalidResponseHasRecoverySuggestion() {
         // Given
         let error = OpenAIService.OpenAIError.invalidResponse
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("again") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("again") ?? false)
     }
 
-    func testOpenAIErrorContentFilteredHasRecoverySuggestion() {
+    @Test("OpenAIError contentFiltered has recovery suggestion")
+    func openAIErrorContentFilteredHasRecoverySuggestion() {
         // Given
         let error = OpenAIService.OpenAIError.contentFiltered("test content")
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("rephras") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("rephras") ?? false)
     }
 
     // MARK: - TavilyError Tests
 
-    func testTavilyErrorNotConfiguredHasRecoverySuggestion() {
+    @Test("TavilyError notConfigured has recovery suggestion")
+    func tavilyErrorNotConfiguredHasRecoverySuggestion() {
         // Given
         let error = TavilyError.notConfigured
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("Settings") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("Settings") ?? false)
     }
 
-    func testTavilyErrorRateLimitHasRecoverySuggestion() {
+    @Test("TavilyError rateLimitExceeded has recovery suggestion")
+    func tavilyErrorRateLimitHasRecoverySuggestion() {
         // Given
         let error = TavilyError.rateLimitExceeded
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("Wait") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("Wait") ?? false)
     }
 
-    func testTavilyErrorInvalidAPIKeyHasRecoverySuggestion() {
+    @Test("TavilyError invalidAPIKey has recovery suggestion")
+    func tavilyErrorInvalidAPIKeyHasRecoverySuggestion() {
         // Given
         let error = TavilyError.invalidAPIKey
 
         // Then
-        XCTAssertNotNil(error.recoverySuggestion)
-        XCTAssertTrue(error.recoverySuggestion?.contains("Check") ?? false)
+        #expect(error.recoverySuggestion != nil)
+        #expect(error.recoverySuggestion?.contains("Check") ?? false)
     }
 
     // MARK: - AIKitError Tests (macOS only)
 
     #if os(macOS)
-        func testAIKitErrorNoModelSelectedHasRecoverySuggestion() {
+        @Test("AIKitError noModelSelected has recovery suggestion")
+        func aiKitErrorNoModelSelectedHasRecoverySuggestion() {
             // Given
             let error = AIKitError.noModelSelected
 
             // Then
-            XCTAssertNotNil(error.recoverySuggestion)
-            XCTAssertTrue(error.recoverySuggestion?.contains("Settings") ?? false)
+            #expect(error.recoverySuggestion != nil)
+            #expect(error.recoverySuggestion?.contains("Settings") ?? false)
         }
 
-        func testAIKitErrorPodmanNotAvailableHasRecoverySuggestion() {
+        @Test("AIKitError podmanNotAvailable has recovery suggestion")
+        func aiKitErrorPodmanNotAvailableHasRecoverySuggestion() {
             // Given
             let error = AIKitError.podmanNotAvailable
 
             // Then
-            XCTAssertNotNil(error.recoverySuggestion)
-            XCTAssertTrue(error.recoverySuggestion?.contains("brew") ?? false)
+            #expect(error.recoverySuggestion != nil)
+            #expect(error.recoverySuggestion?.contains("brew") ?? false)
         }
     #endif
 }
 
 // MARK: - LocalizedError Extension Tests
 
-final class LocalizedErrorExtensionTests: XCTestCase {
-    func testErrorDescriptionIsNotNil() {
+@Suite("LocalizedError Extension Tests")
+struct LocalizedErrorExtensionTests {
+    @Test("Error description is not nil")
+    func errorDescriptionIsNotNil() {
         // Given
         let errors: [any LocalizedError] = [
             OpenAIService.OpenAIError.missingAPIKey,
@@ -186,11 +203,12 @@ final class LocalizedErrorExtensionTests: XCTestCase {
 
         // Then
         for error in errors {
-            XCTAssertNotNil(error.errorDescription, "Error \(error) should have an error description")
+            #expect(error.errorDescription != nil, "Error \(error) should have an error description")
         }
     }
 
-    func testRecoverySuggestionIsNotNil() {
+    @Test("Recovery suggestion is not nil")
+    func recoverySuggestionIsNotNil() {
         // Given
         let errors: [any LocalizedError] = [
             OpenAIService.OpenAIError.missingAPIKey,
@@ -202,7 +220,7 @@ final class LocalizedErrorExtensionTests: XCTestCase {
 
         // Then
         for error in errors {
-            XCTAssertNotNil(error.recoverySuggestion, "Error \(error) should have a recovery suggestion")
+            #expect(error.recoverySuggestion != nil, "Error \(error) should have a recovery suggestion")
         }
     }
 }

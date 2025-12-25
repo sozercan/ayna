@@ -1,12 +1,14 @@
 @testable import Ayna_iOS
-import XCTest
+import Testing
 
 #if os(iOS)
     import UIKit
 
-    final class ConversationExporterIOSTests: XCTestCase {
-        @MainActor
-        func testGeneratePDF_iOS() async throws {
+    @Suite("ConversationExporter iOS Tests")
+    @MainActor
+    struct ConversationExporterIOSTests {
+        @Test("Generate PDF for iOS")
+        func generatePDFiOS() async throws {
             // Create a dummy conversation
             let message = Message(role: .user, content: "Hello iOS PDF")
             let conversation = Conversation(
@@ -15,30 +17,31 @@ import XCTest
                 messages: [message],
                 createdAt: Date(),
                 model: "gpt-4"
-            ) // Generate PDF
+            )
+            
+            // Generate PDF
             let url = ConversationExporter.generatePDF(for: conversation)
 
             // Verify
-            XCTAssertNotNil(url, "PDF URL should not be nil")
+            #expect(url != nil, "PDF URL should not be nil")
             if let url {
-                XCTAssertTrue(
-                    FileManager.default.fileExists(atPath: url.path), "PDF file should exist at path"
-                )
+                #expect(FileManager.default.fileExists(atPath: url.path), "PDF file should exist at path")
 
                 // Clean up
                 try? FileManager.default.removeItem(at: url)
             }
         }
 
-        func testPlatformTypes_iOS() {
+        @Test("Platform types resolve to UIKit on iOS")
+        func platformTypesiOS() {
             // Verify that the typealiases resolve to UIKit types on iOS
             // Since we can't check typealias directly, we check instances
 
             let font = PlatformFont.systemFont(ofSize: 12)
-            XCTAssertTrue(font is UIFont, "PlatformFont should be UIFont on iOS")
+            #expect(font is UIFont, "PlatformFont should be UIFont on iOS")
 
             let color = PlatformColor.blue
-            XCTAssertTrue(color is UIColor, "PlatformColor should be UIColor on iOS")
+            #expect(color is UIColor, "PlatformColor should be UIColor on iOS")
         }
     }
 #endif

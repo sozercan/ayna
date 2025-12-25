@@ -7,61 +7,69 @@
 
 #if os(macOS)
     @testable import Ayna
-    import XCTest
+    import AppKit
+    import Testing
 
+    @Suite("AppContentService Tests")
     @MainActor
-    final class AppContentServiceTests: XCTestCase {
-        var service: AppContentService!
+    struct AppContentServiceTests {
+        var service: AppContentService
 
-        override func setUp() async throws {
+        init() {
             service = AppContentService.shared
         }
 
         // MARK: - Extractor Selection Tests
 
-        func testTerminalExtractorHandlesTerminalApp() {
+        @Test("Terminal extractor handles Terminal app")
+        func terminalExtractorHandlesTerminalApp() {
             let extractor = TerminalExtractor()
 
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.googlecode.iterm2"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "dev.warp.Warp-Stable"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.googlecode.iterm2"))
+            #expect(extractor.canHandle(bundleIdentifier: "dev.warp.Warp-Stable"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
         }
 
-        func testCodeEditorExtractorHandlesEditors() {
+        @Test("Code editor extractor handles editors")
+        func codeEditorExtractorHandlesEditors() {
             let extractor = CodeEditorExtractor()
 
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.todesktop.230313mzl4w4u92")) // Cursor
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.todesktop.230313mzl4w4u92")) // Cursor
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
         }
 
-        func testBrowserExtractorHandlesBrowsers() {
+        @Test("Browser extractor handles browsers")
+        func browserExtractorHandlesBrowsers() {
             let extractor = BrowserExtractor()
 
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.google.Chrome"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "company.thebrowser.Browser")) // Arc
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "org.mozilla.firefox"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.google.Chrome"))
+            #expect(extractor.canHandle(bundleIdentifier: "company.thebrowser.Browser")) // Arc
+            #expect(extractor.canHandle(bundleIdentifier: "org.mozilla.firefox"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
         }
 
-        func testGenericExtractorHandlesAnything() {
+        @Test("Generic extractor handles anything")
+        func genericExtractorHandlesAnything() {
             let extractor = GenericExtractor()
 
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.anything.app"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "random.bundle.id"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: ""))
+            #expect(extractor.canHandle(bundleIdentifier: "com.anything.app"))
+            #expect(extractor.canHandle(bundleIdentifier: "random.bundle.id"))
+            #expect(extractor.canHandle(bundleIdentifier: ""))
         }
 
         // MARK: - Permission Tests
 
-        func testExtractContentReturnsPermissionDeniedWhenNotTrusted() async {
+        @Test("Extract content returns valid result")
+        func extractContentReturnsValidResult() async throws {
             // This test will vary based on whether accessibility is enabled
             // We just verify it doesn't crash
             guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Finder" }) else {
-                XCTSkip("Finder not running")
+                // Skip test if Finder not running (use Issue.record instead of failing)
+                Issue.record("Finder not running - skipping test")
                 return
             }
 
@@ -72,13 +80,14 @@
             case .success, .permissionDenied, .noContentAvailable, .extractionFailed:
                 break // Valid
             case .noFocusedApp:
-                XCTFail("Should not return noFocusedApp when app is provided")
+                Issue.record("Should not return noFocusedApp when app is provided")
             }
         }
 
         // MARK: - Extract From Frontmost Tests
 
-        func testExtractFromFrontmostAppDoesNotCrash() async {
+        @Test("Extract from frontmost app does not crash")
+        func extractFromFrontmostAppDoesNotCrash() async {
             // This test just verifies the method doesn't crash
             let result = await service.extractFromFrontmostApp()
 
@@ -92,68 +101,79 @@
 
     // MARK: - Individual Extractor Tests
 
+    @Suite("TerminalExtractor Tests")
     @MainActor
-    final class TerminalExtractorTests: XCTestCase {
+    struct TerminalExtractorTests {
         let extractor = TerminalExtractor()
 
-        func testCanHandleTerminalBundleIds() {
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.googlecode.iterm2"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "dev.warp.Warp"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "dev.warp.Warp-Stable"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.mitchellh.ghostty"))
+        @Test("Can handle terminal bundle IDs")
+        func canHandleTerminalBundleIds() {
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.googlecode.iterm2"))
+            #expect(extractor.canHandle(bundleIdentifier: "dev.warp.Warp"))
+            #expect(extractor.canHandle(bundleIdentifier: "dev.warp.Warp-Stable"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.mitchellh.ghostty"))
         }
 
-        func testCannotHandleNonTerminals() {
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.finder"))
+        @Test("Cannot handle non-terminals")
+        func cannotHandleNonTerminals() {
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.finder"))
         }
     }
 
+    @Suite("CodeEditorExtractor Tests")
     @MainActor
-    final class CodeEditorExtractorTests: XCTestCase {
+    struct CodeEditorExtractorTests {
         let extractor = CodeEditorExtractor()
 
-        func testCanHandleEditorBundleIds() {
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.sublimetext.4"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.jetbrains.intellij"))
+        @Test("Can handle editor bundle IDs")
+        func canHandleEditorBundleIds() {
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.sublimetext.4"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.jetbrains.intellij"))
         }
 
-        func testCannotHandleNonEditors() {
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
+        @Test("Cannot handle non-editors")
+        func cannotHandleNonEditors() {
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
         }
     }
 
+    @Suite("BrowserExtractor Tests")
     @MainActor
-    final class BrowserExtractorTests: XCTestCase {
+    struct BrowserExtractorTests {
         let extractor = BrowserExtractor()
 
-        func testCanHandleBrowserBundleIds() {
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.google.Chrome"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "org.mozilla.firefox"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.microsoft.edgemac"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.brave.Browser"))
+        @Test("Can handle browser bundle IDs")
+        func canHandleBrowserBundleIds() {
+            #expect(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.google.Chrome"))
+            #expect(extractor.canHandle(bundleIdentifier: "org.mozilla.firefox"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.microsoft.edgemac"))
+            #expect(extractor.canHandle(bundleIdentifier: "com.brave.Browser"))
         }
 
-        func testCannotHandleNonBrowsers() {
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
-            XCTAssertFalse(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
+        @Test("Cannot handle non-browsers")
+        func cannotHandleNonBrowsers() {
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
+            #expect(!extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
         }
     }
 
+    @Suite("GenericExtractor Tests")
     @MainActor
-    final class GenericExtractorTests: XCTestCase {
+    struct GenericExtractorTests {
         let extractor = GenericExtractor()
 
-        func testCanHandleAnyBundleId() {
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "com.any.app"))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: ""))
-            XCTAssertTrue(extractor.canHandle(bundleIdentifier: "random-string"))
+        @Test("Can handle any bundle ID")
+        func canHandleAnyBundleId() {
+            #expect(extractor.canHandle(bundleIdentifier: "com.any.app"))
+            #expect(extractor.canHandle(bundleIdentifier: ""))
+            #expect(extractor.canHandle(bundleIdentifier: "random-string"))
         }
     }
 #endif

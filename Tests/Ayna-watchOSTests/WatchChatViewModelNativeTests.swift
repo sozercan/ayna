@@ -6,126 +6,127 @@
 //
 
 @testable import Ayna_watchOS_Watch_App
-import XCTest
+import Foundation
+import Testing
 
+@Suite("WatchChatViewModel Native Tests")
 @MainActor
-final class WatchChatViewModelNativeTests: XCTestCase {
-    private var viewModel: WatchChatViewModel!
-    private var store: WatchConversationStore!
+struct WatchChatViewModelNativeTests {
+    private var viewModel: WatchChatViewModel
+    private var store: WatchConversationStore
 
-    override func setUp() async throws {
+    init() {
         store = WatchConversationStore.shared
         // Clear existing conversations
         store.updateConversations([])
         viewModel = WatchChatViewModel()
     }
 
-    override func tearDown() async throws {
-        store.updateConversations([])
-        viewModel = nil
-        store = nil
-    }
-
     // MARK: - Initial State Tests
 
-    func testInitialState() {
-        XCTAssertFalse(viewModel.isLoading)
-        XCTAssertFalse(viewModel.isStreaming)
-        XCTAssertNil(viewModel.errorMessage)
-        XCTAssertTrue(viewModel.streamingContent.isEmpty)
-        XCTAssertNil(viewModel.currentToolName)
-        XCTAssertNil(viewModel.failedMessage)
+    @Test("Initial state is correct")
+    func initialState() {
+        #expect(!viewModel.isLoading)
+        #expect(!viewModel.isStreaming)
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.streamingContent.isEmpty)
+        #expect(viewModel.currentToolName == nil)
+        #expect(viewModel.failedMessage == nil)
     }
 
     // MARK: - Conversation Management Tests
 
-    func testCreateNewConversation() {
+    @Test("Create new conversation")
+    func createNewConversation() {
         let conversationId = viewModel.createNewConversation()
 
-        XCTAssertNotNil(store.conversation(for: conversationId))
+        #expect(store.conversation(for: conversationId) != nil)
     }
 
-    func testSetConversation() {
+    @Test("Set conversation resets state")
+    func setConversation() {
         let conversation = store.createConversation(model: "gpt-4o")
 
         viewModel.setConversation(conversation.id)
 
         // State should be reset
-        XCTAssertNil(viewModel.errorMessage)
-        XCTAssertTrue(viewModel.streamingContent.isEmpty)
-        XCTAssertNil(viewModel.currentToolName)
-        XCTAssertNil(viewModel.failedMessage)
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.streamingContent.isEmpty)
+        #expect(viewModel.currentToolName == nil)
+        #expect(viewModel.failedMessage == nil)
     }
 
-    func testSetConversationClearsPreviousError() {
-        // Note: We can't directly set errorMessage, so we verify it's nil after setConversation
+    @Test("Set conversation clears previous error")
+    func setConversationClearsPreviousError() {
         let conversation = store.createConversation(model: "gpt-4o")
 
         viewModel.setConversation(conversation.id)
 
-        XCTAssertNil(viewModel.errorMessage)
+        #expect(viewModel.errorMessage == nil)
     }
 
     // MARK: - Error Handling Tests
 
-    func testSendMessageWithoutConversation() {
+    @Test("Send message without conversation shows error")
+    func sendMessageWithoutConversation() {
         // Don't call setConversation, so no conversation is selected
         viewModel.sendMessage("Hello")
 
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertEqual(viewModel.errorMessage, "No conversation selected")
+        #expect(viewModel.errorMessage != nil)
+        #expect(viewModel.errorMessage == "No conversation selected")
     }
 
-    func testDismissError() {
+    @Test("Dismiss error clears state")
+    func dismissError() async {
         let conversation = store.createConversation(model: "gpt-4o")
         viewModel.setConversation(conversation.id)
 
         // Trigger an error by sending without API key configured
-        // This will set failedMessage when the API call fails
         viewModel.sendMessage("Hello")
 
         // Let any async operations settle
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        try? await Task.sleep(for: .milliseconds(100))
 
         // Dismiss the error
         viewModel.dismissError()
 
-        XCTAssertNil(viewModel.failedMessage)
-        XCTAssertNil(viewModel.errorMessage)
+        #expect(viewModel.failedMessage == nil)
+        #expect(viewModel.errorMessage == nil)
     }
 
     // MARK: - Cancel Tests
 
-    func testCancelRequest() {
+    @Test("Cancel request resets loading state")
+    func cancelRequest() {
         let conversation = store.createConversation(model: "gpt-4o")
         viewModel.setConversation(conversation.id)
 
         viewModel.cancelRequest()
 
-        XCTAssertFalse(viewModel.isLoading)
-        XCTAssertFalse(viewModel.isStreaming)
-        XCTAssertNil(viewModel.currentToolName)
+        #expect(!viewModel.isLoading)
+        #expect(!viewModel.isStreaming)
+        #expect(viewModel.currentToolName == nil)
     }
 
     // MARK: - State Management Tests
 
-    func testStreamingContentReset() {
+    @Test("Streaming content reset on set conversation")
+    func streamingContentReset() {
         let conversation = store.createConversation(model: "gpt-4o")
 
-        // Set some streaming content manually isn't possible since it's published
-        // but we can verify the state is clean after setConversation
         viewModel.setConversation(conversation.id)
 
-        XCTAssertTrue(viewModel.streamingContent.isEmpty)
+        #expect(viewModel.streamingContent.isEmpty)
     }
 
     // MARK: - Retry Tests
 
-    func testRetryWithoutFailedMessage() {
+    @Test("Retry without failed message does nothing")
+    func retryWithoutFailedMessage() {
         // Calling retry when there's no failed message should do nothing
         viewModel.retryFailedMessage()
 
         // Should not crash and state should remain unchanged
-        XCTAssertFalse(viewModel.isLoading)
+        #expect(!viewModel.isLoading)
     }
 }
