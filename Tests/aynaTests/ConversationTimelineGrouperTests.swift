@@ -3,7 +3,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("ConversationTimelineGrouper Tests")
+@Suite("ConversationTimelineGrouper Tests", .tags(.fast))
 struct ConversationTimelineGrouperTests {
     private let calendar = Calendar(identifier: .gregorian)
 

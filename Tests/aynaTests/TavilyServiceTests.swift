@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("TavilyService Tests")
+@Suite("TavilyService Tests", .tags(.networking, .async))
 @MainActor
 struct TavilyServiceTests {
     private var defaults: UserDefaults
@@ -65,7 +65,7 @@ struct TavilyServiceTests {
 
     // MARK: - Search Success Tests
 
-    @Test("Search success decodes response")
+    @Test("Search success decodes response", .timeLimit(.minutes(1)))
     func searchSuccessDecodesResponse() async throws {
         let service = makeService()
 

@@ -2,7 +2,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("MarkdownRenderer Tests")
+@Suite("MarkdownRenderer Tests", .tags(.fast))
 struct MarkdownRendererTests {
     @Test("Parses headings, paragraphs, and divider")
     func parsesHeadingsParagraphsAndDivider() {

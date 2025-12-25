@@ -3,7 +3,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("EncryptedConversationStore Tests")
+@Suite("EncryptedConversationStore Tests", .tags(.persistence, .slow))
 struct EncryptedConversationStoreTests {
     @Test("Save and load round trips conversations")
     func saveAndLoadRoundTripsConversations() async throws {

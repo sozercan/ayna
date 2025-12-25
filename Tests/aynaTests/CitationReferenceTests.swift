@@ -3,7 +3,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("CitationReference Tests")
+@Suite("CitationReference Tests", .tags(.fast))
 struct CitationReferenceTests {
     // MARK: - Initialization Tests
 

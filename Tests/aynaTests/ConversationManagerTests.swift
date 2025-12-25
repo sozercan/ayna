@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("ConversationManager Tests")
+@Suite("ConversationManager Tests", .tags(.viewModel, .persistence))
 struct ConversationManagerTests {
     private var defaults: UserDefaults
 
@@ -45,10 +45,7 @@ struct ConversationManagerTests {
 
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
-        guard let conversation = manager.conversations.first else {
-            Issue.record("Conversation missing")
-            return
-        }
+        let conversation = try #require(manager.conversations.first)
 
         let message = Message(role: .user, content: "Ping")
         manager.addMessage(to: conversation, message: message)

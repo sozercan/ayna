@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("WatchConversation Tests")
+@Suite("WatchConversation Tests", .tags(.fast))
 struct WatchConversationTests {
     @Test("Initialize from Conversation preserves all properties")
     func initFromConversationPreservesAllProperties() {

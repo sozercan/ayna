@@ -3,7 +3,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("DeepLinkManager Tests")
+@Suite("DeepLinkManager Tests", .tags(.fast))
 @MainActor
 struct DeepLinkManagerTests {
     // MARK: - Helper

@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("MCPServerManager Tests")
+@Suite("MCPServerManager Tests", .tags(.async, .slow))
 @MainActor
 struct MCPServerManagerTests {
     private var suiteName: String
@@ -18,7 +18,7 @@ struct MCPServerManagerTests {
         AppPreferences.use(defaults)
     }
 
-    @Test("Connect retries until success")
+    @Test("Connect retries until success", .timeLimit(.minutes(1)))
     func connectRetriesUntilSuccess() async {
         let config = MCPServerConfig(name: "stub", command: "cmd", enabled: true)
         let stub = StubMCPService(
@@ -46,7 +46,7 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(config.name)?.lastError == nil)
     }
 
-    @Test("Auto-disable after repeated failures")
+    @Test("Auto-disable after repeated failures", .timeLimit(.minutes(1)))
     func autoDisableAfterRepeatedFailures() async {
         let config = MCPServerConfig(name: "failing", command: "cmd", enabled: true)
         let stub = StubMCPService(
@@ -74,7 +74,7 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(config.name)?.lastError != nil)
     }
 
-    @Test("Schedules reconnect after unexpected termination")
+    @Test("Schedules reconnect after unexpected termination", .timeLimit(.minutes(1)))
     func schedulesReconnectAfterUnexpectedTermination() async throws {
         let config = MCPServerConfig(name: "reconnect", command: "cmd", enabled: true)
         let primaryService = StubMCPService(config: config, connectResults: [.success(())])
@@ -119,7 +119,7 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(config.name)?.state == .connected)
     }
 
-    @Test("Updating enabled server restarts connection")
+    @Test("Updating enabled server restarts connection", .timeLimit(.minutes(1)))
     func updatingEnabledServerRestartsConnection() async throws {
         let originalConfig = MCPServerConfig(name: "filesystem", command: "cmd", args: ["--foo"], enabled: true)
         var updatedConfig = originalConfig

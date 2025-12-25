@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("OpenAIService Tests")
+@Suite("OpenAIService Tests", .tags(.networking, .async))
 @MainActor
 struct OpenAIServiceTests {
     private var defaults: UserDefaults
@@ -32,7 +32,7 @@ struct OpenAIServiceTests {
         return service
     }
 
-    @Test("Send message without API key throws error")
+    @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
     func sendMessageWithoutAPIKeyThrowsError() async {
         let service = makeService()
         service.apiKey = ""
@@ -68,8 +68,8 @@ struct OpenAIServiceTests {
         }
     }
 
-    @Test("Send message adds authorization header and payload")
-    func sendMessageAddsAuthorizationHeaderAndPayload() async {
+    @Test("Send message adds authorization header and payload", .timeLimit(.minutes(1)))
+    func sendMessageAddsAuthorizationHeaderAndPayload() async throws {
         let service = makeService()
         service.apiKey = "sk-unit-test"
 
@@ -111,10 +111,7 @@ struct OpenAIServiceTests {
             try? await Task.sleep(for: .milliseconds(500))
         }
 
-        guard let request = MockURLProtocol.lastRequest else {
-            Issue.record("Expected captured request")
-            return
-        }
+        let request = try #require(MockURLProtocol.lastRequest)
 
         #expect(request.httpMethod == "POST")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-unit-test")
@@ -138,30 +135,20 @@ struct OpenAIServiceTests {
             bodyData = data
         }
 
-        guard
-            let body = bodyData,
-            let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            Issue.record("Failed to decode request body")
-            return
-        }
+        let body = try #require(bodyData)
+        let json = try #require(try? JSONSerialization.jsonObject(with: body) as? [String: Any])
 
         #expect(json["stream"] as? Bool == false)
 
-        guard
-            let messages = json["messages"] as? [[String: Any]],
-            let firstMessage = messages.first,
-            let content = firstMessage["content"] as? String
-        else {
-            Issue.record("Missing message payload")
-            return
-        }
+        let messages = try #require(json["messages"] as? [[String: Any]])
+        let firstMessage = try #require(messages.first)
+        let content = try #require(firstMessage["content"] as? String)
 
         #expect(content == "Hi")
         #expect(receivedChunk.value == "Hello")
     }
 
-    @Test("Send message parses structured content response")
+    @Test("Send message parses structured content response", .timeLimit(.minutes(1)))
     func sendMessageParsesStructuredContentResponse() async {
         let service = makeService()
         service.apiKey = "sk-unit-test"
