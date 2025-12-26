@@ -36,10 +36,8 @@
 		BF8498C967537054EFCA290C /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
 		C3427A91EED5B0E9C5E67C18 /* FloatingPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A778EF766A48372FF1B30067 /* FloatingPanelController.swift */; };
 		C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */; };
-		C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
 		C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C81393A62ED3DE9900F5E7F9 /* Info.plist */; };
 		C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */; };
-		C81393AF2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
 		C81393DB2ED3DEB800F5E7F9 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B42ED3DEB800F5E7F9 /* Conversation.swift */; };
 		C81393DC2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */; };
 		C81393DD2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */; };
@@ -121,7 +119,6 @@
 		C82E6BA22EDBDFF30055158F /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C82E6BA32EDBDFF90055158F /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */; };
 		C82E6BA42EDBE0020055158F /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B12ED3DEB800F5E7F9 /* DiagnosticsLogger.swift */; };
-		C82E6BA62EDC290D0055158F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */; };
 		C855BF482EE143310073EB99 /* TestIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C92ED3DEB800F5E7F9 /* TestIdentifiers.swift */; };
 		C855C16C2EE208910073EB99 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16B2EE208910073EB99 /* SoundEngine.swift */; };
 		C855C16D2EE208910073EB99 /* HapticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C16A2EE208910073EB99 /* HapticEngine.swift */; };
@@ -132,8 +129,10 @@
 		C855C1732EE208A40073EB99 /* ScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */; };
 		C855C1752EE20A040073EB99 /* MacScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */; };
 		C855C17B2EE34C120073EB99 /* ErrorBannerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */; };
+		C86FBCEB2EFE5CAA0023BAE5 /* ayna.icon in Resources */ = {isa = PBXBuildFile; fileRef = C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */; };
+		C86FBCEC2EFE5CAA0023BAE5 /* ayna.icon in Resources */ = {isa = PBXBuildFile; fileRef = C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */; };
+		C86FBCED2EFE5CAA0023BAE5 /* ayna.icon in Resources */ = {isa = PBXBuildFile; fileRef = C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
-		TESTTAGS0001A13064F88B81B1 /* TestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = TESTTAGS0001A13064F88B81B0 /* TestTags.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
 		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
 		C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */; };
@@ -165,6 +164,7 @@
 		STREAMING0BUF13064F88B8101 /* StreamingChunkBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */; };
 		STREAMING0BUF13064F88B8102 /* StreamingChunkBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */; };
 		TAVILY0TEST13064F88B81B01 /* TavilyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */; };
+		TESTTAGS0001A13064F88B81B1 /* TestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = TESTTAGS0001A13064F88B81B0 /* TestTags.swift */; };
 		WATCH0CHAT0VM0TEST13064F89 /* WatchChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WATCH0CHAT0VM0TEST13064F88 /* WatchChatViewModelTests.swift */; };
 		WATCH0CONV0STORE0TEST1307 /* WatchConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WATCH0CONV0STORE0TEST1306 /* WatchConversationStoreTests.swift */; };
 		WATCHDATA0MODELS13064F89 /* WatchDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = WATCHDATA0MODELS13064F88 /* WatchDataModels.swift */; };
@@ -262,7 +262,6 @@
 		AF7CFB8FBA4B848BF47B1E32 /* MacNewChatView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacNewChatView.swift; sourceTree = "<group>"; };
 		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
-		C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
 		C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aynaApp.swift; sourceTree = "<group>"; };
 		C81393A62ED3DE9900F5E7F9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -297,7 +296,6 @@
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
 		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
-		TESTTAGS0001A13064F88B81B0 /* TestTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestTags.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
 		C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatView.swift; sourceTree = "<group>"; };
@@ -328,6 +326,7 @@
 		C855C1722EE208A40073EB99 /* ScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C855C17A2EE34C120073EB99 /* ErrorBannerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBannerViewTests.swift; sourceTree = "<group>"; };
+		C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = ayna.icon; sourceTree = "<group>"; };
 		C8C534DC2ED41F89003D2BAC /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8F1E0002ED5B4F500B5BC45 /* aynaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = aynaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8FBD3B82ED2F42B00E39928 /* Ayna-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -347,13 +346,14 @@
 		IOSCITATION013064F88B81B00 /* IOSCitationSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCitationSourcesView.swift; sourceTree = "<group>"; };
 		STREAMING0BUF13064F88B8100 /* StreamingChunkBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingChunkBuffer.swift; sourceTree = "<group>"; };
 		TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyServiceTests.swift; sourceTree = "<group>"; };
+		TESTTAGS0001A13064F88B81B0 /* TestTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestTags.swift; sourceTree = "<group>"; };
 		WATCH0CHAT0VM0TEST13064F88 /* WatchChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatViewModelTests.swift; sourceTree = "<group>"; };
 		WATCH0CONV0STORE0TEST1306 /* WatchConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConversationStoreTests.swift; sourceTree = "<group>"; };
 		WATCHDATA0MODELS13064F88 /* WatchDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchDataModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		C82E6BA52EDBE1290055158F /* Exceptions for "watchOS" folder in "Ayna-watchOS Watch App" target */ = {
+		C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -363,84 +363,13 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C82E6B7A2EDBD7090055158F /* watchOS */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				C82E6BA52EDBE1290055158F /* Exceptions for "watchOS" folder in "Ayna-watchOS Watch App" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = watchOS;
-			sourceTree = "<group>";
-		};
-		C82E6B822EDBD7260055158F /* watchOS */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = watchOS;
-			sourceTree = "<group>";
-		};
-		C855BF4F2EE144630073EB99 /* Ayna-iOSUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = "Ayna-iOSUITests";
-			sourceTree = "<group>";
-		};
-		C855BF542EE1448C0073EB99 /* Ayna-watchOSUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = "Ayna-watchOSUITests";
-			sourceTree = "<group>";
-		};
-		C855C1072EE15D700073EB99 /* Ayna-watchOSTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = "Ayna-watchOSTests";
-			sourceTree = "<group>";
-		};
-		C855C15D2EE16FC10073EB99 /* Design */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = Design;
-			sourceTree = "<group>";
-		};
-		C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = "Ayna-iOSTests";
-			sourceTree = "<group>";
-		};
+		C82E6B7A2EDBD7090055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
+		C82E6B822EDBD7260055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
+		C855BF4F2EE144630073EB99 /* Ayna-iOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSUITests"; sourceTree = "<group>"; };
+		C855BF542EE1448C0073EB99 /* Ayna-watchOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSUITests"; sourceTree = "<group>"; };
+		C855C1072EE15D700073EB99 /* Ayna-watchOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSTests"; sourceTree = "<group>"; };
+		C855C15D2EE16FC10073EB99 /* Design */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Design; sourceTree = "<group>"; };
+		C8C534DD2ED41F89003D2BAC /* Ayna-iOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSTests"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -518,7 +447,6 @@
 				C81393CE2ED3DEB800F5E7F9 /* Core */,
 				C81393DA2ED3DEB800F5E7F9 /* Tests */,
 				C813942D2ED3DEC900F5E7F9 /* Views */,
-				C81393A32ED3DE9900F5E7F9 /* Assets.xcassets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -562,6 +490,7 @@
 				C81393A22ED3DE9900F5E7F9 /* iOS */,
 				C81393A72ED3DE9900F5E7F9 /* macOS */,
 				C82E6B7A2EDBD7090055158F /* watchOS */,
+				C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -767,7 +696,6 @@
 			children = (
 				AA1A7B4903494662BF828788 /* ChatExporter.swift */,
 			);
-			name = Chat;
 			path = Chat;
 			sourceTree = "<group>";
 		};
@@ -1033,7 +961,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C81393AB2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
+				C86FBCEC2EFE5CAA0023BAE5 /* ayna.icon in Resources */,
 				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1042,7 +970,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C82E6BA62EDC290D0055158F /* Assets.xcassets in Resources */,
+				C86FBCED2EFE5CAA0023BAE5 /* ayna.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1078,7 +1006,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C81393AF2ED3DE9900F5E7F9 /* Assets.xcassets in Resources */,
+				C86FBCEB2EFE5CAA0023BAE5 /* ayna.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1472,7 +1400,7 @@
 		14000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = ayna;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/ayna.entitlements;
@@ -1510,7 +1438,7 @@
 		14000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = ayna;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/ayna.entitlements;
