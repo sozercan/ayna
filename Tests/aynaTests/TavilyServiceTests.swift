@@ -439,7 +439,7 @@ struct TavilyServiceTests {
         }
 
         #expect(function["name"] as? String == "web_search")
-        #expect(function["description"] as? String != nil)
+        #expect(function["description"] is String)
 
         guard let parameters = function["parameters"] as? [String: Any] else {
             Issue.record("Missing parameters definition")

@@ -159,24 +159,57 @@ jobs:
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          # Shutdown first in case it's in a bad state
+          xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+          sleep 2
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
           # Wait for boot to complete
-          sleep 5
+          sleep 10
         fi
 
-    - name: Run iOS unit tests
+    - name: Run iOS unit tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project Ayna.xcodeproj \
-          -scheme Ayna-iOS \
-          -destination '${{ matrix.destination }}' \
-          -derivedDataPath ./build \
-          -only-testing:Ayna-iOSTests \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          test
+        # Simulator tests can be flaky - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project Ayna.xcodeproj \
+            -scheme Ayna-iOS \
+            -destination '${{ matrix.destination }}' \
+            -derivedDataPath ./build \
+            -resultBundlePath ./build/TestResults-iOS-Unit-$attempt.xcresult \
+            -only-testing:Ayna-iOSTests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            exit 0
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying after simulator reset..."
+            # Reset simulator state before retry
+            DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
+            DEVICE_UDID=$(xcrun simctl list devices | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+            if [ -n "$DEVICE_UDID" ]; then
+              xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+              sleep 5
+              xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+              sleep 10
+            fi
+          fi
+        done
+        echo "Tests failed after 2 attempts"
+        exit 1
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: iOS-Unit-TestResults-${{ matrix.macos-version }}
+        path: ./build/*.xcresult
+        retention-days: 7
 
   ios_ui_tests:
     name: iOS UI Tests

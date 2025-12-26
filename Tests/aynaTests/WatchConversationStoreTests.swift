@@ -34,8 +34,8 @@ struct WatchConversationTests {
         var conversation = Conversation(title: "Long Chat", model: "gpt-4o")
 
         // Add 30 messages
-        for i in 1 ... 30 {
-            conversation.addMessage(Message(role: .user, content: "Message \(i)"))
+        for idx in 1 ... 30 {
+            conversation.addMessage(Message(role: .user, content: "Message \(idx)"))
         }
 
         let watchConv = WatchConversation(from: conversation)
@@ -116,15 +116,15 @@ struct WatchConversationTests {
     func preservesMessageOrder() {
         var conversation = Conversation(title: "Ordered Chat", model: "gpt-4o")
 
-        for i in 1 ... 5 {
-            conversation.addMessage(Message(role: .user, content: "Message \(i)"))
+        for idx in 1 ... 5 {
+            conversation.addMessage(Message(role: .user, content: "Message \(idx)"))
         }
 
         let watchConv = WatchConversation(from: conversation)
         let restored = watchConv.toConversation()
 
-        for i in 0 ..< 5 {
-            #expect(restored.messages[i].content == "Message \(i + 1)")
+        for idx in 0 ..< 5 {
+            #expect(restored.messages[idx].content == "Message \(idx + 1)")
         }
     }
 }
@@ -286,9 +286,9 @@ struct WatchConversationArrayTests {
     func convertMultipleConversations() {
         var conversations: [Conversation] = []
 
-        for i in 1 ... 3 {
-            var conv = Conversation(title: "Chat \(i)", model: "gpt-4o")
-            conv.addMessage(Message(role: .user, content: "Message in chat \(i)"))
+        for idx in 1 ... 3 {
+            var conv = Conversation(title: "Chat \(idx)", model: "gpt-4o")
+            conv.addMessage(Message(role: .user, content: "Message in chat \(idx)"))
             conversations.append(conv)
         }
 
@@ -307,10 +307,10 @@ struct WatchConversationArrayTests {
     func roundTripArrayOfConversations() {
         var conversations: [Conversation] = []
 
-        for i in 1 ... 5 {
-            var conv = Conversation(title: "Chat \(i)", model: "gpt-4o")
-            conv.addMessage(Message(role: .user, content: "Hello \(i)"))
-            conv.addMessage(Message(role: .assistant, content: "Hi \(i)!"))
+        for idx in 1 ... 5 {
+            var conv = Conversation(title: "Chat \(idx)", model: "gpt-4o")
+            conv.addMessage(Message(role: .user, content: "Hello \(idx)"))
+            conv.addMessage(Message(role: .assistant, content: "Hi \(idx)!"))
             conversations.append(conv)
         }
 
@@ -334,9 +334,9 @@ struct WatchConversationArrayTests {
     func encodeAndDecodeArray() throws {
         var conversations: [Conversation] = []
 
-        for i in 1 ... 3 {
-            var conv = Conversation(title: "Chat \(i)", model: "gpt-4o")
-            conv.addMessage(Message(role: .user, content: "Message \(i)"))
+        for idx in 1 ... 3 {
+            var conv = Conversation(title: "Chat \(idx)", model: "gpt-4o")
+            conv.addMessage(Message(role: .user, content: "Message \(idx)"))
             conversations.append(conv)
         }
 
@@ -359,8 +359,8 @@ struct WatchConversationEdgeCasesTests {
     func exactlyTwentyMessages() {
         var conversation = Conversation(title: "20 Messages", model: "gpt-4o")
 
-        for i in 1 ... 20 {
-            conversation.addMessage(Message(role: .user, content: "Message \(i)"))
+        for idx in 1 ... 20 {
+            conversation.addMessage(Message(role: .user, content: "Message \(idx)"))
         }
 
         let watchConv = WatchConversation(from: conversation)
@@ -374,8 +374,8 @@ struct WatchConversationEdgeCasesTests {
     func twentyOneMessagesTruncatesToTwenty() {
         var conversation = Conversation(title: "21 Messages", model: "gpt-4o")
 
-        for i in 1 ... 21 {
-            conversation.addMessage(Message(role: .user, content: "Message \(i)"))
+        for idx in 1 ... 21 {
+            conversation.addMessage(Message(role: .user, content: "Message \(idx)"))
         }
 
         let watchConv = WatchConversation(from: conversation)
