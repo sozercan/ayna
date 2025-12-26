@@ -8,39 +8,41 @@
 #if os(macOS)
     @testable import Ayna
     import Carbon.HIToolbox
-    import XCTest
+    import Testing
 
+    @Suite("GlobalHotkeyService Tests")
     @MainActor
-    final class GlobalHotkeyServiceTests: XCTestCase {
-        var service: GlobalHotkeyService!
+    struct GlobalHotkeyServiceTests {
+        var service: GlobalHotkeyService
 
-        override func setUp() async throws {
+        init() {
             service = GlobalHotkeyService.shared
-        }
-
-        override func tearDown() async throws {
             service.unregister()
             service.onHotkeyPressed = nil
         }
 
         // MARK: - Registration Tests
 
-        func testInitialStateNotRegistered() {
+        @Test("Initial state not registered")
+        func initialStateNotRegistered() {
             // Fresh service should not be registered
             service.unregister() // Ensure clean state
-            XCTAssertFalse(service.isRegistered)
+            #expect(!service.isRegistered)
         }
 
-        func testRegisterSetsIsRegistered() throws {
+        @Test("Register sets isRegistered")
+        func registerSetsIsRegistered() throws {
             try service.register(
                 keyCode: UInt32(kVK_Space),
                 modifiers: UInt32(cmdKey | shiftKey)
             )
 
-            XCTAssertTrue(service.isRegistered)
+            #expect(service.isRegistered)
+            service.unregister()
         }
 
-        func testUnregisterClearsIsRegistered() throws {
+        @Test("Unregister clears isRegistered")
+        func unregisterClearsIsRegistered() throws {
             try service.register(
                 keyCode: UInt32(kVK_Space),
                 modifiers: UInt32(cmdKey | shiftKey)
@@ -48,16 +50,19 @@
 
             service.unregister()
 
-            XCTAssertFalse(service.isRegistered)
+            #expect(!service.isRegistered)
         }
 
-        func testRegisterDefaultSucceeds() throws {
+        @Test("Register default succeeds")
+        func registerDefaultSucceeds() throws {
             try service.registerDefault()
 
-            XCTAssertTrue(service.isRegistered)
+            #expect(service.isRegistered)
+            service.unregister()
         }
 
-        func testReRegisterUnregistersFirst() throws {
+        @Test("Re-register unregisters first")
+        func reRegisterUnregistersFirst() throws {
             try service.register(
                 keyCode: UInt32(kVK_Space),
                 modifiers: UInt32(cmdKey | shiftKey)
@@ -69,26 +74,32 @@
                 modifiers: UInt32(cmdKey | optionKey)
             )
 
-            XCTAssertTrue(service.isRegistered)
+            #expect(service.isRegistered)
+            service.unregister()
         }
 
         // MARK: - Hotkey String Parsing Tests
 
-        func testRegisterWithHotkeyString() throws {
+        @Test("Register with hotkey string")
+        func registerWithHotkeyString() throws {
             try service.register(hotkeyString: "⌘⇧Space")
 
-            XCTAssertTrue(service.isRegistered)
+        #expect(service.isRegistered)
+            service.unregister()
         }
 
-        func testRegisterWithAlternativeModifiers() throws {
+        @Test("Register with alternative modifiers")
+        func registerWithAlternativeModifiers() throws {
             try service.register(hotkeyString: "cmd+shift+space")
 
-            XCTAssertTrue(service.isRegistered)
+            #expect(service.isRegistered)
+            service.unregister()
         }
 
         // MARK: - Callback Tests
 
-        func testCallbackCanBeSet() {
+        @Test("Callback can be set")
+        func callbackCanBeSet() {
             var callbackInvoked = false
 
             service.onHotkeyPressed = { _ in
@@ -97,41 +108,46 @@
 
             // We can't easily trigger the hotkey in tests,
             // but we can verify the callback is stored
-            XCTAssertNotNil(service.onHotkeyPressed)
+            #expect(service.onHotkeyPressed != nil)
             _ = callbackInvoked // Silence unused variable warning
         }
 
-        func testCapturedAppInitiallyNil() {
-            XCTAssertNil(service.capturedApp)
+        @Test("Captured app initially nil")
+        func capturedAppInitiallyNil() {
+            #expect(service.capturedApp == nil)
         }
 
         // MARK: - Error Handling Tests
 
-        func testMultipleUnregisterCallsSafe() {
+        @Test("Multiple unregister calls safe")
+        func multipleUnregisterCallsSafe() {
             service.unregister()
             service.unregister()
             service.unregister()
 
             // Should not crash
-            XCTAssertFalse(service.isRegistered)
+            #expect(!service.isRegistered)
         }
     }
 
     // MARK: - GlobalHotkeyError Tests
 
-    final class GlobalHotkeyErrorTests: XCTestCase {
-        func testEventHandlerInstallFailedDescription() {
+    @Suite("GlobalHotkeyError Tests")
+    struct GlobalHotkeyErrorTests {
+        @Test("Event handler install failed description")
+        func eventHandlerInstallFailedDescription() {
             let error = GlobalHotkeyError.eventHandlerInstallFailed(status: -1)
 
-            XCTAssertNotNil(error.errorDescription)
-            XCTAssertTrue(error.errorDescription!.contains("event handler"))
+            #expect(error.errorDescription != nil)
+            #expect(error.errorDescription!.contains("event handler"))
         }
 
-        func testRegistrationFailedDescription() {
+        @Test("Registration failed description")
+        func registrationFailedDescription() {
             let error = GlobalHotkeyError.registrationFailed(status: -1)
 
-            XCTAssertNotNil(error.errorDescription)
-            XCTAssertTrue(error.errorDescription!.contains("register"))
+            #expect(error.errorDescription != nil)
+            #expect(error.errorDescription!.contains("register"))
         }
     }
 #endif

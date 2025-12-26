@@ -1,11 +1,13 @@
 @testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
+@Suite("OpenAIService Tests", .tags(.networking, .async), .serialized)
 @MainActor
-final class OpenAIServiceTests: XCTestCase {
-    private var defaults: UserDefaults!
+struct OpenAIServiceTests {
+    private var defaults: UserDefaults
 
-    override func setUp() async throws {
+    init() {
         guard let suite = UserDefaults(suiteName: "OpenAIServiceTests") else {
             fatalError("Failed to create UserDefaults suite for OpenAIServiceTests")
         }
@@ -20,15 +22,6 @@ final class OpenAIServiceTests: XCTestCase {
         MockURLProtocol.reset()
     }
 
-    override func tearDown() async throws {
-        AppPreferences.reset()
-        defaults.removePersistentDomain(forName: "OpenAIServiceTests")
-        defaults = nil
-        OpenAIService.keychain = KeychainStorage.shared
-        GitHubOAuthService.keychain = KeychainStorage.shared
-        MockURLProtocol.reset()
-    }
-
     private func makeService() -> OpenAIService {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
@@ -39,44 +32,46 @@ final class OpenAIServiceTests: XCTestCase {
         return service
     }
 
-    func testSendMessageWithoutAPIKeyThrowsError() {
+    @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
+    func sendMessageWithoutAPIKeyThrowsError() async {
         let service = makeService()
         service.apiKey = ""
 
-        let errorExpectation = expectation(description: "onError called")
-
-        service.sendMessage(
-            messages: [Message(role: .user, content: "Ping")],
-            model: nil,
-            temperature: nil,
-            stream: false,
-            tools: nil,
-            conversationId: nil,
-            onChunk: { _ in
-                XCTFail("Did not expect chunks when API key is missing")
-            },
-            onComplete: {
-                XCTFail("Completion should not fire when API key is missing")
-            },
-            onError: { error in
-                guard case OpenAIService.OpenAIError.missingAPIKey = error else {
-                    return XCTFail("Unexpected error: \(error)")
-                }
-                errorExpectation.fulfill()
-            },
-            onToolCall: nil,
-            onToolCallRequested: nil,
-            onReasoning: nil
-        )
-
-        wait(for: [errorExpectation], timeout: 1)
+        await confirmation("onError called") { errorReceived in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Ping")],
+                model: nil,
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { _ in
+                    Issue.record("Did not expect chunks when API key is missing")
+                },
+                onComplete: {
+                    Issue.record("Completion should not fire when API key is missing")
+                },
+                onError: { error in
+                    guard case OpenAIService.OpenAIError.missingAPIKey = error else {
+                        Issue.record("Unexpected error: \(error)")
+                        return
+                    }
+                    errorReceived()
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+            
+            // Give time for async callback
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
-    func testSendMessageAddsAuthorizationHeaderAndPayload() {
+    @Test("Send message adds authorization header and payload", .timeLimit(.minutes(1)))
+    func sendMessageAddsAuthorizationHeaderAndPayload() async throws {
         let service = makeService()
         service.apiKey = "sk-unit-test"
-
-        let completionExpectation = expectation(description: "Request completes")
 
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request
@@ -90,35 +85,36 @@ final class OpenAIServiceTests: XCTestCase {
 
         let receivedChunk = ResultHolder()
 
-        service.sendMessage(
-            messages: [Message(role: .user, content: "Hi")],
-            model: nil,
-            temperature: nil,
-            stream: false,
-            tools: nil,
-            conversationId: nil,
-            onChunk: { chunk in
-                receivedChunk.value = chunk
-            },
-            onComplete: {
-                completionExpectation.fulfill()
-            },
-            onError: { error in
-                XCTFail("Unexpected error: \(error)")
-            },
-            onToolCall: nil,
-            onToolCallRequested: nil,
-            onReasoning: nil
-        )
-
-        wait(for: [completionExpectation], timeout: 1)
-
-        guard let request = MockURLProtocol.lastRequest else {
-            return XCTFail("Expected captured request")
+        await confirmation("Request completes") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hi")],
+                model: nil,
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { chunk in
+                    receivedChunk.value = chunk
+                },
+                onComplete: {
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+            
+            // Give time for async callback
+            try? await Task.sleep(for: .milliseconds(500))
         }
 
-        XCTAssertEqual(request.httpMethod, "POST")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-unit-test")
+        let request = try #require(MockURLProtocol.lastRequest)
+
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-unit-test")
 
         var bodyData = request.httpBody
         if bodyData == nil, let stream = request.httpBodyStream {
@@ -139,32 +135,23 @@ final class OpenAIServiceTests: XCTestCase {
             bodyData = data
         }
 
-        guard
-            let body = bodyData,
-            let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
-        else {
-            return XCTFail("Failed to decode request body")
-        }
+        let body = try #require(bodyData)
+        let json = try #require(try? JSONSerialization.jsonObject(with: body) as? [String: Any])
 
-        XCTAssertEqual(json["stream"] as? Bool, false)
+        #expect(json["stream"] as? Bool == false)
 
-        guard
-            let messages = json["messages"] as? [[String: Any]],
-            let firstMessage = messages.first,
-            let content = firstMessage["content"] as? String
-        else {
-            return XCTFail("Missing message payload")
-        }
+        let messages = try #require(json["messages"] as? [[String: Any]])
+        let firstMessage = try #require(messages.first)
+        let content = try #require(firstMessage["content"] as? String)
 
-        XCTAssertEqual(content, "Hi")
-        XCTAssertEqual(receivedChunk.value, "Hello")
+        #expect(content == "Hi")
+        #expect(receivedChunk.value == "Hello")
     }
 
-    func testSendMessageParsesStructuredContentResponse() {
+    @Test("Send message parses structured content response", .timeLimit(.minutes(1)))
+    func sendMessageParsesStructuredContentResponse() async {
         let service = makeService()
         service.apiKey = "sk-unit-test"
-
-        let completionExpectation = expectation(description: "Structured response parsed")
 
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request
@@ -178,32 +165,36 @@ final class OpenAIServiceTests: XCTestCase {
 
         let receivedChunk = ResultHolder()
 
-        service.sendMessage(
-            messages: [Message(role: .user, content: "Hello")],
-            model: nil,
-            temperature: nil,
-            stream: false,
-            tools: nil,
-            conversationId: nil,
-            onChunk: { chunk in
-                receivedChunk.value += chunk
-            },
-            onComplete: {
-                XCTAssertEqual(receivedChunk.value, "Structured hello")
-                completionExpectation.fulfill()
-            },
-            onError: { error in
-                XCTFail("Unexpected error: \(error)")
-            },
-            onToolCall: nil,
-            onToolCallRequested: nil,
-            onReasoning: nil
-        )
-
-        wait(for: [completionExpectation], timeout: 1)
+        await confirmation("Structured response parsed") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hello")],
+                model: nil,
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { chunk in
+                    receivedChunk.value += chunk
+                },
+                onComplete: {
+                    #expect(receivedChunk.value == "Structured hello")
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+            
+            // Give time for async callback
+            try? await Task.sleep(for: .milliseconds(500))
+        }
     }
 
-    func testGitHubModelsRateLimitTrackingIsPerToken() {
+    @Test("GitHub Models rate limit tracking is per token")
+    func gitHubModelsRateLimitTrackingIsPerToken() {
         let oauth = GitHubOAuthService()
 
         let url = URL(string: "https://models.github.ai/inference/chat/completions")!
@@ -236,11 +227,12 @@ final class OpenAIServiceTests: XCTestCase {
         oauth.updateRateLimit(from: responseA, forAccessToken: "token-A")
         oauth.updateRateLimit(from: responseB, forAccessToken: "token-B")
 
-        XCTAssertEqual(oauth.rateLimitInfo(forAccessToken: "token-A")?.remaining, 10)
-        XCTAssertEqual(oauth.rateLimitInfo(forAccessToken: "token-B")?.remaining, 3)
+        #expect(oauth.rateLimitInfo(forAccessToken: "token-A")?.remaining == 10)
+        #expect(oauth.rateLimitInfo(forAccessToken: "token-B")?.remaining == 3)
     }
 
-    func testGitHubModelsRetryAfterIsPerToken() {
+    @Test("GitHub Models retry after is per token")
+    func gitHubModelsRetryAfterIsPerToken() {
         let oauth = GitHubOAuthService()
 
         let url = URL(string: "https://models.github.ai/inference/chat/completions")!
@@ -255,15 +247,15 @@ final class OpenAIServiceTests: XCTestCase {
 
         oauth.updateRetryAfter(from: response, forAccessToken: "token-A")
 
-        XCTAssertNotNil(oauth.retryAfterDate(forAccessToken: "token-A"))
-        XCTAssertNil(oauth.retryAfterDate(forAccessToken: "token-B"))
+        #expect(oauth.retryAfterDate(forAccessToken: "token-A") != nil)
+        #expect(oauth.retryAfterDate(forAccessToken: "token-B") == nil)
 
         oauth.clearRetryAfter(forAccessToken: "token-A")
-        XCTAssertNil(oauth.retryAfterDate(forAccessToken: "token-A"))
+        #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
     }
 }
 
-private final class MockURLProtocol: URLProtocol {
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
     nonisolated(unsafe) static var lastRequest: URLRequest?
 
@@ -300,6 +292,6 @@ private final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
-class ResultHolder: @unchecked Sendable {
+final class ResultHolder: @unchecked Sendable {
     var value = ""
 }

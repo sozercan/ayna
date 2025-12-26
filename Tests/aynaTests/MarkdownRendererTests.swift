@@ -1,8 +1,11 @@
-@testable import Ayna
-import XCTest
+import Testing
 
-final class MarkdownRendererTests: XCTestCase {
-    func testParsesHeadingsParagraphsAndDivider() {
+@testable import Ayna
+
+@Suite("MarkdownRenderer Tests", .tags(.fast))
+struct MarkdownRendererTests {
+    @Test("Parses headings, paragraphs, and divider")
+    func parsesHeadingsParagraphsAndDivider() {
         let input = """
         # Title
 
@@ -13,32 +16,33 @@ final class MarkdownRendererTests: XCTestCase {
         More text.
         """
         let blocks = MarkdownRenderer.parse(input)
-        XCTAssertEqual(blocks.count, 4)
+        #expect(blocks.count == 4)
         guard blocks.count == 4 else { return }
         if case let .heading(level, text) = blocks[0].type {
-            XCTAssertEqual(level, 1)
-            XCTAssertEqual(String(text.characters), "Title")
+            #expect(level == 1)
+            #expect(String(text.characters) == "Title")
         } else {
-            XCTFail("Expected heading block")
+            Issue.record("Expected heading block")
         }
         if case let .paragraph(text) = blocks[1].type {
-            XCTAssertTrue(String(text.characters).contains("bold"))
+            #expect(String(text.characters).contains("bold"))
         } else {
-            XCTFail("Expected paragraph block")
+            Issue.record("Expected paragraph block")
         }
         if case .divider = blocks[2].type {
             // success
         } else {
-            XCTFail("Expected divider block")
+            Issue.record("Expected divider block")
         }
         if case let .paragraph(text) = blocks[3].type {
-            XCTAssertTrue(String(text.characters).contains("More text"))
+            #expect(String(text.characters).contains("More text"))
         } else {
-            XCTFail("Expected paragraph block")
+            Issue.record("Expected paragraph block")
         }
     }
 
-    func testParsesListsAndBlockquote() {
+    @Test("Parses lists and blockquote")
+    func parsesListsAndBlockquote() {
         let input = """
         - First
         - Second
@@ -49,26 +53,27 @@ final class MarkdownRendererTests: XCTestCase {
         > Tip block
         """
         let blocks = MarkdownRenderer.parse(input)
-        XCTAssertEqual(blocks.count, 3)
+        #expect(blocks.count == 3)
         if case let .unorderedList(items) = blocks[0].type {
-            XCTAssertEqual(items.count, 2)
+            #expect(items.count == 2)
         } else {
-            XCTFail("Expected unordered list block")
+            Issue.record("Expected unordered list block")
         }
         if case let .orderedList(start, items) = blocks[1].type {
-            XCTAssertEqual(start, 1)
-            XCTAssertEqual(items.count, 2)
+            #expect(start == 1)
+            #expect(items.count == 2)
         } else {
-            XCTFail("Expected ordered list block")
+            Issue.record("Expected ordered list block")
         }
         if case let .blockquote(text) = blocks[2].type {
-            XCTAssertEqual(String(text.characters), "Tip block")
+            #expect(String(text.characters) == "Tip block")
         } else {
-            XCTFail("Expected blockquote block")
+            Issue.record("Expected blockquote block")
         }
     }
 
-    func testParsesCodeAndToolBlocks() {
+    @Test("Parses code and tool blocks")
+    func parsesCodeAndToolBlocks() {
         let input = """
         ```swift
         print("Hello")
@@ -78,22 +83,23 @@ final class MarkdownRendererTests: XCTestCase {
         result
         """
         let blocks = MarkdownRenderer.parse(input)
-        XCTAssertEqual(blocks.count, 2)
+        #expect(blocks.count == 2)
         if case let .code(code, language) = blocks[0].type {
-            XCTAssertEqual(language, "swift")
-            XCTAssertTrue(code.contains("print"))
+            #expect(language == "swift")
+            #expect(code.contains("print"))
         } else {
-            XCTFail("Expected code block")
+            Issue.record("Expected code block")
         }
         if case let .tool(name, result) = blocks[1].type {
-            XCTAssertEqual(name, "search")
-            XCTAssertEqual(result, "result")
+            #expect(name == "search")
+            #expect(result == "result")
         } else {
-            XCTFail("Expected tool block")
+            Issue.record("Expected tool block")
         }
     }
 
-    func testParsesTables() {
+    @Test("Parses tables")
+    func parsesTables() {
         let input = """
         | Name | Value |
         | ---- | ----: |
@@ -101,17 +107,19 @@ final class MarkdownRendererTests: XCTestCase {
         | bar | 2 |
         """
         let blocks = MarkdownRenderer.parse(input)
-        XCTAssertEqual(blocks.count, 1)
+        #expect(blocks.count == 1)
         guard case let .table(table) = blocks[0].type else {
-            return XCTFail("Expected table block")
+            Issue.record("Expected table block")
+            return
         }
-        XCTAssertEqual(table.headers.count, 2)
-        XCTAssertEqual(table.rows.count, 2)
-        XCTAssertEqual(table.alignments.count, 2)
-        XCTAssertEqual(String(table.headers[0].characters), "Name")
+        #expect(table.headers.count == 2)
+        #expect(table.rows.count == 2)
+        #expect(table.alignments.count == 2)
+        #expect(String(table.headers[0].characters) == "Name")
     }
 
-    func testParsesNestedCodeBlocks() {
+    @Test("Parses nested code blocks")
+    func parsesNestedCodeBlocks() {
         let input = """
         ````markdown
         # Title
@@ -121,19 +129,20 @@ final class MarkdownRendererTests: XCTestCase {
         ````
         """
         let blocks = MarkdownRenderer.parse(input)
-        XCTAssertEqual(blocks.count, 1)
+        #expect(blocks.count == 1)
         if case let .code(code, language) = blocks[0].type {
-            XCTAssertEqual(language, "markdown")
-            XCTAssertTrue(code.contains("# Title"))
-            XCTAssertTrue(code.contains("```javascript"))
-            XCTAssertTrue(code.contains("console.log"))
-            XCTAssertTrue(code.contains("```"))
+            #expect(language == "markdown")
+            #expect(code.contains("# Title"))
+            #expect(code.contains("```javascript"))
+            #expect(code.contains("console.log"))
+            #expect(code.contains("```"))
         } else {
-            XCTFail("Expected code block")
+            Issue.record("Expected code block")
         }
     }
 
-    func testParsesAmbiguousNestedMarkdownBlock() {
+    @Test("Parses ambiguous nested markdown block")
+    func parsesAmbiguousNestedMarkdownBlock() {
         let content = """
         ```markdown
         # Title
@@ -144,25 +153,26 @@ final class MarkdownRendererTests: XCTestCase {
         ```
         """
         let blocks = MarkdownRenderer.parse(content)
-        XCTAssertEqual(blocks.count, 1)
+        #expect(blocks.count == 1)
         if case let .code(code, lang) = blocks.first?.type {
-            XCTAssertEqual(lang, "markdown")
-            XCTAssertTrue(code.contains("## Usage"))
+            #expect(lang == "markdown")
+            #expect(code.contains("## Usage"))
         } else {
-            XCTFail("Expected code block")
+            Issue.record("Expected code block")
         }
     }
 
-    func testLongerFenceClosesShorterFence() {
+    @Test("Longer fence closes shorter fence")
+    func longerFenceClosesShorterFence() {
         let content = """
         ```
         code
         ````
         """
         let blocks = MarkdownRenderer.parse(content)
-        XCTAssertEqual(blocks.count, 1)
+        #expect(blocks.count == 1)
         if case let .code(code, _) = blocks.first?.type {
-            XCTAssertEqual(code.trimmingCharacters(in: .whitespacesAndNewlines), "code")
+            #expect(code.trimmingCharacters(in: .whitespacesAndNewlines) == "code")
         }
     }
 }

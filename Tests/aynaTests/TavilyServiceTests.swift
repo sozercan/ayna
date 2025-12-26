@@ -1,12 +1,14 @@
 @testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
+@Suite("TavilyService Tests", .tags(.networking, .async), .serialized)
 @MainActor
-final class TavilyServiceTests: XCTestCase {
-    private var defaults: UserDefaults!
-    private var keychain: InMemoryKeychainStorage!
+struct TavilyServiceTests {
+    private var defaults: UserDefaults
+    private var keychain: InMemoryKeychainStorage
 
-    override func setUp() async throws {
+    init() {
         guard let suite = UserDefaults(suiteName: "TavilyServiceTests") else {
             fatalError("Failed to create UserDefaults suite for TavilyServiceTests")
         }
@@ -16,14 +18,6 @@ final class TavilyServiceTests: XCTestCase {
         AppPreferences.use(defaults)
 
         keychain = InMemoryKeychainStorage()
-        TavilyMockURLProtocol.reset()
-    }
-
-    override func tearDown() async throws {
-        AppPreferences.reset()
-        defaults.removePersistentDomain(forName: "TavilyServiceTests")
-        defaults = nil
-        keychain = nil
         TavilyMockURLProtocol.reset()
     }
 
@@ -40,41 +34,46 @@ final class TavilyServiceTests: XCTestCase {
 
     // MARK: - Configuration Tests
 
-    func testIsConfiguredReturnsFalseWhenAPIKeyEmpty() {
+    @Test("isConfigured returns false when API key empty")
+    func isConfiguredReturnsFalseWhenAPIKeyEmpty() {
         let service = makeService(apiKey: "")
-        XCTAssertFalse(service.isConfigured)
+        #expect(!service.isConfigured)
     }
 
-    func testIsConfiguredReturnsFalseWhenAPIKeyWhitespaceOnly() {
+    @Test("isConfigured returns false when API key whitespace only")
+    func isConfiguredReturnsFalseWhenAPIKeyWhitespaceOnly() {
         let service = makeService(apiKey: "   ")
-        XCTAssertFalse(service.isConfigured)
+        #expect(!service.isConfigured)
     }
 
-    func testIsConfiguredReturnsTrueWhenAPIKeySet() {
+    @Test("isConfigured returns true when API key set")
+    func isConfiguredReturnsTrueWhenAPIKeySet() {
         let service = makeService(apiKey: "tvly-valid-key")
-        XCTAssertTrue(service.isConfigured)
+        #expect(service.isConfigured)
     }
 
-    func testIsAvailableRequiresBothConfiguredAndEnabled() {
+    @Test("isAvailable requires both configured and enabled")
+    func isAvailableRequiresBothConfiguredAndEnabled() {
         let service = makeService(apiKey: "tvly-valid-key", enabled: false)
-        XCTAssertTrue(service.isConfigured)
-        XCTAssertFalse(service.isEnabled)
-        XCTAssertFalse(service.isAvailable)
+        #expect(service.isConfigured)
+        #expect(!service.isEnabled)
+        #expect(!service.isAvailable)
 
         service.isEnabled = true
-        XCTAssertTrue(service.isAvailable)
+        #expect(service.isAvailable)
     }
 
     // MARK: - Search Success Tests
 
-    func testSearchSuccessDecodesResponse() async throws {
+    @Test("Search success decodes response", .timeLimit(.minutes(1)))
+    func searchSuccessDecodesResponse() async throws {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { request in
             // Verify request structure
-            XCTAssertEqual(request.url?.absoluteString, "https://api.tavily.com/search")
-            XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            #expect(request.url?.absoluteString == "https://api.tavily.com/search")
+            #expect(request.httpMethod == "POST")
+            #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -108,16 +107,17 @@ final class TavilyServiceTests: XCTestCase {
 
         let result = try await service.search(query: "test query")
 
-        XCTAssertEqual(result.query, "test query")
-        XCTAssertEqual(result.answer, "This is the AI-generated answer.")
-        XCTAssertEqual(result.results.count, 2)
-        XCTAssertEqual(result.results[0].title, "Result 1")
-        XCTAssertEqual(result.results[0].url, "https://example.com/1")
-        XCTAssertEqual(result.results[0].score, 0.95)
-        XCTAssertEqual(result.responseTime, 1.23)
+        #expect(result.query == "test query")
+        #expect(result.answer == "This is the AI-generated answer.")
+        #expect(result.results.count == 2)
+        #expect(result.results[0].title == "Result 1")
+        #expect(result.results[0].url == "https://example.com/1")
+        #expect(result.results[0].score == 0.95)
+        #expect(result.responseTime == 1.23)
     }
 
-    func testSearchRequestIncludesCorrectParameters() async throws {
+    @Test("Search request includes correct parameters")
+    func searchRequestIncludesCorrectParameters() async throws {
         let service = makeService(apiKey: "tvly-my-api-key")
 
         var capturedBody: [String: Any]?
@@ -162,16 +162,17 @@ final class TavilyServiceTests: XCTestCase {
             includeAnswer: true
         )
 
-        XCTAssertNotNil(capturedBody)
-        XCTAssertEqual(capturedBody?["api_key"] as? String, "tvly-my-api-key")
-        XCTAssertEqual(capturedBody?["query"] as? String, "Swift programming")
-        XCTAssertEqual(capturedBody?["topic"] as? String, "news")
-        XCTAssertEqual(capturedBody?["search_depth"] as? String, "advanced")
-        XCTAssertEqual(capturedBody?["max_results"] as? Int, 3)
-        XCTAssertEqual(capturedBody?["include_answer"] as? Bool, true)
+        #expect(capturedBody != nil)
+        #expect(capturedBody?["api_key"] as? String == "tvly-my-api-key")
+        #expect(capturedBody?["query"] as? String == "Swift programming")
+        #expect(capturedBody?["topic"] as? String == "news")
+        #expect(capturedBody?["search_depth"] as? String == "advanced")
+        #expect(capturedBody?["max_results"] as? Int == 3)
+        #expect(capturedBody?["include_answer"] as? Bool == true)
     }
 
-    func testSearchClampsMaxResultsToValidRange() async throws {
+    @Test("Search clamps max results to valid range")
+    func searchClampsMaxResultsToValidRange() async throws {
         let service = makeService()
 
         var capturedMaxResults: Int?
@@ -212,32 +213,26 @@ final class TavilyServiceTests: XCTestCase {
 
         // Test upper bound clamping (25 -> 20)
         _ = try await service.search(query: "test", maxResults: 25)
-        XCTAssertEqual(capturedMaxResults, 20)
+        #expect(capturedMaxResults == 20)
 
         // Test lower bound clamping (0 -> 1)
         _ = try await service.search(query: "test", maxResults: 0)
-        XCTAssertEqual(capturedMaxResults, 1)
+        #expect(capturedMaxResults == 1)
     }
 
     // MARK: - Error Handling Tests
 
-    func testSearchThrowsNotConfiguredWhenAPIKeyMissing() async {
+    @Test("Search throws notConfigured when API key missing")
+    func searchThrowsNotConfiguredWhenAPIKeyMissing() async {
         let service = makeService(apiKey: "")
 
-        do {
+        await #expect(throws: TavilyError.self) {
             _ = try await service.search(query: "test")
-            XCTFail("Expected TavilyError.notConfigured to be thrown")
-        } catch let error as TavilyError {
-            guard case .notConfigured = error else {
-                XCTFail("Expected .notConfigured, got \(error)")
-                return
-            }
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
         }
     }
 
-    func testSearchThrowsInvalidAPIKeyOn401() async {
+    @Test("Search throws invalidAPIKey on 401")
+    func searchThrowsInvalidAPIKeyOn401() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { request in
@@ -250,20 +245,13 @@ final class TavilyServiceTests: XCTestCase {
             return (response, Data())
         }
 
-        do {
+        await #expect(throws: TavilyError.self) {
             _ = try await service.search(query: "test")
-            XCTFail("Expected TavilyError.invalidAPIKey to be thrown")
-        } catch let error as TavilyError {
-            guard case .invalidAPIKey = error else {
-                XCTFail("Expected .invalidAPIKey, got \(error)")
-                return
-            }
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
         }
     }
 
-    func testSearchThrowsRateLimitExceededOn429() async {
+    @Test("Search throws rateLimitExceeded on 429")
+    func searchThrowsRateLimitExceededOn429() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { request in
@@ -276,20 +264,13 @@ final class TavilyServiceTests: XCTestCase {
             return (response, Data())
         }
 
-        do {
+        await #expect(throws: TavilyError.self) {
             _ = try await service.search(query: "test")
-            XCTFail("Expected TavilyError.rateLimitExceeded to be thrown")
-        } catch let error as TavilyError {
-            guard case .rateLimitExceeded = error else {
-                XCTFail("Expected .rateLimitExceeded, got \(error)")
-                return
-            }
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
         }
     }
 
-    func testSearchParsesAPIErrorFromResponseBody() async {
+    @Test("Search parses API error from response body")
+    func searchParsesAPIErrorFromResponseBody() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { request in
@@ -307,41 +288,35 @@ final class TavilyServiceTests: XCTestCase {
 
         do {
             _ = try await service.search(query: "test")
-            XCTFail("Expected TavilyError.apiError to be thrown")
+            Issue.record("Expected TavilyError.apiError to be thrown")
         } catch let error as TavilyError {
             guard case let .apiError(message) = error else {
-                XCTFail("Expected .apiError, got \(error)")
+                Issue.record("Expected .apiError, got \(error)")
                 return
             }
-            XCTAssertEqual(message, "Invalid query parameter")
+            #expect(message == "Invalid query parameter")
         } catch {
-            XCTFail("Unexpected error type: \(error)")
+            Issue.record("Unexpected error type: \(error)")
         }
     }
 
-    func testSearchThrowsNetworkErrorOnConnectionFailure() async {
+    @Test("Search throws networkError on connection failure")
+    func searchThrowsNetworkErrorOnConnectionFailure() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { _ in
             throw URLError(.notConnectedToInternet)
         }
 
-        do {
+        await #expect(throws: TavilyError.self) {
             _ = try await service.search(query: "test")
-            XCTFail("Expected TavilyError.networkError to be thrown")
-        } catch let error as TavilyError {
-            guard case .networkError = error else {
-                XCTFail("Expected .networkError, got \(error)")
-                return
-            }
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
         }
     }
 
     // MARK: - Tool Call Execution Tests
 
-    func testExecuteToolCallReturnsFormattedResults() async {
+    @Test("Execute tool call returns formatted results")
+    func executeToolCallReturnsFormattedResults() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { _ in
@@ -371,21 +346,23 @@ final class TavilyServiceTests: XCTestCase {
 
         let result = await service.executeToolCall(arguments: ["query": "weather"])
 
-        XCTAssertTrue(result.contains("**Answer:**"))
-        XCTAssertTrue(result.contains("The weather is sunny."))
-        XCTAssertTrue(result.contains("**Sources:**"))
-        XCTAssertTrue(result.contains("[Weather Report](https://weather.com)"))
+        #expect(result.contains("**Answer:**"))
+        #expect(result.contains("The weather is sunny."))
+        #expect(result.contains("**Sources:**"))
+        #expect(result.contains("[Weather Report](https://weather.com)"))
     }
 
-    func testExecuteToolCallHandlesMissingQueryParameter() async {
+    @Test("Execute tool call handles missing query parameter")
+    func executeToolCallHandlesMissingQueryParameter() async {
         let service = makeService()
 
         let result = await service.executeToolCall(arguments: [:])
 
-        XCTAssertEqual(result, "Error: Missing 'query' parameter for web search")
+        #expect(result == "Error: Missing 'query' parameter for web search")
     }
 
-    func testExecuteToolCallParsesOptionalParameters() async {
+    @Test("Execute tool call parses optional parameters")
+    func executeToolCallParsesOptionalParameters() async {
         let service = makeService()
 
         var capturedBody: [String: Any]?
@@ -429,12 +406,13 @@ final class TavilyServiceTests: XCTestCase {
             "max_results": 5
         ])
 
-        XCTAssertEqual(capturedBody?["topic"] as? String, "finance")
-        XCTAssertEqual(capturedBody?["search_depth"] as? String, "advanced")
-        XCTAssertEqual(capturedBody?["max_results"] as? Int, 5)
+        #expect(capturedBody?["topic"] as? String == "finance")
+        #expect(capturedBody?["search_depth"] as? String == "advanced")
+        #expect(capturedBody?["max_results"] as? Int == 5)
     }
 
-    func testExecuteToolCallReturnsErrorStringOnFailure() async {
+    @Test("Execute tool call returns error string on failure")
+    func executeToolCallReturnsErrorStringOnFailure() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { _ in
@@ -443,58 +421,61 @@ final class TavilyServiceTests: XCTestCase {
 
         let result = await service.executeToolCall(arguments: ["query": "test"])
 
-        XCTAssertTrue(result.hasPrefix("Error searching the web:"))
+        #expect(result.hasPrefix("Error searching the web:"))
     }
 
     // MARK: - Tool Definition Tests
 
-    func testToolDefinitionMatchesOpenAIFunctionSchema() {
+    @Test("Tool definition matches OpenAI function schema")
+    func toolDefinitionMatchesOpenAIFunctionSchema() {
         let service = makeService()
         let definition = service.toolDefinition()
 
-        XCTAssertEqual(definition["type"] as? String, "function")
+        #expect(definition["type"] as? String == "function")
 
         guard let function = definition["function"] as? [String: Any] else {
-            XCTFail("Missing function definition")
+            Issue.record("Missing function definition")
             return
         }
 
-        XCTAssertEqual(function["name"] as? String, "web_search")
-        XCTAssertNotNil(function["description"] as? String)
+        #expect(function["name"] as? String == "web_search")
+        #expect(function["description"] is String)
 
         guard let parameters = function["parameters"] as? [String: Any] else {
-            XCTFail("Missing parameters definition")
+            Issue.record("Missing parameters definition")
             return
         }
 
-        XCTAssertEqual(parameters["type"] as? String, "object")
+        #expect(parameters["type"] as? String == "object")
 
         guard let properties = parameters["properties"] as? [String: Any] else {
-            XCTFail("Missing properties definition")
+            Issue.record("Missing properties definition")
             return
         }
 
         // Verify required properties
-        XCTAssertNotNil(properties["query"])
-        XCTAssertNotNil(properties["topic"])
-        XCTAssertNotNil(properties["max_results"])
+        #expect(properties["query"] != nil)
+        #expect(properties["topic"] != nil)
+        #expect(properties["max_results"] != nil)
 
         // Verify required array
         guard let required = parameters["required"] as? [String] else {
-            XCTFail("Missing required array")
+            Issue.record("Missing required array")
             return
         }
 
-        XCTAssertTrue(required.contains("query"))
+        #expect(required.contains("query"))
     }
 
-    func testToolNameConstant() {
-        XCTAssertEqual(TavilyService.toolName, "web_search")
+    @Test("Tool name constant")
+    func toolNameConstant() {
+        #expect(TavilyService.toolName == "web_search")
     }
 
     // MARK: - Response Formatting Tests
 
-    func testFormattedForModelWithAnswerAndResults() {
+    @Test("Formatted for model with answer and results")
+    func formattedForModelWithAnswerAndResults() {
         let response = TavilySearchResponse(
             query: "test",
             answer: "This is the answer.",
@@ -523,13 +504,14 @@ final class TavilyServiceTests: XCTestCase {
 
         let formatted = response.formattedForModel(maxResults: 2)
 
-        XCTAssertTrue(formatted.contains("**Answer:** This is the answer."))
-        XCTAssertTrue(formatted.contains("**Sources:**"))
-        XCTAssertTrue(formatted.contains("1. [First Result](https://example.com/1)"))
-        XCTAssertTrue(formatted.contains("2. [Second Result](https://example.com/2)"))
+        #expect(formatted.contains("**Answer:** This is the answer."))
+        #expect(formatted.contains("**Sources:**"))
+        #expect(formatted.contains("1. [First Result](https://example.com/1)"))
+        #expect(formatted.contains("2. [Second Result](https://example.com/2)"))
     }
 
-    func testFormattedForModelWithoutAnswer() {
+    @Test("Formatted for model without answer")
+    func formattedForModelWithoutAnswer() {
         let response = TavilySearchResponse(
             query: "test",
             answer: nil,
@@ -550,11 +532,12 @@ final class TavilyServiceTests: XCTestCase {
 
         let formatted = response.formattedForModel()
 
-        XCTAssertFalse(formatted.contains("**Answer:**"))
-        XCTAssertTrue(formatted.contains("**Sources:**"))
+        #expect(!formatted.contains("**Answer:**"))
+        #expect(formatted.contains("**Sources:**"))
     }
 
-    func testFormattedForModelWithEmptyResults() {
+    @Test("Formatted for model with empty results")
+    func formattedForModelWithEmptyResults() {
         let response = TavilySearchResponse(
             query: "obscure query",
             answer: nil,
@@ -566,10 +549,11 @@ final class TavilyServiceTests: XCTestCase {
 
         let formatted = response.formattedForModel()
 
-        XCTAssertEqual(formatted, "No results found.")
+        #expect(formatted == "No results found.")
     }
 
-    func testFormattedForModelRespectsMaxResultsLimit() {
+    @Test("Formatted for model respects max results limit")
+    func formattedForModelRespectsMaxResultsLimit() {
         let response = TavilySearchResponse(
             query: "test",
             answer: nil,
@@ -586,13 +570,14 @@ final class TavilyServiceTests: XCTestCase {
 
         let formatted = response.formattedForModel(maxResults: 2)
 
-        XCTAssertTrue(formatted.contains("1. [Result 1]"))
-        XCTAssertTrue(formatted.contains("2. [Result 2]"))
-        XCTAssertFalse(formatted.contains("3. [Result 3]"))
-        XCTAssertFalse(formatted.contains("4. [Result 4]"))
+        #expect(formatted.contains("1. [Result 1]"))
+        #expect(formatted.contains("2. [Result 2]"))
+        #expect(!formatted.contains("3. [Result 3]"))
+        #expect(!formatted.contains("4. [Result 4]"))
     }
 
-    func testFormattedForModelTruncatesLongContent() {
+    @Test("Formatted for model truncates long content")
+    func formattedForModelTruncatesLongContent() {
         let longContent = String(repeating: "x", count: 300)
         let response = TavilySearchResponse(
             query: "test",
@@ -615,14 +600,15 @@ final class TavilyServiceTests: XCTestCase {
         let formatted = response.formattedForModel()
 
         // Content should be truncated to 150 chars + "..."
-        XCTAssertTrue(formatted.contains("..."))
+        #expect(formatted.contains("..."))
         // The full 300-char content should NOT appear
-        XCTAssertFalse(formatted.contains(longContent))
+        #expect(!formatted.contains(longContent))
     }
 
     // MARK: - Citation Reference Tests
 
-    func testToCitationReferencesConvertsResults() {
+    @Test("toCitationReferences converts results")
+    func toCitationReferencesConvertsResults() {
         let response = TavilySearchResponse(
             query: "test",
             answer: "Answer",
@@ -651,19 +637,20 @@ final class TavilyServiceTests: XCTestCase {
 
         let citations = response.toCitationReferences()
 
-        XCTAssertEqual(citations.count, 2)
-        XCTAssertEqual(citations[0].number, 1)
-        XCTAssertEqual(citations[0].title, "First Result")
-        XCTAssertEqual(citations[0].url, "https://example.com/1")
-        XCTAssertEqual(citations[0].favicon, "https://example.com/favicon.ico")
-        XCTAssertEqual(citations[1].number, 2)
-        XCTAssertEqual(citations[1].title, "Second Result")
-        XCTAssertEqual(citations[1].url, "https://example.com/2")
+        #expect(citations.count == 2)
+        #expect(citations[0].number == 1)
+        #expect(citations[0].title == "First Result")
+        #expect(citations[0].url == "https://example.com/1")
+        #expect(citations[0].favicon == "https://example.com/favicon.ico")
+        #expect(citations[1].number == 2)
+        #expect(citations[1].title == "Second Result")
+        #expect(citations[1].url == "https://example.com/2")
         // When no favicon is provided, Google's favicon service URL is generated
-        XCTAssertEqual(citations[1].favicon, "https://www.google.com/s2/favicons?domain=example.com&sz=64")
+        #expect(citations[1].favicon == "https://www.google.com/s2/favicons?domain=example.com&sz=64")
     }
 
-    func testToCitationReferencesRespectsMaxResults() {
+    @Test("toCitationReferences respects max results")
+    func toCitationReferencesRespectsMaxResults() {
         let response = TavilySearchResponse(
             query: "test",
             answer: nil,
@@ -681,13 +668,14 @@ final class TavilyServiceTests: XCTestCase {
 
         let citations = response.toCitationReferences(maxResults: 3)
 
-        XCTAssertEqual(citations.count, 3)
-        XCTAssertEqual(citations[0].number, 1)
-        XCTAssertEqual(citations[1].number, 2)
-        XCTAssertEqual(citations[2].number, 3)
+        #expect(citations.count == 3)
+        #expect(citations[0].number == 1)
+        #expect(citations[1].number == 2)
+        #expect(citations[2].number == 3)
     }
 
-    func testToCitationReferencesReturnsEmptyArrayForNoResults() {
+    @Test("toCitationReferences returns empty array for no results")
+    func toCitationReferencesReturnsEmptyArrayForNoResults() {
         let response = TavilySearchResponse(
             query: "test",
             answer: nil,
@@ -699,10 +687,11 @@ final class TavilyServiceTests: XCTestCase {
 
         let citations = response.toCitationReferences()
 
-        XCTAssertTrue(citations.isEmpty)
+        #expect(citations.isEmpty)
     }
 
-    func testExecuteToolCallWithCitationsReturnsFormattedResultAndCitations() async {
+    @Test("Execute tool call with citations returns formatted result and citations")
+    func executeToolCallWithCitationsReturnsFormattedResultAndCitations() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { _ in
@@ -741,32 +730,34 @@ final class TavilyServiceTests: XCTestCase {
         let (result, citations) = await service.executeToolCallWithCitations(arguments: ["query": "swift programming"])
 
         // Verify formatted result
-        XCTAssertTrue(result.contains("**Answer:**"))
-        XCTAssertTrue(result.contains("Swift is a programming language."))
-        XCTAssertTrue(result.contains("**Sources:**"))
+        #expect(result.contains("**Answer:**"))
+        #expect(result.contains("Swift is a programming language."))
+        #expect(result.contains("**Sources:**"))
 
         // Verify citations
-        XCTAssertEqual(citations.count, 2)
-        XCTAssertEqual(citations[0].number, 1)
-        XCTAssertEqual(citations[0].title, "Swift.org")
-        XCTAssertEqual(citations[0].url, "https://swift.org")
-        XCTAssertEqual(citations[0].favicon, "https://swift.org/favicon.ico")
-        XCTAssertEqual(citations[1].number, 2)
-        XCTAssertEqual(citations[1].title, "Apple Developer")
+        #expect(citations.count == 2)
+        #expect(citations[0].number == 1)
+        #expect(citations[0].title == "Swift.org")
+        #expect(citations[0].url == "https://swift.org")
+        #expect(citations[0].favicon == "https://swift.org/favicon.ico")
+        #expect(citations[1].number == 2)
+        #expect(citations[1].title == "Apple Developer")
         // When no favicon is provided, Google's favicon service URL is generated
-        XCTAssertEqual(citations[1].favicon, "https://www.google.com/s2/favicons?domain=developer.apple.com&sz=64")
+        #expect(citations[1].favicon == "https://www.google.com/s2/favicons?domain=developer.apple.com&sz=64")
     }
 
-    func testExecuteToolCallWithCitationsReturnsEmptyCitationsOnMissingQuery() async {
+    @Test("Execute tool call with citations returns empty citations on missing query")
+    func executeToolCallWithCitationsReturnsEmptyCitationsOnMissingQuery() async {
         let service = makeService()
 
         let (result, citations) = await service.executeToolCallWithCitations(arguments: [:])
 
-        XCTAssertEqual(result, "Error: Missing 'query' parameter for web search")
-        XCTAssertTrue(citations.isEmpty)
+        #expect(result == "Error: Missing 'query' parameter for web search")
+        #expect(citations.isEmpty)
     }
 
-    func testExecuteToolCallWithCitationsReturnsEmptyCitationsOnError() async {
+    @Test("Execute tool call with citations returns empty citations on error")
+    func executeToolCallWithCitationsReturnsEmptyCitationsOnError() async {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { _ in
@@ -775,22 +766,24 @@ final class TavilyServiceTests: XCTestCase {
 
         let (result, citations) = await service.executeToolCallWithCitations(arguments: ["query": "test"])
 
-        XCTAssertTrue(result.hasPrefix("Error searching the web:"))
-        XCTAssertTrue(citations.isEmpty)
+        #expect(result.hasPrefix("Error searching the web:"))
+        #expect(citations.isEmpty)
     }
 
     // MARK: - API Key Persistence Tests
 
-    func testAPIKeyIsSavedToKeychain() throws {
+    @Test("API key is saved to keychain")
+    func apiKeyIsSavedToKeychain() throws {
         let service = makeService(apiKey: "")
 
         service.apiKey = "tvly-new-key"
 
         let storedKey = try keychain.string(for: "tavily_api_key")
-        XCTAssertEqual(storedKey, "tvly-new-key")
+        #expect(storedKey == "tvly-new-key")
     }
 
-    func testEmptyAPIKeyRemovesFromKeychain() throws {
+    @Test("Empty API key removes from keychain")
+    func emptyAPIKeyRemovesFromKeychain() throws {
         // First set a key
         try keychain.setString("tvly-existing-key", for: "tavily_api_key")
 
@@ -798,13 +791,13 @@ final class TavilyServiceTests: XCTestCase {
         service.apiKey = ""
 
         let storedKey = try keychain.string(for: "tavily_api_key")
-        XCTAssertNil(storedKey)
+        #expect(storedKey == nil)
     }
 }
 
 // MARK: - Mock URL Protocol for Tavily Tests
 
-private final class TavilyMockURLProtocol: URLProtocol {
+private final class TavilyMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
     nonisolated(unsafe) static var lastRequest: URLRequest?
 

@@ -1,11 +1,12 @@
 @testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
-final class ConversationManagerTests: XCTestCase {
-    private var defaults: UserDefaults!
+@Suite("ConversationManager Tests", .tags(.viewModel, .persistence))
+struct ConversationManagerTests {
+    private var defaults: UserDefaults
 
-    override func setUp() {
-        super.setUp()
+    init() {
         guard let suite = UserDefaults(suiteName: "ConversationManagerTests") else {
             fatalError("Failed to create UserDefaults suite for tests")
         }
@@ -15,23 +16,17 @@ final class ConversationManagerTests: XCTestCase {
         defaults.set(false, forKey: "autoGenerateTitle")
     }
 
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: "ConversationManagerTests")
-        AppPreferences.reset()
-        defaults = nil
-        super.tearDown()
-    }
-
     @MainActor
-    func makeManager(directory: URL, keychain: KeychainStoring? = nil, keyIdentifier: String? = nil) -> ConversationManager {
+    private func makeManager(directory: URL, keychain: KeychainStoring? = nil, keyIdentifier: String? = nil) -> ConversationManager {
         let keychainToUse = keychain ?? InMemoryKeychainStorage()
         let keyId = keyIdentifier ?? UUID().uuidString
         let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychainToUse)
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
 
+    @Test("Create new conversation uses selected model")
     @MainActor
-    func testCreateNewConversationUsesSelectedModel() throws {
+    func createNewConversationUsesSelectedModel() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let expectedModel = "unit-test-model"
 
@@ -39,29 +34,29 @@ final class ConversationManagerTests: XCTestCase {
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
 
-        XCTAssertEqual(manager.conversations.count, 1)
-        XCTAssertEqual(manager.conversations.first?.model, expectedModel)
+        #expect(manager.conversations.count == 1)
+        #expect(manager.conversations.first?.model == expectedModel)
     }
 
+    @Test("Add message appends and updates timestamp")
     @MainActor
-    func testAddMessageAppendsAndUpdatesTimestamp() throws {
+    func addMessageAppendsAndUpdatesTimestamp() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
-        guard let conversation = manager.conversations.first else {
-            return XCTFail("Conversation missing")
-        }
+        let conversation = try #require(manager.conversations.first)
 
         let message = Message(role: .user, content: "Ping")
         manager.addMessage(to: conversation, message: message)
 
-        XCTAssertEqual(manager.conversations.first?.messages.count, 1)
-        XCTAssertEqual(manager.conversations.first?.messages.first?.content, "Ping")
+        #expect(manager.conversations.first?.messages.count == 1)
+        #expect(manager.conversations.first?.messages.first?.content == "Ping")
     }
 
+    @Test("Clear all conversations empties encrypted store")
     @MainActor
-    func testClearAllConversationsEmptiesEncryptedStore() async throws {
+    func clearAllConversationsEmptiesEncryptedStore() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
@@ -76,12 +71,13 @@ final class ConversationManagerTests: XCTestCase {
         // Wait for async clear
         try await Task.sleep(for: .milliseconds(100))
 
-        XCTAssertTrue(manager.conversations.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
+        #expect(manager.conversations.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("conversations.enc").path))
     }
 
+    @Test("Search finds matches in title and messages")
     @MainActor
-    func testSearchFindsMatchesInTitleAndMessages() throws {
+    func searchFindsMatchesInTitleAndMessages() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -95,14 +91,15 @@ final class ConversationManagerTests: XCTestCase {
         let titleResults = manager.searchConversations(query: "Swift")
         let bodyResults = manager.searchConversations(query: "movies")
 
-        XCTAssertEqual(titleResults.count, 1)
-        XCTAssertEqual(titleResults.first?.title, "Swift Tips")
-        XCTAssertEqual(bodyResults.count, 1)
-        XCTAssertEqual(bodyResults.first?.title, "Random Chat")
+        #expect(titleResults.count == 1)
+        #expect(titleResults.first?.title == "Swift Tips")
+        #expect(bodyResults.count == 1)
+        #expect(bodyResults.first?.title == "Random Chat")
     }
 
+    @Test("Save immediately persists manual changes")
     @MainActor
-    func testSaveImmediatelyPersistsManualChanges() async throws {
+    func saveImmediatelyPersistsManualChanges() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-key-id"
@@ -127,12 +124,13 @@ final class ConversationManagerTests: XCTestCase {
         let newManager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)
         _ = await newManager.loadingTask?.value
 
-        XCTAssertEqual(newManager.conversations.count, 1)
-        XCTAssertEqual(newManager.conversations.first?.messages.last?.content, "Partial content")
+        #expect(newManager.conversations.count == 1)
+        #expect(newManager.conversations.first?.messages.last?.content == "Partial content")
     }
 
+    @Test("Reload conversations removes stale non-dirty conversations")
     @MainActor
-    func testReloadConversationsRemovesStaleNonDirtyConversations() async throws {
+    func reloadConversationsRemovesStaleNonDirtyConversations() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-reconcile-key"
@@ -144,21 +142,22 @@ final class ConversationManagerTests: XCTestCase {
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         _ = await manager.loadingTask?.value
 
-        XCTAssertEqual(manager.conversations.count, 1)
-        XCTAssertEqual(manager.conversations.first?.id, kept.id)
+        #expect(manager.conversations.count == 1)
+        #expect(manager.conversations.first?.id == kept.id)
 
         let stale = TestHelpers.sampleConversation(title: "Stale")
         manager.conversations.append(stale)
-        XCTAssertEqual(manager.conversations.count, 2)
+        #expect(manager.conversations.count == 2)
 
         await manager.reloadConversations()
 
-        XCTAssertTrue(manager.conversations.contains(where: { $0.id == kept.id }))
-        XCTAssertFalse(manager.conversations.contains(where: { $0.id == stale.id }))
+        #expect(manager.conversations.contains(where: { $0.id == kept.id }))
+        #expect(!manager.conversations.contains(where: { $0.id == stale.id }))
     }
 
+    @Test("Reload conversations preserves dirty in-memory conversations not yet on disk")
     @MainActor
-    func testReloadConversationsPreservesDirtyInMemoryConversationsNotYetOnDisk() async throws {
+    func reloadConversationsPreservesDirtyInMemoryConversationsNotYetOnDisk() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-dirty-wins-key"
@@ -176,11 +175,11 @@ final class ConversationManagerTests: XCTestCase {
 
         // Confirm it's not on disk yet (debounce is long)
         let diskBefore = try await store.loadConversations()
-        XCTAssertTrue(diskBefore.isEmpty)
+        #expect(diskBefore.isEmpty)
 
         await manager.reloadConversations()
 
-        XCTAssertTrue(manager.conversations.contains(where: { $0.id == dirty.id }))
+        #expect(manager.conversations.contains(where: { $0.id == dirty.id }))
 
         // Clean up pending saves to avoid test cross-talk.
         manager.clearAllConversations()

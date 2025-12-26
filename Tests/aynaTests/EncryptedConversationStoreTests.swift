@@ -1,8 +1,12 @@
-@testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
-final class EncryptedConversationStoreTests: XCTestCase {
-    func testSaveAndLoadRoundTripsConversations() async throws {
+@testable import Ayna
+
+@Suite("EncryptedConversationStore Tests", .tags(.persistence, .slow))
+struct EncryptedConversationStoreTests {
+    @Test("Save and load round trips conversations")
+    func saveAndLoadRoundTripsConversations() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation(title: "Alpha")
@@ -10,12 +14,13 @@ final class EncryptedConversationStoreTests: XCTestCase {
         try await store.save(conversation)
         let loaded = try await store.loadConversations()
 
-        XCTAssertEqual(loaded.count, 1)
-        XCTAssertEqual(loaded.first?.title, "Alpha")
-        XCTAssertEqual(loaded.first?.messages.count, conversation.messages.count)
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.title == "Alpha")
+        #expect(loaded.first?.messages.count == conversation.messages.count)
     }
 
-    func testClearRemovesEncryptedFiles() async throws {
+    @Test("Clear removes encrypted files")
+    func clearRemovesEncryptedFiles() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation()
@@ -26,10 +31,11 @@ final class EncryptedConversationStoreTests: XCTestCase {
         let files = try FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         )
-        XCTAssertTrue(files.isEmpty)
+        #expect(files.isEmpty)
     }
 
-    func testSecondStoreInstanceLoadsDataUsingSameKey() async throws {
+    @Test("Second store instance loads data using same key")
+    func secondStoreInstanceLoadsDataUsingSameKey() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keyIdentifier = UUID().uuidString
 
@@ -44,6 +50,6 @@ final class EncryptedConversationStoreTests: XCTestCase {
         )
         let loaded = try await secondStore.loadConversations()
 
-        XCTAssertEqual(loaded.first?.title, "Persisted")
+        #expect(loaded.first?.title == "Persisted")
     }
 }

@@ -1,16 +1,18 @@
 @testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
 // Note: WatchChatViewModel is only available on watchOS. These tests verify the
 // OpenAIService tool integration and the data flow patterns used by the watch.
 // The actual WatchChatViewModel cannot be tested directly on macOS.
 
+@Suite("WatchChatViewModel Integration Tests", .serialized)
 @MainActor
-final class WatchChatViewModelIntegrationTests: XCTestCase {
-    private var defaults: UserDefaults!
-    private var keychain: InMemoryKeychainStorage!
+struct WatchChatViewModelIntegrationTests {
+    private var defaults: UserDefaults
+    private var keychain: InMemoryKeychainStorage
 
-    override func setUp() async throws {
+    init() {
         guard let suite = UserDefaults(suiteName: "WatchChatViewModelTests") else {
             fatalError("Failed to create UserDefaults suite")
         }
@@ -23,17 +25,10 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         WatchMockURLProtocol.reset()
     }
 
-    override func tearDown() async throws {
-        AppPreferences.reset()
-        defaults.removePersistentDomain(forName: "WatchChatViewModelTests")
-        defaults = nil
-        keychain = nil
-        WatchMockURLProtocol.reset()
-    }
-
     // MARK: - Tool Integration Tests
 
-    func testOpenAIServiceIncludesTavilyToolWhenConfigured() async throws {
+    @Test("OpenAI service includes Tavily tool when configured")
+    func openAIServiceIncludesTavilyToolWhenConfigured() async throws {
         // Configure TavilyService with a test API key
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = "tvly-test-key"
@@ -41,41 +36,44 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         // Note: In the actual app, OpenAIService.getAllAvailableTools() includes Tavily
         // when TavilyService.shared.isAvailable is true
-        XCTAssertTrue(tavilyService.isAvailable)
-        XCTAssertTrue(tavilyService.isConfigured)
+        #expect(tavilyService.isAvailable)
+        #expect(tavilyService.isConfigured)
 
         let toolDef = tavilyService.toolDefinition()
         guard let function = toolDef["function"] as? [String: Any],
               let name = function["name"] as? String
         else {
-            XCTFail("Invalid tool definition")
+            Issue.record("Invalid tool definition")
             return
         }
 
-        XCTAssertEqual(name, "web_search")
+        #expect(name == "web_search")
     }
 
-    func testOpenAIServiceExcludesTavilyToolWhenDisabled() {
+    @Test("OpenAI service excludes Tavily tool when disabled")
+    func openAIServiceExcludesTavilyToolWhenDisabled() {
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = "tvly-test-key"
         tavilyService.isEnabled = false
 
-        XCTAssertTrue(tavilyService.isConfigured)
-        XCTAssertFalse(tavilyService.isAvailable)
+        #expect(tavilyService.isConfigured)
+        #expect(!tavilyService.isAvailable)
     }
 
-    func testOpenAIServiceExcludesTavilyToolWhenNotConfigured() {
+    @Test("OpenAI service excludes Tavily tool when not configured")
+    func openAIServiceExcludesTavilyToolWhenNotConfigured() {
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = ""
         tavilyService.isEnabled = true
 
-        XCTAssertFalse(tavilyService.isConfigured)
-        XCTAssertFalse(tavilyService.isAvailable)
+        #expect(!tavilyService.isConfigured)
+        #expect(!tavilyService.isAvailable)
     }
 
     // MARK: - Message Flow Tests
 
-    func testWatchMessageSyncFlow() throws {
+    @Test("Watch message sync flow")
+    func watchMessageSyncFlow() throws {
         // Simulate the message flow: User sends message → WatchMessage → sync to iPhone
         let userContent = "What's the weather?"
         let userMessage = Message(role: .user, content: userContent)
@@ -83,20 +81,21 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         // Encode for WatchConnectivity
         let data = try JSONEncoder().encode(watchMessage)
-        XCTAssertFalse(data.isEmpty)
+        #expect(!data.isEmpty)
 
         // Decode on iPhone side
         let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
-        XCTAssertEqual(decoded.content, userContent)
-        XCTAssertEqual(decoded.role, "user")
+        #expect(decoded.content == userContent)
+        #expect(decoded.role == "user")
 
         // Convert to Message for ConversationManager
         let message = decoded.toMessage()
-        XCTAssertEqual(message.content, userContent)
-        XCTAssertEqual(message.role, .user)
+        #expect(message.content == userContent)
+        #expect(message.role == .user)
     }
 
-    func testAssistantMessageSyncFlow() throws {
+    @Test("Assistant message sync flow")
+    func assistantMessageSyncFlow() throws {
         // Simulate: API response → Update local → WatchMessage → sync to iPhone
         let assistantContent = "The weather is sunny with a high of 72°F."
         let assistantMessage = Message(role: .assistant, content: assistantContent, model: "gpt-4o")
@@ -105,14 +104,15 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         let data = try JSONEncoder().encode(watchMessage)
         let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
 
-        XCTAssertEqual(decoded.content, assistantContent)
-        XCTAssertEqual(decoded.role, "assistant")
-        XCTAssertEqual(decoded.model, "gpt-4o")
+        #expect(decoded.content == assistantContent)
+        #expect(decoded.role == "assistant")
+        #expect(decoded.model == "gpt-4o")
     }
 
     // MARK: - Tool Execution Flow Tests
 
-    func testTavilyToolCallExecution() async {
+    @Test("Tavily tool call execution")
+    func tavilyToolCallExecution() async {
         // Configure mock Tavily service
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WatchMockURLProtocol.self]
@@ -136,7 +136,7 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
                     {
                         "title": "Weather.com",
                         "url": "https://weather.com",
-                        "content": "Today's forecast shows clear skies.",
+                       "content": "Today's forecast shows clear skies.",
                         "score": 0.9
                     }
                 ],
@@ -148,12 +148,13 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         let result = await tavilyService.executeToolCall(arguments: ["query": "weather"])
 
-        XCTAssertTrue(result.contains("Answer"))
-        XCTAssertTrue(result.contains("Sunny"))
-        XCTAssertTrue(result.contains("Sources"))
+        #expect(result.contains("Answer"))
+        #expect(result.contains("Sunny"))
+        #expect(result.contains("Sources"))
     }
 
-    func testToolCallDepthLimit() {
+    @Test("Tool call depth limit")
+    func toolCallDepthLimit() {
         // The WatchChatViewModel has a maxToolCallDepth of 5
         // This test verifies the concept of depth limiting
         let maxDepth = 5
@@ -167,12 +168,13 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
             currentDepth += 1
         }
 
-        XCTAssertEqual(currentDepth, maxDepth, "Tool call depth should be limited to \(maxDepth)")
+        #expect(currentDepth == maxDepth, "Tool call depth should be limited to \(maxDepth)")
     }
 
     // MARK: - Model Filtering Tests
 
-    func testWatchOSModelFiltering() {
+    @Test("WatchOS model filtering")
+    func watchOSModelFiltering() {
         // On watchOS, AIKit and Apple Intelligence models should be filtered out
         let allModels = ["gpt-4o", "gpt-4", "llama-local", "apple-intelligence"]
         let modelProviders: [String: AIProvider] = [
@@ -187,30 +189,32 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
             return provider != .aikit && provider != .appleIntelligence
         }
 
-        XCTAssertEqual(usableModels.count, 2)
-        XCTAssertTrue(usableModels.contains("gpt-4o"))
-        XCTAssertTrue(usableModels.contains("gpt-4"))
-        XCTAssertFalse(usableModels.contains("llama-local"))
-        XCTAssertFalse(usableModels.contains("apple-intelligence"))
+        #expect(usableModels.count == 2)
+        #expect(usableModels.contains("gpt-4o"))
+        #expect(usableModels.contains("gpt-4"))
+        #expect(!usableModels.contains("llama-local"))
+        #expect(!usableModels.contains("apple-intelligence"))
     }
 
     // MARK: - Conversation State Tests
 
-    func testTitleGenerationTrigger() {
+    @Test("Title generation trigger")
+    func titleGenerationTrigger() {
         // Title generation should only trigger on the first message
         var conversation = Conversation(title: "New Chat", model: "gpt-4o")
 
         let isFirstMessage = conversation.messages.isEmpty
-        XCTAssertTrue(isFirstMessage, "First message should trigger title generation")
+        #expect(isFirstMessage, "First message should trigger title generation")
 
         conversation.addMessage(Message(role: .user, content: "Hello"))
         conversation.addMessage(Message(role: .assistant, content: "Hi!"))
 
         let isStillFirstMessage = conversation.messages.isEmpty
-        XCTAssertFalse(isStillFirstMessage, "Subsequent messages should not trigger title generation")
+        #expect(!isStillFirstMessage, "Subsequent messages should not trigger title generation")
     }
 
-    func testConversationUpdatePreservesLocalTitle() {
+    @Test("Conversation update preserves local title")
+    func conversationUpdatePreservesLocalTitle() {
         // When iPhone syncs with "New Chat" but watch has generated a title,
         // the local title should be preserved
         let conversationId = UUID()
@@ -229,20 +233,22 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         let shouldPreserveLocal = syncedConv.title == "New Chat" && localConv.title != "New Chat"
         let finalTitle = shouldPreserveLocal ? localConv.title : syncedConv.title
 
-        XCTAssertEqual(finalTitle, localTitle)
+        #expect(finalTitle == localTitle)
     }
 
     // MARK: - Additional Watch Integration Tests
 
-    func testStreamingThrottleInterval() {
+    @Test("Streaming throttle interval")
+    func streamingThrottleInterval() {
         // Verify the throttle interval constant is reasonable for Watch performance
         let uiUpdateInterval: TimeInterval = 0.1 // 100ms as used in WatchChatViewModel
-        XCTAssertEqual(uiUpdateInterval, 0.1, accuracy: 0.001)
-        XCTAssertTrue(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
-        XCTAssertTrue(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
+        #expect(uiUpdateInterval == 0.1)
+        #expect(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
+        #expect(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
     }
 
-    func testMaxToolCallDepthConstant() {
+    @Test("Max tool call depth constant")
+    func maxToolCallDepthConstant() {
         // The WatchChatViewModel should limit recursive tool calls
         let maxToolCallDepth = 5
 
@@ -258,11 +264,12 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
             currentDepth += 1
         }
 
-        XCTAssertTrue(reachedLimit, "Should reach tool call depth limit")
-        XCTAssertEqual(currentDepth, maxToolCallDepth)
+        #expect(reachedLimit, "Should reach tool call depth limit")
+        #expect(currentDepth == maxToolCallDepth)
     }
 
-    func testWatchConversationSyncMergeLogic() {
+    @Test("Watch conversation sync merge logic")
+    func watchConversationSyncMergeLogic() {
         // Test the merge logic used in WatchConversationStore.updateConversations
         let conversationId = UUID()
 
@@ -279,10 +286,11 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         // Merge logic should preserve local when it has more messages
         let shouldPreserveLocalMessages = localConv.messages.count > remoteConv.messages.count
-        XCTAssertTrue(shouldPreserveLocalMessages)
+        #expect(shouldPreserveLocalMessages)
     }
 
-    func testWatchMessageRoundTripWithAllFields() throws {
+    @Test("Watch message round trip with all fields")
+    func watchMessageRoundTripWithAllFields() throws {
         let originalId = UUID()
         let timestamp = Date()
         let original = Message(
@@ -303,14 +311,15 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         // Convert back to Message
         let final = decoded.toMessage()
 
-        XCTAssertEqual(final.id, originalId)
-        XCTAssertEqual(final.role, .assistant)
-        XCTAssertEqual(final.content, original.content)
-        XCTAssertEqual(final.model, "gpt-4o")
-        XCTAssertEqual(final.timestamp.timeIntervalSince1970, timestamp.timeIntervalSince1970, accuracy: 0.001)
+        #expect(final.id == originalId)
+        #expect(final.role == .assistant)
+        #expect(final.content == original.content)
+        #expect(final.model == "gpt-4o")
+        #expect(abs(final.timestamp.timeIntervalSince1970 - timestamp.timeIntervalSince1970) < 0.001)
     }
 
-    func testWatchConversationRoundTripWithMessages() throws {
+    @Test("Watch conversation round trip with messages")
+    func watchConversationRoundTripWithMessages() throws {
         let originalId = UUID()
         let createdAt = Date()
         var original = Conversation(
@@ -332,15 +341,16 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
         // Convert back
         let final = decoded.toConversation()
 
-        XCTAssertEqual(final.id, originalId)
-        XCTAssertEqual(final.title, "Test Chat")
-        XCTAssertEqual(final.model, "gpt-4o")
-        XCTAssertEqual(final.messages.count, 2)
-        XCTAssertEqual(final.messages[0].content, "Question")
-        XCTAssertEqual(final.messages[1].content, "Answer")
+        #expect(final.id == originalId)
+        #expect(final.title == "Test Chat")
+        #expect(final.model == "gpt-4o")
+        #expect(final.messages.count == 2)
+        #expect(final.messages[0].content == "Question")
+        #expect(final.messages[1].content == "Answer")
     }
 
-    func testModelUsabilityCheckLogic() {
+    @Test("Model usability check logic")
+    func modelUsabilityCheckLogic() {
         // Test the filtering logic for watchOS-compatible models
         let allModels = ["gpt-4o", "gpt-4", "gpt-3.5-turbo", "llama-local", "apple-intelligence-chat"]
         let modelProviders: [String: AIProvider] = [
@@ -357,15 +367,16 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
             return provider != .aikit && provider != .appleIntelligence
         }
 
-        XCTAssertEqual(usableModels.count, 3)
-        XCTAssertTrue(usableModels.contains("gpt-4o"))
-        XCTAssertTrue(usableModels.contains("gpt-4"))
-        XCTAssertTrue(usableModels.contains("gpt-3.5-turbo"))
-        XCTAssertFalse(usableModels.contains("llama-local"))
-        XCTAssertFalse(usableModels.contains("apple-intelligence-chat"))
+        #expect(usableModels.count == 3)
+        #expect(usableModels.contains("gpt-4o"))
+        #expect(usableModels.contains("gpt-4"))
+        #expect(usableModels.contains("gpt-3.5-turbo"))
+        #expect(!usableModels.contains("llama-local"))
+        #expect(!usableModels.contains("apple-intelligence-chat"))
     }
 
-    func testAzureProviderAllowedOnWatch() {
+    @Test("Azure provider allowed on Watch")
+    func azureProviderAllowedOnWatch() {
         // GitHub Models should work on watchOS (uses cloud API)
         let modelProviders: [String: AIProvider] = [
             "github-gpt-4o": .githubModels,
@@ -374,14 +385,14 @@ final class WatchChatViewModelIntegrationTests: XCTestCase {
 
         for (model, provider) in modelProviders {
             let isUsableOnWatch = provider != .aikit && provider != .appleIntelligence
-            XCTAssertTrue(isUsableOnWatch, "\(model) should be usable on watchOS")
+            #expect(isUsableOnWatch, "\(model) should be usable on watchOS")
         }
     }
 }
 
 // MARK: - Mock URL Protocol for Watch Tests
 
-private final class WatchMockURLProtocol: URLProtocol {
+private final class WatchMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     static func reset() {

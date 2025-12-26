@@ -50,6 +50,8 @@ open ayna.xcodeproj
 
 ## Testing
 
+**Unit tests use [Swift Testing](https://developer.apple.com/documentation/testing)** (not XCTest). UI tests remain on XCTest.
+
 - Run SwiftLint before committing:
   ```bash
   swiftlint --strict
@@ -62,11 +64,13 @@ open ayna.xcodeproj
   ```bash
   xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
   ```
-- Unit tests remain in `Tests/aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
+- Unit tests live in `Tests/aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
   - `InMemoryKeychainStorage` keeps credentials in-memory during tests.
   - `MockURLProtocol` intercepts `URLSession` traffic for `OpenAIService`.
   - `EncryptedConversationStore` and `ConversationManager` accept dependency-injected stores/file URLs for isolation.
 - Keep every test deterministic—avoid real network calls, timers, or writes outside temporary directories.
+
+See [docs/testing.md](docs/testing.md) for detailed testing patterns and templates.
 
 ## Architecture
 

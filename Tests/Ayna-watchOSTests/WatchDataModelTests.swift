@@ -7,12 +7,15 @@
 //
 
 @testable import Ayna_watchOS_Watch_App
-import XCTest
+import Foundation
+import Testing
 
-final class WatchDataModelTests: XCTestCase {
+@Suite("WatchDataModel Tests")
+struct WatchDataModelTests {
     // MARK: - WatchMessage Tests
 
-    func testWatchMessageInitFromMessage() {
+    @Test("WatchMessage init from Message")
+    func watchMessageInitFromMessage() {
         let originalId = UUID()
         let timestamp = Date()
         let message = Message(
@@ -25,14 +28,15 @@ final class WatchDataModelTests: XCTestCase {
 
         let watchMessage = WatchMessage(from: message)
 
-        XCTAssertEqual(watchMessage.id, originalId)
-        XCTAssertEqual(watchMessage.role, "user")
-        XCTAssertEqual(watchMessage.content, "Test content")
-        XCTAssertEqual(watchMessage.timestamp, timestamp)
-        XCTAssertEqual(watchMessage.model, "gpt-4o")
+        #expect(watchMessage.id == originalId)
+        #expect(watchMessage.role == "user")
+        #expect(watchMessage.content == "Test content")
+        #expect(watchMessage.timestamp == timestamp)
+        #expect(watchMessage.model == "gpt-4o")
     }
 
-    func testWatchMessageToMessage() {
+    @Test("WatchMessage to Message")
+    func watchMessageToMessage() {
         let originalId = UUID()
         let timestamp = Date()
         let watchMessage = WatchMessage(
@@ -47,34 +51,37 @@ final class WatchDataModelTests: XCTestCase {
 
         let message = watchMessage.toMessage()
 
-        XCTAssertEqual(message.id, originalId)
-        XCTAssertEqual(message.role, .assistant)
-        XCTAssertEqual(message.content, "Response")
-        XCTAssertEqual(message.timestamp, timestamp)
-        XCTAssertEqual(message.model, "gpt-4")
+        #expect(message.id == originalId)
+        #expect(message.role == .assistant)
+        #expect(message.content == "Response")
+        #expect(message.timestamp == timestamp)
+        #expect(message.model == "gpt-4")
     }
 
-    func testWatchMessageAllRoles() {
+    @Test("WatchMessage all roles")
+    func watchMessageAllRoles() {
         let roles: [Message.Role] = [.user, .assistant, .system, .tool]
 
         for role in roles {
             let message = Message(role: role, content: "Test")
             let watchMessage = WatchMessage(from: message)
 
-            XCTAssertEqual(watchMessage.role, role.rawValue)
-            XCTAssertEqual(watchMessage.toMessage().role, role)
+            #expect(watchMessage.role == role.rawValue)
+            #expect(watchMessage.toMessage().role == role)
         }
     }
 
-    func testWatchMessageWithoutModel() {
+    @Test("WatchMessage without model")
+    func watchMessageWithoutModel() {
         let message = Message(role: .user, content: "Question")
         let watchMessage = WatchMessage(from: message)
 
-        XCTAssertNil(watchMessage.model)
-        XCTAssertNil(watchMessage.toMessage().model)
+        #expect(watchMessage.model == nil)
+        #expect(watchMessage.toMessage().model == nil)
     }
 
-    func testWatchMessageCodable() throws {
+    @Test("WatchMessage Codable")
+    func watchMessageCodable() throws {
         let message = Message(role: .assistant, content: "Test", model: "gpt-4o")
         let watchMessage = WatchMessage(from: message)
 
@@ -84,15 +91,16 @@ final class WatchDataModelTests: XCTestCase {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(WatchMessage.self, from: data)
 
-        XCTAssertEqual(decoded.id, watchMessage.id)
-        XCTAssertEqual(decoded.role, watchMessage.role)
-        XCTAssertEqual(decoded.content, watchMessage.content)
-        XCTAssertEqual(decoded.model, watchMessage.model)
+        #expect(decoded.id == watchMessage.id)
+        #expect(decoded.role == watchMessage.role)
+        #expect(decoded.content == watchMessage.content)
+        #expect(decoded.model == watchMessage.model)
     }
 
     // MARK: - WatchConversation Tests
 
-    func testWatchConversationInitFromConversation() {
+    @Test("WatchConversation init from Conversation")
+    func watchConversationInitFromConversation() {
         let originalId = UUID()
         let createdAt = Date()
         var conversation = Conversation(
@@ -106,25 +114,27 @@ final class WatchDataModelTests: XCTestCase {
 
         let watchConversation = WatchConversation(from: conversation)
 
-        XCTAssertEqual(watchConversation.id, originalId)
-        XCTAssertEqual(watchConversation.title, "Test Chat")
-        XCTAssertEqual(watchConversation.model, "gpt-4o")
-        XCTAssertEqual(watchConversation.messages.count, 2)
+        #expect(watchConversation.id == originalId)
+        #expect(watchConversation.title == "Test Chat")
+        #expect(watchConversation.model == "gpt-4o")
+        #expect(watchConversation.messages.count == 2)
     }
 
-    func testWatchConversationToConversation() {
+    @Test("WatchConversation to Conversation")
+    func watchConversationToConversation() {
         let originalId = UUID()
         let conversation = Conversation(id: originalId, title: "Watch Chat", model: "gpt-4")
         let watchConversation = WatchConversation(from: conversation)
 
         let converted = watchConversation.toConversation()
 
-        XCTAssertEqual(converted.id, originalId)
-        XCTAssertEqual(converted.title, "Watch Chat")
-        XCTAssertEqual(converted.model, "gpt-4")
+        #expect(converted.id == originalId)
+        #expect(converted.title == "Watch Chat")
+        #expect(converted.model == "gpt-4")
     }
 
-    func testWatchConversationLimitsMessages() {
+    @Test("WatchConversation limits messages to 20")
+    func watchConversationLimitsMessages() {
         var conversation = Conversation(title: "Many Messages", model: "gpt-4o")
 
         // Add more than 20 messages
@@ -136,14 +146,15 @@ final class WatchDataModelTests: XCTestCase {
         let watchConversation = WatchConversation(from: conversation)
 
         // Should only include the last 20
-        XCTAssertEqual(watchConversation.messages.count, 20)
+        #expect(watchConversation.messages.count == 20)
         // First message should be "Message 11" (30-20+1)
-        XCTAssertEqual(watchConversation.messages.first?.content, "Message 11")
+        #expect(watchConversation.messages.first?.content == "Message 11")
         // Last message should be "Message 30"
-        XCTAssertEqual(watchConversation.messages.last?.content, "Message 30")
+        #expect(watchConversation.messages.last?.content == "Message 30")
     }
 
-    func testWatchConversationCodable() throws {
+    @Test("WatchConversation Codable")
+    func watchConversationCodable() throws {
         var conversation = Conversation(title: "Codable Test", model: "gpt-4o")
         conversation.addMessage(Message(role: .user, content: "Test"))
         let watchConversation = WatchConversation(from: conversation)
@@ -154,13 +165,14 @@ final class WatchDataModelTests: XCTestCase {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(WatchConversation.self, from: data)
 
-        XCTAssertEqual(decoded.id, watchConversation.id)
-        XCTAssertEqual(decoded.title, watchConversation.title)
-        XCTAssertEqual(decoded.model, watchConversation.model)
-        XCTAssertEqual(decoded.messages.count, 1)
+        #expect(decoded.id == watchConversation.id)
+        #expect(decoded.title == watchConversation.title)
+        #expect(decoded.model == watchConversation.model)
+        #expect(decoded.messages.count == 1)
     }
 
-    func testWatchConversationArrayCodable() throws {
+    @Test("WatchConversation array Codable")
+    func watchConversationArrayCodable() throws {
         var conv1 = Conversation(title: "Chat 1", model: "gpt-4o")
         conv1.addMessage(Message(role: .user, content: "Hello"))
 
@@ -178,42 +190,46 @@ final class WatchDataModelTests: XCTestCase {
         let decoder = JSONDecoder()
         let decoded = try decoder.decode([WatchConversation].self, from: data)
 
-        XCTAssertEqual(decoded.count, 2)
-        XCTAssertEqual(decoded[0].title, "Chat 1")
-        XCTAssertEqual(decoded[1].title, "Chat 2")
+        #expect(decoded.count == 2)
+        #expect(decoded[0].title == "Chat 1")
+        #expect(decoded[1].title == "Chat 2")
     }
 
     // MARK: - Edge Cases
 
-    func testEmptyConversation() {
+    @Test("Empty conversation")
+    func emptyConversation() {
         let conversation = Conversation(title: "Empty", model: "gpt-4o")
         let watchConversation = WatchConversation(from: conversation)
 
-        XCTAssertTrue(watchConversation.messages.isEmpty)
+        #expect(watchConversation.messages.isEmpty)
 
         let converted = watchConversation.toConversation()
-        XCTAssertTrue(converted.messages.isEmpty)
+        #expect(converted.messages.isEmpty)
     }
 
-    func testMessageWithEmptyContent() {
+    @Test("Message with empty content")
+    func messageWithEmptyContent() {
         let message = Message(role: .assistant, content: "")
         let watchMessage = WatchMessage(from: message)
 
-        XCTAssertTrue(watchMessage.content.isEmpty)
-        XCTAssertTrue(watchMessage.toMessage().content.isEmpty)
+        #expect(watchMessage.content.isEmpty)
+        #expect(watchMessage.toMessage().content.isEmpty)
     }
 
-    func testMessageWithSpecialCharacters() {
+    @Test("Message with special characters")
+    func messageWithSpecialCharacters() {
         let content = "Hello 👋 <script>alert('xss')</script> & more"
         let message = Message(role: .user, content: content)
         let watchMessage = WatchMessage(from: message)
 
-        XCTAssertEqual(watchMessage.content, content)
-        XCTAssertEqual(watchMessage.toMessage().content, content)
+        #expect(watchMessage.content == content)
+        #expect(watchMessage.toMessage().content == content)
     }
 
-    func testConversationDatePreservation() {
-        let createdAt = Date(timeIntervalSince1970: 1_000_000)
+    @Test("Conversation date preservation")
+    func conversationDatePreservation() {
+      let createdAt = Date(timeIntervalSince1970: 1_000_000)
         let updatedAt = Date(timeIntervalSince1970: 2_000_000)
 
         var conversation = Conversation(
@@ -226,7 +242,7 @@ final class WatchDataModelTests: XCTestCase {
 
         let watchConversation = WatchConversation(from: conversation)
 
-        XCTAssertEqual(watchConversation.createdAt, createdAt)
-        XCTAssertEqual(watchConversation.updatedAt, updatedAt)
+        #expect(watchConversation.createdAt == createdAt)
+        #expect(watchConversation.updatedAt == updatedAt)
     }
 }

@@ -1,7 +1,26 @@
 @testable import Ayna
 import Foundation
 import Security
-import XCTest
+import Testing
+
+// MARK: - CustomTestStringConvertible Extensions
+
+// Provides better test failure diagnostics per Swift Testing Playbook Section 10
+extension Conversation: @retroactive CustomTestStringConvertible {
+    public var testDescription: String {
+        "Conversation(\(id.uuidString.prefix(8))..., title: \"\(title)\", messages: \(messages.count), model: \(model))"
+    }
+}
+
+extension Message: @retroactive CustomTestStringConvertible {
+    public var testDescription: String {
+        let contentPreview = content.prefix(30)
+        let suffix = content.count > 30 ? "..." : ""
+        return "Message(\(role.rawValue), \"\(contentPreview)\(suffix)\")"
+    }
+}
+
+// MARK: - In-Memory Keychain Storage
 
 final class InMemoryKeychainStorage: KeychainStoring, @unchecked Sendable {
     private var storage: [String: Data] = [:]

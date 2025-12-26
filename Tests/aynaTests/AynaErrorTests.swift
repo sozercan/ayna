@@ -6,304 +6,330 @@
 //
 
 import Foundation
-import XCTest
+import Testing
 
 @testable import Ayna
 
-final class AynaErrorTests: XCTestCase {
-    // MARK: - Error Description Tests
+// MARK: - CustomTestStringConvertible Extension for Better Diagnostics
 
-    func testNetworkErrorDescription() {
+extension AynaError: @retroactive CustomTestStringConvertible {
+    public var testDescription: String {
+        switch self {
+        case .timeout: "AynaError.timeout"
+        case .cancelled: "AynaError.cancelled"
+        case .noModelSelected: "AynaError.noModelSelected"
+        case let .missingAPIKey(provider): "AynaError.missingAPIKey(\(provider))"
+        case let .invalidAPIKey(provider): "AynaError.invalidAPIKey(\(provider))"
+        case let .modelNotFound(name): "AynaError.modelNotFound(\(name))"
+        case let .httpError(code, msg): "AynaError.httpError(\(code), \"\(msg.prefix(20))...\")"
+        case let .rateLimited(retry): "AynaError.rateLimited(retryAfter: \(retry ?? 0))"
+        case let .toolNotFound(name): "AynaError.toolNotFound(\(name))"
+        case let .toolExecutionFailed(name, _): "AynaError.toolExecutionFailed(\(name))"
+        case .networkError: "AynaError.networkError"
+        case .contentFiltered: "AynaError.contentFiltered"
+        case .unknown: "AynaError.unknown"
+        }
+    }
+}
+
+// MARK: - Test Input Types for Parameterized Tests
+
+/// Test case for error description validation
+private struct ErrorDescriptionCase: Sendable {
+    let error: AynaError
+    let expectedContains: String
+    let hasRecoverySuggestion: Bool
+
+    var label: String { expectedContains }
+}
+
+/// Test case for URLError wrapping
+private struct URLErrorWrapCase: Sendable, CustomTestStringConvertible {
+    let code: URLError.Code
+    let expectedCase: ExpectedAynaError
+
+    var testDescription: String {
+        "URLError.\(code) → \(expectedCase)"
+    }
+
+    enum ExpectedAynaError: Sendable, CustomStringConvertible {
+        case timeout
+        case cancelled
+        case networkError
+
+        var description: String {
+            switch self {
+            case .timeout: "timeout"
+            case .cancelled: "cancelled"
+            case .networkError: "networkError"
+            }
+        }
+
+        func matches(_ error: AynaError) -> Bool {
+            switch self {
+            case .timeout: error == .timeout
+            case .cancelled: error == .cancelled
+            case .networkError:
+                if case .networkError = error { return true }
+                return false
+            }
+        }
+    }
+}
+
+@Suite("AynaError Tests", .tags(.errorHandling, .fast))
+struct AynaErrorTests {
+    // MARK: - Error Description Tests (Parameterized)
+
+    @Test("Error descriptions are correct", arguments: [
+        ErrorDescriptionCase(error: .timeout, expectedContains: "Request timed out", hasRecoverySuggestion: true),
+        ErrorDescriptionCase(error: .noModelSelected, expectedContains: "No model selected", hasRecoverySuggestion: true),
+        ErrorDescriptionCase(error: .cancelled, expectedContains: "Operation was cancelled", hasRecoverySuggestion: false),
+        ErrorDescriptionCase(error: .missingAPIKey(provider: "OpenAI"), expectedContains: "OpenAI API key not configured", hasRecoverySuggestion: true),
+        ErrorDescriptionCase(error: .invalidAPIKey(provider: "GitHub"), expectedContains: "Invalid GitHub API key", hasRecoverySuggestion: false),
+        ErrorDescriptionCase(error: .modelNotFound(modelName: "gpt-5"), expectedContains: "Model 'gpt-5' not found", hasRecoverySuggestion: false),
+        ErrorDescriptionCase(error: .toolNotFound(toolName: "web_search"), expectedContains: "Tool 'web_search' not found", hasRecoverySuggestion: false),
+        ErrorDescriptionCase(error: .rateLimited(retryAfter: 60), expectedContains: "Rate limit", hasRecoverySuggestion: true),
+        ErrorDescriptionCase(error: .contentFiltered(reason: "Inappropriate"), expectedContains: "Content filtered", hasRecoverySuggestion: true)
+    ])
+    func errorDescriptions(testCase: ErrorDescriptionCase) {
+        #expect(testCase.error.errorDescription?.contains(testCase.expectedContains) == true)
+        #expect((testCase.error.recoverySuggestion != nil) == testCase.hasRecoverySuggestion)
+    }
+
+    @Test("Network error has correct description")
+    func networkErrorDescription() {
         let urlError = URLError(.notConnectedToInternet)
         let error = AynaError.networkError(underlying: urlError)
 
-        XCTAssertNotNil(error.errorDescription)
-        XCTAssertTrue(error.errorDescription?.contains("Network error") == true)
+        #expect(error.errorDescription != nil)
+        #expect(error.errorDescription?.contains("Network error") == true)
     }
 
-    func testTimeoutErrorDescription() {
-        let error = AynaError.timeout
-
-        XCTAssertEqual(error.errorDescription, "Request timed out")
-        XCTAssertNotNil(error.recoverySuggestion)
-    }
-
-    func testMissingAPIKeyErrorDescription() {
-        let error = AynaError.missingAPIKey(provider: "OpenAI")
-
-        XCTAssertEqual(error.errorDescription, "OpenAI API key not configured")
-        XCTAssertTrue(error.recoverySuggestion?.contains("Settings") == true)
-    }
-
-    func testInvalidAPIKeyErrorDescription() {
-        let error = AynaError.invalidAPIKey(provider: "GitHub")
-
-        XCTAssertEqual(error.errorDescription, "Invalid GitHub API key")
-    }
-
-    func testNoModelSelectedErrorDescription() {
-        let error = AynaError.noModelSelected
-
-        XCTAssertEqual(error.errorDescription, "No model selected")
-        XCTAssertTrue(error.recoverySuggestion?.contains("Settings") == true)
-    }
-
-    func testModelNotFoundErrorDescription() {
-        let error = AynaError.modelNotFound(modelName: "gpt-5")
-
-        XCTAssertEqual(error.errorDescription, "Model 'gpt-5' not found")
-    }
-
-    func testContentFilteredErrorDescription() {
-        let error = AynaError.contentFiltered(reason: "Inappropriate content")
-
-        XCTAssertTrue(error.errorDescription?.contains("Content filtered") == true)
-        XCTAssertEqual(error.recoverySuggestion, "Try rephrasing your message")
-    }
-
-    func testToolNotFoundErrorDescription() {
-        let error = AynaError.toolNotFound(toolName: "web_search")
-
-        XCTAssertEqual(error.errorDescription, "Tool 'web_search' not found")
-    }
-
-    func testToolExecutionFailedErrorDescription() {
+    @Test("Tool execution failed error has correct description")
+    func toolExecutionFailedErrorDescription() {
         let error = AynaError.toolExecutionFailed(toolName: "calculator", reason: "Division by zero")
 
-        XCTAssertTrue(error.errorDescription?.contains("calculator") == true)
-        XCTAssertTrue(error.errorDescription?.contains("Division by zero") == true)
+        #expect(error.errorDescription?.contains("calculator") == true)
+        #expect(error.errorDescription?.contains("Division by zero") == true)
     }
 
-    func testRateLimitedErrorDescription() {
-        let error = AynaError.rateLimited(retryAfter: 60)
+    // MARK: - Error Wrapping Tests (Parameterized)
 
-        XCTAssertTrue(error.errorDescription?.contains("Rate limit") == true)
-        XCTAssertTrue(error.recoverySuggestion?.contains("60") == true)
-    }
-
-    func testCancelledErrorDescription() {
-        let error = AynaError.cancelled
-
-        XCTAssertEqual(error.errorDescription, "Operation was cancelled")
-        XCTAssertNil(error.recoverySuggestion)
-    }
-
-    // MARK: - Error Wrapping Tests
-
-    func testWrapURLErrorTimeout() {
-        let urlError = URLError(.timedOut)
+    @Test("URLError wrapping returns correct AynaError", arguments: [
+        URLErrorWrapCase(code: .timedOut, expectedCase: .timeout),
+        URLErrorWrapCase(code: .cancelled, expectedCase: .cancelled),
+        URLErrorWrapCase(code: .notConnectedToInternet, expectedCase: .networkError),
+        URLErrorWrapCase(code: .networkConnectionLost, expectedCase: .networkError)
+    ])
+    func wrapURLError(testCase: URLErrorWrapCase) {
+        let urlError = URLError(testCase.code)
         let wrapped = AynaError.wrap(urlError)
-
-        XCTAssertEqual(wrapped, .timeout)
+        #expect(testCase.expectedCase.matches(wrapped))
     }
 
-    func testWrapURLErrorNoConnection() {
-        let urlError = URLError(.notConnectedToInternet)
-        let wrapped = AynaError.wrap(urlError)
-
-        if case .networkError = wrapped {
-            // Pass
-        } else {
-            XCTFail("Expected networkError")
-        }
-    }
-
-    func testWrapURLErrorCancelled() {
-        let urlError = URLError(.cancelled)
-        let wrapped = AynaError.wrap(urlError)
-
-        XCTAssertEqual(wrapped, .cancelled)
-    }
-
-    func testWrapCancellationError() {
+    @Test("Wrap CancellationError returns cancelled error")
+    func wrapCancellationError() {
         let error = CancellationError()
         let wrapped = AynaError.wrap(error)
 
-        XCTAssertEqual(wrapped, .cancelled)
+        #expect(wrapped == .cancelled)
     }
 
-    func testWrapAynaErrorPassthrough() {
+    @Test("Wrap AynaError passes through")
+    func wrapAynaErrorPassthrough() {
         let original = AynaError.timeout
         let wrapped = AynaError.wrap(original)
 
-        XCTAssertEqual(wrapped, .timeout)
+        #expect(wrapped == .timeout)
     }
 
-    func testWrapUnknownError() {
+    @Test("Wrap unknown error returns unknown error")
+    func wrapUnknownError() {
         struct CustomError: Error {}
         let error = CustomError()
         let wrapped = AynaError.wrap(error)
 
-        if case .unknown = wrapped {
-            // Pass
-        } else {
-            XCTFail("Expected unknown error")
+        guard case .unknown = wrapped else {
+            Issue.record("Expected unknown error, got \(wrapped)")
+            return
         }
     }
 
     // MARK: - HTTP Response Conversion Tests
 
-    func testFromHTTPResponse401() {
+    @Test("HTTP response 401 returns invalid API key error")
+    func fromHTTPResponse401() throws {
         let error = AynaError.fromHTTPResponse(statusCode: 401, data: nil)
 
-        if case let .invalidAPIKey(provider) = error {
-            XCTAssertEqual(provider, "API")
-        } else {
-            XCTFail("Expected invalidAPIKey")
+        guard case let .invalidAPIKey(provider) = error else {
+            Issue.record("Expected invalidAPIKey, got \(error)")
+            return
         }
+        #expect(provider == "API")
     }
 
-    func testFromHTTPResponse429() {
+    @Test("HTTP response 429 returns rate limited error")
+    func fromHTTPResponse429() {
         let error = AynaError.fromHTTPResponse(statusCode: 429, data: nil)
 
-        if case .rateLimited = error {
-            // Pass
-        } else {
-            XCTFail("Expected rateLimited")
+        guard case .rateLimited = error else {
+            Issue.record("Expected rateLimited, got \(error)")
+            return
         }
     }
 
-    func testFromHTTPResponse500WithJSONError() {
+    @Test("HTTP response 500 with JSON error parses message")
+    func fromHTTPResponse500WithJSONError() throws {
         let json = Data("""
         {"error": {"message": "Internal server error"}}
         """.utf8)
 
         let error = AynaError.fromHTTPResponse(statusCode: 500, data: json)
 
-        if case let .httpError(statusCode, message) = error {
-            XCTAssertEqual(statusCode, 500)
-            XCTAssertEqual(message, "Internal server error")
-        } else {
-            XCTFail("Expected httpError")
+        guard case let .httpError(statusCode, message) = error else {
+            Issue.record("Expected httpError, got \(error)")
+            return
         }
+        #expect(statusCode == 500)
+        #expect(message == "Internal server error")
     }
 
-    // MARK: - Equatable Tests
+    // MARK: - Equatable Tests (Parameterized)
 
-    func testEquatableSimpleCases() {
-        XCTAssertEqual(AynaError.timeout, AynaError.timeout)
-        XCTAssertEqual(AynaError.noModelSelected, AynaError.noModelSelected)
-        XCTAssertEqual(AynaError.cancelled, AynaError.cancelled)
+    @Test("Simple error cases are equatable", arguments: [
+        AynaError.timeout,
+        AynaError.noModelSelected,
+        AynaError.cancelled
+    ])
+    func equatableSimpleCases(error: AynaError) {
+        #expect(error == error)
     }
 
-    func testEquatableWithParameters() {
-        XCTAssertEqual(
-            AynaError.missingAPIKey(provider: "OpenAI"),
-            AynaError.missingAPIKey(provider: "OpenAI")
+    @Test("Errors with parameters are equatable")
+    func equatableWithParameters() {
+        #expect(
+            AynaError.missingAPIKey(provider: "OpenAI") ==
+                AynaError.missingAPIKey(provider: "OpenAI")
         )
-        XCTAssertNotEqual(
-            AynaError.missingAPIKey(provider: "OpenAI"),
-            AynaError.missingAPIKey(provider: "Azure")
+        #expect(
+            AynaError.missingAPIKey(provider: "OpenAI") !=
+                AynaError.missingAPIKey(provider: "Azure")
         )
     }
 
-    func testEquatableHTTPError() {
-        XCTAssertEqual(
-            AynaError.httpError(statusCode: 500, message: "Error"),
-            AynaError.httpError(statusCode: 500, message: "Error")
+    @Test("HTTP errors are equatable")
+    func equatableHTTPError() {
+        #expect(
+            AynaError.httpError(statusCode: 500, message: "Error") ==
+                AynaError.httpError(statusCode: 500, message: "Error")
         )
-        XCTAssertNotEqual(
-            AynaError.httpError(statusCode: 500, message: "Error"),
-            AynaError.httpError(statusCode: 404, message: "Error")
+        #expect(
+            AynaError.httpError(statusCode: 500, message: "Error") !=
+                AynaError.httpError(statusCode: 404, message: "Error")
         )
     }
 }
 
 // MARK: - ErrorPresenter Tests
 
-final class ErrorPresenterTests: XCTestCase {
-    func testUserMessageForAynaError() {
+/// Test case for suggested actions
+private struct SuggestedActionCase: Sendable, CustomTestStringConvertible {
+    let error: AynaError
+    let expectedAction: ErrorPresenter.SuggestedAction
+
+    var testDescription: String {
+        "\(error) → \(expectedAction)"
+    }
+}
+
+@Suite("ErrorPresenter Tests", .tags(.errorHandling, .fast))
+struct ErrorPresenterTests {
+    @Test("User message for AynaError")
+    func userMessageForAynaError() {
         let error = AynaError.timeout
         let message = ErrorPresenter.userMessage(for: error)
 
-        XCTAssertEqual(message, "Request timed out")
+        #expect(message == "Request timed out")
     }
 
-    func testUserMessageForURLError() {
+    @Test("User message for URLError")
+    func userMessageForURLError() {
         let error = URLError(.notConnectedToInternet)
         let message = ErrorPresenter.userMessage(for: error)
 
-        XCTAssertEqual(message, "No internet connection")
+        #expect(message == "No internet connection")
     }
 
-    func testUserMessageSanitizesIncorrectAPIKeyMessage() {
+    @Test("User message sanitizes incorrect API key message")
+    func userMessageSanitizesIncorrectAPIKeyMessage() {
         let leakingMessage = "Incorrect API key provided: sk-proj-1234567890ABCDEFGH. You can find your API key at https://platform.openai.com/account/api-keys."
         let error = OpenAIService.OpenAIError.apiError(leakingMessage)
 
         let message = ErrorPresenter.userMessage(for: error)
 
-        XCTAssertEqual(message, "Invalid API key")
-        XCTAssertFalse(message.contains("sk-proj-"))
-        XCTAssertFalse(message.contains("platform.openai.com"))
+        #expect(message == "Invalid API key")
+        #expect(!message.contains("sk-proj-"))
+        #expect(!message.contains("platform.openai.com"))
     }
 
-    func testRecoverySuggestionForAynaError() {
+    @Test("Recovery suggestion for AynaError")
+    func recoverySuggestionForAynaError() {
         let error = AynaError.missingAPIKey(provider: "OpenAI")
         let suggestion = ErrorPresenter.recoverySuggestion(for: error)
 
-        XCTAssertNotNil(suggestion)
-        XCTAssertTrue(suggestion?.contains("Settings") == true)
+        #expect(suggestion != nil)
+        #expect(suggestion?.contains("Settings") == true)
     }
 
-    func testCategoryForNetworkError() {
-        let error = AynaError.networkError(underlying: URLError(.timedOut))
+    // MARK: - Category Tests (Parameterized)
+
+    @Test("Error category is correct", arguments: zip(
+        [
+            AynaError.networkError(underlying: URLError(.timedOut)),
+            AynaError.invalidAPIKey(provider: "Test"),
+            AynaError.toolNotFound(toolName: "test")
+        ] as [AynaError],
+        [
+            ErrorPresenter.ErrorCategory.network,
+            ErrorPresenter.ErrorCategory.authentication,
+            ErrorPresenter.ErrorCategory.tool
+        ]
+    ))
+    func errorCategory(error: AynaError, expectedCategory: ErrorPresenter.ErrorCategory) {
         let category = ErrorPresenter.category(for: error)
-
-        XCTAssertEqual(category, .network)
+        #expect(category == expectedCategory)
     }
 
-    func testCategoryForAuthError() {
-        let error = AynaError.invalidAPIKey(provider: "Test")
-        let category = ErrorPresenter.category(for: error)
+    // MARK: - Retryable Tests (Parameterized)
 
-        XCTAssertEqual(category, .authentication)
+    @Test("Retryable errors are identified correctly", arguments: zip(
+        [AynaError.timeout, AynaError.missingAPIKey(provider: "Test")],
+        [true, false]
+    ))
+    func isRetryable(error: AynaError, expected: Bool) {
+        #expect(ErrorPresenter.isRetryable(error) == expected)
     }
 
-    func testCategoryForToolError() {
-        let error = AynaError.toolNotFound(toolName: "test")
-        let category = ErrorPresenter.category(for: error)
+    // MARK: - Requires User Action Tests (Parameterized)
 
-        XCTAssertEqual(category, .tool)
+    @Test("User action requirement is correct", arguments: zip(
+        [AynaError.missingAPIKey(provider: "Test"), AynaError.timeout],
+        [true, false]
+    ))
+    func requiresUserAction(error: AynaError, expected: Bool) {
+        #expect(ErrorPresenter.requiresUserAction(error) == expected)
     }
 
-    func testIsRetryableForTimeout() {
-        let error = AynaError.timeout
-        XCTAssertTrue(ErrorPresenter.isRetryable(error))
-    }
+    // MARK: - Suggested Action Tests (Parameterized)
 
-    func testIsRetryableForMissingAPIKey() {
-        let error = AynaError.missingAPIKey(provider: "Test")
-        XCTAssertFalse(ErrorPresenter.isRetryable(error))
-    }
-
-    func testRequiresUserActionForMissingAPIKey() {
-        let error = AynaError.missingAPIKey(provider: "Test")
-        XCTAssertTrue(ErrorPresenter.requiresUserAction(error))
-    }
-
-    func testRequiresUserActionForTimeout() {
-        let error = AynaError.timeout
-        XCTAssertFalse(ErrorPresenter.requiresUserAction(error))
-    }
-
-    func testSuggestedActionRetry() {
-        let error = AynaError.timeout
-        let action = ErrorPresenter.suggestedAction(for: error)
-
-        XCTAssertEqual(action, .retry)
-    }
-
-    func testSuggestedActionOpenSettings() {
-        let error = AynaError.missingAPIKey(provider: "Test")
-        let action = ErrorPresenter.suggestedAction(for: error)
-
-        XCTAssertEqual(action, .openSettings)
-    }
-
-    func testSuggestedActionDismiss() {
-        let error = AynaError.cancelled
-        let action = ErrorPresenter.suggestedAction(for: error)
-
-        XCTAssertEqual(action, .dismiss)
+    @Test("Suggested action is correct", arguments: [
+        SuggestedActionCase(error: .timeout, expectedAction: .retry),
+        SuggestedActionCase(error: .missingAPIKey(provider: "Test"), expectedAction: .openSettings),
+        SuggestedActionCase(error: .cancelled, expectedAction: .dismiss)
+    ])
+    func suggestedAction(testCase: SuggestedActionCase) {
+        let action = ErrorPresenter.suggestedAction(for: testCase.error)
+        #expect(action == testCase.expectedAction)
     }
 }

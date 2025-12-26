@@ -6,163 +6,185 @@
 //
 
 @testable import Ayna_watchOS_Watch_App
-import XCTest
+import Foundation
+import Testing
 
-final class WatchMarkdownRendererTests: XCTestCase {
+@Suite("WatchMarkdownRenderer Tests")
+struct WatchMarkdownRendererTests {
     // MARK: - Basic Rendering Tests
 
-    func testRenderPlainText() {
+    @Test("Render plain text")
+    func renderPlainText() {
         let text = "Hello, World!"
         let result = WatchMarkdownRenderer.render(text)
 
-        XCTAssertEqual(String(result.characters), text)
+        #expect(String(result.characters) == text)
     }
 
-    func testRenderBoldText() {
+    @Test("Render bold text")
+    func renderBoldText() {
         let text = "Hello **bold** world"
         let result = WatchMarkdownRenderer.render(text)
 
         // The AttributedString should contain the text with bold formatting
-        XCTAssertTrue(String(result.characters).contains("bold"))
+        #expect(String(result.characters).contains("bold"))
     }
 
-    func testRenderItalicText() {
+    @Test("Render italic text")
+    func renderItalicText() {
         let text = "Hello *italic* world"
         let result = WatchMarkdownRenderer.render(text)
 
-        XCTAssertTrue(String(result.characters).contains("italic"))
+        #expect(String(result.characters).contains("italic"))
     }
 
-    func testRenderInlineCode() {
+    @Test("Render inline code")
+    func renderInlineCode() {
         let text = "Use `code` here"
         let result = WatchMarkdownRenderer.render(text)
 
-        XCTAssertTrue(String(result.characters).contains("code"))
+        #expect(String(result.characters).contains("code"))
     }
 
-    func testRenderMixedFormatting() {
+    @Test("Render mixed formatting")
+    func renderMixedFormatting() {
         let text = "**Bold** and *italic* and `code`"
         let result = WatchMarkdownRenderer.render(text)
 
         let chars = String(result.characters)
-        XCTAssertTrue(chars.contains("Bold"))
-        XCTAssertTrue(chars.contains("italic"))
-        XCTAssertTrue(chars.contains("code"))
+        #expect(chars.contains("Bold"))
+        #expect(chars.contains("italic"))
+        #expect(chars.contains("code"))
     }
 
     // MARK: - Styled Rendering Tests
 
-    func testRenderStyledUserMessage() {
+    @Test("Render styled user message")
+    func renderStyledUserMessage() {
         let text = "Hello from user"
         let result = WatchMarkdownRenderer.renderStyled(text, isUser: true)
 
-        XCTAssertEqual(String(result.characters), text)
+        #expect(String(result.characters) == text)
     }
 
-    func testRenderStyledAssistantMessage() {
+    @Test("Render styled assistant message")
+    func renderStyledAssistantMessage() {
         let text = "Hello from assistant"
         let result = WatchMarkdownRenderer.renderStyled(text, isUser: false)
 
-        XCTAssertEqual(String(result.characters), text)
+        #expect(String(result.characters) == text)
     }
 
     // MARK: - Strip Markdown Tests
 
-    func testStripMarkdownBold() {
+    @Test("Strip markdown bold")
+    func stripMarkdownBold() {
         let text = "Hello **bold** world"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Hello bold world")
+        #expect(result == "Hello bold world")
     }
 
-    func testStripMarkdownItalic() {
+    @Test("Strip markdown italic")
+    func stripMarkdownItalic() {
         let text = "Hello *italic* world"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Hello italic world")
+        #expect(result == "Hello italic world")
     }
 
-    func testStripMarkdownInlineCode() {
+    @Test("Strip markdown inline code")
+    func stripMarkdownInlineCode() {
         let text = "Use `code` here"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Use code here")
+        #expect(result == "Use code here")
     }
 
-    func testStripMarkdownLinks() {
+    @Test("Strip markdown links")
+    func stripMarkdownLinks() {
         let text = "Check [this link](https://example.com) out"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Check this link out")
+        #expect(result == "Check this link out")
     }
 
-    func testStripMarkdownHeaders() {
+    @Test("Strip markdown headers")
+    func stripMarkdownHeaders() {
         let h1 = "# Header 1"
         let h2 = "## Header 2"
         let h3 = "### Header 3"
 
-        XCTAssertEqual(WatchMarkdownRenderer.stripMarkdown(h1), "Header 1")
-        XCTAssertEqual(WatchMarkdownRenderer.stripMarkdown(h2), "Header 2")
-        XCTAssertEqual(WatchMarkdownRenderer.stripMarkdown(h3), "Header 3")
+        #expect(WatchMarkdownRenderer.stripMarkdown(h1) == "Header 1")
+        #expect(WatchMarkdownRenderer.stripMarkdown(h2) == "Header 2")
+        #expect(WatchMarkdownRenderer.stripMarkdown(h3) == "Header 3")
     }
 
-    func testStripMarkdownMixed() {
+    @Test("Strip markdown mixed")
+    func stripMarkdownMixed() {
         let text = "# Title\n**Bold** and [link](url)"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertTrue(result.contains("Title"))
-        XCTAssertTrue(result.contains("Bold"))
-        XCTAssertTrue(result.contains("link"))
-        XCTAssertFalse(result.contains("**"))
-        XCTAssertFalse(result.contains("["))
-        XCTAssertFalse(result.contains("]("))
+        #expect(result.contains("Title"))
+        #expect(result.contains("Bold"))
+        #expect(result.contains("link"))
+        #expect(!result.contains("**"))
+        #expect(!result.contains("["))
+        #expect(!result.contains("]("))
     }
 
-    func testStripMarkdownEmptyString() {
+    @Test("Strip markdown empty string")
+    func stripMarkdownEmptyString() {
         let result = WatchMarkdownRenderer.stripMarkdown("")
-        XCTAssertEqual(result, "")
+        #expect(result == "")
     }
 
-    func testStripMarkdownWhitespace() {
+    @Test("Strip markdown whitespace")
+    func stripMarkdownWhitespace() {
         let text = "  **bold**  "
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "bold")
+        #expect(result == "bold")
     }
 
     // MARK: - Edge Cases
 
-    func testRenderEmptyString() {
+    @Test("Render empty string")
+    func renderEmptyString() {
         let result = WatchMarkdownRenderer.render("")
-        XCTAssertEqual(String(result.characters), "")
+        #expect(String(result.characters) == "")
     }
 
-    func testRenderSpecialCharacters() {
+    @Test("Render special characters")
+    func renderSpecialCharacters() {
         let text = "Hello & < > \" ' characters"
         let result = WatchMarkdownRenderer.render(text)
 
         // Should handle special characters gracefully
-        XCTAssertFalse(String(result.characters).isEmpty)
+        #expect(!String(result.characters).isEmpty)
     }
 
-    func testRenderLongText() {
+    @Test("Render long text")
+    func renderLongText() {
         let text = String(repeating: "This is a long text. ", count: 100)
         let result = WatchMarkdownRenderer.render(text)
 
-        XCTAssertEqual(String(result.characters), text)
+        #expect(String(result.characters) == text)
     }
 
-    func testStripMarkdownUnderscoreBold() {
+    @Test("Strip markdown underscore bold")
+    func stripMarkdownUnderscoreBold() {
         let text = "Hello __bold__ world"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Hello bold world")
+        #expect(result == "Hello bold world")
     }
 
-    func testStripMarkdownUnderscoreItalic() {
+    @Test("Strip markdown underscore italic")
+    func stripMarkdownUnderscoreItalic() {
         let text = "Hello _italic_ world"
         let result = WatchMarkdownRenderer.stripMarkdown(text)
 
-        XCTAssertEqual(result, "Hello italic world")
+        #expect(result == "Hello italic world")
     }
 }

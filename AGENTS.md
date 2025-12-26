@@ -159,22 +159,35 @@ This keeps the human informed and provides natural points to course-correct.
 
 7. **Swift Concurrency**: Always mark `@Observable` classes with `@MainActor`. Never use `DispatchQueue` — use Swift concurrency (`async`/`await`, `MainActor`).
 
-8. **XCTest with @MainActor**: For `@MainActor` test classes, use `async` setUp/tearDown **without** calling `super`:
+8. **Use Swift Testing for Unit Tests**: Unit tests use [Swift Testing](https://developer.apple.com/documentation/testing), not XCTest. UI tests remain on XCTest.
    ```swift
-   @MainActor
-   final class MyServiceTests: XCTestCase {
-       override func setUp() async throws {
-           // Do NOT call: try await super.setUp()
-           // Set up test fixtures here
+   import Foundation
+   import Testing
+   @testable import Ayna
+
+   @Suite("MyService Tests")
+   @MainActor  // Add if testing @MainActor types
+   struct MyServiceTests {
+       private var sut: MyService
+       
+       init() {
+           // Setup - runs before each test
+           sut = MyService()
        }
        
-       override func tearDown() async throws {
-           // Clean up here
-           // Do NOT call: try await super.tearDown()
+       @Test("Something works correctly")
+       func somethingWorksCorrectly() {
+           #expect(sut.value == expectedValue)
        }
    }
    ```
-   **Why?** `XCTestCase` is not `Sendable`. Calling `super.setUp()` from a `@MainActor` async context sends `self` across actor boundaries, causing Swift 6 strict concurrency errors. XCTest's base implementations are no-ops, so skipping them is safe.
+   Key differences from XCTest:
+   - `@Suite` struct instead of `XCTestCase` class
+   - `init()` instead of `setUp()`
+   - `@Test("description")` instead of `func testXxx()`
+   - `#expect(condition)` instead of `XCTAssert*()`
+   - `Issue.record()` instead of `XCTFail()`
+   - `confirmation { confirm in ... }` instead of `XCTestExpectation`
 
 ## Quick Style Rules
 
@@ -188,7 +201,7 @@ This keeps the human informed and provides natural points to course-correct.
 | `String(format: "%.2f", n)` | `Text(n, format: .number.precision(...))` |
 | `replacingOccurrences(of:with:)` | `replacing(_:with:)` |
 | Force unwraps (`!`) | Optional handling or `guard` |
-| `super.setUp()` in `@MainActor` tests | Omit super calls in async setUp/tearDown |
+| XCTest for unit tests | Swift Testing (`@Suite`, `@Test`, `#expect`) |
 
 ## Quick Reference
 

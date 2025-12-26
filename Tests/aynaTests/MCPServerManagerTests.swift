@@ -1,29 +1,25 @@
 @testable import Ayna
-import XCTest
+import Foundation
+import Testing
 
+@Suite("MCPServerManager Tests", .tags(.async, .slow))
 @MainActor
-final class MCPServerManagerTests: XCTestCase {
-    private nonisolated(unsafe) var suiteName: String = ""
+struct MCPServerManagerTests {
+    private var suiteName: String
+    private var defaults: UserDefaults
 
-    override func setUp() async throws {
-        continueAfterFailure = false
+    init() {
         suiteName = "MCPServerManagerTests-\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Failed to create UserDefaults suite")
-            return
+        guard let suite = UserDefaults(suiteName: suiteName) else {
+            fatalError("Failed to create UserDefaults suite")
         }
+        defaults = suite
         defaults.removePersistentDomain(forName: suiteName)
         AppPreferences.use(defaults)
     }
 
-    override func tearDown() async throws {
-        if let defaults = UserDefaults(suiteName: suiteName) {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-        AppPreferences.reset()
-    }
-
-    func testConnectRetriesUntilSuccess() async {
+    @Test("Connect retries until success", .timeLimit(.minutes(1)))
+    func connectRetriesUntilSuccess() async {
         let config = MCPServerConfig(name: "stub", command: "cmd", enabled: true)
         let stub = StubMCPService(
             config: config,
@@ -43,14 +39,15 @@ final class MCPServerManagerTests: XCTestCase {
 
         await manager.connectToServer(config)
 
-        XCTAssertEqual(stub.connectCallCount, 2)
-        XCTAssertTrue(manager.isServerConnected(config.name))
-        XCTAssertTrue(manager.serverConfigs.first?.enabled ?? false)
-        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .connected)
-        XCTAssertNil(manager.getServerStatus(config.name)?.lastError)
+        #expect(stub.connectCallCount == 2)
+        #expect(manager.isServerConnected(config.name))
+        #expect(manager.serverConfigs.first?.enabled ?? false)
+        #expect(manager.getServerStatus(config.name)?.state == .connected)
+        #expect(manager.getServerStatus(config.name)?.lastError == nil)
     }
 
-    func testAutoDisableAfterRepeatedFailures() async {
+    @Test("Auto-disable after repeated failures", .timeLimit(.minutes(1)))
+    func autoDisableAfterRepeatedFailures() async {
         let config = MCPServerConfig(name: "failing", command: "cmd", enabled: true)
         let stub = StubMCPService(
             config: config,
@@ -71,26 +68,23 @@ final class MCPServerManagerTests: XCTestCase {
 
         await manager.connectToServer(config)
 
-        XCTAssertFalse(manager.isServerConnected(config.name))
-        XCTAssertEqual(manager.serverConfigs.first?.enabled, false)
-        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .disabled)
-        XCTAssertNotNil(manager.getServerStatus(config.name)?.lastError)
+        #expect(!manager.isServerConnected(config.name))
+        #expect(manager.serverConfigs.first?.enabled == false)
+        #expect(manager.getServerStatus(config.name)?.state == .disabled)
+        #expect(manager.getServerStatus(config.name)?.lastError != nil)
     }
 
-    func testSchedulesReconnectAfterUnexpectedTermination() async throws {
+    @Test("Schedules reconnect after unexpected termination", .timeLimit(.minutes(1)))
+    func schedulesReconnectAfterUnexpectedTermination() async throws {
         let config = MCPServerConfig(name: "reconnect", command: "cmd", enabled: true)
         let primaryService = StubMCPService(config: config, connectResults: [.success(())])
         let reconnectService = StubMCPService(config: config, connectResults: [.success(())])
-        let reconnectExpectation = expectation(description: "Reconnect attempted")
-        reconnectService.onConnect = {
-            reconnectExpectation.fulfill()
-        }
 
         var serviceQueue: [StubMCPService] = [primaryService, reconnectService]
         let manager = MCPServerManager(
             serviceFactory: { _ in
                 guard !serviceQueue.isEmpty else {
-                    XCTFail("Service queue exhausted")
+                    Issue.record("Service queue exhausted")
                     return StubMCPService(config: config)
                 }
                 return serviceQueue.removeFirst()
@@ -104,7 +98,13 @@ final class MCPServerManagerTests: XCTestCase {
         await manager.connectToServer(config)
         primaryService.simulateUnexpectedTermination(error: "boom")
 
-        await fulfillment(of: [reconnectExpectation], timeout: 1.0)
+        // Wait for reconnect
+        for _ in 0 ..< 20 {
+            if reconnectService.connectCallCount > 0 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
 
         // Wait for state to update to connected since onConnect fires before state update
         for _ in 0 ..< 10 {
@@ -114,12 +114,13 @@ final class MCPServerManagerTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
-        XCTAssertTrue(manager.isServerConnected(config.name))
-        XCTAssertEqual(reconnectService.connectCallCount, 1)
-        XCTAssertEqual(manager.getServerStatus(config.name)?.state, .connected)
+        #expect(manager.isServerConnected(config.name))
+        #expect(reconnectService.connectCallCount == 1)
+        #expect(manager.getServerStatus(config.name)?.state == .connected)
     }
 
-    func testUpdatingEnabledServerRestartsConnection() async {
+    @Test("Updating enabled server restarts connection", .timeLimit(.minutes(1)))
+    func updatingEnabledServerRestartsConnection() async throws {
         let originalConfig = MCPServerConfig(name: "filesystem", command: "cmd", args: ["--foo"], enabled: true)
         var updatedConfig = originalConfig
         updatedConfig.args = ["--bar"]
@@ -127,10 +128,6 @@ final class MCPServerManagerTests: XCTestCase {
 
         let initialService = StubMCPService(config: originalConfig)
         let restartedService = StubMCPService(config: updatedConfig)
-        let restartExpectation = expectation(description: "Restarted service connected")
-        restartedService.onConnect = {
-            restartExpectation.fulfill()
-        }
 
         let manager = MCPServerManager(
             serviceFactory: { config in
@@ -146,12 +143,18 @@ final class MCPServerManagerTests: XCTestCase {
         manager.updateServerConfig(originalConfig)
 
         await manager.connectToServer(originalConfig)
-        XCTAssertEqual(initialService.connectCallCount, 1)
-        XCTAssertTrue(manager.isServerConnected(originalConfig.name))
+        #expect(initialService.connectCallCount == 1)
+        #expect(manager.isServerConnected(originalConfig.name))
 
         manager.updateServerConfig(updatedConfig)
 
-        await fulfillment(of: [restartExpectation], timeout: 1.0)
+        // Wait for restart
+        for _ in 0 ..< 20 {
+            if restartedService.connectCallCount > 0 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
 
         // Wait for connection to complete since factory is called before connection finishes
         let timeout = Date().addingTimeInterval(2.0)
@@ -162,9 +165,9 @@ final class MCPServerManagerTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
-        XCTAssertEqual(initialService.disconnectCallCount, 1)
-        XCTAssertEqual(restartedService.connectCallCount, 1)
-        XCTAssertEqual(manager.getServerStatus(updatedConfig.name)?.state, .connected)
+        #expect(initialService.disconnectCallCount == 1)
+        #expect(restartedService.connectCallCount == 1)
+        #expect(manager.getServerStatus(updatedConfig.name)?.state == .connected)
     }
 }
 

@@ -2,6 +2,50 @@
 
 This document covers testing strategies, commands, and best practices for Ayna.
 
+## Test Framework
+
+**Unit tests use [Swift Testing](https://developer.apple.com/documentation/testing)** (not XCTest).
+
+- `@Suite` for test groupings
+- `@Test` for individual tests
+- `#expect()` for soft assertions (continues on failure)
+- `#require()` for hard assertions (stops on failure, use for preconditions)
+- `Issue.record()` for explicit failures
+- `confirmation()` for async callback verification
+- Test tags for filtering and organization
+- Parameterized tests for reducing boilerplate
+
+**UI tests remain on XCTest** (Swift Testing does not support `XCUIApplication`).
+
+## Test Tags
+
+Tags enable filtering tests by category. Defined in `Tests/aynaTests/Support/TestTags.swift`:
+
+| Tag | Description | Example Usage |
+|-----|-------------|---------------|
+| `.fast` | Pure logic tests, milliseconds | `@Test("...", .tags(.fast))` |
+| `.slow` | I/O, encryption, complex mocking | `@Test("...", .tags(.slow))` |
+| `.networking` | API/HTTP tests (mocked) | `@Test("...", .tags(.networking))` |
+| `.persistence` | File I/O, Keychain tests | `@Test("...", .tags(.persistence))` |
+| `.viewModel` | ViewModel state tests | `@Test("...", .tags(.viewModel))` |
+| `.errorHandling` | Error/edge case tests | `@Test("...", .tags(.errorHandling))` |
+| `.async` | Async/callback tests | `@Test("...", .tags(.async))` |
+
+### Filtering Tests
+
+```bash
+# Run only fast tests
+swift test --filter .fast
+
+# Skip slow tests
+swift test --skip .slow
+
+# Combine filters
+swift test --filter .networking --filter .errorHandling
+```
+
+In Xcode Test Plan, add tag names to "Include Tags" or "Exclude Tags" fields.
+
 ## Test Commands
 
 ### Unit Tests (Logic/Backend)
@@ -36,27 +80,30 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
    - Add to the `aynaTests` group
 3. Run tests to verify: `xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests`
 
-### Test File Template
+### Test File Template (Swift Testing)
 
 ```swift
-import XCTest
+import Foundation
+import Testing
+
 @testable import Ayna
 
-final class MyServiceTests: XCTestCase {
-    var sut: MyService!
+@Suite("MyService Tests", .tags(.networking, .async))
+struct MyServiceTests {
+    private var sut: MyService
+    private let keychain: InMemoryKeychainStorage
 
-    override func setUp() {
-        super.setUp()
+    init() {
+        keychain = InMemoryKeychainStorage()
         // Use mocks for isolation
-        sut = MyService(urlSession: MockURLProtocol.session())
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        sut = MyService(keychain: keychain, urlSession: session)
     }
 
-    override func tearDown() {
-        sut = nil
-        super.tearDown()
-    }
-
-    func testSomething() async throws {
+    @Test("Something works correctly", .timeLimit(.minutes(1)))
+    func somethingWorksCorrectly() async throws {
         // Arrange
         MockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
@@ -66,11 +113,129 @@ final class MyServiceTests: XCTestCase {
         // Act
         let result = try await sut.doSomething()
 
-        // Assert
-        XCTAssertNotNil(result)
+        // Assert - use #require for preconditions, #expect for validations
+        let unwrapped = try #require(result)  // Stops test if nil
+        #expect(unwrapped.count > 0)          // Continues on failure
+    }
+}
+
+// MARK: - Mock URL Protocol
+
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    static func reset() {
+        requestHandler = nil
+    }
+
+    override static func canInit(with _: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = MockURLProtocol.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: NSError(domain: "MockURLProtocol", code: 0))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+```
+
+### MainActor Tests
+
+For tests that need `@MainActor`, annotate the struct:
+
+```swift
+@Suite("MyViewModel Tests")
+@MainActor
+struct MyViewModelTests {
+    private var defaults: UserDefaults
+    
+    init() {
+        guard let suite = UserDefaults(suiteName: "MyViewModelTests") else {
+            fatalError("Failed to create UserDefaults suite")
+        }
+        defaults = suite
+        defaults.removePersistentDomain(forName: "MyViewModelTests")
+        AppPreferences.use(defaults)
+    }
+    
+    @Test("Initial state is correct")
+    func initialState() {
+        let vm = MyViewModel()
+        #expect(vm.isLoading == false)
     }
 }
 ```
+
+### Async Callback Tests
+
+Use `confirmation()` for callback-based APIs:
+
+```swift
+@Test("Callback is invoked", .timeLimit(.minutes(1)))
+func callbackIsInvoked() async {
+    await confirmation { confirm in
+        service.doSomethingAsync { result in
+            #expect(result != nil)
+            confirm()
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+    }
+}
+```
+
+### Parameterized Tests
+
+Use parameterized tests to reduce repetitive test code. This runs each argument set as an independent test case:
+
+```swift
+// Single collection - test multiple inputs
+@Test("Error descriptions are correct", arguments: [
+    AynaError.timeout,
+    AynaError.cancelled,
+    AynaError.noModelSelected
+])
+func errorDescriptions(error: AynaError) {
+    #expect(error.errorDescription != nil)
+}
+
+// Zipped collections - pair inputs with expected outputs
+@Test("URLError wrapping returns correct AynaError", arguments: zip(
+    [URLError(.timedOut), URLError(.cancelled)],
+    [AynaError.timeout, AynaError.cancelled]
+))
+func wrapURLError(input: URLError, expected: AynaError) {
+    let wrapped = AynaError.wrap(input)
+    #expect(wrapped == expected)
+}
+```
+
+### Custom Test Descriptions
+
+For better failure diagnostics, implement `CustomTestStringConvertible` on test input types:
+
+```swift
+struct TestCase: CustomTestStringConvertible {
+    let input: String
+    let expected: Int
+    
+    var testDescription: String {
+        "input: \"\(input)\" → expected: \(expected)"
+    }
+}
+```
+
+Key models (`Conversation`, `Message`, `AynaError`) already conform in `TestHelpers.swift`.
 
 ## Environment Isolation
 
