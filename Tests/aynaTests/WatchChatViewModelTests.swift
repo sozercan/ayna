@@ -6,7 +6,7 @@ import Testing
 // OpenAIService tool integration and the data flow patterns used by the watch.
 // The actual WatchChatViewModel cannot be tested directly on macOS.
 
-@Suite("WatchChatViewModel Integration Tests")
+@Suite("WatchChatViewModel Integration Tests", .serialized)
 @MainActor
 struct WatchChatViewModelIntegrationTests {
     private var defaults: UserDefaults

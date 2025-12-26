@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("TavilyService Tests", .tags(.networking, .async))
+@Suite("TavilyService Tests", .tags(.networking, .async), .serialized)
 @MainActor
 struct TavilyServiceTests {
     private var defaults: UserDefaults

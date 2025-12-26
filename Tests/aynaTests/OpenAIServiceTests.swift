@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("OpenAIService Tests", .tags(.networking, .async))
+@Suite("OpenAIService Tests", .tags(.networking, .async), .serialized)
 @MainActor
 struct OpenAIServiceTests {
     private var defaults: UserDefaults
