@@ -88,6 +88,8 @@ struct IOSMessageView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(isToolExpanded ? "Collapse tool result" : "Expand tool result")
+                    .accessibilityIdentifier("message.tool.expandButton")
 
                     // Expanded content
                     if isToolExpanded {

@@ -50,6 +50,7 @@ struct IOSSettingsView: View {
                     NavigationLink("Image Generation Settings") {
                         IOSImageGenerationSettingsView()
                     }
+                    .accessibilityIdentifier("settings.imageGeneration.link")
 
                     Button("Clear All Conversations", role: .destructive) {
                         conversationManager.clearAllConversations()
@@ -212,17 +213,20 @@ struct IOSImageGenerationSettingsView: View {
                     Text("1024×1536 (Portrait)").tag("1024x1536")
                     Text("1536×1024 (Landscape)").tag("1536x1024")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.sizeSelector")
 
                 Picker("Image Quality", selection: $openAIService.imageQuality) {
                     Text("Low").tag("low")
                     Text("Medium").tag("medium")
                     Text("High").tag("high")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.qualitySelector")
 
                 Picker("Output Format", selection: $openAIService.outputFormat) {
                     Text("PNG").tag("png")
                     Text("JPEG").tag("jpeg")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.formatSelector")
 
                 VStack(alignment: .leading) {
                     Text("Compression: \(openAIService.outputCompression)%")
@@ -230,6 +234,8 @@ struct IOSImageGenerationSettingsView: View {
                         get: { Double(openAIService.outputCompression) },
                         set: { openAIService.outputCompression = Int($0) }
                     ), in: 0 ... 100, step: 10)
+                    .accessibilityLabel("Compression")
+                    .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
                 }
             } footer: {
                 Text("These settings apply when using image generation models.")
@@ -297,6 +303,8 @@ struct IOSModelEditView: View {
                     TextField("Model Name", text: $modelName)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .accessibilityLabel("Model Name")
+                        .accessibilityIdentifier("settings.addModel.modelName")
                 } else {
                     Text(modelName)
                         .foregroundStyle(Theme.textSecondary)
@@ -307,22 +315,28 @@ struct IOSModelEditView: View {
                     Text("GitHub Models").tag(AIProvider.githubModels)
                     Text("Apple Intelligence").tag(AIProvider.appleIntelligence)
                 }
+                .accessibilityIdentifier("settings.addModel.providerSelector")
             }
 
             if provider == .openai {
                 Section("Configuration") {
                     SecureField("API Key", text: $apiKey)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("settings.addModel.apiKey")
 
                     TextField("Endpoint URL", text: $endpoint)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
+                        .accessibilityLabel("Endpoint URL")
+                        .accessibilityIdentifier("settings.addModel.endpointUrl")
 
                     Picker("Endpoint Type", selection: $endpointType) {
                         ForEach(APIEndpointType.allCases, id: \.self) { type in
                             Text(type.displayName).tag(type)
                         }
                     }
+                    .accessibilityIdentifier("settings.addModel.endpointTypeSelector")
                 }
             } else if provider == .githubModels {
                 // Show OAuth status if signed in
@@ -358,6 +372,7 @@ struct IOSModelEditView: View {
                             }
                         }
                         .disabled(githubOAuth.isAuthenticating)
+                        .accessibilityIdentifier("settings.github.signInButton")
 
                         if githubOAuth.isAuthenticating {
                             HStack {
@@ -398,6 +413,7 @@ struct IOSModelEditView: View {
                                 Text(model.displayName).tag(model.id)
                             }
                         }
+                        .accessibilityIdentifier("settings.github.modelSelector")
                         Text("\(githubOAuth.availableModels.count) models available")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -405,6 +421,8 @@ struct IOSModelEditView: View {
                         TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Model ID")
+                            .accessibilityIdentifier("settings.addModel.githubModelId")
                         HStack(spacing: Spacing.xxs) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Theme.statusConnecting)
@@ -419,10 +437,13 @@ struct IOSModelEditView: View {
                         TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Model ID")
+                            .accessibilityIdentifier("settings.addModel.githubModelId")
                         if githubOAuth.isAuthenticated {
                             Button("Load Available Models") {
                                 Task { await githubOAuth.fetchModels() }
                             }
+                            .accessibilityIdentifier("settings.github.loadModelsButton")
                         } else {
                             Text("Sign in to see available models")
                                 .font(Typography.caption)
@@ -443,6 +464,7 @@ struct IOSModelEditView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .accessibilityIdentifier("settings.addModel.cancelButton")
                 }
             }
 
@@ -452,6 +474,7 @@ struct IOSModelEditView: View {
                     dismiss()
                 }
                 .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated))
+                .accessibilityIdentifier("settings.addModel.saveButton")
             }
         }
         .onAppear {
@@ -670,6 +693,7 @@ struct IOSToolsSettingsView: View {
 
                     Toggle("", isOn: $tavilyService.isEnabled)
                         .labelsHidden()
+                        .accessibilityLabel("Web Search")
                         .accessibilityIdentifier("settings.tools.webSearch.toggle")
                 }
             } header: {
@@ -685,6 +709,7 @@ struct IOSToolsSettingsView: View {
                         SecureField("Tavily API Key", text: $tavilyService.apiKey)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Tavily API Key")
                             .accessibilityIdentifier("settings.tools.webSearch.apiKey")
 
                         if tavilyService.isConfigured {
@@ -724,6 +749,7 @@ struct IOSWebSearchSettingsSection: View {
                     SecureField("Tavily API Key", text: $tavilyService.apiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .accessibilityLabel("Tavily API Key")
                         .accessibilityIdentifier("settings.webSearch.apiKey")
 
                     if tavilyService.isConfigured {

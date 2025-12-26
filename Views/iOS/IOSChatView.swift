@@ -549,11 +549,13 @@ struct IOSConversationSystemPromptSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .accessibilityIdentifier("chat.systemPrompt.cancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         saveAndDismiss()
                     }
+                    .accessibilityIdentifier("chat.systemPrompt.saveButton")
                 }
             }
         }

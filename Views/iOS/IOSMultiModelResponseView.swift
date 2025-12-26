@@ -169,6 +169,7 @@ struct IOSMultiModelResponseView: View {
             }
             .foregroundStyle(.white)
             .background(Theme.accent)
+            .accessibilityIdentifier("multimodel.selectResponse.button")
         }
     }
 

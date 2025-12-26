@@ -119,6 +119,8 @@ struct IOSCitationSourcesFooter: View {
                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
             }
             .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel(isExpanded ? "Collapse sources" : "Expand sources, \(citations.count) available")
+            .accessibilityIdentifier("message.citations.expandButton")
 
             // Expanded source list
             if isExpanded {

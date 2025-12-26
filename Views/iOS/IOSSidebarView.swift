@@ -51,7 +51,7 @@ struct IOSSidebarView: View {
                     }
                 }
                 .font(.system(size: 17))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.editButton)
                 .disabled(conversationManager.conversations.isEmpty)
             }
@@ -63,7 +63,7 @@ struct IOSSidebarView: View {
                     }) {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                             .frame(width: 36, height: 36)
                     }
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
@@ -257,6 +257,8 @@ struct IOSSidebarView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Theme.textSecondary)
                         }
+                        .accessibilityLabel("Clear search")
+                        .accessibilityIdentifier("sidebar.search.clearButton")
                     }
                 }
                 .padding(.vertical, Spacing.md)
@@ -271,13 +273,14 @@ struct IOSSidebarView: View {
                 }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: Typography.IconSize.lg, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .frame(width: 40, height: 40)
                         .background {
                             Circle()
                                 .fill(.ultraThinMaterial)
                         }
                 }
+                .accessibilityLabel("New conversation")
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
             }
             .padding(.horizontal)
