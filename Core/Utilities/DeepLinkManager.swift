@@ -48,7 +48,7 @@ enum DeepLinkError: LocalizedError {
         case let .missingRequiredParameter(param):
             "Add the '\(param)' parameter to the URL"
         case .invalidProvider:
-            "Valid providers: OpenAI, GitHub Models, Apple Intelligence, AIKit"
+            "Valid providers: OpenAI, GitHub Models, Apple Intelligence"
         case .invalidEndpointType:
             "Valid types: Chat Completions, Responses, Image Generation"
         case .modelAlreadyExists:
@@ -359,8 +359,6 @@ final class DeepLinkManager: ObservableObject {
                 provider = .githubModels
             case "apple", "apple intelligence", "appleintelligence":
                 provider = .appleIntelligence
-            case "aikit", "local":
-                provider = .aikit
             default:
                 // Try exact match
                 if let exactMatch = AIProvider.allCases.first(where: { $0.rawValue.lowercased() == normalizedProvider }) {
@@ -432,8 +430,6 @@ final class DeepLinkManager: ObservableObject {
                         provider = .githubModels
                     case "apple", "apple intelligence", "appleintelligence":
                         provider = .appleIntelligence
-                    case "aikit", "local":
-                        provider = .aikit
                     default:
                         if let exactMatch = AIProvider.allCases.first(where: { $0.rawValue.lowercased() == normalizedProvider }) {
                             provider = exactMatch

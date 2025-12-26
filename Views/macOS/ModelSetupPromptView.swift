@@ -20,7 +20,7 @@ struct ModelSetupPromptView: View {
                 Text("Add a model to start chatting")
                     .font(.title3.weight(.semibold))
                 Text(
-                    "Head to Settings → Model to connect OpenAI, Azure, or AIKit models before sending your first message."
+                    "Head to Settings → Model to connect OpenAI, Azure, or local models before sending your first message."
                 )
                 .font(.body)
                 .multilineTextAlignment(.center)

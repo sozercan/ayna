@@ -11,7 +11,6 @@ This document details platform-specific capabilities, limitations, and implement
 | **OpenAI / Azure / Custom** | ✅ | ✅ | ✅ |
 | **GitHub Models (OAuth)** | ✅ | ✅ | ✅ (via iPhone) |
 | **Apple Intelligence** | ✅ (26.0+) | ✅ (26.0+) | ❌ |
-| **AIKit (Local Models)** | ✅ | ❌ | ❌ |
 | **MCP Tools** | ✅ | ❌ | ❌ |
 | **Web Search (Tavily)** | ✅ | ✅ | ✅ (via iPhone) |
 | **Image Generation** | ✅ | ✅ | ❌ |
@@ -38,7 +37,6 @@ This document details platform-specific capabilities, limitations, and implement
 - **UI Pattern**: `TabView` with navigation stacks
 - **Input**: Touch, swipe actions for conversation management
 - **Limitations**:
-  - No AIKit (cannot run Podman containers)
   - No MCP (sandbox prevents subprocess spawning)
 - **Scheme**: `Ayna-iOS`
 
@@ -49,7 +47,7 @@ This document details platform-specific capabilities, limitations, and implement
 - **Input**: Digital Crown, dictation, scribble
 - **Settings Sync**: All settings synced from paired iPhone via `WatchConnectivityService`
 - **Limitations**:
-  - No local providers (AIKit, Apple Intelligence)
+  - No local providers (Apple Intelligence)
   - No MCP tools
   - No attachments or image generation
   - No CloudKit direct access (syncs via iPhone)
@@ -180,15 +178,12 @@ Button {
 `OpenAIService.usableModels` automatically filters providers:
 
 ```swift
-// iOS: Filters out AIKit
-// watchOS: Filters out AIKit and Apple Intelligence
+// watchOS: Filters out Apple Intelligence
 var usableModels: [String] {
     models.filter { model in
         let provider = modelProviders[model]
-        #if os(iOS)
-        return provider != .aikit
-        #elseif os(watchOS)
-        return provider != .aikit && provider != .appleIntelligence
+        #if os(watchOS)
+        return provider != .appleIntelligence
         #else
         return true
         #endif

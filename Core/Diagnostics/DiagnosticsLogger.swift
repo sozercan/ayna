@@ -13,7 +13,6 @@ enum DiagnosticsCategory: String, CaseIterable, Codable {
     case openAIService = "OpenAIService"
     case mcpServerManager = "MCPServerManager"
     case mcpService = "MCPService"
-    case aiKitService = "AIKitService"
     case appleIntelligence = "AppleIntelligenceService"
     case encryptedStore = "EncryptedConversationStore"
     case keychain = "KeychainStorage"

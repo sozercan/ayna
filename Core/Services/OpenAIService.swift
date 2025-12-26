@@ -19,7 +19,6 @@ enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
     case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
-    case aikit = "AIKit"
 
     var displayName: String { rawValue }
 }
@@ -57,12 +56,6 @@ class OpenAIService: ObservableObject {
             #if !os(watchOS)
                 AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
             #endif
-            // Sync with AIKitService if this is an AIKit model
-            if modelProviders[selectedModel] == .aikit {
-                #if os(macOS)
-                    AIKitService.shared.selectModelByName(selectedModel)
-                #endif
-            }
         }
     }
 
@@ -1988,7 +1981,7 @@ class OpenAIService: ObservableObject {
 extension OpenAIService {
     private func providerRequiresAPIKey(_ provider: AIProvider) -> Bool {
         switch provider {
-        case .aikit, .appleIntelligence:
+        case .appleIntelligence:
             false
         case .openai, .githubModels:
             true
@@ -2068,12 +2061,6 @@ extension OpenAIService {
 
     var usableModels: [String] {
         customModels.filter { model in
-            #if os(iOS) || os(watchOS)
-                // AIKit requires local Podman runtime, not available on iOS/watchOS
-                if modelProviders[model] == .aikit {
-                    return false
-                }
-            #endif
             #if os(watchOS)
                 // Apple Intelligence requires on-device processing which isn't available on watchOS
                 // The watch app makes API calls directly, not via iPhone relay

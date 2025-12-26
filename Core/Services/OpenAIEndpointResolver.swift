@@ -37,7 +37,6 @@ enum OpenAIEndpointResolver {
     private static let openAIResponsesURL = "https://api.openai.com/v1/responses"
     private static let openAIImagesURL = "https://api.openai.com/v1/images/generations"
     private static let githubModelsChatURL = "https://models.github.ai/inference/chat/completions"
-    private static let aikitBaseURL = "http://localhost:8080"
 
     // MARK: - Public API
 
@@ -50,8 +49,6 @@ enum OpenAIEndpointResolver {
             githubModelsChatURL
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
-        case .aikit:
-            "\(aikitBaseURL)/v1/chat/completions"
         }
     }
 
@@ -64,8 +61,6 @@ enum OpenAIEndpointResolver {
             "" // GitHub Models doesn't support the Responses API
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
-        case .aikit:
-            "\(aikitBaseURL)/v1/responses"
         }
     }
 
