@@ -103,7 +103,7 @@ struct GitHubRateLimitInfo {
 /// Runs an action at most once.
 final class OneShot: @unchecked Sendable {
     private let lock = NSLock()
-    nonisolated(unsafe) private var didRun = false
+    private nonisolated(unsafe) var didRun = false
     private let action: @Sendable () -> Void
 
     nonisolated init(_ action: @escaping @Sendable () -> Void) {

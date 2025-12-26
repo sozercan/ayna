@@ -229,7 +229,7 @@ struct WatchDataModelTests {
 
     @Test("Conversation date preservation")
     func conversationDatePreservation() {
-      let createdAt = Date(timeIntervalSince1970: 1_000_000)
+        let createdAt = Date(timeIntervalSince1970: 1_000_000)
         let updatedAt = Date(timeIntervalSince1970: 2_000_000)
 
         var conversation = Conversation(

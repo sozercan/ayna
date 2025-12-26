@@ -35,6 +35,12 @@ struct MacSettingsView: View {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
                 .tag(SettingsTab.mcp)
+
+            MemorySettingsSection()
+                .tabItem {
+                    Label("Memory", systemImage: "brain")
+                }
+                .tag(SettingsTab.memory)
         }
         .frame(width: 650, height: 500)
         .onReceive(settingsRouter.$requestedTab) { tab in

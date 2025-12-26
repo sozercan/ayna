@@ -1643,13 +1643,12 @@ class OpenAIService: ObservableObject {
             let accessToken = request.value(forHTTPHeaderField: "Authorization")
                 .map { $0.replacingOccurrences(of: "Bearer ", with: "") }
 
-            let retryAfterDate: Date?
-            if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
-                retryAfterDate = await MainActor.run {
+            let retryAfterDate: Date? = if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
+                await MainActor.run {
                     GitHubOAuthService.shared.retryAfterDate(forAccessToken: accessToken)
                 }
             } else {
-                retryAfterDate = nil
+                nil
             }
 
             DiagnosticsLogger.log(

@@ -134,8 +134,8 @@ actor BreadcrumbStore {
 final class LogThrottle: @unchecked Sendable {
     nonisolated static let shared = LogThrottle()
 
-    nonisolated private let lock = NSLock()
-    nonisolated(unsafe) private var lastLogByKey: [String: Date] = [:]
+    private nonisolated let lock = NSLock()
+    private nonisolated(unsafe) var lastLogByKey: [String: Date] = [:]
 
     nonisolated func shouldLog(key: String, interval: TimeInterval) -> Bool {
         let now = Date()

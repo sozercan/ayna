@@ -6,8 +6,8 @@
 //
 
 #if os(macOS)
-    @testable import Ayna
     import AppKit
+    @testable import Ayna
     import Testing
 
     @Suite("AppContentService Tests")

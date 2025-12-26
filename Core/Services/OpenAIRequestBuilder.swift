@@ -464,4 +464,67 @@ enum OpenAIRequestBuilder {
         request.httpBody = bodyData
         return request
     }
+
+    // MARK: - Memory Context Injection
+
+    /// Builds a complete message array with memory context injected.
+    ///
+    /// Context is injected in this order (following ChatGPT's pattern):
+    /// 1. System prompt (existing)
+    /// 2. Session metadata (ephemeral)
+    /// 3. User memory facts (persistent)
+    /// 4. Recent conversations summary (computed)
+    /// 5. Current conversation history (existing)
+    /// 6. Latest user message
+    ///
+    /// - Parameters:
+    ///   - systemPrompt: The system prompt for this conversation
+    ///   - memoryContext: Memory context from MemoryContextProvider
+    ///   - conversationHistory: The current conversation's message history
+    /// - Returns: Array of messages ready for API request
+    static func buildMessagesWithMemory(
+        systemPrompt: String?,
+        memoryContext: MemoryContext,
+        conversationHistory: [Message]
+    ) -> [Message] {
+        var messages: [Message] = []
+
+        // [0] System prompt (existing pattern)
+        if let systemPrompt, !systemPrompt.isEmpty {
+            messages.append(Message(role: .system, content: systemPrompt))
+        }
+
+        // Only inject memory context if available
+        guard memoryContext.hasContent else {
+            messages.append(contentsOf: conversationHistory)
+            return messages
+        }
+
+        // [1] Session metadata (ephemeral)
+        if let sessionMetadata = memoryContext.sessionMetadata {
+            messages.append(Message(role: .system, content: sessionMetadata))
+        }
+
+        // [2] User memory facts (persistent)
+        if let userMemory = memoryContext.userMemory {
+            messages.append(Message(role: .system, content: userMemory))
+        }
+
+        // [3] Recent conversations summary (computed)
+        if let summaries = memoryContext.conversationSummaries {
+            messages.append(Message(role: .system, content: summaries))
+        }
+
+        // [4-5] Current conversation history + latest message (existing)
+        messages.append(contentsOf: conversationHistory)
+
+        return messages
+    }
+
+    /// Estimates the token count for messages (rough approximation: 4 chars ≈ 1 token)
+    static func estimateTokenCount(for messages: [Message]) -> Int {
+        messages.reduce(0) { total, message in
+            total + (message.content.count / 4) + 4 // +4 for role/message overhead
+        }
+    }
 }

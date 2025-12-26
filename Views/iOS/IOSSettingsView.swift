@@ -27,6 +27,16 @@ struct IOSSettingsView: View {
         }
     }
 
+    private var memorySummary: String {
+        let provider = MemoryContextProvider.shared
+        if provider.isMemoryEnabled {
+            let factCount = UserMemoryService.shared.activeFacts().count
+            return factCount == 1 ? "1 fact" : "\(factCount) facts"
+        } else {
+            return "Disabled"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -77,6 +87,23 @@ struct IOSSettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings.tools.link")
+                }
+
+                // MARK: - Memory
+
+                Section("Memory") {
+                    NavigationLink {
+                        IOSMemorySettingsView()
+                    } label: {
+                        HStack {
+                            Text("Memory")
+                            Spacer()
+                            Text(memorySummary)
+                                .font(Typography.subheadline)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.memory.link")
                 }
 
                 // MARK: - Models
