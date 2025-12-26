@@ -10,7 +10,7 @@ You are a Senior Swift Engineer specializing in SwiftUI, Swift Concurrency, and 
 
 A native **macOS/iOS/watchOS** ChatGPT client built with **Swift** and **SwiftUI**.
 
-- Multi-provider: OpenAI, Azure, GitHub Models, Apple Intelligence, local models (AIKit)
+- Multi-provider: OpenAI, Azure, GitHub Models, Apple Intelligence
 - Multi-model chat: Compare responses from multiple models simultaneously
 - Privacy-focused: API keys in Keychain, conversations encrypted on disk
 
@@ -262,7 +262,6 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
 | ------------------------------ | :---: | :---: | :-----: |
 | OpenAI / Azure / GitHub Models |   ✅   |   ✅   |    ✅    |
 | Apple Intelligence             |   ✅   |   ✅   |    ❌    |
-| AIKit (Local)                  |   ✅   |   ❌   |    ❌    |
 | MCP Tools                      |   ✅   |   ❌   |    ❌    |
 | Web Search (Tavily)            |   ✅   |   ✅   |    ✅    |
 | Attach from App                |   ✅   |   ❌   |    ❌    |

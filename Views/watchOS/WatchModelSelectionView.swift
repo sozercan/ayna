@@ -17,9 +17,9 @@
         /// Filter models to only show those usable on watchOS
         private var watchUsableModels: [String] {
             connectivityService.availableModels.filter { model in
-                // Filter out AIKit and Apple Intelligence - they can't run on watchOS
+                // Filter out Apple Intelligence - it can't run on watchOS
                 let provider = openAIService.modelProviders[model]
-                return provider != .aikit && provider != .appleIntelligence
+                return provider != .appleIntelligence
             }
         }
 

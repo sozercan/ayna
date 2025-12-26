@@ -126,11 +126,11 @@
 
             // Check if the selected model is usable on watchOS
             let provider = openAIService.modelProviders[model]
-            if provider == .aikit || provider == .appleIntelligence {
+            if provider == .appleIntelligence {
                 // Fall back to first usable model
                 let usableModels = connectivityService.availableModels.filter { modelName in
                     let modelProvider = openAIService.modelProviders[modelName]
-                    return modelProvider != .aikit && modelProvider != .appleIntelligence
+                    return modelProvider != .appleIntelligence
                 }
                 if let fallback = usableModels.first {
                     model = fallback
@@ -411,16 +411,16 @@
 
         /// Create a new conversation
         func createNewConversation() -> UUID {
-            // Filter to only models usable on watchOS (exclude AIKit and Apple Intelligence)
+            // Filter to only models usable on watchOS (exclude Apple Intelligence)
             let usableModels = connectivityService.availableModels.filter { model in
                 let provider = openAIService.modelProviders[model]
-                return provider != .aikit && provider != .appleIntelligence
+                return provider != .appleIntelligence
             }
 
             // Use selected model if it's usable, otherwise pick first usable model
             let selectedModel = connectivityService.selectedModel
             let selectedProvider = openAIService.modelProviders[selectedModel]
-            let isSelectedUsable = selectedProvider != .aikit && selectedProvider != .appleIntelligence
+            let isSelectedUsable = selectedProvider != .appleIntelligence
 
             let model: String = if !selectedModel.isEmpty, isSelectedUsable {
                 selectedModel

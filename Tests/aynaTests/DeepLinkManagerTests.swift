@@ -136,22 +136,6 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel?.provider == .appleIntelligence)
     }
 
-    @Test("Parse provider AIKit")
-    func parseProviderAIKit() async {
-        let (manager, _) = makeManager()
-        let url = URL(string: "ayna://add-model?name=test&provider=aikit")!
-        await manager.handle(url: url)
-        #expect(manager.pendingAddModel?.provider == .aikit)
-    }
-
-    @Test("Parse provider local")
-    func parseProviderLocal() async {
-        let (manager, _) = makeManager()
-        let url = URL(string: "ayna://add-model?name=test&provider=local")!
-        await manager.handle(url: url)
-        #expect(manager.pendingAddModel?.provider == .aikit)
-    }
-
     @Test("Parse provider case insensitive")
     func parseProviderCaseInsensitive() async {
         let (manager, _) = makeManager()
@@ -561,15 +545,15 @@ struct DeepLinkManagerTests {
     @Test("Unified flow with all config params")
     func unifiedFlowWithAllConfigParams() async {
         let (manager, _) = makeManager()
-        let url = URL(string: "ayna://chat?model=full-config&provider=aikit&endpoint=http://localhost:8080&key=local-key&type=responses&prompt=Test&system=Be%20helpful")!
+        let url = URL(string: "ayna://chat?model=full-config&provider=openai&endpoint=https://api.openai.com&key=test-key&type=responses&prompt=Test&system=Be%20helpful")!
 
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel != nil)
         #expect(manager.pendingAddModel?.name == "full-config")
-        #expect(manager.pendingAddModel?.provider == .aikit)
-        #expect(manager.pendingAddModel?.endpoint == "http://localhost:8080")
-        #expect(manager.pendingAddModel?.apiKey == "local-key")
+        #expect(manager.pendingAddModel?.provider == .openai)
+        #expect(manager.pendingAddModel?.endpoint == "https://api.openai.com")
+        #expect(manager.pendingAddModel?.apiKey == "test-key")
         #expect(manager.pendingAddModel?.endpointType == .responses)
 
         #expect(manager.pendingChat != nil)

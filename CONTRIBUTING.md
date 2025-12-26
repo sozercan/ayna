@@ -98,7 +98,7 @@ Models → ViewModels → Views → Services
 - `MacSettingsView` / `IOSSettingsView`: Configuration tabs
 
 **Services**
-- `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection, Apple Intelligence, and AIKit via local OpenAI-compatible endpoint)
+- `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection and Apple Intelligence)
 - `MCPServerManager`: Handles Model Context Protocol tools (macOS only)
 - `KeychainStorage`: Securely stores API keys
 
