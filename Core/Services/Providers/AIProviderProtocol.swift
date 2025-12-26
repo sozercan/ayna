@@ -120,8 +120,8 @@ enum AIProviderFactory {
             OpenAIProvider(urlSession: urlSession)
         case .githubModels:
             GitHubModelsProvider(urlSession: urlSession)
-        case .appleIntelligence, .aikit:
-            // These providers are handled separately by their dedicated services
+        case .appleIntelligence:
+            // Apple Intelligence is handled separately by its dedicated service
             // Return OpenAI provider as fallback (should not be used)
             OpenAIProvider(urlSession: urlSession)
         }

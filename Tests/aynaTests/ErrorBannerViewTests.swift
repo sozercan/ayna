@@ -160,30 +160,6 @@ struct ErrorRecoverySuggestionTests {
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("Check") ?? false)
     }
-
-    // MARK: - AIKitError Tests (macOS only)
-
-    #if os(macOS)
-        @Test("AIKitError noModelSelected has recovery suggestion")
-        func aiKitErrorNoModelSelectedHasRecoverySuggestion() {
-            // Given
-            let error = AIKitError.noModelSelected
-
-            // Then
-            #expect(error.recoverySuggestion != nil)
-            #expect(error.recoverySuggestion?.contains("Settings") ?? false)
-        }
-
-        @Test("AIKitError podmanNotAvailable has recovery suggestion")
-        func aiKitErrorPodmanNotAvailableHasRecoverySuggestion() {
-            // Given
-            let error = AIKitError.podmanNotAvailable
-
-            // Then
-            #expect(error.recoverySuggestion != nil)
-            #expect(error.recoverySuggestion?.contains("brew") ?? false)
-        }
-    #endif
 }
 
 // MARK: - LocalizedError Extension Tests

@@ -298,11 +298,6 @@ public enum Theme {
     public static var providerApple: Color {
         Color.accentColor
     }
-
-    /// Local/AIKit brand color
-    public static var providerLocal: Color {
-        .purple
-    }
 }
 
 // MARK: - Convenience Extensions

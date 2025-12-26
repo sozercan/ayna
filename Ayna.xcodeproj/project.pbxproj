@@ -71,7 +71,6 @@
 		C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
 		C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */; };
-		C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */; };
 		C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C813940E2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
 		C813940F2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */; };
@@ -88,7 +87,6 @@
 		C81394332ED3DEC900F5E7F9 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */; };
 		C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394282ED3DEC900F5E7F9 /* MacSettingsView.swift */; };
 		C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813942A2ED3DEC900F5E7F9 /* MCPSettingsView.swift */; };
-		C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */; };
 		C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81394272ED3DEC900F5E7F9 /* MacMessageView.swift */; };
 		C813943D2ED3DEC900F5E7F9 /* IOSChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941D2ED3DEC900F5E7F9 /* IOSChatView.swift */; };
 		C81394422ED3DEC900F5E7F9 /* IOSContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C813941E2ED3DEC900F5E7F9 /* IOSContentView.swift */; };
@@ -270,7 +268,6 @@
 		C81393B42ED3DEB800F5E7F9 /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		C81393B52ED3DEB800F5E7F9 /* MCPModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPModels.swift; sourceTree = "<group>"; };
 		C81393B62ED3DEB800F5E7F9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
-		C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitService.swift; sourceTree = "<group>"; };
 		C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStorage.swift; sourceTree = "<group>"; };
 		C81393BB2ED3DEB800F5E7F9 /* EncryptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStore.swift; sourceTree = "<group>"; };
@@ -303,7 +300,6 @@
 		C813941F2ED3DEC900F5E7F9 /* IOSMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageView.swift; sourceTree = "<group>"; };
 		C81394202ED3DEC900F5E7F9 /* IOSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSettingsView.swift; sourceTree = "<group>"; };
 		C81394212ED3DEC900F5E7F9 /* IOSSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSidebarView.swift; sourceTree = "<group>"; };
-		C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIKitSettingsView.swift; sourceTree = "<group>"; };
 		C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		C81394252ED3DEC900F5E7F9 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
 		C81394262ED3DEC900F5E7F9 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
@@ -522,7 +518,6 @@
 			isa = PBXGroup;
 			children = (
 				C82E6B882EDBD7510055158F /* WatchConnectivityService.swift */,
-				C81393B82ED3DEB800F5E7F9 /* AIKitService.swift */,
 				C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */,
 				C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */,
 				B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */,
@@ -658,7 +653,6 @@
 			isa = PBXGroup;
 			children = (
 				C855C1742EE20A040073EB99 /* MacScrollToBottomButton.swift */,
-				C81394232ED3DEC900F5E7F9 /* AIKitSettingsView.swift */,
 				C81394242ED3DEC900F5E7F9 /* DynamicTextEditor.swift */,
 				C81394252ED3DEC900F5E7F9 /* MacChatView.swift */,
 				C813945B2ED3DEC900F5E7F9 /* ConversationSystemPromptSheet.swift */,
@@ -1041,7 +1035,6 @@
 				GITHUB0AUTH13064F88B81B01 /* GitHubOAuthService.swift in Sources */,
 				B0F01CAC13064F88B81B4CA2 /* ConversationPersistenceCoordinator.swift in Sources */,
 				C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */,
-				C813940C2ED3DEB800F5E7F9 /* AIKitService.swift in Sources */,
 				C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */,
 				C813940E2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */,
 				C813940F2ED3DEB800F5E7F9 /* ConversationExporter.swift in Sources */,
@@ -1062,7 +1055,6 @@
 				C855C1712EE208910073EB99 /* HapticEngine.swift in Sources */,
 				C81394352ED3DEC900F5E7F9 /* MacSettingsView.swift in Sources */,
 				C81394392ED3DEC900F5E7F9 /* MCPSettingsView.swift in Sources */,
-				C813943A2ED3DEC900F5E7F9 /* AIKitSettingsView.swift in Sources */,
 				C813943B2ED3DEC900F5E7F9 /* MacMessageView.swift in Sources */,
 				CITATION0VIEW13064F88B81B01 /* CitationSourcesView.swift in Sources */,
 				A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,

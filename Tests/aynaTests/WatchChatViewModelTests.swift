@@ -175,24 +175,22 @@ struct WatchChatViewModelIntegrationTests {
 
     @Test("WatchOS model filtering")
     func watchOSModelFiltering() {
-        // On watchOS, AIKit and Apple Intelligence models should be filtered out
-        let allModels = ["gpt-4o", "gpt-4", "llama-local", "apple-intelligence"]
+        // On watchOS, Apple Intelligence models should be filtered out
+        let allModels = ["gpt-4o", "gpt-4", "apple-intelligence"]
         let modelProviders: [String: AIProvider] = [
             "gpt-4o": .openai,
             "gpt-4": .openai,
-            "llama-local": .aikit,
             "apple-intelligence": .appleIntelligence
         ]
 
         let usableModels = allModels.filter { model in
             let provider = modelProviders[model]
-            return provider != .aikit && provider != .appleIntelligence
+            return provider != .appleIntelligence
         }
 
         #expect(usableModels.count == 2)
         #expect(usableModels.contains("gpt-4o"))
         #expect(usableModels.contains("gpt-4"))
-        #expect(!usableModels.contains("llama-local"))
         #expect(!usableModels.contains("apple-intelligence"))
     }
 
@@ -352,26 +350,24 @@ struct WatchChatViewModelIntegrationTests {
     @Test("Model usability check logic")
     func modelUsabilityCheckLogic() {
         // Test the filtering logic for watchOS-compatible models
-        let allModels = ["gpt-4o", "gpt-4", "gpt-3.5-turbo", "llama-local", "apple-intelligence-chat"]
+        let allModels = ["gpt-4o", "gpt-4", "gpt-3.5-turbo", "apple-intelligence-chat"]
         let modelProviders: [String: AIProvider] = [
             "gpt-4o": .openai,
             "gpt-4": .openai,
             "gpt-3.5-turbo": .openai,
-            "llama-local": .aikit,
             "apple-intelligence-chat": .appleIntelligence
         ]
 
-        // watchOS can only use cloud-based models (not AIKit or Apple Intelligence)
+        // watchOS can only use cloud-based models (not Apple Intelligence)
         let usableModels = allModels.filter { model in
             let provider = modelProviders[model]
-            return provider != .aikit && provider != .appleIntelligence
+            return provider != .appleIntelligence
         }
 
         #expect(usableModels.count == 3)
         #expect(usableModels.contains("gpt-4o"))
         #expect(usableModels.contains("gpt-4"))
         #expect(usableModels.contains("gpt-3.5-turbo"))
-        #expect(!usableModels.contains("llama-local"))
         #expect(!usableModels.contains("apple-intelligence-chat"))
     }
 
@@ -384,7 +380,7 @@ struct WatchChatViewModelIntegrationTests {
         ]
 
         for (model, provider) in modelProviders {
-            let isUsableOnWatch = provider != .aikit && provider != .appleIntelligence
+            let isUsableOnWatch = provider != .appleIntelligence
             #expect(isUsableOnWatch, "\(model) should be usable on watchOS")
         }
     }

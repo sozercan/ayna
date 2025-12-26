@@ -914,8 +914,8 @@ struct APISettingsView: View {
                 // Scrollable configuration area
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
-                        // API Endpoint Type Selection (not applicable for Apple Intelligence, AIKit, or GitHub Models)
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit, openAIService.provider != .githubModels {
+                        // API Endpoint Type Selection (not applicable for Apple Intelligence or GitHub Models)
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Label("API Endpoint", systemImage: "arrow.left.arrow.right")
                                     .font(Typography.headline)
@@ -1285,17 +1285,10 @@ struct APISettingsView: View {
                                 validationStatus: $validationStatus
                             )
                             .padding(.horizontal)
-                        } else if openAIService.provider == .aikit {
-                            // AIKit Configuration
-                            AIKitConfigurationView(
-                                tempModelName: $tempModelName,
-                                selectedModelName: $selectedModelName
-                            )
-                            .padding(.horizontal)
                         }
 
                         // Status Section
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .aikit, openAIService.provider != .githubModels {
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Validation Status", systemImage: "checkmark.seal.fill")
                                     .font(Typography.headline)
@@ -1522,11 +1515,6 @@ struct APISettingsView: View {
         // Switch to the correct provider for this model
         if let modelProvider = openAIService.modelProviders[model] {
             openAIService.provider = modelProvider
-
-            // Sync with AIKitService if this is an AIKit model
-            if modelProvider == .aikit {
-                AIKitService.shared.selectModelByName(model)
-            }
         }
 
         tempModelName = model
@@ -2033,217 +2021,6 @@ struct GitHubModelsConfigurationView: View {
         openAIService.modelUsesGitHubOAuth[modelName] = true
 
         validationStatus = .notChecked
-    }
-}
-
-// MARK: - AIKit Configuration View
-
-struct AIKitConfigurationView: View {
-    @ObservedObject private var aikitService = AIKitService.shared
-    @ObservedObject private var openAIService = OpenAIService.shared
-    @Binding var tempModelName: String
-    @Binding var selectedModelName: String?
-
-    @State private var isPulling = false
-    @State private var isRunning = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Label("AIKit Configuration", systemImage: "shippingbox.fill")
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                // Info section
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(Theme.accent)
-                    Text("AIKit runs AI models locally using containers")
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-
-                // Model Selection
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Select Model")
-                        .font(Typography.subheadline)
-                        .fontWeight(.medium)
-
-                    Picker("", selection: $aikitService.selectedModelId) {
-                        ForEach(aikitService.availableModels) { model in
-                            Text("\(model.displayName) (\(model.size))").tag(model.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .onChange(of: aikitService.selectedModelId) { _, _ in
-                        Task {
-                            await aikitService.updateContainerStatus()
-                        }
-                    }
-
-                    if let model = aikitService.selectedModel {
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text("Image: \(model.imageURL)")
-                                .font(Typography.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-
-                // Container Status
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Container Status")
-                        .font(Typography.subheadline)
-                        .fontWeight(.medium)
-
-                    HStack(spacing: Spacing.sm) {
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 8, height: 8)
-                        Text(aikitService.statusMessage.isEmpty ? aikitService.containerStatus.rawValue : aikitService.statusMessage)
-                            .font(Typography.caption)
-                    }
-                    .padding(Spacing.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.backgroundSecondary)
-                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.statusError)
-                    }
-                }
-
-                // Container Management Buttons
-                VStack(spacing: Spacing.sm) {
-                    if aikitService.containerStatus == .running {
-                        Button(action: stopContainer) {
-                            HStack {
-                                if isRunning {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                                Text(isRunning ? "Stopping..." : "Stop Container")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .disabled(isRunning)
-                        .controlSize(.large)
-                        .tint(Theme.statusError)
-                    } else {
-                        Button(action: pullAndRunModel) {
-                            HStack {
-                                if isRunning {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                                Text(isRunning ? "Starting..." : "Pull & Run Model")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .disabled(isRunning)
-                        .controlSize(.large)
-                    }
-
-                    Text(aikitService.containerStatus == .running ? "Container is running on http://localhost:8080" : "This will pull the model image and run it on http://localhost:8080")
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            .padding(Spacing.lg)
-            .background(Theme.backgroundSecondary)
-            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
-
-            // Add Model Button
-            Button {
-                if let model = aikitService.selectedModel {
-                    let modelName = model.name
-                    if !openAIService.customModels.contains(modelName) {
-                        openAIService.customModels.append(modelName)
-                        openAIService.modelProviders[modelName] = .aikit
-                        if openAIService.customModels.count == 1 {
-                            openAIService.selectedModel = modelName
-                        }
-                        selectedModelName = modelName
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add Model to List")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-        }
-        .task {
-            let service = AIKitService.shared
-            await service.checkPodmanAvailability()
-            await service.updateContainerStatus()
-        }
-    }
-
-    private var statusColor: Color {
-        switch aikitService.containerStatus {
-        case .notPulled, .stopped:
-            Theme.statusDisconnected
-        case .pulling, .starting, .stopping:
-            Theme.statusConnecting
-        case .pulled:
-            .yellow
-        case .running:
-            Theme.statusConnected
-        case .error, .notSupported:
-            Theme.statusError
-        }
-    }
-
-    private func pullAndRunModel() {
-        isRunning = true
-        errorMessage = nil
-
-        Task {
-            do {
-                // Pull the model
-                try await aikitService.pullModel()
-
-                // Run the container
-                try await aikitService.runContainer()
-
-                await MainActor.run {
-                    isRunning = false
-                }
-            } catch {
-                await MainActor.run {
-                    isRunning = false
-                    errorMessage = ErrorPresenter.userMessage(for: error)
-                }
-            }
-        }
-    }
-
-    private func stopContainer() {
-        isRunning = true
-        errorMessage = nil
-
-        Task {
-            do {
-                // Stop the container
-                try await aikitService.stopContainer()
-
-                await MainActor.run {
-                    isRunning = false
-                }
-            } catch {
-                await MainActor.run {
-                    isRunning = false
-                    errorMessage = ErrorPresenter.userMessage(for: error)
-                }
-            }
-        }
     }
 }
 

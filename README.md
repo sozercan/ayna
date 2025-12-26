@@ -50,7 +50,7 @@ brew install --cask ayna
    - **OpenAI**: Use the default endpoint or a custom OpenAI-compatible endpoint.
    - **Azure OpenAI**: Use `https://<resource>.openai.azure.com` with your deployment name as the model.
    - **GitHub Models**: Sign in with your GitHub account (OAuth).
-   - **Apple Intelligence / AIKit**: For on-device/local inference.
+   - **Apple Intelligence**: For on-device inference.
 3. Start chatting!
 
 ### Multi-Model Chat
@@ -58,11 +58,6 @@ brew install --cask ayna
 2. In the model selector, choose **multiple models** (e.g., GPT-4o and Claude 3.5 Sonnet).
 3. Send your prompt.
 4. Ayna will stream responses from all selected models in parallel, allowing you to compare their outputs side-by-side.
-
-### Run Local Models (AIKit)
-1. Install [Podman](https://podman-desktop.io/) configured with [GPU access](https://podman-desktop.io/docs/podman/gpu).
-2. In **Settings** → **Models** → **AIKit**, select a model and click **Pull & Run**.
-3. Chats will now be processed locally on your machine.
 
 ### Enable Tools (MCP)
 1. Go to **Settings** → **MCP Tools**.
@@ -77,7 +72,7 @@ brew install --cask ayna
 ## Privacy
 
 - **No Telemetry**: We don't track your usage.
-- **Local Storage**: Conversations are encrypted and stored only on your device if using local models.
+- **Local Storage**: Conversations are encrypted and stored only on your device.
 - **Secure Keys**: API keys are stored securely in the system Keychain.
 
 ## Contributing

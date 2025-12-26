@@ -40,7 +40,6 @@ The app supports multiple AI providers via the `AIProvider` enum.
 | Azure OpenAI | All | API Key | `<resource>.openai.azure.com` |
 | GitHub Models | All | OAuth (PKCE) | `models.github.ai` |
 | Apple Intelligence | macOS/iOS 26.0+ | None (on-device) | Local |
-| AIKit | macOS only | None | `localhost:8080` |
 
 ### OpenAI Service Architecture
 
@@ -73,12 +72,6 @@ Decomposed into single-responsibility components:
 - **Token Exchange**: Proxied via Cloudflare Worker to secure `client_secret`
 - **Headers**: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
 - **Model Catalog**: Fetched from `https://models.github.ai/catalog/models`
-
-### AIKit (Local Models)
-
-- **macOS only** — requires Podman with GPU access
-- Uses containerized models (Llama, Mixtral, etc.)
-- Managed by `AIKitService.swift` and `AIKitSettingsView`
 
 ## Multi-Model Architecture
 
@@ -125,7 +118,7 @@ Handles URL scheme (`ayna://`) for automation and external app integration.
 | Parameter | Required | Values | Description |
 |-----------|:--------:|--------|-------------|
 | `name` | ✅ | String | Model identifier (e.g., `gpt-4o`) |
-| `provider` | | `openai`, `github`, `azure`, `apple`, `aikit` | API provider |
+| `provider` | | `openai`, `github`, `azure`, `apple` | API provider |
 | `endpoint` | | URL | Custom API endpoint |
 | `key` | | String | API key |
 | `type` | | `chat`, `responses`, `image` | Model capability type |
