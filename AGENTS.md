@@ -24,15 +24,23 @@ Tests/      → Unit tests (aynaTests/) and UI tests (aynaUITests/)
 docs/       → Detailed documentation for AI agents
 ```
 
-## Before You Start: Read the Relevant Docs
+## Before You Start: Context Loading
 
-**Always consult these docs before making changes.** They contain detailed patterns and examples.
+**Before starting any non-trivial task, load context systematically:**
+
+1. **Read core docs** based on your task:
 
 | If your task involves...                       | Read this first                              |
 | ---------------------------------------------- | -------------------------------------------- |
 | Services, providers, data flow, concurrency    | [docs/architecture.md](docs/architecture.md) |
 | Writing or running tests                       | [docs/testing.md](docs/testing.md)           |
 | Platform-specific features, SwiftUI patterns   | [docs/platforms.md](docs/platforms.md)       |
+| Significant architectural changes              | [docs/adr/README.md](docs/adr/README.md)     |
+
+2. **Understand recent changes**: `git log --oneline -10`
+3. **Identify affected subsystem**: Which Services/ViewModels/Views are involved?
+4. **Review related tests**: Find existing tests for similar functionality
+5. **Check for prior art**: Search codebase for similar patterns
 
 ## Task Planning: Phases with Exit Criteria
 
@@ -124,6 +132,26 @@ After each phase, briefly report:
 - ➡️ Next phase plan
 
 This keeps the human informed and provides natural points to course-correct.
+
+## Debugging: Five Whys Technique
+
+Before implementing a fix, ask "Why?" five times to find the root cause:
+
+**Example:**
+1. Why did the crash occur? → Memory pressure
+2. Why memory pressure? → Array growing unbounded
+3. Why unbounded? → No pagination in conversation loading
+4. Why no pagination? → Original spec assumed small conversations
+5. Why that assumption? → Requirements didn't consider power users
+
+**Root Cause**: Missing pagination in `EncryptedConversationStore`  
+**Solution**: Add lazy loading + paginate large conversations
+
+**Best Practices:**
+- Focus on process/code, not blame
+- Look for systemic issues (missing tests, unclear requirements)
+- Document the analysis in commit messages
+- Verify the fix addresses the root cause, not just the symptom
 
 ## Critical Rules (Apply to EVERY task)
 
@@ -247,3 +275,145 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test
 - `Core/Models/AynaError.swift` — Unified error types
 - `Core/Utilities/ErrorPresenter.swift` — User-friendly error presentation
 - `Core/Diagnostics/DiagnosticsLogger.swift` — Logging (use this for all logs)
+
+## Performance Checklist
+
+Before completing non-trivial features, verify these patterns are followed:
+
+### Streaming & Network
+
+- [ ] **Streaming responses handled incrementally** — Never buffer entire response before displaying
+- [ ] **Network requests are cancellable** — Use `Task` with proper cancellation, not fire-and-forget
+- [ ] **Retry logic uses exponential backoff** — See `OpenAIRetryPolicy` for the pattern
+- [ ] **Large payloads are chunked** — Don't send/receive massive JSON in one request
+
+### UI Performance
+
+- [ ] **Conversation lists use `LazyVStack`** — Not `VStack` for potentially long lists
+- [ ] **Message views avoid re-renders** — Extract expensive markdown rendering to subviews
+- [ ] **No `await` calls inside `ForEach`** — Fetch data before iteration
+- [ ] **Images/attachments use async loading** — Never block UI thread for file I/O
+
+### Memory Management
+
+- [ ] **Streaming chunks are processed, not accumulated** — `StreamingChunkBuffer` clears after processing
+- [ ] **Attachments cleaned up on conversation delete** — `AttachmentStorage` handles orphan cleanup
+- [ ] **Long conversations paginate** — Don't load 1000+ messages into memory at once
+- [ ] **Observation is scoped** — Use `@Observable` on small units, not entire app state
+
+### Persistence
+
+- [ ] **Saves are debounced** — Don't save on every keystroke; use `ConversationPersistenceCoordinator`
+- [ ] **Encryption happens off main thread** — Use `Task { }` for crypto operations
+- [ ] **Metadata loads fast** — Conversation list shouldn't decrypt all content upfront
+
+### MCP & Subprocess (macOS only)
+
+- [ ] **MCP processes are tracked** — `MCPProcessTracker` monitors lifecycle
+- [ ] **Subprocess timeouts enforced** — Don't let hung tools block indefinitely
+- [ ] **Resources cleaned up on termination** — Processes killed on app quit
+
+### Cross-Platform
+
+- [ ] **Core code avoids platform-specific overhead** — No UIKit/AppKit in Core without guards
+- [ ] **watchOS is memory-conscious** — Smaller buffers, fewer cached items
+- [ ] **iOS handles backgrounding** — Save state before suspension
+
+### Verification Commands
+
+```bash
+# Profile memory usage (Instruments)
+xcrun xctrace record --template 'Allocations' --launch -- /path/to/Ayna.app
+
+# Check for main thread violations
+xcrun xctrace record --template 'Main Thread Checker' --launch -- /path/to/Ayna.app
+```
+
+## Architecture Decision Records
+
+For significant architectural decisions, document them in `docs/adr/`. See [docs/adr/README.md](docs/adr/README.md) for the format and existing decisions.
+
+Current ADRs:
+- [ADR-0001: Multi-Provider Architecture](docs/adr/0001-multi-provider-architecture.md)
+- [ADR-0002: Encrypted Conversation Storage](docs/adr/0002-encrypted-conversation-storage.md)
+- [ADR-0003: Cross-Platform Core Module](docs/adr/0003-cross-platform-core.md)
+
+## PR Self-Review Checklist
+
+Before requesting human review, verify:
+
+### Code Quality
+- [ ] Code is clean, readable, and follows existing patterns
+- [ ] No TODO comments left unaddressed
+- [ ] Error handling is complete (no silent failures)
+- [ ] `DiagnosticsLogger` calls added for debugging
+
+### Testing
+- [ ] New code has unit tests in `Tests/aynaTests/`
+- [ ] Edge cases covered (empty states, errors, cancellation)
+- [ ] Existing tests still pass
+
+### Security
+- [ ] Secrets stored in Keychain (never UserDefaults or hardcoded)
+- [ ] No force unwraps on user input or API responses
+- [ ] Sensitive data not logged
+
+### Platform Compatibility
+- [ ] Builds on macOS, iOS, watchOS (as applicable)
+- [ ] `#if os()` guards for platform-specific code in Core/
+- [ ] No AppKit/UIKit imports in Core/ without guards
+
+### Accessibility
+- [ ] `.accessibilityLabel()` on image-only buttons
+- [ ] Dynamic Type supported (no fixed font sizes)
+- [ ] VoiceOver navigation logical
+
+### Performance
+- [ ] No `await` inside `ForEach` or loops
+- [ ] Large lists use `LazyVStack`
+- [ ] Streaming responses handled incrementally
+
+## Common Errors & Solutions
+
+### "Cannot find X in scope" (cross-platform builds)
+- **Cause**: AppKit/UIKit used in `Core/` without platform guard
+- **Fix**: Add `#if os(macOS)` / `#if os(iOS)` guards
+- **Prevention**: Always verify iOS build after Core changes
+
+### "Reference to captured var in concurrently-executing code"
+- **Cause**: Mutable state accessed across actor boundaries
+- **Fix**: Make the type `Sendable` or use `@MainActor`
+- **Prevention**: Mark `@Observable` classes with `@MainActor`
+
+### "Thread 1: Fatal error: Unexpectedly found nil"
+- **Cause**: Force unwrap (`!`) on optional that was nil
+- **Fix**: Use `guard let` or optional chaining
+- **Prevention**: Avoid `!` except in tests with known values
+
+### "Expression type is ambiguous without more context"
+- **Cause**: SwiftUI view builder can't infer types
+- **Fix**: Add explicit type annotations or break into smaller views
+- **Prevention**: Extract complex views into separate structs
+
+### Streaming response stops mid-message
+- **Cause**: Task cancelled or error not propagated
+- **Fix**: Check `Task.isCancelled` and handle errors in stream
+- **Prevention**: Use `AsyncThrowingStream` with proper error handling
+
+## When to Update This Document
+
+**Add new rules when:**
+- A pattern is used in 3+ places
+- Code reviews repeatedly flag the same issue
+- A bug could have been prevented by a documented rule
+- New security or performance patterns emerge
+
+**Update existing rules when:**
+- Better examples exist in the codebase
+- Edge cases are discovered
+- APIs or patterns have changed
+
+**Remove rules when:**
+- They cause more confusion than they prevent
+- The underlying issue no longer applies
+- They duplicate other documentation
