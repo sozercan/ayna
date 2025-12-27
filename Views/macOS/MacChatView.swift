@@ -871,8 +871,8 @@ struct MacChatView: View {
 
     private func showShareSheet(for url: URL) {
         let picker = NSSharingServicePicker(items: [url])
-        // Presenting from the key window's content view is a reasonable default for macOS apps
-        DispatchQueue.main.async {
+        // Defer to next run loop to ensure window state is ready
+        Task { @MainActor in
             if let window = NSApp.keyWindow, let contentView = window.contentView {
                 picker.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
             }
@@ -1297,7 +1297,8 @@ struct MacChatView: View {
             if hasEnabledServers {
                 logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
                 // Give discovery a moment to complete (non-blocking)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
                     // Re-query after a brief delay
                     let updatedTools = mcpManager.getEnabledTools()
                     logChat(

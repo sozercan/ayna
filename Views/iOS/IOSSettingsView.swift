@@ -234,8 +234,8 @@ struct IOSImageGenerationSettingsView: View {
                         get: { Double(openAIService.outputCompression) },
                         set: { openAIService.outputCompression = Int($0) }
                     ), in: 0 ... 100, step: 10)
-                    .accessibilityLabel("Compression")
-                    .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
+                        .accessibilityLabel("Compression")
+                        .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
                 }
             } footer: {
                 Text("These settings apply when using image generation models.")

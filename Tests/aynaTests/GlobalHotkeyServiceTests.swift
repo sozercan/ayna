@@ -84,7 +84,7 @@
         func registerWithHotkeyString() throws {
             try service.register(hotkeyString: "⌘⇧Space")
 
-        #expect(service.isRegistered)
+            #expect(service.isRegistered)
             service.unregister()
         }
 

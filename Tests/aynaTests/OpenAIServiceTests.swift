@@ -62,7 +62,7 @@ struct OpenAIServiceTests {
                 onToolCallRequested: nil,
                 onReasoning: nil
             )
-            
+
             // Give time for async callback
             try? await Task.sleep(for: .milliseconds(100))
         }
@@ -106,7 +106,7 @@ struct OpenAIServiceTests {
                 onToolCallRequested: nil,
                 onReasoning: nil
             )
-            
+
             // Give time for async callback
             try? await Task.sleep(for: .milliseconds(500))
         }
@@ -187,7 +187,7 @@ struct OpenAIServiceTests {
                 onToolCallRequested: nil,
                 onReasoning: nil
             )
-            
+
             // Give time for async callback
             try? await Task.sleep(for: .milliseconds(500))
         }

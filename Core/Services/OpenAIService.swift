@@ -1134,8 +1134,8 @@ class OpenAIService: ObservableObject {
                         )
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            await self.delay(for: attempt)
-                            self.responsesAPIRequest(
+                            await delay(for: attempt)
+                            responsesAPIRequest(
                                 messages: messages,
                                 model: model,
                                 onChunk: onChunk,
@@ -1643,13 +1643,12 @@ class OpenAIService: ObservableObject {
             let accessToken = request.value(forHTTPHeaderField: "Authorization")
                 .map { $0.replacingOccurrences(of: "Bearer ", with: "") }
 
-            let retryAfterDate: Date?
-            if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
-                retryAfterDate = await MainActor.run {
+            let retryAfterDate: Date? = if isGitHubModelsRequest, let accessToken, !accessToken.isEmpty {
+                await MainActor.run {
                     GitHubOAuthService.shared.retryAfterDate(forAccessToken: accessToken)
                 }
             } else {
-                retryAfterDate = nil
+                nil
             }
 
             DiagnosticsLogger.log(
@@ -1725,8 +1724,8 @@ class OpenAIService: ObservableObject {
                         )
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            await self.delay(for: attempt)
-                            self.nonStreamResponse(
+                            await delay(for: attempt)
+                            nonStreamResponse(
                                 request: request,
                                 onChunk: onChunk,
                                 onComplete: onComplete,

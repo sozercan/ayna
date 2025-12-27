@@ -686,8 +686,7 @@ struct MacNewChatView: View {
         }
 
         // Ensure we have at least one model selected if possible
-        if selectedModels.isEmpty, !openAIService.usableModels.isEmpty {
-            let first = openAIService.usableModels.first!
+        if selectedModels.isEmpty, let first = openAIService.usableModels.first {
             selectedModels = [first]
             selectedModel = first
         }

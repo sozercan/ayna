@@ -101,9 +101,8 @@ struct GitHubRateLimitInfo {
 // MARK: - Concurrency Gate
 
 /// Runs an action at most once.
-final class OneShot: @unchecked Sendable {
-    private let lock = NSLock()
-    nonisolated(unsafe) private var didRun = false
+final class OneShot: Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: false)
     private let action: @Sendable () -> Void
 
     nonisolated init(_ action: @escaping @Sendable () -> Void) {
@@ -111,12 +110,16 @@ final class OneShot: @unchecked Sendable {
     }
 
     nonisolated func run() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard !didRun else { return }
-        didRun = true
-        action()
+        let shouldRun = state.withLock { didRun -> Bool in
+            if didRun {
+                return false
+            }
+            didRun = true
+            return true
+        }
+        if shouldRun {
+            action()
+        }
     }
 }
 

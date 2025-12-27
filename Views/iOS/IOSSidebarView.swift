@@ -36,51 +36,51 @@ struct IOSSidebarView: View {
             .safeAreaInset(edge: .bottom) {
                 bottomBar
             }
-        .navigationTitle("Conversations")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(isEditing ? "Done" : "Edit") {
-                    withAnimation {
-                        isEditing.toggle()
-                        if !isEditing {
-                            selectedConversations.removeAll()
+            .navigationTitle("Conversations")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(isEditing ? "Done" : "Edit") {
+                        withAnimation {
+                            isEditing.toggle()
+                            if !isEditing {
+                                selectedConversations.removeAll()
+                            }
                         }
                     }
+                    .font(.system(size: 17))
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier(TestIdentifiers.Sidebar.editButton)
+                    .disabled(conversationManager.conversations.isEmpty)
                 }
-                .font(.system(size: 17))
-                .foregroundStyle(.primary)
-                .accessibilityIdentifier(TestIdentifiers.Sidebar.editButton)
-                .disabled(conversationManager.conversations.isEmpty)
-            }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                if !isEditing {
-                    Button(action: {
-                        showSettings = true
-                    }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .frame(width: 36, height: 36)
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !isEditing {
+                        Button(action: {
+                            showSettings = true
+                        }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .frame(width: 36, height: 36)
+                        }
+                        .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
                     }
-                    .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
                 }
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                IOSSettingsView()
+            .sheet(isPresented: $showSettings) {
+                NavigationStack {
+                    IOSSettingsView()
+                }
             }
-        }
-        .onAppear {
-            DiagnosticsLogger.log(
-                .contentView,
-                level: .info,
-                message: "📱 IOSSidebarView appeared",
-                metadata: ["conversationCount": "\(conversationManager.conversations.count)"]
-            )
-        }
+            .onAppear {
+                DiagnosticsLogger.log(
+                    .contentView,
+                    level: .info,
+                    message: "📱 IOSSidebarView appeared",
+                    metadata: ["conversationCount": "\(conversationManager.conversations.count)"]
+                )
+            }
     }
 
     // MARK: - Empty State View

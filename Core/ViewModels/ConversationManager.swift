@@ -265,7 +265,15 @@ final class ConversationManager: ObservableObject {
                 metadata: ["error": error.localizedDescription]
             )
             logManager("⚠️ Clearing corrupted conversation data", level: .default)
-            try? store.clear()
+            do {
+                try store.clear()
+            } catch {
+                logManager(
+                    "❌ Failed to clear corrupted store",
+                    level: .error,
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
             conversations = []
             conversationIndexCache.removeAll()
             isLoaded = true
@@ -738,14 +746,15 @@ final class ConversationManager: ObservableObject {
             model: conversation.model,
             stream: false,
             onChunk: { chunk in
-                accumulator.title += chunk
+                Task { await accumulator.append(chunk) }
             },
             onComplete: { [weak self] in
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
                     // Use the AI-generated title, trimmed and cleaned
-                    let cleanTitle = accumulator.title
+                    let accumulatedTitle = await accumulator.getTitle()
+                    let cleanTitle = accumulatedTitle
                         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                         .replacingOccurrences(of: "\"", with: "")
                         .replacingOccurrences(of: "\n", with: " ")
@@ -995,7 +1004,15 @@ final class ConversationManager: ObservableObject {
     }
 }
 
-// Helper class for title generation
-private class TitleAccumulator: @unchecked Sendable {
-    nonisolated(unsafe) var title = ""
+// Helper actor for thread-safe title generation
+private actor TitleAccumulator {
+    var title = ""
+
+    func append(_ chunk: String) {
+        title += chunk
+    }
+
+    func getTitle() -> String {
+        title
+    }
 }
