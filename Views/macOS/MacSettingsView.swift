@@ -1363,11 +1363,16 @@ struct APISettingsView: View {
             } // End of outer VStack wrapping provider selection and scroll view
         }
         .onAppear {
-            tempAPIKey = openAIService.apiKey
-            tempEndpoint = "https://api.openai.com/"
-            // Default to "new model" state for GitHub Models
-            if openAIService.provider == .githubModels {
-                createNewModel()
+            // If there's a selected model, load its config; otherwise set defaults
+            if let model = selectedModelName, openAIService.customModels.contains(model) {
+                loadModelConfig(model)
+            } else {
+                tempAPIKey = openAIService.apiKey
+                tempEndpoint = "https://api.openai.com/"
+                // Default to "new model" state for GitHub Models
+                if openAIService.provider == .githubModels {
+                    createNewModel()
+                }
             }
         }
         .onChange(of: openAIService.provider) { _, newProvider in

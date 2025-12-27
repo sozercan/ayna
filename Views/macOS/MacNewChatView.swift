@@ -864,7 +864,16 @@ struct MacNewChatView: View {
         attachedAppContent = nil // Clear app content after sending
 
         // DON'T switch views yet - stay in NewChatView so the stop button remains visible
-        // The view switch will happen in the completion handler after generation finishes
+    // The view switch will happen in the completion handler after generation finishes
+
+    // Check if current model is for image generation
+    let modelCapability = openAIService.getModelCapability(activeModel)
+    if modelCapability == .imageGeneration {
+      // Image generation flow
+      isGenerating = true
+      generateImage(prompt: textToSend, model: activeModel, conversation: conversation)
+      return
+        }
 
         // Send the message immediately (no delay needed)
         if selectedModels.count > 1 {
@@ -917,6 +926,81 @@ struct MacNewChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools
+    )
+  }
+
+  // MARK: - Image Generation
+
+  private func generateImage(prompt: String, model: String, conversation: Conversation) {
+    // Create placeholder assistant message with a known ID
+    let messageId = UUID()
+    let placeholderMessage = Message(
+      id: messageId,
+      role: .assistant,
+      content: "",
+      model: model,
+      mediaType: .image
+    )
+    conversationManager.addMessage(to: conversation, message: placeholderMessage)
+
+    openAIService.generateImage(
+      prompt: prompt,
+      model: model,
+      onComplete: { imageData in
+        Task { @MainActor in
+          // Save image to disk
+          var imagePath: String?
+          do {
+            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+          } catch {
+            logNewChat(
+              "❌ Failed to save generated image: \(error.localizedDescription)",
+              level: .error
+            )
+          }
+
+          // Update the placeholder message with actual image using the proper method
+          conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+            message.content = ""
+            if let path = imagePath {
+              message.imagePath = path
+              message.imageData = nil  // Don't store raw data if saved to disk
+            } else {
+              // Fallback to storing in message if save failed
+              message.imageData = imageData
+              message.imagePath = nil
+            }
+          }
+
+          isGenerating = false
+          // Switch to chat view after image generation completes
+          selectedConversationId = conversation.id
+        }
+      },
+      onError: { error in
+        Task { @MainActor in
+          isGenerating = false
+          logNewChat(
+            "❌ Image generation failed: \(error.localizedDescription)",
+            level: .error,
+            metadata: ["model": model]
+          )
+          presentError(error)
+
+          // Remove the empty assistant placeholder message since we show error in banner
+          if let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversation.id
+          }) {
+            let lastIndex = conversationManager.conversations[index].messages.count - 1
+            if lastIndex >= 0,
+              conversationManager.conversations[index].messages[lastIndex].role == .assistant,
+              conversationManager.conversations[index].messages[lastIndex].content.isEmpty
+            {
+              conversationManager.conversations[index].messages.remove(at: lastIndex)
+            }
+          }
+        }
+      }
         )
     }
 
