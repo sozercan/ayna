@@ -1134,8 +1134,8 @@ class OpenAIService: ObservableObject {
                         )
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            await delay(for: attempt)
-                            responsesAPIRequest(
+                            await self.delay(for: attempt)
+                            self.responsesAPIRequest(
                                 messages: messages,
                                 model: model,
                                 onChunk: onChunk,
@@ -1724,8 +1724,8 @@ class OpenAIService: ObservableObject {
                         )
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            await delay(for: attempt)
-                            nonStreamResponse(
+                            await self.delay(for: attempt)
+                            self.nonStreamResponse(
                                 request: request,
                                 onChunk: onChunk,
                                 onComplete: onComplete,
