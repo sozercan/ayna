@@ -332,6 +332,14 @@ struct IOSMultiModelSelector: View {
     let availableModels: [String]
     let maxSelection: Int
 
+    @ObservedObject private var openAIService = OpenAIService.shared
+
+    /// Determines the capability type of currently selected models (if any)
+    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+        guard let firstSelected = selectedModels.first else { return nil }
+        return openAIService.getModelCapability(firstSelected)
+    }
+
     var body: some View {
         List {
             Section {
@@ -341,7 +349,13 @@ struct IOSMultiModelSelector: View {
             } header: {
                 Text("Select up to \(maxSelection) models")
             } footer: {
-                Text("Selected models will receive your message simultaneously for comparison.")
+                if selectedCapabilityType == .imageGeneration {
+                    Text("Image generation models selected. Only other image models can be added for comparison.")
+                } else if selectedCapabilityType == .chat {
+                    Text("Text models selected. Only other text models can be added for comparison.")
+                } else {
+                    Text("Selected models will receive your message simultaneously for comparison.")
+                }
             }
         }
         .navigationTitle("Multi-Model")
@@ -350,7 +364,14 @@ struct IOSMultiModelSelector: View {
 
     private func modelRow(for model: String) -> some View {
         let isModelSelected = selectedModels.contains(model)
-        let isDisabled = !isModelSelected && selectedModels.count >= maxSelection
+        let modelCapability = openAIService.getModelCapability(model)
+
+        // Disable if max reached OR if mixing capability types
+        let isCapabilityMismatch: Bool = {
+            guard let selectedType = selectedCapabilityType else { return false }
+            return modelCapability != selectedType
+        }()
+        let isDisabled = !isModelSelected && (selectedModels.count >= maxSelection || isCapabilityMismatch)
 
         return Button {
             toggleModel(model)
@@ -360,6 +381,13 @@ struct IOSMultiModelSelector: View {
                     .foregroundStyle(Theme.textPrimary)
 
                 Spacer()
+
+                // Show capability badge for image gen models
+                if modelCapability == .imageGeneration {
+                    Image(systemName: "photo")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
 
                 Image(systemName: isModelSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isModelSelected ? Theme.accent : Theme.textSecondary)

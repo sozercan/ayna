@@ -273,7 +273,44 @@ struct MultiModelResponseCard: View {
     private var contentScrollView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if message.content.isEmpty, isStreaming {
+                if message.mediaType == .image {
+                    // Image generation content
+                    if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
+                            .contextMenu {
+                                Button("Save Image...") {
+                                    saveImage(nsImage)
+                                }
+                                Button("Copy Image") {
+                                    copyImage(nsImage)
+                                }
+                            }
+                    } else if isStreaming {
+                        // Still generating
+                        VStack(spacing: Spacing.md) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Generating image...")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.xxl)
+                    } else if hasFailed {
+                        failedContentView
+                    } else {
+                        // Completed but no image data (shouldn't happen)
+                        Text("Image unavailable")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.xxl)
+                    }
+                } else if message.content.isEmpty, isStreaming {
                     TypingIndicatorView()
                         .padding(.vertical, Spacing.sm)
                 } else if hasFailed {
@@ -348,6 +385,30 @@ struct MultiModelResponseCard: View {
             .foregroundStyle(isHovered ? Theme.accent : Theme.textSecondary)
         }
     }
+
+    // MARK: - Image Actions
+
+    private func saveImage(_ image: NSImage) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.png, .jpeg]
+        savePanel.nameFieldStringValue = "generated-image.png"
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                if let tiffData = image.tiffRepresentation,
+                   let bitmapImage = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmapImage.representation(using: .png, properties: [:])
+                {
+                    try? pngData.write(to: url)
+                }
+            }
+        }
+    }
+
+    private func copyImage(_ image: NSImage) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
+    }
 }
 
 /// A compact view for selecting models to use in multi-model mode
@@ -357,6 +418,13 @@ struct MultiModelSelector: View {
     let maxSelection: Int
 
     @State private var isExpanded = false
+    @ObservedObject private var openAIService = OpenAIService.shared
+
+    /// Determines the capability type of currently selected models (if any)
+    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+        guard let firstSelected = selectedModels.first else { return nil }
+        return openAIService.getModelCapability(firstSelected)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -407,10 +475,23 @@ struct MultiModelSelector: View {
 
     private var modelList: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text("Select up to \(maxSelection) models:")
-                .font(Typography.footnote)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.horizontal, Spacing.xxs)
+            // Header with capability hint
+            if selectedCapabilityType == .imageGeneration {
+                Text("Select up to \(maxSelection) image models:")
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, Spacing.xxs)
+            } else if selectedCapabilityType == .chat {
+                Text("Select up to \(maxSelection) text models:")
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, Spacing.xxs)
+            } else {
+                Text("Select up to \(maxSelection) models:")
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, Spacing.xxs)
+            }
 
             ForEach(availableModels, id: \.self) { model in
                 modelRow(for: model)
@@ -426,7 +507,14 @@ struct MultiModelSelector: View {
 
     private func modelRow(for model: String) -> some View {
         let isSelected = selectedModels.contains(model)
-        let isDisabled = !isSelected && selectedModels.count >= maxSelection
+        let modelCapability = openAIService.getModelCapability(model)
+
+        // Disable if max reached OR if mixing capability types
+        let isCapabilityMismatch: Bool = {
+            guard let selectedType = selectedCapabilityType else { return false }
+            return modelCapability != selectedType
+        }()
+        let isDisabled = !isSelected && (selectedModels.count >= maxSelection || isCapabilityMismatch)
 
         return Button(action: {
             toggleModel(model)
@@ -440,6 +528,13 @@ struct MultiModelSelector: View {
                     .lineLimit(1)
 
                 Spacer()
+
+                // Show capability badge for image gen models
+                if modelCapability == .imageGeneration {
+                    Image(systemName: "photo")
+                        .font(.system(size: Typography.Size.xs))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, Spacing.xs)

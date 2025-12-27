@@ -348,4 +348,183 @@ final class OpenAIImageService: @unchecked Sendable {
             }
         }
     }
+
+    // MARK: - Image Editing
+
+    /// Edits an image based on a prompt and source image.
+    /// Uses the /v1/images/edits endpoint to modify existing images.
+    /// - Parameters:
+    ///   - prompt: The text description of the desired edit
+    ///   - sourceImage: The source image data to edit (PNG format recommended)
+    ///   - requestConfig: Configuration for the API request (model, key, endpoint)
+    ///   - imageConfig: Image generation settings (size, quality)
+    ///   - onComplete: Callback with the edited image data
+    ///   - onError: Callback with any error that occurred
+    func editImage(
+        prompt: String,
+        sourceImage: Data,
+        requestConfig: RequestConfig,
+        imageConfig: ImageConfig = .default,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void
+    ) {
+        // Validate provider
+        guard requestConfig.provider == .openai else {
+            onError(OpenAIService.OpenAIError.unsupportedProvider)
+            return
+        }
+
+        // Validate API key
+        guard !requestConfig.apiKey.isEmpty else {
+            onError(OpenAIService.OpenAIError.missingAPIKey)
+            return
+        }
+
+        // Resolve endpoint URL
+        let endpointConfig = OpenAIEndpointResolver.EndpointConfig(
+            modelName: requestConfig.model,
+            provider: requestConfig.provider,
+            customEndpoint: requestConfig.customEndpoint,
+            azureAPIVersion: requestConfig.azureAPIVersion
+        )
+        let editURL = OpenAIEndpointResolver.imageEditURL(for: endpointConfig)
+
+        guard let url = URL(string: editURL) else {
+            onError(OpenAIService.OpenAIError.invalidURL)
+            return
+        }
+
+        // Build multipart form request
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        // Set authentication header
+        let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(requestConfig.customEndpoint)
+        if usesAzureEndpoint {
+            request.setValue(requestConfig.apiKey, forHTTPHeaderField: "api-key")
+        } else {
+            request.setValue("Bearer \(requestConfig.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        // Build multipart body
+        var body = Data()
+
+        // Add image field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"image[]\"; filename=\"image.png\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
+        body.append(sourceImage)
+        body.append("\r\n".data(using: .utf8)!)
+
+        // Add prompt field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
+        body.append(prompt.data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
+
+        // Add model field (not needed for Azure - deployment is in URL)
+        if !usesAzureEndpoint {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
+            body.append(requestConfig.model.data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+
+        // Add size field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
+        body.append(imageConfig.size.data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
+
+        // Add quality field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".data(using: .utf8)!)
+        body.append(imageConfig.quality.data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
+
+        // End boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        // Execute request
+        executeEditRequest(request, onComplete: onComplete, onError: onError)
+    }
+
+    private func executeEditRequest(
+        _ request: URLRequest,
+        onComplete: @escaping @Sendable (Data) -> Void,
+        onError: @escaping @Sendable (Error) -> Void
+    ) {
+        let circuitKey = NetworkCircuitBreaker.key(for: request.url, label: "openai.image.edit")
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
+        if !circuitGate.allowed {
+            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+            let message = seconds > 0
+                ? "Image editing temporarily unavailable. Please try again in \(seconds)s."
+                : "Image editing temporarily unavailable. Please try again shortly."
+            Task { @MainActor in
+                onError(OpenAIService.OpenAIError.apiError(message))
+            }
+            return
+        }
+
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            if let error {
+                if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
+                Task { @MainActor in
+                    onError(error)
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                Task { @MainActor in
+                    onError(OpenAIService.OpenAIError.invalidResponse)
+                }
+                return
+            }
+
+            guard let data else {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .error,
+                    message: "No data received from image editing"
+                )
+                Task { @MainActor in
+                    onError(OpenAIService.OpenAIError.noData)
+                }
+                return
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                    NetworkCircuitBreaker.recordFailure(key: circuitKey)
+                }
+
+                let message: String = {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let errorDict = json["error"] as? [String: Any],
+                       let errorMessage = errorDict["message"] as? String
+                    {
+                        return errorMessage
+                    }
+                    return "HTTP \(httpResponse.statusCode)"
+                }()
+
+                Task { @MainActor in
+                    onError(OpenAIService.OpenAIError.apiError(message))
+                }
+                return
+            }
+
+            NetworkCircuitBreaker.recordSuccess(key: circuitKey)
+
+            self?.parseResponse(data, onComplete: onComplete, onError: onError)
+        }.resume()
+    }
 }

@@ -36,6 +36,7 @@ enum OpenAIEndpointResolver {
     private static let openAIChatURL = "https://api.openai.com/v1/chat/completions"
     private static let openAIResponsesURL = "https://api.openai.com/v1/responses"
     private static let openAIImagesURL = "https://api.openai.com/v1/images/generations"
+    private static let openAIImageEditsURL = "https://api.openai.com/v1/images/edits"
     private static let githubModelsChatURL = "https://models.github.ai/inference/chat/completions"
 
     // MARK: - Public API
@@ -90,6 +91,29 @@ enum OpenAIEndpointResolver {
         }
 
         return appendPathIfNeeded(customEndpoint, path: "/v1/images/generations")
+    }
+
+    /// Resolves the image editing endpoint URL.
+    static func imageEditURL(for config: EndpointConfig) -> String {
+        guard config.provider == .openai else {
+            return "" // Only OpenAI supports image editing
+        }
+
+        guard let customEndpoint = config.customEndpoint,
+              !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return openAIImageEditsURL
+        }
+
+        if isAzureEndpoint(customEndpoint) {
+            return azureImageEditsURL(
+                baseEndpoint: customEndpoint,
+                deployment: config.modelName,
+                apiVersion: config.azureAPIVersion
+            )
+        }
+
+        return appendPathIfNeeded(customEndpoint, path: "/v1/images/edits")
     }
 
     /// Checks if the given endpoint is an Azure OpenAI endpoint.
@@ -173,6 +197,16 @@ enum OpenAIEndpointResolver {
         let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
         let encodedDeployment = percentEncodedDeployment(deployment)
         return "\(cleanBase)/openai/deployments/\(encodedDeployment)/images/generations?api-version=\(apiVersion)"
+    }
+
+    private static func azureImageEditsURL(
+        baseEndpoint: String,
+        deployment: String,
+        apiVersion: String
+    ) -> String {
+        let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
+        let encodedDeployment = percentEncodedDeployment(deployment)
+        return "\(cleanBase)/openai/deployments/\(encodedDeployment)/images/edits?api-version=\(apiVersion)"
     }
 
     private static func appendPathIfNeeded(_ endpoint: String, path: String) -> String {

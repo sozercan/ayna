@@ -18,6 +18,25 @@ private final class UncheckedSendable<T>: @unchecked Sendable {
     }
 }
 
+/// Thread-safe counter for tracking async completion
+@MainActor
+private final class CompletionCounter {
+    private var completed: Int = 0
+    private let total: Int
+
+    init(total: Int) {
+        self.total = total
+    }
+
+    func increment() {
+        completed += 1
+    }
+
+    var isComplete: Bool {
+        completed >= total
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
@@ -51,6 +70,12 @@ struct MacNewChatView: View {
     private var currentConversation: Conversation? {
         guard let id = currentConversationId else { return nil }
         return conversationManager.conversations.first(where: { $0.id == id })
+    }
+
+    /// Determines the capability type of currently selected models (if any)
+    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+        guard let firstSelected = selectedModels.first else { return nil }
+        return openAIService.getModelCapability(firstSelected)
     }
 
     // MARK: - Multi-Model Display
@@ -553,33 +578,50 @@ struct MacNewChatView: View {
                 .routeSettings(to: .models)
             } else {
                 ForEach(openAIService.usableModels, id: \.self) { model in
+                    let isSelected = selectedModels.contains(model)
+                    let modelCapability = openAIService.getModelCapability(model)
+                    let isCapabilityMismatch: Bool = {
+                        guard let selectedType = selectedCapabilityType else { return false }
+                        return modelCapability != selectedType
+                    }()
+                    let isDisabled = !isSelected && isCapabilityMismatch
+
                     Button(action: {
                         toggleModelSelection(model)
                     }) {
                         HStack {
                             Image(
-                                systemName: selectedModels.contains(model)
+                                systemName: isSelected
                                     ? "checkmark.square.fill" : "square"
                             )
                             .foregroundStyle(
-                                selectedModels.contains(model) ? Color.accentColor : Color.secondary
+                                isSelected ? Color.accentColor : Color.secondary
                             )
                             .font(.system(size: 14))
                             Text(model)
                                 .font(.system(size: 13))
                             Spacer()
+
+                            // Show capability badge for image gen models
+                            if modelCapability == .imageGeneration {
+                                Image(systemName: "photo")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.secondary)
+                            }
                         }
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(
-                                    selectedModels.contains(model)
+                                    isSelected
                                         ? Color.accentColor.opacity(0.1) : Color.clear
                                 )
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(isDisabled)
+                    .opacity(isDisabled ? 0.5 : 1.0)
                 }
             }
 
@@ -694,10 +736,15 @@ struct MacNewChatView: View {
 
     private func toggleModelSelection(_ model: String) {
         if selectedModels.contains(model) {
-            if selectedModels.count > 1 {
-                selectedModels.remove(model)
-            }
+            // Always allow removing a model (user can select a different one)
+            selectedModels.remove(model)
         } else {
+            // Check if we're trying to mix capability types
+            let modelCapability = openAIService.getModelCapability(model)
+            if let selectedType = selectedCapabilityType, modelCapability != selectedType {
+                // Clear existing selections and start fresh with the new type
+                selectedModels.removeAll()
+            }
             selectedModels.insert(model)
         }
 
@@ -864,15 +911,19 @@ struct MacNewChatView: View {
         attachedAppContent = nil // Clear app content after sending
 
         // DON'T switch views yet - stay in NewChatView so the stop button remains visible
-    // The view switch will happen in the completion handler after generation finishes
+        // The view switch will happen in the completion handler after generation finishes
 
-    // Check if current model is for image generation
-    let modelCapability = openAIService.getModelCapability(activeModel)
-    if modelCapability == .imageGeneration {
-      // Image generation flow
-      isGenerating = true
-      generateImage(prompt: textToSend, model: activeModel, conversation: conversation)
-      return
+        // Check if we're in image generation mode (any selected model is image gen means all are)
+        let modelCapability = openAIService.getModelCapability(activeModel)
+        if modelCapability == .imageGeneration {
+            // Image generation flow - handle multi-model image gen
+            isGenerating = true
+            if selectedModels.count > 1 {
+                generateMultiModelImages(prompt: textToSend, models: Array(selectedModels), conversation: conversation)
+            } else {
+                generateImage(prompt: textToSend, model: activeModel, conversation: conversation)
+            }
+            return
         }
 
         // Send the message immediately (no delay needed)
@@ -926,82 +977,206 @@ struct MacNewChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools
-    )
-  }
-
-  // MARK: - Image Generation
-
-  private func generateImage(prompt: String, model: String, conversation: Conversation) {
-    // Create placeholder assistant message with a known ID
-    let messageId = UUID()
-    let placeholderMessage = Message(
-      id: messageId,
-      role: .assistant,
-      content: "",
-      model: model,
-      mediaType: .image
-    )
-    conversationManager.addMessage(to: conversation, message: placeholderMessage)
-
-    openAIService.generateImage(
-      prompt: prompt,
-      model: model,
-      onComplete: { imageData in
-        Task { @MainActor in
-          // Save image to disk
-          var imagePath: String?
-          do {
-            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-          } catch {
-            logNewChat(
-              "❌ Failed to save generated image: \(error.localizedDescription)",
-              level: .error
-            )
-          }
-
-          // Update the placeholder message with actual image using the proper method
-          conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-            message.content = ""
-            if let path = imagePath {
-              message.imagePath = path
-              message.imageData = nil  // Don't store raw data if saved to disk
-            } else {
-              // Fallback to storing in message if save failed
-              message.imageData = imageData
-              message.imagePath = nil
-            }
-          }
-
-          isGenerating = false
-          // Switch to chat view after image generation completes
-          selectedConversationId = conversation.id
-        }
-      },
-      onError: { error in
-        Task { @MainActor in
-          isGenerating = false
-          logNewChat(
-            "❌ Image generation failed: \(error.localizedDescription)",
-            level: .error,
-            metadata: ["model": model]
-          )
-          presentError(error)
-
-          // Remove the empty assistant placeholder message since we show error in banner
-          if let index = conversationManager.conversations.firstIndex(where: {
-            $0.id == conversation.id
-          }) {
-            let lastIndex = conversationManager.conversations[index].messages.count - 1
-            if lastIndex >= 0,
-              conversationManager.conversations[index].messages[lastIndex].role == .assistant,
-              conversationManager.conversations[index].messages[lastIndex].content.isEmpty
-            {
-              conversationManager.conversations[index].messages.remove(at: lastIndex)
-            }
-          }
-        }
-      }
         )
+    }
+
+    // MARK: - Image Generation
+
+    private func generateImage(prompt: String, model: String, conversation: Conversation) {
+        // Create placeholder assistant message with a known ID
+        let messageId = UUID()
+        let placeholderMessage = Message(
+            id: messageId,
+            role: .assistant,
+            content: "",
+            model: model,
+            mediaType: .image
+        )
+        conversationManager.addMessage(to: conversation, message: placeholderMessage)
+
+        openAIService.generateImage(
+            prompt: prompt,
+            model: model,
+            onComplete: { imageData in
+                Task { @MainActor in
+                    // Save image to disk
+                    var imagePath: String?
+                    do {
+                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+                    } catch {
+                        logNewChat(
+                            "❌ Failed to save generated image: \(error.localizedDescription)",
+                            level: .error
+                        )
+                    }
+
+                    // Update the placeholder message with actual image using the proper method
+                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                        message.content = ""
+                        if let path = imagePath {
+                            message.imagePath = path
+                            message.imageData = nil // Don't store raw data if saved to disk
+                        } else {
+                            // Fallback to storing in message if save failed
+                            message.imageData = imageData
+                            message.imagePath = nil
+                        }
+                    }
+
+                    isGenerating = false
+                    // Switch to chat view after image generation completes
+                    selectedConversationId = conversation.id
+                }
+            },
+            onError: { error in
+                Task { @MainActor in
+                    isGenerating = false
+                    logNewChat(
+                        "❌ Image generation failed: \(error.localizedDescription)",
+                        level: .error,
+                        metadata: ["model": model]
+                    )
+                    presentError(error)
+
+                    // Remove the empty assistant placeholder message since we show error in banner
+                    if let index = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversation.id
+                    }) {
+                        let lastIndex = conversationManager.conversations[index].messages.count - 1
+                        if lastIndex >= 0,
+                           conversationManager.conversations[index].messages[lastIndex].role == .assistant,
+                           conversationManager.conversations[index].messages[lastIndex].content.isEmpty
+                        {
+                            conversationManager.conversations[index].messages.remove(at: lastIndex)
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    /// Generates images from multiple models in parallel for comparison
+    private func generateMultiModelImages(prompt: String, models: [String], conversation: Conversation) {
+        // Create a response group for the multi-model comparison
+        let responseGroupId = UUID()
+        var responseEntries: [ResponseGroup.ResponseEntry] = []
+        var messageIds: [String: UUID] = [:]
+
+        // Create placeholder messages for each model
+        for model in models {
+            let messageId = UUID()
+            messageIds[model] = messageId
+
+            let placeholderMessage = Message(
+                id: messageId,
+                role: .assistant,
+                content: "",
+                model: model,
+                responseGroupId: responseGroupId,
+                mediaType: .image
+            )
+            conversationManager.addMessage(to: conversation, message: placeholderMessage)
+
+            responseEntries.append(ResponseGroup.ResponseEntry(
+                id: messageId,
+                modelName: model,
+                status: .streaming
+            ))
+        }
+
+        // Create response group
+        let responseGroup = ResponseGroup(
+            id: responseGroupId,
+            userMessageId: conversation.messages.first(where: { $0.role == .user })?.id
+                ?? conversation.messages.last(where: { $0.role == .user })?.id ?? UUID(),
+            responses: responseEntries
+        )
+
+        // Add response group to conversation
+        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversationManager.conversations[index].responseGroups.append(responseGroup)
+        }
+
+        // Track completion state with actor-isolated counter
+        let counter = CompletionCounter(total: models.count)
+
+        // Generate images in parallel
+        for model in models {
+            guard let messageId = messageIds[model] else { continue }
+
+            openAIService.generateImage(
+                prompt: prompt,
+                model: model,
+                onComplete: { imageData in
+                    Task { @MainActor in
+                        // Save image to disk
+                        var imagePath: String?
+                        do {
+                            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+                        } catch {
+                            logNewChat(
+                                "❌ Failed to save generated image: \(error.localizedDescription)",
+                                level: .error
+                            )
+                        }
+
+                        // Update the placeholder message with actual image
+                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = ""
+                            if let path = imagePath {
+                                message.imagePath = path
+                                message.imageData = nil
+                            } else {
+                                message.imageData = imageData
+                                message.imagePath = nil
+                            }
+                        }
+
+                        // Update response group status
+                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
+                        {
+                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
+                        }
+
+                        counter.increment()
+                        if counter.isComplete {
+                            isGenerating = false
+                            selectedConversationId = conversation.id
+                        }
+                    }
+                },
+                onError: { error in
+                    Task { @MainActor in
+                        logNewChat(
+                            "❌ Image generation failed for \(model): \(error.localizedDescription)",
+                            level: .error,
+                            metadata: ["model": model]
+                        )
+
+                        // Update response group status to failed
+                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
+                        {
+                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
+                        }
+
+                        // Update message with error
+                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = "Image generation failed: \(error.localizedDescription)"
+                        }
+
+                        counter.increment()
+                        if counter.isComplete {
+                            isGenerating = false
+                            selectedConversationId = conversation.id
+                        }
+                    }
+                }
+            )
+        }
     }
 
     private func sendMultiModelMessage(
