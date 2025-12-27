@@ -74,7 +74,7 @@ struct IOSChatView: View {
             }
 
             // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
+            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
                 // Hide assistant messages that only have tool calls (intermediate steps)
                 // These are placeholders that triggered tool execution but have no response content
                 if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
@@ -89,7 +89,7 @@ struct IOSChatView: View {
                 return message.id == conversation.messages.last?.id && viewModel.isGenerating
             }
 
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
 
         for message in visibleMessages {
