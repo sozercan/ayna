@@ -138,6 +138,12 @@ struct IOSSettingsView: View {
                                 Label("Set as Default", systemImage: "checkmark")
                             }
 
+                            Button {
+                                duplicateModel(model)
+                            } label: {
+                                Label("Duplicate", systemImage: "doc.on.doc")
+                            }
+
                             Button(role: .destructive) {
                                 removeModel(model)
                             } label: {
@@ -198,6 +204,43 @@ struct IOSSettingsView: View {
             if openAIService.selectedModel == model, let first = openAIService.customModels.first {
                 openAIService.selectedModel = first
             }
+        }
+    }
+
+    private func duplicateModel(_ model: String) {
+        // Generate a unique name by appending "Copy" or "Copy N"
+        var newName = "\(model) Copy"
+        var copyNumber = 2
+        while openAIService.customModels.contains(newName) {
+            newName = "\(model) Copy \(copyNumber)"
+            copyNumber += 1
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📋 Duplicating model",
+            metadata: ["original": model, "duplicate": newName]
+        )
+
+        // Add the new model
+        openAIService.customModels.append(newName)
+
+        // Copy all settings from the original model
+        if let provider = openAIService.modelProviders[model] {
+            openAIService.modelProviders[newName] = provider
+        }
+        if let endpoint = openAIService.modelEndpoints[model] {
+            openAIService.modelEndpoints[newName] = endpoint
+        }
+        if let apiKey = openAIService.modelAPIKeys[model] {
+            openAIService.modelAPIKeys[newName] = apiKey
+        }
+        if let endpointType = openAIService.modelEndpointTypes[model] {
+            openAIService.modelEndpointTypes[newName] = endpointType
+        }
+        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
+            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
         }
     }
 }
@@ -274,6 +317,7 @@ struct IOSModelEditView: View {
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
 
     let isNew: Bool
+    let originalModelName: String
     @State var modelName: String
 
     @State private var provider: AIProvider = .openai
@@ -283,6 +327,7 @@ struct IOSModelEditView: View {
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
+        self.originalModelName = modelName
         self.isNew = isNew
     }
 
@@ -299,16 +344,11 @@ struct IOSModelEditView: View {
     var body: some View {
         Form {
             Section("Model Details") {
-                if isNew {
-                    TextField("Model Name", text: $modelName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityLabel("Model Name")
-                        .accessibilityIdentifier("settings.addModel.modelName")
-                } else {
-                    Text(modelName)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                TextField("Model Name", text: $modelName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Model Name")
+                    .accessibilityIdentifier("settings.addModel.modelName")
 
                 Picker("Provider", selection: $provider) {
                     Text("OpenAI").tag(AIProvider.openai)
@@ -506,51 +546,83 @@ struct IOSModelEditView: View {
     }
 
     private func saveModel() {
+        let trimmedName = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isRename = !isNew && trimmedName != originalModelName
+
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: isNew ? "➕ Adding new model" : "💾 Saving model changes",
+            message: isNew ? "➕ Adding new model" : (isRename ? "✏️ Renaming model" : "💾 Saving model changes"),
             metadata: [
-                "model": modelName,
+                "model": trimmedName,
+                "originalModel": originalModelName,
                 "provider": provider.displayName,
                 "hasEndpoint": "\(!endpoint.isEmpty)",
             ]
         )
+
         if isNew {
-            if openAIService.customModels.contains(modelName) {
+            if openAIService.customModels.contains(trimmedName) {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .default,
                     message: "⚠️ Duplicate model name, skipping",
-                    metadata: ["model": modelName]
+                    metadata: ["model": trimmedName]
                 )
-                // Handle duplicate name if needed, for now just return or overwrite
                 return
             }
-            openAIService.customModels.append(modelName)
+            openAIService.customModels.append(trimmedName)
+        } else if isRename {
+            // Check if new name already exists
+            if openAIService.customModels.contains(trimmedName) {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .default,
+                    message: "⚠️ Model name already exists, skipping rename",
+                    metadata: ["model": trimmedName]
+                )
+                return
+            }
+
+            // Update the model list: replace old name with new name
+            if let index = openAIService.customModels.firstIndex(of: originalModelName) {
+                openAIService.customModels[index] = trimmedName
+            }
+
+            // Remove old model settings
+            openAIService.modelProviders.removeValue(forKey: originalModelName)
+            openAIService.modelAPIKeys.removeValue(forKey: originalModelName)
+            openAIService.modelEndpoints.removeValue(forKey: originalModelName)
+            openAIService.modelEndpointTypes.removeValue(forKey: originalModelName)
+            openAIService.modelUsesGitHubOAuth.removeValue(forKey: originalModelName)
+
+            // Update selected model if it was the renamed one
+            if openAIService.selectedModel == originalModelName {
+                openAIService.selectedModel = trimmedName
+            }
         }
 
-        openAIService.modelProviders[modelName] = provider
+        openAIService.modelProviders[trimmedName] = provider
 
         if provider == .openai {
             if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[modelName] = apiKey
+                openAIService.modelAPIKeys[trimmedName] = apiKey
             }
             if !endpoint.isEmpty {
-                openAIService.modelEndpoints[modelName] = endpoint
+                openAIService.modelEndpoints[trimmedName] = endpoint
             }
-            openAIService.modelEndpointTypes[modelName] = endpointType
+            openAIService.modelEndpointTypes[trimmedName] = endpointType
         } else if provider == .githubModels {
             // Use OAuth if signed in
             if githubOAuth.isAuthenticated {
-                openAIService.modelUsesGitHubOAuth[modelName] = true
-                openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                openAIService.modelUsesGitHubOAuth[trimmedName] = true
+                openAIService.modelAPIKeys.removeValue(forKey: trimmedName)
             }
         }
 
         // If this is the first model, select it
         if openAIService.customModels.count == 1 {
-            openAIService.selectedModel = modelName
+            openAIService.selectedModel = trimmedName
         }
     }
 }

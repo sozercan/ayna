@@ -864,6 +864,27 @@ struct APISettingsView: View {
                                     selectedModelName = model
                                     loadModelConfig(model)
                                 }
+                                .contextMenu {
+                                    Button {
+                                        openAIService.selectedModel = model
+                                    } label: {
+                                        Label("Set as Default", systemImage: "star")
+                                    }
+
+                                    Button {
+                                        duplicateModel(model)
+                                    } label: {
+                                        Label("Duplicate", systemImage: "doc.on.doc")
+                                    }
+
+                                    Divider()
+
+                                    Button(role: .destructive) {
+                                        removeModel(model)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .padding(Spacing.sm)
@@ -1537,6 +1558,47 @@ struct APISettingsView: View {
             tempModelName = ""
             tempEndpoint = "https://api.openai.com/"
         }
+    }
+
+    private func duplicateModel(_ model: String) {
+        // Generate a unique name by appending "Copy" or "Copy N"
+        var newName = "\(model) Copy"
+        var copyNumber = 2
+        while openAIService.customModels.contains(newName) {
+            newName = "\(model) Copy \(copyNumber)"
+            copyNumber += 1
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📋 Duplicating model",
+            metadata: ["original": model, "duplicate": newName]
+        )
+
+        // Add the new model
+        openAIService.customModels.append(newName)
+
+        // Copy all settings from the original model
+        if let provider = openAIService.modelProviders[model] {
+            openAIService.modelProviders[newName] = provider
+        }
+        if let endpoint = openAIService.modelEndpoints[model] {
+            openAIService.modelEndpoints[newName] = endpoint
+        }
+        if let apiKey = openAIService.modelAPIKeys[model] {
+            openAIService.modelAPIKeys[newName] = apiKey
+        }
+        if let endpointType = openAIService.modelEndpointTypes[model] {
+            openAIService.modelEndpointTypes[newName] = endpointType
+        }
+        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
+            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
+        }
+
+        // Select the new model for editing
+        selectedModelName = newName
+        loadModelConfig(newName)
     }
 }
 
