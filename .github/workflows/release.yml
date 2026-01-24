@@ -1,6 +1,13 @@
 name: Release Build
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -20,6 +27,13 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+      with:
+        fetch-depth: 0  # Full history for changelog generation
+
+    - name: Configure git user
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
     - name: Show Xcode version
       run: xcodebuild -version
@@ -67,6 +81,20 @@ jobs:
           fi
         done
 
+    - name: Determine version from tag
+      id: version
+      run: |
+        if [ -n "${{ inputs.tag }}" ]; then
+          TAG="${{ inputs.tag }}"
+        elif [ -n "${{ github.ref_name }}" ]; then
+          TAG="${{ github.ref_name }}"
+        else
+          TAG="0.0.0"
+        fi
+        VERSION="${TAG#v}"  # Remove 'v' prefix if present
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Using version: $VERSION"
+
     - name: Build release configuration
       run: |
         xcodebuild -project ayna.xcodeproj \
@@ -77,26 +105,71 @@ jobs:
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
+          ARCHS="arm64 x86_64" \
+          ONLY_ACTIVE_ARCH=NO \
+          MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+          CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
           build
+
+    - name: Install create-dmg
+      run: brew install create-dmg
 
     - name: Create DMG
       run: |
-        APP_PATH=$(find ./build/Build/Products/Release -name "*.app" -type d | head -n 1)
+        APP_NAME="Ayna.app"
+        BUILD_DIR="./build/Build/Products/Release"
+
+        # debug: show what's in the build folder
+        echo "Contents of $BUILD_DIR:"
+        ls -la "$BUILD_DIR" || true
+
+        # clean previous artifact
+        rm -f ayna.dmg || true
+
+        # find the main app explicitly by name to avoid Sparkle Updater.app
+        APP_PATH=$(find "$BUILD_DIR" -type d -name "$APP_NAME" | head -n 1)
 
         if [ -z "$APP_PATH" ]; then
-          echo "Error: Could not find built app"
+          echo "Error: Could not find $APP_NAME in $BUILD_DIR"
           exit 1
         fi
 
         echo "Found app at: $APP_PATH"
 
-        mkdir -p dmg_contents
-        cp -R "$APP_PATH" dmg_contents/
+        # Verify app version matches expected version
+        PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
+        EXPECTED_VERSION="${{ steps.version.outputs.version }}"
+        echo "Built app version: $PLIST_VERSION"
+        echo "Expected version: $EXPECTED_VERSION"
+        if [ "$PLIST_VERSION" != "$EXPECTED_VERSION" ]; then
+          echo "Error: Version mismatch!"
+          exit 1
+        fi
 
-        hdiutil create -volname "Ayna" \
-          -srcfolder dmg_contents \
-          -ov -format UDZO \
-          ayna.dmg
+        # Verify Universal Binary (Intel + Apple Silicon)
+        if [ -f "$APP_PATH/Contents/MacOS/Ayna" ]; then
+          ARCHS=$(lipo -archs "$APP_PATH/Contents/MacOS/Ayna" 2>/dev/null || echo "unknown")
+        else
+          ARCHS="unknown"
+        fi
+        echo "Architectures: $ARCHS"
+        if [[ "$ARCHS" != *"x86_64"* ]] || [[ "$ARCHS" != *"arm64"* ]]; then
+          echo "Error: App is not a Universal Binary (found: $ARCHS)"
+          exit 1
+        fi
+
+        # Create styled DMG with Applications symlink
+        create-dmg \
+          --volname "Ayna" \
+          --window-pos 200 120 \
+          --window-size 660 400 \
+          --icon-size 100 \
+          --icon "Ayna.app" 180 190 \
+          --app-drop-link 480 190 \
+          --hide-extension "Ayna.app" \
+          --no-internet-enable \
+          ayna.dmg \
+          "$APP_PATH"
 
     - name: Determine artifact name
       id: artifact
@@ -106,7 +179,7 @@ jobs:
         elif [ -n "${{ github.ref_name }}" ]; then
           TAG="${{ github.ref_name }}"
         else
-          TAG="${GITHUB_SHA::7}"
+          TAG="v${{ steps.version.outputs.version }}"
         fi
 
         if [ -z "$TAG" ]; then
@@ -126,6 +199,113 @@ jobs:
         path: ${{ steps.artifact.outputs.filename }}
         retention-days: 30
 
+    - name: Calculate SHA256
+      id: sha256
+      run: |
+        SHA256=$(shasum -a 256 "${{ steps.artifact.outputs.filename }}" | awk '{print $1}')
+        echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+    - name: Sign DMG for Sparkle
+      id: sparkle_sign
+      env:
+        SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      run: |
+        if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+          echo "Warning: SPARKLE_PRIVATE_KEY not set, skipping Sparkle signing"
+          echo "signature=" >> "$GITHUB_OUTPUT"
+          echo "length=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Find Sparkle's sign_update binary
+        SIGN_UPDATE=$(find ./build -name "sign_update" -type f 2>/dev/null | head -1)
+        if [ -z "$SIGN_UPDATE" ]; then
+          echo "Warning: sign_update not found, skipping Sparkle signing"
+          echo "signature=" >> "$GITHUB_OUTPUT"
+          echo "length=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Write private key to temp file
+        echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
+        chmod 600 /tmp/sparkle_key
+
+        # Sign the DMG and capture output
+        SIGN_OUTPUT=$("$SIGN_UPDATE" --ed-key-file /tmp/sparkle_key "${{ steps.artifact.outputs.filename }}")
+        rm -f /tmp/sparkle_key
+
+        # Parse signature and length from output
+        # Output format: sparkle:edSignature="..." length="..."
+        SIGNATURE=$(echo "$SIGN_OUTPUT" | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"$//')
+        LENGTH=$(stat -f%z "${{ steps.artifact.outputs.filename }}")
+
+        echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
+        echo "length=$LENGTH" >> "$GITHUB_OUTPUT"
+        echo "Sparkle signature generated successfully"
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        VERSION="${{ steps.version.outputs.version }}"
+        SHA256="${{ steps.sha256.outputs.sha256 }}"
+
+        # Get previous tag for changelog
+        CURRENT_TAG="${{ steps.artifact.outputs.tag }}"
+        PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -A1 "^${CURRENT_TAG}$" | tail -1)
+        if [ "$PREV_TAG" = "$CURRENT_TAG" ] || [ -z "$PREV_TAG" ]; then
+          PREV_TAG=$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || echo "")
+        fi
+
+        # Generate changelog
+        if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
+          CHANGELOG=$(git log --pretty=format:"- %s" "$PREV_TAG".."$CURRENT_TAG" --no-merges | head -50)
+        else
+          CHANGELOG="- Initial release"
+        fi
+
+        # Create release notes
+        NOTES=$(cat <<EOF
+        ## What's New
+
+        ${CHANGELOG}
+
+        ## Installation
+
+        ### Homebrew (recommended)
+        \`\`\`bash
+        brew install sozercan/repo/ayna
+        \`\`\`
+
+        ### Manual Download
+        1. Download \`${{ steps.artifact.outputs.filename }}\`
+        2. Open the DMG and drag Ayna to Applications
+        3. Remove the quarantine attribute (required for unsigned apps):
+           \`\`\`bash
+           xattr -d com.apple.quarantine /Applications/Ayna.app
+           \`\`\`
+
+        ## Verification
+
+        **SHA256:** \`${SHA256}\`
+
+        Verify with: \`shasum -a 256 ${{ steps.artifact.outputs.filename }}\`
+        EOF
+        )
+
+        # Write to file (safer than GITHUB_OUTPUT for multiline)
+        echo "$NOTES" > release_notes.md
+
+    - name: Check if pre-release
+      id: prerelease
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        if [[ "$TAG" =~ -(alpha|beta|rc|dev) ]]; then
+          echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Create GitHub release and upload DMG
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -134,8 +314,12 @@ jobs:
 
         TAG="${{ steps.artifact.outputs.tag }}"
         FILE="${{ steps.artifact.outputs.filename }}"
-        TITLE="Ayna ${TAG}"
-        NOTES="Automated release for ${TAG} (build ${GITHUB_SHA})"
+        TITLE="${TAG}"
+        PRERELEASE_FLAG=""
+
+        if [ "${{ steps.prerelease.outputs.is_prerelease }}" = "true" ]; then
+          PRERELEASE_FLAG="--prerelease"
+        fi
 
         if gh release view "$TAG" >/dev/null 2>&1; then
           echo "Release $TAG already exists, uploading asset instead"
@@ -143,47 +327,121 @@ jobs:
         else
           gh release create "$TAG" "$FILE" \
             --title "$TITLE" \
-            --notes "$NOTES"
+            --notes-file release_notes.md \
+            $PRERELEASE_FLAG
         fi
 
+    - name: Checkout Homebrew tap repo
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+      with:
+        repository: sozercan/homebrew-repo
+        token: ${{ secrets.HOMEBREW_REPO_TOKEN }}
+        path: homebrew-repo
+        fetch-depth: 0
+
     - name: Update Homebrew Cask
-      if: success()
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         TAG="${{ steps.artifact.outputs.tag }}"
-        FILE="${{ steps.artifact.outputs.filename }}"
-
-        # Strip 'v' prefix from tag for version
         VERSION="${TAG#v}"
 
-        # Calculate SHA256
-        SHA256=$(shasum -a 256 "$FILE" | awk '{print $1}')
-
-        echo "Updating Cask to version $VERSION with sha256 $SHA256"
+        cd homebrew-repo
 
         # Configure git
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-        # Create new branch
-        BRANCH_NAME="bump-cask-${VERSION}"
-        git checkout -b "$BRANCH_NAME"
+        # Update the cask file
+        mkdir -p Casks
+        cat > Casks/ayna.rb << EOF
+        cask "ayna" do
+          version "$VERSION"
+          sha256 "${{ steps.sha256.outputs.sha256 }}"
 
-        # Update Cask file
-        sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/ayna.rb
-        sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/ayna.rb
+          url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
+          name "Ayna"
+          desc "Native macOS/iOS/watchOS ChatGPT client"
+          homepage "https://github.com/sozercan/ayna"
 
-        # Commit and push
-        if ! git diff --quiet Casks/ayna.rb; then
-          git add Casks/ayna.rb
-          git commit -m "Update Cask to version $VERSION"
-          git push origin "$BRANCH_NAME"
+          auto_updates true
+          depends_on macos: ">= :sonoma"
 
-          # Create PR
-          gh pr create \
-            --title "Update Cask to version $VERSION" \
-            --body "Automated update of Homebrew Cask for version $VERSION" \
-            --base main \
-            --head "$BRANCH_NAME"
+          app "Ayna.app"
+
+          postflight do
+            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
+          end
+
+          zap trash: [
+            "~/Library/Application Support/Ayna",
+            "~/Library/Caches/com.sertacozercan.ayna",
+            "~/Library/Preferences/com.sertacozercan.ayna.plist",
+            "~/Library/Saved Application State/com.sertacozercan.ayna.savedState",
+          ]
+        end
+        EOF
+
+        # Remove heredoc indentation
+        sed -i '' 's/^        //' Casks/ayna.rb
+
+        git add Casks/ayna.rb
+        git diff --cached --quiet || git commit -m "Update ayna to ${TAG}"
+        git push origin main
+
+    - name: Update Appcast
+      if: success()
+      run: |
+        # Fetch and checkout the default branch
+        git fetch origin ${{ github.event.repository.default_branch }}
+        git checkout ${{ github.event.repository.default_branch }}
+
+        TAG="${{ steps.artifact.outputs.tag }}"
+        VERSION="${TAG#v}"
+
+        # Update appcast.xml for Sparkle auto-updates
+        SIGNATURE="${{ steps.sparkle_sign.outputs.signature }}"
+        LENGTH="${{ steps.sparkle_sign.outputs.length }}"
+
+        if [ -n "$SIGNATURE" ]; then
+          PUB_DATE=$(date -u "+%a, %d %b %Y %H:%M:%S %z")
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${{ steps.artifact.outputs.filename }}"
+          RELEASE_NOTES_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+
+          # Create updated appcast.xml with the new item at the top
+          cat > appcast.xml << 'APPCAST_EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <channel>
+                <title>Ayna Updates</title>
+                <link>https://github.com/sozercan/ayna/releases</link>
+                <description>Most recent updates for Ayna, a native macOS/iOS/watchOS ChatGPT client.</description>
+                <language>en</language>
+        APPCAST_EOF
+
+          # Append the item with variable substitution
+          cat >> appcast.xml << ITEM_EOF
+
+                <item>
+                    <title>Version ${VERSION}</title>
+                    <sparkle:releaseNotesLink>${RELEASE_NOTES_URL}</sparkle:releaseNotesLink>
+                    <pubDate>${PUB_DATE}</pubDate>
+                    <enclosure
+                        url="${DOWNLOAD_URL}"
+                        sparkle:version="${{ github.run_number }}"
+                        sparkle:shortVersionString="${VERSION}"
+                        length="${LENGTH}"
+                        type="application/octet-stream"
+                        sparkle:edSignature="${SIGNATURE}"/>
+                    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                </item>
+
+            </channel>
+        </rss>
+        ITEM_EOF
+
+          # Fix indentation (remove leading spaces from heredoc)
+          sed -i '' 's/^        //' appcast.xml
+
+          git add appcast.xml
+          git diff --cached --quiet || git commit -m "Update appcast to ${{ steps.artifact.outputs.tag }}"
+          git push origin ${{ github.event.repository.default_branch }}
         fi
