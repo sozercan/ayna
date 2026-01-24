@@ -155,6 +155,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 
 ## Critical Rules (Apply to EVERY task)
 
+> 🚨 **NEVER leak secrets, API keys, or tokens** — Under NO circumstances include real API keys, authentication tokens, or any sensitive credentials in code, comments, logs, documentation, test fixtures, or any output. Always use placeholder values like `"REDACTED"`, `"mock-token"`, or `"test-key"` in examples and tests. This applies to all files including tests and docs.
+
 > ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
 
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
@@ -231,6 +233,136 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 | Force unwraps (`!`) | Optional handling or `guard` |
 | XCTest for unit tests | Swift Testing (`@Suite`, `@Test`, `#expect`) |
 
+## Common Bug Patterns to Avoid
+
+These patterns have caused bugs in Swift/SwiftUI codebases. **Always check for these during code review.**
+
+### Fire-and-Forget Tasks
+
+```swift
+// ❌ BAD: Task not tracked, errors lost, can't cancel
+func sendMessage() {
+    Task { await api.send(message) }
+}
+
+// ✅ GOOD: Track task, handle errors, support cancellation
+private var sendTask: Task<Void, Error>?
+
+func sendMessage() async throws {
+    sendTask?.cancel()
+    sendTask = Task {
+        try await api.send(message)
+    }
+    try await sendTask?.value
+}
+```
+
+### Optimistic Updates Without Proper Rollback
+
+```swift
+// ❌ BAD: CancellationError not handled, state permanently wrong
+func toggleFavorite(_ item: Item) async {
+    let previous = favorites[item.id]
+    favorites[item.id] = !previous  // Optimistic update
+    do {
+        try await api.setFavorite(item.id, !previous)
+    } catch {
+        favorites[item.id] = previous  // Doesn't run on cancellation!
+    }
+}
+
+// ✅ GOOD: Handle ALL errors including cancellation
+func toggleFavorite(_ item: Item) async {
+    let previous = favorites[item.id]
+    favorites[item.id] = !previous
+    do {
+        try await api.setFavorite(item.id, !previous)
+    } catch is CancellationError {
+        favorites[item.id] = previous  // Rollback on cancel
+        throw CancellationError()
+    } catch {
+        favorites[item.id] = previous  // Rollback on error
+        throw error
+    }
+}
+```
+
+### `.onAppear` Instead of `.task` for Async Work
+
+```swift
+// ❌ BAD: Task not cancelled on disappear, can update stale view
+.onAppear {
+    Task { await viewModel.load() }
+}
+
+// ✅ GOOD: Lifecycle-managed, auto-cancelled on disappear
+.task {
+    await viewModel.load()
+}
+
+// ✅ GOOD: With ID for re-execution on change
+.task(id: conversationId) {
+    await viewModel.load(conversationId)
+}
+```
+
+### ForEach with Unstable Identity
+
+```swift
+// ❌ BAD: Index-based identity causes wrong views during mutations
+ForEach(messages.indices, id: \.self) { index in
+    MessageRow(message: messages[index])
+}
+
+// ❌ BAD: Array enumeration recreates identity on every change
+ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
+    MessageRow(message: message)
+}
+
+// ✅ GOOD: Use stable model identity
+ForEach(messages) { message in
+    MessageRow(message: message)
+}
+
+// ✅ GOOD: If you need index for display, use element ID
+ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+    MessageRow(message: message, index: index)
+}
+```
+
+### Background Tasks Not Cancelled on Deinit
+
+```swift
+// ❌ BAD: Task continues after ViewModel is deallocated
+@Observable @MainActor
+class ConversationViewModel {
+    private var streamTask: Task<Void, Never>?
+
+    func startStreaming() {
+        streamTask = Task { /* ... */ }
+    }
+    // Missing deinit cleanup!
+}
+
+// ✅ GOOD: Cancel tasks in deinit
+@Observable @MainActor
+class ConversationViewModel {
+    private var streamTask: Task<Void, Never>?
+
+    func startStreaming() {
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            guard !Task.isCancelled else { return }
+            // ...
+        }
+    }
+
+    deinit {
+        streamTask?.cancel()
+    }
+}
+```
+
 ## Quick Reference
 
 ### Build Commands
@@ -248,12 +380,17 @@ xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,name=Ap
 
 ### Test Commands
 
+> ⚠️ **NEVER run unit tests and UI tests together** — Always execute them separately to avoid resource conflicts and flaky results.
+
 ```bash
 # Unit tests only
 xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
 
 # Full suite
 xcodebuild -scheme Ayna -destination 'platform=macOS' test
+
+# UI tests (run separately, ask permission first as they launch the app)
+xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
 ```
 
 ### Platform Feature Support
@@ -318,6 +455,14 @@ Before completing non-trivial features, verify these patterns are followed:
 - [ ] **Core code avoids platform-specific overhead** — No UIKit/AppKit in Core without guards
 - [ ] **watchOS is memory-conscious** — Smaller buffers, fewer cached items
 - [ ] **iOS handles backgrounding** — Save state before suspension
+
+### Concurrency Safety
+
+- [ ] **No fire-and-forget `Task { }` without error handling** — Track tasks, handle errors
+- [ ] **Optimistic updates handle `CancellationError` explicitly** — Rollback on cancel, not just on error
+- [ ] **Background tasks cancelled in `deinit`** — Prevent work after deallocation
+- [ ] **Using `.task` instead of `.onAppear { Task { } }`** — Lifecycle-managed, auto-cancelled
+- [ ] **ForEach uses stable identity** — Use model ID, not array index
 
 ### Verification Commands
 

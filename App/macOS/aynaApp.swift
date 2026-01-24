@@ -23,6 +23,7 @@ struct aynaApp: App {
     @NSApplicationDelegateAdaptor(AynaAppDelegate.self) private var appDelegate
     @StateObject private var conversationManager: ConversationManager
     @StateObject private var floatingPanelController = FloatingPanelController.shared
+    @State private var updaterService = UpdaterService()
 
     init() {
         AppPreferences.registerDefaults()
@@ -108,6 +109,12 @@ struct aynaApp: App {
                     )
                 }
                 .keyboardShortcut("n", modifiers: .command)
+            }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") {
+                    updaterService.checkForUpdates()
+                }
+                .disabled(!updaterService.canCheckForUpdates)
             }
         }
 

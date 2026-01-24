@@ -7,6 +7,7 @@
 
 import Combine
 import os.log
+import Photos
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -88,6 +89,8 @@ struct IOSMessageView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(isToolExpanded ? "Collapse tool result" : "Expand tool result")
+                    .accessibilityIdentifier("message.tool.expandButton")
 
                     // Expanded content
                     if isToolExpanded {
@@ -181,7 +184,7 @@ struct IOSMessageView: View {
                     }
                 }
 
-                if message.mediaType == .image, let imageData = message.imageData {
+                if message.mediaType == .image {
                     if let decodedImage {
                         Image(uiImage: decodedImage)
                             .resizable()
@@ -192,9 +195,12 @@ struct IOSMessageView: View {
                         ProgressView()
                             .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
                             .task {
-                                decodedImage = await Task.detached(priority: .userInitiated) {
-                                    UIImage(data: imageData)
-                                }.value
+                                // Load image from either imageData or imagePath
+                                if let imageData = message.effectiveImageData {
+                                    decodedImage = await Task.detached(priority: .userInitiated) {
+                                        UIImage(data: imageData)
+                                    }.value
+                                }
                             }
                     }
                 }
@@ -301,7 +307,7 @@ struct IOSMessageView: View {
                 }
 
                 // Copy image if present
-                if message.mediaType == .image, let imageData = message.imageData,
+                if message.mediaType == .image, let imageData = message.effectiveImageData,
                    let image = UIImage(data: imageData)
                 {
                     Button {
@@ -315,6 +321,12 @@ struct IOSMessageView: View {
                         )
                     } label: {
                         Label("Copy Image", systemImage: "photo.on.rectangle")
+                    }
+
+                    Button {
+                        saveImageToPhotos(image)
+                    } label: {
+                        Label("Save to Photos", systemImage: "square.and.arrow.down")
                     }
                 }
             }
@@ -367,6 +379,48 @@ struct IOSMessageView: View {
         guard newHash != lastContentHash else { return }
         lastContentHash = newHash
         performParse(content: content)
+    }
+
+    private func saveImageToPhotos(_ image: UIImage) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            Task { @MainActor in
+                switch status {
+                case .authorized, .limited:
+                    PHPhotoLibrary.shared().performChanges {
+                        PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    } completionHandler: { success, error in
+                        Task { @MainActor in
+                            if success {
+                                HapticEngine.notification(.success)
+                                DiagnosticsLogger.log(
+                                    .chatView,
+                                    level: .info,
+                                    message: "📷 Image saved to Photos"
+                                )
+                            } else {
+                                HapticEngine.notification(.error)
+                                DiagnosticsLogger.log(
+                                    .chatView,
+                                    level: .error,
+                                    message: "❌ Failed to save image: \(error?.localizedDescription ?? "Unknown error")"
+                                )
+                            }
+                        }
+                    }
+                case .denied, .restricted:
+                    HapticEngine.notification(.error)
+                    DiagnosticsLogger.log(
+                        .chatView,
+                        level: .info,
+                        message: "⚠️ Photo library access denied"
+                    )
+                case .notDetermined:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+        }
     }
 }
 

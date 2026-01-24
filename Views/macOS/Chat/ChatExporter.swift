@@ -49,7 +49,8 @@ enum ChatExportHelper {
     /// Show the system share sheet for a URL
     static func showShareSheet(for url: URL) {
         let picker = NSSharingServicePicker(items: [url])
-        DispatchQueue.main.async {
+        // Already on MainActor, but need to defer to next run loop for proper window state
+        Task { @MainActor in
             if let window = NSApp.keyWindow, let contentView = window.contentView {
                 picker.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
             }

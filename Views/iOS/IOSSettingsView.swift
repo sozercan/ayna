@@ -60,6 +60,7 @@ struct IOSSettingsView: View {
                     NavigationLink("Image Generation Settings") {
                         IOSImageGenerationSettingsView()
                     }
+                    .accessibilityIdentifier("settings.imageGeneration.link")
 
                     Button("Clear All Conversations", role: .destructive) {
                         conversationManager.clearAllConversations()
@@ -164,6 +165,12 @@ struct IOSSettingsView: View {
                                 Label("Set as Default", systemImage: "checkmark")
                             }
 
+                            Button {
+                                duplicateModel(model)
+                            } label: {
+                                Label("Duplicate", systemImage: "doc.on.doc")
+                            }
+
                             Button(role: .destructive) {
                                 removeModel(model)
                             } label: {
@@ -226,6 +233,43 @@ struct IOSSettingsView: View {
             }
         }
     }
+
+    private func duplicateModel(_ model: String) {
+        // Generate a unique name by appending "Copy" or "Copy N"
+        var newName = "\(model) Copy"
+        var copyNumber = 2
+        while openAIService.customModels.contains(newName) {
+            newName = "\(model) Copy \(copyNumber)"
+            copyNumber += 1
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📋 Duplicating model",
+            metadata: ["original": model, "duplicate": newName]
+        )
+
+        // Add the new model
+        openAIService.customModels.append(newName)
+
+        // Copy all settings from the original model
+        if let provider = openAIService.modelProviders[model] {
+            openAIService.modelProviders[newName] = provider
+        }
+        if let endpoint = openAIService.modelEndpoints[model] {
+            openAIService.modelEndpoints[newName] = endpoint
+        }
+        if let apiKey = openAIService.modelAPIKeys[model] {
+            openAIService.modelAPIKeys[newName] = apiKey
+        }
+        if let endpointType = openAIService.modelEndpointTypes[model] {
+            openAIService.modelEndpointTypes[newName] = endpointType
+        }
+        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
+            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
+        }
+    }
 }
 
 struct IOSImageGenerationSettingsView: View {
@@ -239,17 +283,20 @@ struct IOSImageGenerationSettingsView: View {
                     Text("1024×1536 (Portrait)").tag("1024x1536")
                     Text("1536×1024 (Landscape)").tag("1536x1024")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.sizeSelector")
 
                 Picker("Image Quality", selection: $openAIService.imageQuality) {
                     Text("Low").tag("low")
                     Text("Medium").tag("medium")
                     Text("High").tag("high")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.qualitySelector")
 
                 Picker("Output Format", selection: $openAIService.outputFormat) {
                     Text("PNG").tag("png")
                     Text("JPEG").tag("jpeg")
                 }
+                .accessibilityIdentifier("settings.imageGeneration.formatSelector")
 
                 VStack(alignment: .leading) {
                     Text("Compression: \(openAIService.outputCompression)%")
@@ -257,6 +304,8 @@ struct IOSImageGenerationSettingsView: View {
                         get: { Double(openAIService.outputCompression) },
                         set: { openAIService.outputCompression = Int($0) }
                     ), in: 0 ... 100, step: 10)
+                        .accessibilityLabel("Compression")
+                        .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
                 }
             } footer: {
                 Text("These settings apply when using image generation models.")
@@ -295,6 +344,7 @@ struct IOSModelEditView: View {
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
 
     let isNew: Bool
+    let originalModelName: String
     @State var modelName: String
 
     @State private var provider: AIProvider = .openai
@@ -304,6 +354,7 @@ struct IOSModelEditView: View {
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
+        self.originalModelName = modelName
         self.isNew = isNew
     }
 
@@ -320,36 +371,39 @@ struct IOSModelEditView: View {
     var body: some View {
         Form {
             Section("Model Details") {
-                if isNew {
-                    TextField("Model Name", text: $modelName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } else {
-                    Text(modelName)
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                TextField("Model Name", text: $modelName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Model Name")
+                    .accessibilityIdentifier("settings.addModel.modelName")
 
                 Picker("Provider", selection: $provider) {
                     Text("OpenAI").tag(AIProvider.openai)
                     Text("GitHub Models").tag(AIProvider.githubModels)
                     Text("Apple Intelligence").tag(AIProvider.appleIntelligence)
                 }
+                .accessibilityIdentifier("settings.addModel.providerSelector")
             }
 
             if provider == .openai {
                 Section("Configuration") {
                     SecureField("API Key", text: $apiKey)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("settings.addModel.apiKey")
 
                     TextField("Endpoint URL", text: $endpoint)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
+                        .accessibilityLabel("Endpoint URL")
+                        .accessibilityIdentifier("settings.addModel.endpointUrl")
 
                     Picker("Endpoint Type", selection: $endpointType) {
                         ForEach(APIEndpointType.allCases, id: \.self) { type in
                             Text(type.displayName).tag(type)
                         }
                     }
+                    .accessibilityIdentifier("settings.addModel.endpointTypeSelector")
                 }
             } else if provider == .githubModels {
                 // Show OAuth status if signed in
@@ -385,6 +439,7 @@ struct IOSModelEditView: View {
                             }
                         }
                         .disabled(githubOAuth.isAuthenticating)
+                        .accessibilityIdentifier("settings.github.signInButton")
 
                         if githubOAuth.isAuthenticating {
                             HStack {
@@ -425,6 +480,7 @@ struct IOSModelEditView: View {
                                 Text(model.displayName).tag(model.id)
                             }
                         }
+                        .accessibilityIdentifier("settings.github.modelSelector")
                         Text("\(githubOAuth.availableModels.count) models available")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -432,6 +488,8 @@ struct IOSModelEditView: View {
                         TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Model ID")
+                            .accessibilityIdentifier("settings.addModel.githubModelId")
                         HStack(spacing: Spacing.xxs) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Theme.statusConnecting)
@@ -446,10 +504,13 @@ struct IOSModelEditView: View {
                         TextField("Model ID (e.g., openai/gpt-4o)", text: $modelName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Model ID")
+                            .accessibilityIdentifier("settings.addModel.githubModelId")
                         if githubOAuth.isAuthenticated {
                             Button("Load Available Models") {
                                 Task { await githubOAuth.fetchModels() }
                             }
+                            .accessibilityIdentifier("settings.github.loadModelsButton")
                         } else {
                             Text("Sign in to see available models")
                                 .font(Typography.caption)
@@ -470,6 +531,7 @@ struct IOSModelEditView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .accessibilityIdentifier("settings.addModel.cancelButton")
                 }
             }
 
@@ -479,6 +541,7 @@ struct IOSModelEditView: View {
                     dismiss()
                 }
                 .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated))
+                .accessibilityIdentifier("settings.addModel.saveButton")
             }
         }
         .onAppear {
@@ -510,51 +573,83 @@ struct IOSModelEditView: View {
     }
 
     private func saveModel() {
+        let trimmedName = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isRename = !isNew && trimmedName != originalModelName
+
         DiagnosticsLogger.log(
             .openAIService,
             level: .info,
-            message: isNew ? "➕ Adding new model" : "💾 Saving model changes",
+            message: isNew ? "➕ Adding new model" : (isRename ? "✏️ Renaming model" : "💾 Saving model changes"),
             metadata: [
-                "model": modelName,
+                "model": trimmedName,
+                "originalModel": originalModelName,
                 "provider": provider.displayName,
                 "hasEndpoint": "\(!endpoint.isEmpty)",
             ]
         )
+
         if isNew {
-            if openAIService.customModels.contains(modelName) {
+            if openAIService.customModels.contains(trimmedName) {
                 DiagnosticsLogger.log(
                     .openAIService,
                     level: .default,
                     message: "⚠️ Duplicate model name, skipping",
-                    metadata: ["model": modelName]
+                    metadata: ["model": trimmedName]
                 )
-                // Handle duplicate name if needed, for now just return or overwrite
                 return
             }
-            openAIService.customModels.append(modelName)
+            openAIService.customModels.append(trimmedName)
+        } else if isRename {
+            // Check if new name already exists
+            if openAIService.customModels.contains(trimmedName) {
+                DiagnosticsLogger.log(
+                    .openAIService,
+                    level: .default,
+                    message: "⚠️ Model name already exists, skipping rename",
+                    metadata: ["model": trimmedName]
+                )
+                return
+            }
+
+            // Update the model list: replace old name with new name
+            if let index = openAIService.customModels.firstIndex(of: originalModelName) {
+                openAIService.customModels[index] = trimmedName
+            }
+
+            // Remove old model settings
+            openAIService.modelProviders.removeValue(forKey: originalModelName)
+            openAIService.modelAPIKeys.removeValue(forKey: originalModelName)
+            openAIService.modelEndpoints.removeValue(forKey: originalModelName)
+            openAIService.modelEndpointTypes.removeValue(forKey: originalModelName)
+            openAIService.modelUsesGitHubOAuth.removeValue(forKey: originalModelName)
+
+            // Update selected model if it was the renamed one
+            if openAIService.selectedModel == originalModelName {
+                openAIService.selectedModel = trimmedName
+            }
         }
 
-        openAIService.modelProviders[modelName] = provider
+        openAIService.modelProviders[trimmedName] = provider
 
         if provider == .openai {
             if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[modelName] = apiKey
+                openAIService.modelAPIKeys[trimmedName] = apiKey
             }
             if !endpoint.isEmpty {
-                openAIService.modelEndpoints[modelName] = endpoint
+                openAIService.modelEndpoints[trimmedName] = endpoint
             }
-            openAIService.modelEndpointTypes[modelName] = endpointType
+            openAIService.modelEndpointTypes[trimmedName] = endpointType
         } else if provider == .githubModels {
             // Use OAuth if signed in
             if githubOAuth.isAuthenticated {
-                openAIService.modelUsesGitHubOAuth[modelName] = true
-                openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                openAIService.modelUsesGitHubOAuth[trimmedName] = true
+                openAIService.modelAPIKeys.removeValue(forKey: trimmedName)
             }
         }
 
         // If this is the first model, select it
         if openAIService.customModels.count == 1 {
-            openAIService.selectedModel = modelName
+            openAIService.selectedModel = trimmedName
         }
     }
 }
@@ -697,6 +792,7 @@ struct IOSToolsSettingsView: View {
 
                     Toggle("", isOn: $tavilyService.isEnabled)
                         .labelsHidden()
+                        .accessibilityLabel("Web Search")
                         .accessibilityIdentifier("settings.tools.webSearch.toggle")
                 }
             } header: {
@@ -712,6 +808,7 @@ struct IOSToolsSettingsView: View {
                         SecureField("Tavily API Key", text: $tavilyService.apiKey)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .accessibilityLabel("Tavily API Key")
                             .accessibilityIdentifier("settings.tools.webSearch.apiKey")
 
                         if tavilyService.isConfigured {
@@ -751,6 +848,7 @@ struct IOSWebSearchSettingsSection: View {
                     SecureField("Tavily API Key", text: $tavilyService.apiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .accessibilityLabel("Tavily API Key")
                         .accessibilityIdentifier("settings.webSearch.apiKey")
 
                     if tavilyService.isConfigured {

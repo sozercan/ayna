@@ -41,6 +41,47 @@ struct IOSMessageComposer: View {
     /// Whether to show the attachment source selection sheet
     @State private var showAttachmentSourceSheet = false
 
+    /// Environment color scheme for theme-aware styling
+    @Environment(\.colorScheme) private var colorScheme
+
+    // MARK: - iOS 26 Liquid Glass Backgrounds with Fallback
+
+    /// Background for the plus button - liquid glass on iOS 26+, solid on older
+    @ViewBuilder
+    private var composerButtonBackground: some View {
+        if #available(iOS 26.0, *) {
+            Circle().fill(.regularMaterial).glassEffect()
+        } else {
+            Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
+        }
+    }
+
+    /// Background for the text field - liquid glass on iOS 26+, solid on older
+    @ViewBuilder
+    private var composerFieldBackground: some View {
+        if #available(iOS 26.0, *) {
+            Capsule().fill(.regularMaterial).glassEffect()
+        } else {
+            Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
+        }
+    }
+
+    /// Background for the entire composer bar
+    @ViewBuilder
+    private var composerBarBackground: some View {
+        if #available(iOS 26.0, *) {
+            // Transparent on iOS 26 since elements have their own glass effect
+            Color.clear
+        } else {
+            Color(uiColor: .systemBackground)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color(uiColor: .separator).opacity(0.3))
+                        .frame(height: 0.5)
+                }
+        }
+    }
+
     init(
         messageText: Binding<String>,
         isGenerating: Binding<Bool>,
@@ -101,22 +142,22 @@ struct IOSMessageComposer: View {
                             imageAttachmentChip(for: attachedImages[index], at: index)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, Spacing.md)
                 }
                 .accessibilityIdentifier("\(identifierPrefix).attachmentsList")
             }
 
-            // Input bar with material background
-            HStack(alignment: .bottom, spacing: Spacing.md) {
-                // Attachment button - meets 44pt touch target
+            // Input bar - iMessage style
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                // Attachment button - iMessage style circular button
                 if showAttachmentButton {
                     Button(action: { showAttachmentSourceSheet = true }) {
                         Image(systemName: "plus")
-                            .font(.system(size: Typography.IconSize.lg, weight: .medium))
-                            .foregroundStyle(Theme.textSecondary)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color(uiColor: .label))
                     }
-                    .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
-                    .background(Theme.backgroundSecondary)
+                    .frame(width: 34, height: 34)
+                    .background(composerButtonBackground)
                     .clipShape(Circle())
                     .accessibilityLabel("Add attachment")
                     .accessibilityIdentifier("\(identifierPrefix).attachButton")
@@ -139,13 +180,14 @@ struct IOSMessageComposer: View {
                     }
                 }
 
-                // Text field container with smooth height animation
-                HStack(alignment: .bottom) {
+                // Text field container - iMessage style pill with inline send button
+                HStack(alignment: .center, spacing: 0) {
                     TextField("Ask anything", text: $messageText, axis: .vertical)
                         .lineLimit(1 ... 5)
-                        .font(Typography.body)
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm + 2)
+                        .font(.body)
+                        .padding(.leading, 16)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 8)
                         .accessibilityIdentifier("\(identifierPrefix).textEditor")
                         .onSubmit {
                             if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isGenerating {
@@ -153,30 +195,32 @@ struct IOSMessageComposer: View {
                             }
                         }
                         .submitLabel(.send)
+
+                    // Send/Stop button inside the text field - iMessage style
+                    if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating {
+                        Button(action: handleSendOrCancel) {
+                            Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
+                                .font(.system(size: 26))
+                                .foregroundStyle(isGenerating ? Theme.statusError : Theme.accent)
+                                .symbolEffect(.pulse, options: .repeating, value: isGenerating)
+                        }
+                        .padding(.trailing, 5)
+                        .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
+                        .accessibilityIdentifier("\(identifierPrefix).sendButton")
+                        .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .background(Theme.backgroundSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill))
+                .frame(minHeight: 34)
+                .background(composerFieldBackground)
+                .clipShape(Capsule())
                 // Smooth spring animation when height changes from multiline text
                 .animation(Motion.springSnappy, value: messageText.contains("\n") || messageText.count > 40)
-
-                // Send/Stop button - meets 44pt touch target
-                if !messageText.isEmpty || isGenerating {
-                    Button(action: handleSendOrCancel) {
-                        Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(isGenerating ? Theme.statusError : Theme.accent)
-                            .symbolEffect(.pulse, options: .repeating, value: isGenerating)
-                    }
-                    .frame(minWidth: Spacing.minTouchTarget, minHeight: Spacing.minTouchTarget)
-                    .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
-                    .accessibilityIdentifier("\(identifierPrefix).sendButton")
-                }
+                .animation(Motion.springSnappy, value: !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, Spacing.md)
         }
         .padding(.vertical, Spacing.sm)
-        // Material background for blur effect - content scrolls underneath
-        .background(.regularMaterial)
+        .background(composerBarBackground)
     }
 
     @ViewBuilder

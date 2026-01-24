@@ -79,12 +79,11 @@ struct DynamicTextEditor: NSViewRepresentable {
 
     private func syncFirstResponderState(for textView: NSTextView, retryCount: Int = 8) {
         let shouldFocus = isFirstResponder
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard let window = textView.window else {
                 guard shouldFocus, retryCount > 0 else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    syncFirstResponderState(for: textView, retryCount: retryCount - 1)
-                }
+                try? await Task.sleep(for: .milliseconds(50))
+                syncFirstResponderState(for: textView, retryCount: retryCount - 1)
                 return
             }
 

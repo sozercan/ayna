@@ -32,57 +32,55 @@ struct IOSSidebarView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            conversationListView
-
-            // Bottom Bar
-            bottomBar
-        }
-        .navigationTitle("Conversations")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(isEditing ? "Done" : "Edit") {
-                    withAnimation {
-                        isEditing.toggle()
-                        if !isEditing {
-                            selectedConversations.removeAll()
+        conversationListView
+            .safeAreaInset(edge: .bottom) {
+                bottomBar
+            }
+            .navigationTitle("Conversations")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(isEditing ? "Done" : "Edit") {
+                        withAnimation {
+                            isEditing.toggle()
+                            if !isEditing {
+                                selectedConversations.removeAll()
+                            }
                         }
                     }
+                    .font(.system(size: 17))
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier(TestIdentifiers.Sidebar.editButton)
+                    .disabled(conversationManager.conversations.isEmpty)
                 }
-                .font(.system(size: 17))
-                .foregroundStyle(.white)
-                .accessibilityIdentifier(TestIdentifiers.Sidebar.editButton)
-                .disabled(conversationManager.conversations.isEmpty)
-            }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                if !isEditing {
-                    Button(action: {
-                        showSettings = true
-                    }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !isEditing {
+                        Button(action: {
+                            showSettings = true
+                        }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .frame(width: 36, height: 36)
+                        }
+                        .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
                     }
-                    .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
                 }
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                IOSSettingsView()
+            .sheet(isPresented: $showSettings) {
+                NavigationStack {
+                    IOSSettingsView()
+                }
             }
-        }
-        .onAppear {
-            DiagnosticsLogger.log(
-                .contentView,
-                level: .info,
-                message: "📱 IOSSidebarView appeared",
-                metadata: ["conversationCount": "\(conversationManager.conversations.count)"]
-            )
-        }
+            .onAppear {
+                DiagnosticsLogger.log(
+                    .contentView,
+                    level: .info,
+                    message: "📱 IOSSidebarView appeared",
+                    metadata: ["conversationCount": "\(conversationManager.conversations.count)"]
+                )
+            }
     }
 
     // MARK: - Empty State View
@@ -191,9 +189,6 @@ struct IOSSidebarView: View {
                 emptyStateView
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            Color.clear.frame(height: 80)
-        }
     }
 
     @ViewBuilder
@@ -225,6 +220,18 @@ struct IOSSidebarView: View {
 
     // MARK: - Bottom Bar
 
+    private enum IMessageBottomBar {
+        static let barHeight: CGFloat = 40
+        static let composeSize: CGFloat = 40
+        static let outerPaddingH: CGFloat = 16
+        static let outerPaddingTop: CGFloat = 8
+        static let outerPaddingBottom: CGFloat = 12
+
+        static let innerPaddingH: CGFloat = 16
+        static let innerSpacing: CGFloat = 8
+        static let elementSpacing: CGFloat = 12
+    }
+
     @ViewBuilder
     private var bottomBar: some View {
         if isEditing {
@@ -244,45 +251,58 @@ struct IOSSidebarView: View {
             .padding()
             .background(Theme.background)
         } else {
-            HStack(spacing: Spacing.md) {
-                HStack {
+            HStack(spacing: IMessageBottomBar.elementSpacing) {
+                // iMessage-style search bar
+                HStack(spacing: IMessageBottomBar.innerSpacing) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(Theme.textSecondary)
-                    TextField("Search", text: $searchText)
-                        .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+
+                    ZStack(alignment: .leading) {
+                        if searchText.isEmpty {
+                            Text("Search")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Color(uiColor: .placeholderText))
+                        }
+                        TextField("", text: $searchText)
+                            .font(.system(size: 16))
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                            .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
+                    }
+
                     if !searchText.isEmpty {
                         Button {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.textSecondary)
+                                .font(.system(size: 15))
+                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
                         }
+                        .accessibilityLabel("Clear search")
+                        .accessibilityIdentifier("sidebar.search.clearButton")
                     }
                 }
-                .padding(.vertical, Spacing.md)
-                .padding(.horizontal, Spacing.md)
-                .background {
-                    RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
-                        .fill(.ultraThinMaterial)
-                }
+                .padding(.horizontal, IMessageBottomBar.innerPaddingH)
+                .frame(height: IMessageBottomBar.barHeight)
+                .modifier(IMessageCapsuleStyle())
 
                 Button(action: {
                     startNewConversation()
                 }) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: Typography.IconSize.lg, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background {
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                        }
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: IMessageBottomBar.composeSize, height: IMessageBottomBar.composeSize)
+                        .modifier(IMessageCircleStyle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New conversation")
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
             }
-            .padding(.horizontal)
-            .padding(.top, Spacing.md)
-            .padding(.bottom, Spacing.lg)
+            .padding(.horizontal, IMessageBottomBar.outerPaddingH)
+            .padding(.top, IMessageBottomBar.outerPaddingTop)
+            .padding(.bottom, IMessageBottomBar.outerPaddingBottom)
         }
     }
 
@@ -435,5 +455,41 @@ struct ConversationRow: View {
             }
         }
         .padding(.vertical, Spacing.xxs)
+    }
+}
+
+// MARK: - iMessage Style Modifiers
+
+/// A view modifier that applies iMessage-style capsule background
+/// Uses glassEffect on iOS 26+, falls back to solid fill on earlier versions
+private struct IMessageCapsuleStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background {
+                    Capsule()
+                        .fill(Color(uiColor: .tertiarySystemFill))
+                }
+        }
+    }
+}
+
+/// A view modifier that applies iMessage-style circle background for buttons
+/// Uses interactive glassEffect on iOS 26+, falls back to solid fill on earlier versions
+private struct IMessageCircleStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .background {
+                    Circle()
+                        .fill(Color(uiColor: .tertiarySystemFill))
+                }
+        }
     }
 }

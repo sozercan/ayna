@@ -593,6 +593,49 @@ class OpenAIService: ObservableObject {
                 attempt: attempt
             )
         }
+
+        /// Edits an image based on a prompt and source image.
+        /// Delegates to OpenAIImageService for the actual network request.
+        func editImage(
+            prompt: String,
+            sourceImage: Data,
+            model: String? = nil,
+            onComplete: @escaping @Sendable (Data) -> Void,
+            onError: @escaping @Sendable (Error) -> Void
+        ) {
+            let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !requestModel.isEmpty else {
+                onError(OpenAIError.missingModel)
+                return
+            }
+
+            let effectiveProvider = modelProviders[requestModel] ?? provider
+            let endpointInfo = customEndpoint(for: requestModel)
+
+            let requestConfig = OpenAIImageService.RequestConfig(
+                model: requestModel,
+                apiKey: getAPIKey(for: requestModel),
+                provider: effectiveProvider,
+                customEndpoint: endpointInfo?.endpoint,
+                azureAPIVersion: azureAPIVersion
+            )
+
+            let imageConfig = OpenAIImageService.ImageConfig(
+                size: imageSize,
+                quality: imageQuality,
+                outputFormat: outputFormat,
+                outputCompression: outputCompression
+            )
+
+            imageService.editImage(
+                prompt: prompt,
+                sourceImage: sourceImage,
+                requestConfig: requestConfig,
+                imageConfig: imageConfig,
+                onComplete: onComplete,
+                onError: onError
+            )
+        }
     #endif
 
     // MARK: - Helper Methods for sendMessage
@@ -2068,6 +2111,14 @@ extension OpenAIService {
                 }
             #endif
             return true
+        }
+    }
+
+    /// Models that support text generation (excludes image generation models)
+    /// Use this for multi-model comparison mode where comparing text to images doesn't make sense
+    var textGenerationModels: [String] {
+        usableModels.filter { model in
+            getModelCapability(model) != .imageGeneration
         }
     }
 

@@ -53,19 +53,26 @@ struct MacSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search Box - iMessage style
-            HStack(spacing: Spacing.xs) {
+            // Search Box - iMessage style with liquid glass on macOS 26+
+            HStack(spacing: Spacing.sm) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Theme.textTertiary)
-                    .font(.system(size: Typography.Size.caption, weight: .medium))
+                    .font(.system(size: 15, weight: .regular))
 
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(Typography.modelName)
-                    .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-                    .onChange(of: searchText) {
-                        performSearch()
+                ZStack(alignment: .leading) {
+                    if searchText.isEmpty {
+                        Text("Search")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Theme.textPlaceholder)
                     }
+                    TextField("", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 16))
+                        .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
+                        .onChange(of: searchText) {
+                            performSearch()
+                        }
+                }
 
                 if !searchText.isEmpty {
                     Button(action: {
@@ -74,18 +81,16 @@ struct MacSidebarView: View {
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(Theme.textTertiary)
-                            .font(.system(size: Typography.Size.caption))
+                            .font(.system(size: 15))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
-                    .fill(.regularMaterial)
-            )
-            .padding(.horizontal, Spacing.lg)
+            .frame(height: 30)
+            .modifier(IMessageSearchBarStyle())
+            .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.md)
             .padding(.bottom, Spacing.sm)
             .onChange(of: conversationManager.conversations) {
@@ -175,8 +180,8 @@ struct MacSidebarView: View {
                 .onDeleteCommand(perform: handleDeleteCommand)
             }
         }
-        // Apply translucent material background - wallpaper bleeds through
-        .background(.regularMaterial)
+        // Apply translucent background - on macOS 26+ use clear for glass effects, otherwise material
+        .modifier(SidebarBackgroundStyle())
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()
@@ -296,6 +301,39 @@ struct ConversationRow: View {
         .padding(.vertical, Spacing.md)
         .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - iMessage Style Modifiers
+
+/// A view modifier that applies appropriate background for the sidebar
+/// Uses clear background on macOS 26+ to allow glass effects, falls back to material on earlier versions
+private struct SidebarBackgroundStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .background(.clear)
+        } else {
+            content
+                .background(.regularMaterial)
+        }
+    }
+}
+
+/// A view modifier that applies iMessage-style capsule background for the search bar
+/// Uses glassEffect on macOS 26+, falls back to material fill on earlier versions
+private struct IMessageSearchBarStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background {
+                    Capsule()
+                        .fill(.regularMaterial)
+                }
+        }
     }
 }
 

@@ -785,7 +785,9 @@ func withTimeout<T: Sendable>(
             throw MCPServiceError.timeout
         }
 
-        let result = try await group.next()!
+        guard let result = try await group.next() else {
+            throw MCPServiceError.timeout
+        }
         group.cancelAll()
         return result
     }

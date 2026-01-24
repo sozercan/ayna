@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		000290004A495AD5F502BA93 /* ConversationSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB7133311F57B4B51404F1C /* ConversationSummary.swift */; };
+		C8SPARKLE12EFDF87B00404D13 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C8SPARKLE22EFDF87B00404D13 /* Sparkle */; };
+		C8UPDATER22EFDF87B00404D2 /* UpdaterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8UPDATER12EFDF87B00404D1 /* UpdaterService.swift */; };
 		0C41CC606F7D696D80483FFA /* SpotlightInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F700D7D1530071DC1B9E2A4 /* SpotlightInputView.swift */; };
 		10B50F7D71BEBBF7F402B67F /* AppContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111CD8162CAB3A89531236C3 /* AppContentTests.swift */; };
 		17E9CD4FFFBACD56F8D45E59 /* MemorySettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C23B6D44B9BD48FC2C34EA2 /* MemorySettingsSection.swift */; };
@@ -267,6 +269,7 @@
 		0190A53E691987F81D6875F2 /* EncryptedMemoryStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Core/Services/EncryptedMemoryStore.swift; sourceTree = SOURCE_ROOT; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0725D9936B654575806A8555 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
+		C8UPDATER12EFDF87B00404D1 /* UpdaterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdaterService.swift; sourceTree = "<group>"; };
 		111CD8162CAB3A89531236C3 /* AppContentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentTests.swift; sourceTree = "<group>"; };
 		1FF6017374A429DC741DE5B6 /* UserMemoryService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Core/Services/UserMemoryService.swift; sourceTree = SOURCE_ROOT; };
 		2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageComposer.swift; sourceTree = "<group>"; };
@@ -482,6 +485,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C8SPARKLE12EFDF87B00404D13 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -662,6 +666,7 @@
 				C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */,
 				D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				0725D9936B654575806A8555 /* TavilyService.swift */,
+				C8UPDATER12EFDF87B00404D1 /* UpdaterService.swift */,
 				9674186935874CD2E9D32BD3 /* AccessibilityService.swift */,
 				63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */,
 				641FA21A37F471566BE66A6F /* AppContentService.swift */,
@@ -1069,6 +1074,9 @@
 				Base,
 			);
 			mainGroup = 06000001;
+			packageReferences = (
+				C8SPARKLE02EFDF87B00404D13 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			productRefGroup = 06000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -1147,6 +1155,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C8UPDATER22EFDF87B00404D2 /* UpdaterService.swift in Sources */,
 				C81393FC2ED3DEB800F5E7F9 /* Conversation.swift in Sources */,
 				C81393FD2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */,
 				C81393FE2ED3DEB800F5E7F9 /* MCPModels.swift in Sources */,
@@ -2171,6 +2180,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C8SPARKLE02EFDF87B00404D13 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C8SPARKLE22EFDF87B00404D13 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C8SPARKLE02EFDF87B00404D13 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 11000001 /* Project object */;
 }

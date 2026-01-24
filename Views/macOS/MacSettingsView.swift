@@ -870,6 +870,27 @@ struct APISettingsView: View {
                                     selectedModelName = model
                                     loadModelConfig(model)
                                 }
+                                .contextMenu {
+                                    Button {
+                                        openAIService.selectedModel = model
+                                    } label: {
+                                        Label("Set as Default", systemImage: "star")
+                                    }
+
+                                    Button {
+                                        duplicateModel(model)
+                                    } label: {
+                                        Label("Duplicate", systemImage: "doc.on.doc")
+                                    }
+
+                                    Divider()
+
+                                    Button(role: .destructive) {
+                                        removeModel(model)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .padding(Spacing.sm)
@@ -1369,11 +1390,16 @@ struct APISettingsView: View {
             } // End of outer VStack wrapping provider selection and scroll view
         }
         .onAppear {
-            tempAPIKey = openAIService.apiKey
-            tempEndpoint = "https://api.openai.com/"
-            // Default to "new model" state for GitHub Models
-            if openAIService.provider == .githubModels {
-                createNewModel()
+            // If there's a selected model, load its config; otherwise set defaults
+            if let model = selectedModelName, openAIService.customModels.contains(model) {
+                loadModelConfig(model)
+            } else {
+                tempAPIKey = openAIService.apiKey
+                tempEndpoint = "https://api.openai.com/"
+                // Default to "new model" state for GitHub Models
+                if openAIService.provider == .githubModels {
+                    createNewModel()
+                }
             }
         }
         .onChange(of: openAIService.provider) { _, newProvider in
@@ -1424,24 +1450,18 @@ struct APISettingsView: View {
                     return
                 }
 
-                let urlString =
-                    "\(endpoint)/openai/deployments/\(modelName)/chat/completions?api-version=\(openAIService.latestAzureAPIVersion)"
-                guard let url = URL(string: urlString) else {
+                // Use the /openai/models endpoint to validate Azure credentials without consuming tokens
+                let baseEndpoint = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
+                let modelsURL = "\(baseEndpoint)/openai/models?api-version=\(openAIService.latestAzureAPIVersion)"
+
+                guard let url = URL(string: modelsURL) else {
                     validationStatus = .invalid("Invalid endpoint URL")
                     return
                 }
 
                 var request = URLRequest(url: url)
-                request.httpMethod = "POST"
+                request.httpMethod = "GET"
                 request.setValue(apiKey, forHTTPHeaderField: "api-key")
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-                let testPayload: [String: Any] = [
-                    "messages": [["role": "user", "content": "test"]],
-                    "model": modelName
-                ]
-
-                request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
 
                 let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -1456,18 +1476,7 @@ struct APISettingsView: View {
                 case 401, 403:
                     validationStatus = .invalid("Invalid API key or permissions")
                 case 404:
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String
-                    {
-                        if message.contains("deployment") || message.contains("not found") {
-                            validationStatus = .invalid("Deployment '\(modelName)' not found")
-                        } else {
-                            validationStatus = .invalid(message)
-                        }
-                    } else {
-                        validationStatus = .invalid("Deployment not found")
-                    }
+                    validationStatus = .invalid("Invalid Azure OpenAI endpoint")
                 default:
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
@@ -1497,7 +1506,7 @@ struct APISettingsView: View {
                     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                 }
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (_, response) = try await URLSession.shared.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     validationStatus = .invalid("Invalid response from server")
@@ -1555,6 +1564,47 @@ struct APISettingsView: View {
             tempModelName = ""
             tempEndpoint = "https://api.openai.com/"
         }
+    }
+
+    private func duplicateModel(_ model: String) {
+        // Generate a unique name by appending "Copy" or "Copy N"
+        var newName = "\(model) Copy"
+        var copyNumber = 2
+        while openAIService.customModels.contains(newName) {
+            newName = "\(model) Copy \(copyNumber)"
+            copyNumber += 1
+        }
+
+        DiagnosticsLogger.log(
+            .openAIService,
+            level: .info,
+            message: "📋 Duplicating model",
+            metadata: ["original": model, "duplicate": newName]
+        )
+
+        // Add the new model
+        openAIService.customModels.append(newName)
+
+        // Copy all settings from the original model
+        if let provider = openAIService.modelProviders[model] {
+            openAIService.modelProviders[newName] = provider
+        }
+        if let endpoint = openAIService.modelEndpoints[model] {
+            openAIService.modelEndpoints[newName] = endpoint
+        }
+        if let apiKey = openAIService.modelAPIKeys[model] {
+            openAIService.modelAPIKeys[newName] = apiKey
+        }
+        if let endpointType = openAIService.modelEndpointTypes[model] {
+            openAIService.modelEndpointTypes[newName] = endpointType
+        }
+        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
+            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
+        }
+
+        // Select the new model for editing
+        selectedModelName = newName
+        loadModelConfig(newName)
     }
 }
 
@@ -1922,9 +1972,9 @@ struct GitHubModelsConfigurationView: View {
             return
         }
 
-        // Test the API by making a simple request
+        // Use the catalog API to validate credentials and check if model exists
         do {
-            guard let url = URL(string: "https://models.github.ai/inference/chat/completions") else {
+            guard let url = URL(string: "https://models.github.ai/catalog/models") else {
                 await MainActor.run {
                     isValidating = false
                     validationStatus = .invalid("Invalid API URL")
@@ -1933,19 +1983,10 @@ struct GitHubModelsConfigurationView: View {
             }
 
             var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpMethod = "GET"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-            let testPayload: [String: Any] = [
-                "model": modelName,
-                "messages": [["role": "user", "content": "test"]],
-                "max_tokens": 1
-            ]
-
-            request.httpBody = try JSONSerialization.data(withJSONObject: testPayload)
 
             let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -1962,24 +2003,26 @@ struct GitHubModelsConfigurationView: View {
 
                 switch httpResponse.statusCode {
                 case 200:
-                    validationStatus = .valid
+                    // Check if the requested model exists in the catalog
+                    if let models = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                        let modelExists = models.contains { model in
+                            guard let id = model["id"] as? String else { return false }
+                            return id.lowercased() == modelName.lowercased()
+                        }
+                        if modelExists {
+                            validationStatus = .valid
+                        } else {
+                            validationStatus = .invalid("Model '\(modelName)' not found in catalog")
+                        }
+                    } else {
+                        // Catalog response parsed but model check skipped - credentials are valid
+                        validationStatus = .valid
+                    }
                 case 401, 403:
                     validationStatus = .invalid("Invalid GitHub authentication or insufficient permissions. Ensure token has 'models:read' scope.")
-                case 404:
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String
-                    {
-                        validationStatus = .invalid(message)
-                    } else {
-                        validationStatus = .invalid("Model '\(modelName)' not found")
-                    }
-                case 422:
-                    validationStatus = .invalid("Invalid model ID format. Use publisher/model_name format.")
                 default:
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = json["error"] as? [String: Any],
-                       let message = error["message"] as? String
+                       let message = json["message"] as? String
                     {
                         validationStatus = .invalid(message)
                     } else {

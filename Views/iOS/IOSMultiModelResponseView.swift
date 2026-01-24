@@ -169,6 +169,7 @@ struct IOSMultiModelResponseView: View {
             }
             .foregroundStyle(.white)
             .background(Theme.accent)
+            .accessibilityIdentifier("multimodel.selectResponse.button")
         }
     }
 
@@ -213,6 +214,7 @@ struct IOSMultiModelResponseCard: View {
     var onRetry: (() -> Void)?
 
     @State private var contentBlocks: [ContentBlock]
+    @State private var decodedImage: UIImage?
 
     init(
         message: Message,
@@ -237,6 +239,11 @@ struct IOSMultiModelResponseCard: View {
         responseStatus == .failed
     }
 
+    /// Whether this message is an image generation response
+    private var isImageGeneration: Bool {
+        message.mediaType == .image
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             responseContent
@@ -254,9 +261,45 @@ struct IOSMultiModelResponseCard: View {
                 }
             }
         }
+        .onChange(of: message.imageData) { _, newImageData in
+            // Reload image when imageData changes
+            if let data = newImageData {
+                Task.detached(priority: .userInitiated) {
+                    let image = UIImage(data: data)
+                    await MainActor.run {
+                        decodedImage = image
+                    }
+                }
+            }
+        }
+        .onChange(of: message.imagePath) { _, newPath in
+            // Reload image when imagePath changes
+            if newPath != nil {
+                loadImageFromPath()
+            }
+        }
+        .task {
+            // Load image on appear if needed
+            if isImageGeneration, decodedImage == nil {
+                loadImageFromPath()
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Response from \(message.model ?? "unknown model")")
         .accessibilityHint(isSelected ? "Selected" : "Double tap to select")
+    }
+
+    private func loadImageFromPath() {
+        Task { @MainActor in
+            if let data = message.effectiveImageData {
+                Task.detached(priority: .userInitiated) {
+                    let image = UIImage(data: data)
+                    await MainActor.run {
+                        decodedImage = image
+                    }
+                }
+            }
+        }
     }
 
     private var cardBorder: some View {
@@ -277,7 +320,9 @@ struct IOSMultiModelResponseCard: View {
 
     @ViewBuilder
     private var contentBody: some View {
-        if message.content.isEmpty, isStreaming {
+        if isImageGeneration {
+            imageGenerationContent
+        } else if message.content.isEmpty, isStreaming {
             IOSTypingIndicatorView()
                 .padding(.vertical, Spacing.lg)
         } else if hasFailed {
@@ -286,6 +331,41 @@ struct IOSMultiModelResponseCard: View {
             ForEach(contentBlocks) { block in
                 IOSContentBlockView(block: block)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var imageGenerationContent: some View {
+        if let image = decodedImage {
+            // Image loaded successfully
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
+        } else if isStreaming {
+            // Still generating
+            VStack(spacing: Spacing.md) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                Text("Generating image...")
+                    .font(Typography.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.xxxl)
+        } else if hasFailed {
+            failedStateView
+        } else {
+            // Completed but no image data (loading or error)
+            VStack(spacing: Spacing.md) {
+                ProgressView()
+                Text("Loading image...")
+                    .font(Typography.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.xxxl)
         }
     }
 
@@ -331,6 +411,14 @@ struct IOSMultiModelSelector: View {
     let availableModels: [String]
     let maxSelection: Int
 
+    @ObservedObject private var openAIService = OpenAIService.shared
+
+    /// Determines the capability type of currently selected models (if any)
+    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+        guard let firstSelected = selectedModels.first else { return nil }
+        return openAIService.getModelCapability(firstSelected)
+    }
+
     var body: some View {
         List {
             Section {
@@ -340,7 +428,13 @@ struct IOSMultiModelSelector: View {
             } header: {
                 Text("Select up to \(maxSelection) models")
             } footer: {
-                Text("Selected models will receive your message simultaneously for comparison.")
+                if selectedCapabilityType == .imageGeneration {
+                    Text("Image generation models selected. Only other image models can be added for comparison.")
+                } else if selectedCapabilityType == .chat {
+                    Text("Text models selected. Only other text models can be added for comparison.")
+                } else {
+                    Text("Selected models will receive your message simultaneously for comparison.")
+                }
             }
         }
         .navigationTitle("Multi-Model")
@@ -349,7 +443,14 @@ struct IOSMultiModelSelector: View {
 
     private func modelRow(for model: String) -> some View {
         let isModelSelected = selectedModels.contains(model)
-        let isDisabled = !isModelSelected && selectedModels.count >= maxSelection
+        let modelCapability = openAIService.getModelCapability(model)
+
+        // Disable if max reached OR if mixing capability types
+        let isCapabilityMismatch: Bool = {
+            guard let selectedType = selectedCapabilityType else { return false }
+            return modelCapability != selectedType
+        }()
+        let isDisabled = !isModelSelected && (selectedModels.count >= maxSelection || isCapabilityMismatch)
 
         return Button {
             toggleModel(model)
@@ -359,6 +460,13 @@ struct IOSMultiModelSelector: View {
                     .foregroundStyle(Theme.textPrimary)
 
                 Spacer()
+
+                // Show capability badge for image gen models
+                if modelCapability == .imageGeneration {
+                    Image(systemName: "photo")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
 
                 Image(systemName: isModelSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isModelSelected ? Theme.accent : Theme.textSecondary)

@@ -403,7 +403,16 @@
             let appElement = AccessibilityService.shared.createApplicationElement(for: app)
 
             // Find the appropriate extractor
-            let extractor = extractors.first { $0.canHandle(bundleIdentifier: bundleId) } ?? extractors.last!
+            guard let extractor = extractors.first(where: { $0.canHandle(bundleIdentifier: bundleId) })
+                ?? extractors.last
+            else {
+                DiagnosticsLogger.log(
+                    .attachFromApp,
+                    level: .error,
+                    message: "No content extractors available"
+                )
+                return .extractionFailed(reason: "No content extractors available")
+            }
 
             DiagnosticsLogger.log(
                 .attachFromApp,

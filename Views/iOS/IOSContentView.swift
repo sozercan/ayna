@@ -100,10 +100,91 @@ struct IOSNewChatView: View {
     @State private var showSettings = false
     @State private var showModelSelector = false
 
+    /// Cached displayable items to properly handle multi-model responses
+    @State private var cachedDisplayableItems: [DisplayableItem] = []
+
     /// Get the pending conversation from the environment's conversation manager
     private var pendingConversation: Conversation? {
         guard let id = viewModel.conversationId else { return nil }
         return conversationManager.conversations.first { $0.id == id }
+    }
+
+    // MARK: - Multi-Model Display
+
+    /// Represents either a single message or a group of parallel responses
+    private enum DisplayableItem: Identifiable {
+        case message(Message)
+        case responseGroup(groupId: UUID, responses: [Message])
+
+        var id: String {
+            switch self {
+            case let .message(msg):
+                msg.id.uuidString
+            case let .responseGroup(groupId, _):
+                "group-\(groupId.uuidString)"
+            }
+        }
+    }
+
+    /// Updates cached displayable items. Call when messages change or isGenerating changes.
+    private func updateDisplayableItems() {
+        guard let conversation = pendingConversation else {
+            cachedDisplayableItems = []
+            return
+        }
+
+        var items: [DisplayableItem] = []
+        var processedGroupIds: Set<UUID> = []
+
+        let visibleMessages = conversation.messages.filter { message in
+            // Hide system messages entirely
+            if message.role == .system {
+                return false
+            }
+
+            // Always show tool messages when they have content
+            if message.role == .tool {
+                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+
+            // Don't show empty assistant messages unless we're actively generating
+            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
+                // Hide assistant messages that only have tool calls (intermediate steps)
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    return false
+                }
+                // Always show assistant messages in a response group (multi-model mode)
+                if message.responseGroupId != nil {
+                    return true
+                }
+                // Only show empty assistant message if it's the last message and we're generating
+                return message.id == conversation.messages.last?.id && viewModel.isGenerating
+            }
+
+            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
+        }
+
+        for message in visibleMessages {
+            if let groupId = message.responseGroupId {
+                guard !processedGroupIds.contains(groupId) else { continue }
+                processedGroupIds.insert(groupId)
+
+                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
+                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
+            } else {
+                items.append(.message(message))
+            }
+        }
+
+        cachedDisplayableItems = items
+    }
+
+    /// Calculates which response would be auto-selected if user continues without choosing
+    private func defaultCandidateId(for responses: [Message], in conversation: Conversation) -> UUID? {
+        if let match = responses.first(where: { $0.model == conversation.model }) {
+            return match.id
+        }
+        return responses.first?.id
     }
 
     var body: some View {
@@ -122,19 +203,41 @@ struct IOSNewChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: 12) {
-                            ForEach(conversation.messages) { message in
-                                IOSMessageView(
-                                    message: message,
-                                    onRetry: message.role == .assistant ? {
-                                        viewModel.retryMessage(beforeMessage: message)
-                                    } : nil,
-                                    onSwitchModel: message.role == .assistant ? { newModel in
-                                        viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                    } : nil,
-                                    availableModels: openAIService.usableModels
-                                )
-                                .id(message.id)
-                                .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                            ForEach(cachedDisplayableItems) { item in
+                                switch item {
+                                case let .message(message):
+                                    IOSMessageView(
+                                        message: message,
+                                        onRetry: message.role == .assistant ? {
+                                            viewModel.retryMessage(beforeMessage: message)
+                                        } : nil,
+                                        onSwitchModel: message.role == .assistant ? { newModel in
+                                            viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                        } : nil,
+                                        availableModels: openAIService.usableModels
+                                    )
+                                    .id(message.id)
+                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                                case let .responseGroup(groupId, responses):
+                                    IOSMultiModelResponseView(
+                                        responseGroupId: groupId,
+                                        responses: responses,
+                                        conversation: conversation,
+                                        onSelectResponse: { messageId in
+                                            HapticEngine.selection()
+                                            conversationManager.selectResponse(
+                                                in: conversation,
+                                                groupId: groupId,
+                                                messageId: messageId
+                                            )
+                                        },
+                                        onRetry: { message in
+                                            viewModel.retryMessage(beforeMessage: message)
+                                        },
+                                        defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
+                                    )
+                                    .id(item.id)
+                                }
                             }
                         }
                         .padding()
@@ -142,12 +245,19 @@ struct IOSNewChatView: View {
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
                     .onChange(of: conversation.messages.count) {
+                        updateDisplayableItems()
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
                     .onChange(of: conversation.messages.last?.content) {
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
+                    }
+                    .onChange(of: viewModel.isGenerating) { _, _ in
+                        updateDisplayableItems()
+                    }
+                    .onAppear {
+                        updateDisplayableItems()
                     }
                 }
             } else {
