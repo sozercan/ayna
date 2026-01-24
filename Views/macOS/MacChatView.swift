@@ -1266,6 +1266,11 @@ struct MacChatView: View {
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+            logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
+        }
+
         let promptText = messageText
         messageText = ""
         isComposerFocused = true

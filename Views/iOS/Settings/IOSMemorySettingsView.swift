@@ -19,7 +19,6 @@ struct IOSMemorySettingsView: View {
     @State private var showFactEditor = false
     @State private var editingFact: UserMemoryFact?
     @State private var newFactContent = ""
-    @State private var newFactCategory: UserMemoryFact.MemoryCategory = .other
 
     var body: some View {
         Form {
@@ -101,7 +100,6 @@ struct IOSMemorySettingsView: View {
                 Button {
                     editingFact = nil
                     newFactContent = ""
-                    newFactCategory = .other
                     showFactEditor = true
                 } label: {
                     Label("Add Fact", systemImage: "plus.circle")
@@ -126,18 +124,8 @@ struct IOSMemorySettingsView: View {
 
     private func factRow(_ fact: UserMemoryFact) -> some View {
         HStack(spacing: Spacing.sm) {
-            Image(systemName: fact.category.icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(fact.content)
-                    .lineLimit(2)
-
-                Text(fact.category.displayName)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            Text(fact.content)
+                .lineLimit(2)
 
             Spacer()
         }
@@ -145,7 +133,6 @@ struct IOSMemorySettingsView: View {
         .onTapGesture {
             editingFact = fact
             newFactContent = fact.content
-            newFactCategory = fact.category
             showFactEditor = true
         }
     }
@@ -243,15 +230,6 @@ struct IOSMemorySettingsView: View {
                 } header: {
                     Text("Fact")
                 }
-
-                Section {
-                    Picker("Category", selection: $newFactCategory) {
-                        ForEach(UserMemoryFact.MemoryCategory.allCases, id: \.self) { category in
-                            Label(category.displayName, systemImage: category.icon)
-                                .tag(category)
-                        }
-                    }
-                }
             }
             .navigationTitle(editingFact == nil ? "Add Fact" : "Edit Fact")
             .navigationBarTitleDisplayMode(.inline)
@@ -281,9 +259,8 @@ struct IOSMemorySettingsView: View {
 
         if let existing = editingFact {
             memoryService.updateFact(existing.id, content: content)
-            memoryService.updateFact(existing.id, category: newFactCategory)
         } else {
-            memoryService.addFact(content, category: newFactCategory)
+            memoryService.addFact(content)
         }
     }
 

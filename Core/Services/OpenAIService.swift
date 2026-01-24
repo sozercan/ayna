@@ -795,6 +795,7 @@ class OpenAIService: ObservableObject {
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
+                conversationId: conversationId,
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
@@ -832,10 +833,22 @@ class OpenAIService: ObservableObject {
             ]
         )
 
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
         guard
             let request = OpenAIRequestBuilder.createChatCompletionsRequest(
                 url: url,
-                messages: messages,
+                messages: messagesWithMemory,
                 model: requestModel,
                 stream: stream,
                 tools: tools,
@@ -1115,6 +1128,7 @@ class OpenAIService: ObservableObject {
     private func responsesAPIRequest(
         messages: [Message],
         model: String,
+        conversationId: UUID? = nil,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
@@ -1141,10 +1155,22 @@ class OpenAIService: ObservableObject {
             return
         }
 
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
         guard
             let request = OpenAIRequestBuilder.createResponsesRequest(
                 url: url,
-                messages: messages,
+                messages: messagesWithMemory,
                 model: model,
                 apiKey: modelAPIKey,
                 isAzure: usesAzureEndpoint
@@ -1181,6 +1207,7 @@ class OpenAIService: ObservableObject {
                             self.responsesAPIRequest(
                                 messages: messages,
                                 model: model,
+                                conversationId: conversationId,
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
@@ -1895,9 +1922,30 @@ class OpenAIService: ObservableObject {
             }
 
             // Extract system instructions (first system message if any)
-            let systemInstructions =
+            let baseSystemInstructions =
                 messages.first(where: { $0.role == .system })?.content
                     ?? "You are a helpful assistant."
+
+            // Inject memory context into system instructions
+            let memoryContext = MemoryContextProvider.shared.buildContext(
+                currentConversationId: conversationId
+            )
+            var systemInstructions = baseSystemInstructions
+            if memoryContext.hasContent {
+                var memoryParts: [String] = []
+                if let sessionMetadata = memoryContext.sessionMetadata {
+                    memoryParts.append(sessionMetadata)
+                }
+                if let userMemory = memoryContext.userMemory {
+                    memoryParts.append(userMemory)
+                }
+                if let summaries = memoryContext.conversationSummaries {
+                    memoryParts.append(summaries)
+                }
+                if !memoryParts.isEmpty {
+                    systemInstructions += "\n\n" + memoryParts.joined(separator: "\n\n")
+                }
+            }
 
             // Get the last user message as the prompt
             guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {

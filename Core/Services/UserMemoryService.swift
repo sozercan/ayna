@@ -65,12 +65,10 @@ final class UserMemoryService {
     @discardableResult
     func addFact(
         _ content: String,
-        category: UserMemoryFact.MemoryCategory = .other,
         source: UserMemoryFact.MemorySource = .explicit
     ) -> UserMemoryFact {
         let fact = UserMemoryFact(
             content: content,
-            category: category,
             source: source
         )
 
@@ -93,7 +91,7 @@ final class UserMemoryService {
             .conversationManager,
             level: .info,
             message: "➕ Added memory fact",
-            metadata: ["category": category.rawValue, "source": source.rawValue]
+            metadata: ["source": source.rawValue]
         )
 
         return fact
@@ -104,15 +102,6 @@ final class UserMemoryService {
         guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
 
         facts[index].content = content
-        facts[index].updatedAt = Date()
-        scheduleSave()
-    }
-
-    /// Updates an existing fact's category.
-    func updateFact(_ id: UUID, category: UserMemoryFact.MemoryCategory) {
-        guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
-
-        facts[index].category = category
         facts[index].updatedAt = Date()
         scheduleSave()
     }
@@ -170,11 +159,6 @@ final class UserMemoryService {
         facts.filter(\.isActive)
     }
 
-    /// Returns facts in a specific category.
-    func facts(in category: UserMemoryFact.MemoryCategory) -> [UserMemoryFact] {
-        facts.filter { $0.category == category && $0.isActive }
-    }
-
     /// Searches facts for a query string.
     func searchFacts(query: String) -> [UserMemoryFact] {
         guard !query.isEmpty else { return activeFacts() }
@@ -210,21 +194,14 @@ final class UserMemoryService {
         var lines = ["User Facts:"]
         var totalChars = lines[0].count
 
-        // Group by category for better organization
-        let grouped = Dictionary(grouping: active) { $0.category }
-
-        for category in UserMemoryFact.MemoryCategory.allCases {
-            guard let categoryFacts = grouped[category], !categoryFacts.isEmpty else { continue }
-
-            for fact in categoryFacts {
-                let line = "- \(fact.content)"
-                if totalChars + line.count + 1 > charBudget {
-                    // Budget exceeded
-                    break
-                }
-                lines.append(line)
-                totalChars += line.count + 1
+        for fact in active {
+            let line = "- \(fact.content)"
+            if totalChars + line.count + 1 > charBudget {
+                // Budget exceeded
+                break
             }
+            lines.append(line)
+            totalChars += line.count + 1
         }
 
         // Only return if we have actual facts (not just header)

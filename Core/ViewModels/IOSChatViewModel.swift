@@ -433,6 +433,16 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
 
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "💾 Memory command processed",
+                metadata: ["response": memoryResponse]
+            )
+        }
+
         // Store the message text for retry in case of failure
         pendingUserMessage = text
         messageText = ""
@@ -1045,6 +1055,16 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         // Create user message
         let userMessage = Message(role: .user, content: text)
         conversationManager.addMessage(to: targetConversation, message: userMessage)
+
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "💾 Memory command processed",
+                metadata: ["response": memoryResponse]
+            )
+        }
 
         messageText = ""
         isGenerating = true

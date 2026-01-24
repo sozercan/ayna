@@ -18,12 +18,11 @@ struct UserMemoryServiceTests {
     @Test("Add fact stores fact correctly")
     func addFactStoresFactCorrectly() {
         let service = UserMemoryService()
-        service.addFact("I prefer Swift", category: .preferences)
+        service.addFact("I prefer Swift")
 
         let facts = service.activeFacts()
         #expect(facts.count == 1)
         #expect(facts.first?.content == "I prefer Swift")
-        #expect(facts.first?.category == .preferences)
         #expect(facts.first?.source == .explicit)
         #expect(facts.first?.isActive == true)
     }
@@ -31,9 +30,9 @@ struct UserMemoryServiceTests {
     @Test("Add multiple facts preserves order")
     func addMultipleFactsPreservesOrder() {
         let service = UserMemoryService()
-        service.addFact("Fact 1", category: .personal)
-        service.addFact("Fact 2", category: .professional)
-        service.addFact("Fact 3", category: .interests)
+        service.addFact("Fact 1")
+        service.addFact("Fact 2")
+        service.addFact("Fact 3")
 
         let facts = service.activeFacts()
         #expect(facts.count == 3)
@@ -46,7 +45,7 @@ struct UserMemoryServiceTests {
     @Test("Delete fact removes from store")
     func deleteFactRemovesFromStore() {
         let service = UserMemoryService()
-        service.addFact("To be deleted", category: .other)
+        service.addFact("To be deleted")
 
         let facts = service.activeFacts()
         guard let factId = facts.first?.id else {
@@ -62,7 +61,7 @@ struct UserMemoryServiceTests {
     @Test("Toggle fact changes isActive status")
     func toggleFactChangesIsActiveStatus() {
         let service = UserMemoryService()
-        service.addFact("Toggleable fact", category: .personal)
+        service.addFact("Toggleable fact")
 
         guard let factId = service.activeFacts().first?.id else {
             Issue.record("Expected at least one fact")
@@ -82,10 +81,10 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().count == 1)
     }
 
-    @Test("Update fact content preserves other properties")
-    func updateFactContentPreservesOtherProperties() {
+    @Test("Update fact content works correctly")
+    func updateFactContentWorksCorrectly() {
         let service = UserMemoryService()
-        service.addFact("Original content", category: .personal)
+        service.addFact("Original content")
 
         guard let factId = service.activeFacts().first?.id else {
             Issue.record("Expected at least one fact")
@@ -96,30 +95,14 @@ struct UserMemoryServiceTests {
 
         let updated = service.activeFacts().first
         #expect(updated?.content == "Updated content")
-        #expect(updated?.category == .personal)
-    }
-
-    @Test("Update fact category works correctly")
-    func updateFactCategoryWorksCorrectly() {
-        let service = UserMemoryService()
-        service.addFact("Some fact", category: .other)
-
-        guard let factId = service.activeFacts().first?.id else {
-            Issue.record("Expected at least one fact")
-            return
-        }
-
-        service.updateFact(factId, category: .professional)
-
-        #expect(service.activeFacts().first?.category == .professional)
     }
 
     @Test("Clear all facts removes all facts")
     func clearAllFactsRemovesAllFacts() {
         let service = UserMemoryService()
-        service.addFact("Fact 1", category: .personal)
-        service.addFact("Fact 2", category: .professional)
-        service.addFact("Fact 3", category: .interests)
+        service.addFact("Fact 1")
+        service.addFact("Fact 2")
+        service.addFact("Fact 3")
 
         service.clearAllFacts()
 
@@ -138,8 +121,8 @@ struct UserMemoryServiceTests {
     @Test("Formatted for context includes active facts only")
     func formattedForContextIncludesActiveFactsOnly() {
         let service = UserMemoryService()
-        service.addFact("Active fact", category: .personal)
-        service.addFact("Inactive fact", category: .other)
+        service.addFact("Active fact")
+        service.addFact("Inactive fact")
 
         // Deactivate second fact (which is now first in list due to insert at 0)
         if let factId = service.facts.first?.id {
@@ -156,8 +139,8 @@ struct UserMemoryServiceTests {
         let service = UserMemoryService()
         // Add a long fact
         let longContent = String(repeating: "This is a very long fact. ", count: 100)
-        service.addFact(longContent, category: .personal)
-        service.addFact("Short fact", category: .other)
+        service.addFact(longContent)
+        service.addFact("Short fact")
 
         // Very small budget should limit output
         let context = service.formattedForContext(tokenBudget: 50)
@@ -172,10 +155,10 @@ struct UserMemoryServiceTests {
         let service = UserMemoryService()
         #expect(service.memorySummary == "No facts stored")
 
-        service.addFact("Fact 1", category: .personal)
+        service.addFact("Fact 1")
         #expect(service.memorySummary == "1 fact stored")
 
-        service.addFact("Fact 2", category: .other)
+        service.addFact("Fact 2")
         #expect(service.memorySummary == "2 facts stored")
     }
 
@@ -194,7 +177,7 @@ struct UserMemoryServiceTests {
     @Test("Process remove command removes matching fact")
     func processRemoveCommandRemovesMatchingFact() {
         let service = UserMemoryService()
-        service.addFact("I love coding", category: .preferences)
+        service.addFact("I love coding")
         #expect(service.activeFacts().count == 1)
 
         // "love coding" has 2/3 word overlap with "I love coding", which is >50%
@@ -207,8 +190,8 @@ struct UserMemoryServiceTests {
     @Test("Process query command returns summary")
     func processQueryCommandReturnsSummary() {
         let service = UserMemoryService()
-        service.addFact("I prefer dark mode", category: .preferences)
-        service.addFact("I work as a developer", category: .professional)
+        service.addFact("I prefer dark mode")
+        service.addFact("I work as a developer")
 
         let response = service.processCommand(.query)
 
@@ -219,8 +202,8 @@ struct UserMemoryServiceTests {
     @Test("Process clearAll command returns guidance")
     func processClearAllCommandReturnsGuidance() {
         let service = UserMemoryService()
-        service.addFact("Fact 1", category: .personal)
-        service.addFact("Fact 2", category: .other)
+        service.addFact("Fact 1")
+        service.addFact("Fact 2")
 
         let response = service.processCommand(.clearAll)
 
@@ -293,25 +276,6 @@ struct MemoryCommandPatternTests {
             // Success
         } else {
             Issue.record("Expected none command")
-        }
-    }
-}
-
-// MARK: - UserMemoryFact.MemoryCategory Tests
-
-@Suite("MemoryCategory Tests")
-struct MemoryCategoryTests {
-    @Test("All categories have display names")
-    func allCategoriesHaveDisplayNames() {
-        for category in UserMemoryFact.MemoryCategory.allCases {
-            #expect(!category.displayName.isEmpty)
-        }
-    }
-
-    @Test("All categories have icons")
-    func allCategoriesHaveIcons() {
-        for category in UserMemoryFact.MemoryCategory.allCases {
-            #expect(!category.icon.isEmpty)
         }
     }
 }

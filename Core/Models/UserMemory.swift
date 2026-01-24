@@ -12,7 +12,6 @@ import Foundation
 struct UserMemoryFact: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var content: String
-    var category: MemoryCategory
     var source: MemorySource
     var createdAt: Date
     var updatedAt: Date
@@ -21,7 +20,6 @@ struct UserMemoryFact: Identifiable, Codable, Equatable, Sendable {
     init(
         id: UUID = UUID(),
         content: String,
-        category: MemoryCategory = .other,
         source: MemorySource = .explicit,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -29,43 +27,10 @@ struct UserMemoryFact: Identifiable, Codable, Equatable, Sendable {
     ) {
         self.id = id
         self.content = content
-        self.category = category
         self.source = source
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isActive = isActive
-    }
-
-    /// Categories for organizing memory facts.
-    enum MemoryCategory: String, Codable, CaseIterable, Sendable {
-        case personal // Name, age, location
-        case professional // Job, company, skills
-        case preferences // Likes, dislikes, communication style
-        case projects // Current work, side projects
-        case interests // Hobbies, learning goals
-        case other
-
-        var displayName: String {
-            switch self {
-            case .personal: "Personal"
-            case .professional: "Professional"
-            case .preferences: "Preferences"
-            case .projects: "Projects"
-            case .interests: "Interests"
-            case .other: "Other"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .personal: "person.fill"
-            case .professional: "briefcase.fill"
-            case .preferences: "heart.fill"
-            case .projects: "hammer.fill"
-            case .interests: "star.fill"
-            case .other: "tag.fill"
-            }
-        }
     }
 
     /// How this fact was added to memory.
@@ -73,14 +38,6 @@ struct UserMemoryFact: Identifiable, Codable, Equatable, Sendable {
         case explicit // User said "remember this"
         case inferred // Model detected stable fact (opt-in)
         case imported // Bulk import
-
-        var displayName: String {
-            switch self {
-            case .explicit: "Explicit"
-            case .inferred: "Inferred"
-            case .imported: "Imported"
-            }
-        }
     }
 }
 
@@ -105,11 +62,6 @@ struct UserMemoryStore: Codable, Sendable {
     /// Returns only active facts
     var activeFacts: [UserMemoryFact] {
         facts.filter(\.isActive)
-    }
-
-    /// Returns facts filtered by category
-    func facts(in category: UserMemoryFact.MemoryCategory) -> [UserMemoryFact] {
-        facts.filter { $0.category == category && $0.isActive }
     }
 
     /// Merges another store using Last Write Wins strategy.
@@ -246,6 +198,74 @@ enum MemoryCommandPattern {
             content.removeLast()
         }
 
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Normalize into a clean fact
+        return normalizeFact(content)
+    }
+
+    /// Normalizes extracted content into a clean, third-person fact.
+    /// Examples:
+    /// - "i like tea" → "Likes tea."
+    /// - "my name is John" → "Name is John."
+    /// - "I'm a software engineer" → "Is a software engineer."
+    /// - "I prefer dark mode" → "Prefers dark mode."
+    private static func normalizeFact(_ content: String) -> String {
+        var fact = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fact.isEmpty else { return fact }
+
+        // First-person to third-person conversions
+        let conversions: [(pattern: String, replacement: String)] = [
+            // "i like X" → "Likes X"
+            ("^i like ", "Likes "),
+            ("^i really like ", "Really likes "),
+            ("^i love ", "Loves "),
+            ("^i hate ", "Dislikes "),
+            ("^i dislike ", "Dislikes "),
+            ("^i prefer ", "Prefers "),
+            ("^i want ", "Wants "),
+            ("^i need ", "Needs "),
+            ("^i have ", "Has "),
+            ("^i am ", "Is "),
+            ("^i'm ", "Is "),
+            ("^im ", "Is "),
+            ("^i work ", "Works "),
+            ("^i live ", "Lives "),
+            ("^i use ", "Uses "),
+            ("^i speak ", "Speaks "),
+            ("^i know ", "Knows "),
+            ("^i can ", "Can "),
+            // "my X is Y" → "X is Y"
+            ("^my name is ", "Name is "),
+            ("^my job is ", "Job is "),
+            ("^my favorite ", "Favorite "),
+            ("^my ", ""),
+        ]
+
+        for (pattern, replacement) in conversions {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let range = NSRange(fact.startIndex..., in: fact)
+                if regex.firstMatch(in: fact, range: range) != nil {
+                    fact = regex.stringByReplacingMatches(
+                        in: fact,
+                        range: range,
+                        withTemplate: replacement
+                    )
+                    break
+                }
+            }
+        }
+
+        // Capitalize first letter
+        if let first = fact.first {
+            fact = first.uppercased() + fact.dropFirst()
+        }
+
+        // Ensure ends with period
+        if !fact.isEmpty, let last = fact.last, !last.isPunctuation {
+            fact += "."
+        }
+
+        return fact
     }
 }
