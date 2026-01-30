@@ -60,7 +60,6 @@
 
         // MARK: - Header
 
-        @ViewBuilder
         private var headerView: some View {
             HStack(spacing: Spacing.sm) {
                 // App icon
@@ -134,7 +133,6 @@
             }
         }
 
-        @ViewBuilder
         private func successView(content: AppContent) -> some View {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 // Content type badge
@@ -167,7 +165,6 @@
             }
         }
 
-        @ViewBuilder
         private var permissionDeniedView: some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "lock.shield")
@@ -195,7 +192,6 @@
             .padding(.vertical, Spacing.md)
         }
 
-        @ViewBuilder
         private var noFocusedAppView: some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "macwindow")
@@ -215,7 +211,6 @@
             .padding(.vertical, Spacing.md)
         }
 
-        @ViewBuilder
         private var noContentView: some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "doc.text.magnifyingglass")
@@ -235,7 +230,6 @@
             .padding(.vertical, Spacing.md)
         }
 
-        @ViewBuilder
         private func errorView(reason: String) -> some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "exclamationmark.triangle")
@@ -257,7 +251,6 @@
 
         // MARK: - Input Area
 
-        @ViewBuilder
         private var inputArea: some View {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 // Text input
@@ -298,7 +291,6 @@
             }
         }
 
-        @ViewBuilder
         private func keyboardHint(_ key: String, description: String) -> some View {
             HStack(spacing: Spacing.xxxs) {
                 Text(key)

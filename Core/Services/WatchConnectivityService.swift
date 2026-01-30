@@ -29,6 +29,8 @@ private enum WatchContextKeys {
     static let githubAccessToken = "githubAccessToken"
     static let tavilyAPIKey = "tavilyAPIKey"
     static let tavilyEnabled = "tavilyEnabled"
+    static let memoryEnabled = "memoryEnabled"
+    static let memoryFacts = "memoryFacts"
     static let lastSyncDate = "lastSyncDate"
 }
 
@@ -180,6 +182,26 @@ private enum WatchMessageKeys {
                     context[WatchContextKeys.tavilyAPIKey] = tavilyAPIKey
                 }
                 context[WatchContextKeys.tavilyEnabled] = tavilyEnabled
+
+                // Memory settings (sync facts if enabled)
+                let memoryEnabled = MemoryContextProvider.shared.isMemoryEnabled
+                context[WatchContextKeys.memoryEnabled] = memoryEnabled
+                if memoryEnabled {
+                    let facts = UserMemoryService.shared.activeFacts()
+                    if !facts.isEmpty, let factsData = try? JSONEncoder().encode(facts) {
+                        // Only include facts if we have room (leave headroom for other context)
+                        if factsData.count < 15000 {
+                            context[WatchContextKeys.memoryFacts] = factsData
+                        } else {
+                            DiagnosticsLogger.log(
+                                .watchConnectivity,
+                                level: .default,
+                                message: "⚠️ Skipping memory facts sync - data too large",
+                                metadata: ["size": "\(factsData.count)", "factCount": "\(facts.count)"]
+                            )
+                        }
+                    }
+                }
 
                 try session.updateApplicationContext(context)
                 lastSyncDate = Date()
@@ -660,6 +682,7 @@ private enum WatchMessageKeys {
             processModelSettingsFromContext(context)
             processAPIKeysFromContext(context)
             processTavilySettingsFromContext(context)
+            processMemoryFromContext(context)
 
             if let syncTimestamp = context[WatchContextKeys.lastSyncDate] as? TimeInterval {
                 lastSyncDate = Date(timeIntervalSince1970: syncTimestamp)
@@ -835,6 +858,52 @@ private enum WatchMessageKeys {
                     message: "⌚ Updated Tavily enabled state from iPhone",
                     metadata: ["enabled": "\(tavilyEnabled)"]
                 )
+            }
+        }
+
+        /// Process memory settings from iPhone context
+        private func processMemoryFromContext(_ context: [String: Any]) {
+            if let memoryEnabled = context[WatchContextKeys.memoryEnabled] as? Bool {
+                MemoryContextProvider.shared.setMemoryEnabled(memoryEnabled)
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .info,
+                    message: "⌚ Updated memory enabled state from iPhone",
+                    metadata: ["enabled": "\(memoryEnabled)"]
+                )
+
+                // Clear facts when memory is disabled on iPhone
+                if !memoryEnabled {
+                    UserMemoryService.shared.loadFactsFromSync([])
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .info,
+                        message: "⌚ Cleared memory facts (memory disabled on iPhone)"
+                    )
+                    return
+                }
+            }
+
+            // Decode and load facts
+            if let factsData = context[WatchContextKeys.memoryFacts] as? Data {
+                do {
+                    let facts = try JSONDecoder().decode([UserMemoryFact].self, from: factsData)
+                    UserMemoryService.shared.loadFactsFromSync(facts)
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .info,
+                        message: "⌚ Received memory facts from iPhone",
+                        metadata: ["count": "\(facts.count)"]
+                    )
+                } catch {
+                    // Log and skip - keep existing facts on decode failure
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "⌚ Failed to decode memory facts from iPhone",
+                        metadata: ["error": "\(error.localizedDescription)"]
+                    )
+                }
             }
         }
     }

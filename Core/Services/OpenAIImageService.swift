@@ -412,40 +412,40 @@ final class OpenAIImageService: @unchecked Sendable {
         var body = Data()
 
         // Add image field
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"image[]\"; filename=\"image.png\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"image[]\"; filename=\"image.png\"\r\n".utf8))
+        body.append(Data("Content-Type: image/png\r\n\r\n".utf8))
         body.append(sourceImage)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append(Data("\r\n".utf8))
 
         // Add prompt field
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
-        body.append(prompt.data(using: .utf8)!)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".utf8))
+        body.append(Data(prompt.utf8))
+        body.append(Data("\r\n".utf8))
 
         // Add model field (not needed for Azure - deployment is in URL)
         if !usesAzureEndpoint {
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-            body.append(requestConfig.model.data(using: .utf8)!)
-            body.append("\r\n".data(using: .utf8)!)
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"model\"\r\n\r\n".utf8))
+            body.append(Data(requestConfig.model.utf8))
+            body.append(Data("\r\n".utf8))
         }
 
         // Add size field
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
-        body.append(imageConfig.size.data(using: .utf8)!)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"size\"\r\n\r\n".utf8))
+        body.append(Data(imageConfig.size.utf8))
+        body.append(Data("\r\n".utf8))
 
         // Add quality field
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".data(using: .utf8)!)
-        body.append(imageConfig.quality.data(using: .utf8)!)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".utf8))
+        body.append(Data(imageConfig.quality.utf8))
+        body.append(Data("\r\n".utf8))
 
         // End boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)--\r\n".utf8))
 
         request.httpBody = body
 

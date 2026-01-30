@@ -47,13 +47,13 @@ struct Message: Identifiable, Codable, Equatable {
     var imageData: Data?
     var imagePath: String? // Path relative to AttachmentStorage
 
-    // File attachments for vision/multimodal support
+    /// File attachments for vision/multimodal support
     var attachments: [FileAttachment]?
 
-    // Reasoning/thinking support for o1/o3 models
+    /// Reasoning/thinking support for o1/o3 models
     var reasoning: String?
 
-    // Web search citation support
+    /// Web search citation support
     var citations: [CitationReference]?
 
     enum MediaType: String, Codable {
@@ -66,7 +66,7 @@ struct Message: Identifiable, Codable, Equatable {
         var data: Data?
         var localPath: String? // Path relative to AttachmentStorage
 
-        // Helper to get data regardless of storage method
+        /// Helper to get data regardless of storage method
         @MainActor
         var content: Data? {
             if let data { return data }
@@ -212,7 +212,7 @@ struct Message: Identifiable, Codable, Equatable {
         }
     #endif
 
-    // Helper to get image data regardless of storage method
+    /// Helper to get image data regardless of storage method
     @MainActor
     var effectiveImageData: Data? {
         if let data = imageData { return data }
@@ -222,6 +222,6 @@ struct Message: Identifiable, Codable, Equatable {
         return nil
     }
 
-    // Static loader to decouple from AttachmentStorage
+    /// Static loader to decouple from AttachmentStorage
     @MainActor static var attachmentLoader: ((String) -> Data?)?
 }

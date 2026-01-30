@@ -1,7 +1,6 @@
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("EncryptedConversationStore Tests", .tags(.persistence, .slow))
 struct EncryptedConversationStoreTests {

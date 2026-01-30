@@ -8,7 +8,7 @@
 import AppKit
 import SwiftUI
 
-// Dynamic Text Editor with auto-sizing and keyboard shortcuts
+/// Dynamic Text Editor with auto-sizing and keyboard shortcuts
 struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFirstResponder: Bool

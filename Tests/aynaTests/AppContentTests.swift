@@ -6,9 +6,8 @@
 //
 
 #if os(macOS)
-    import Testing
-
     @testable import Ayna
+    import Testing
 
     @Suite("AppContent Tests")
     struct AppContentTests {
@@ -275,13 +274,13 @@
         }
 
         @Test("Result permission denied")
-        func resultPermissionDenied() {
+        func resultPermissionDenied() throws {
             let result = AppContentResult.permissionDenied
 
             #expect(!result.isSuccess)
             #expect(result.content == nil)
             #expect(result.errorMessage != nil)
-            #expect(result.errorMessage!.contains("permission"))
+            #expect(try #require(result.errorMessage?.contains("permission")))
         }
 
         @Test("Result no focused app")
@@ -303,13 +302,13 @@
         }
 
         @Test("Result extraction failed")
-        func resultExtractionFailed() {
+        func resultExtractionFailed() throws {
             let result = AppContentResult.extractionFailed(reason: "Test failure")
 
             #expect(!result.isSuccess)
             #expect(result.content == nil)
             #expect(result.errorMessage != nil)
-            #expect(result.errorMessage!.contains("Test failure"))
+            #expect(try #require(result.errorMessage?.contains("Test failure")))
         }
     }
 #endif

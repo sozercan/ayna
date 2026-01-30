@@ -85,7 +85,6 @@ struct IOSSidebarView: View {
 
     // MARK: - Empty State View
 
-    @ViewBuilder
     private var emptyStateView: some View {
         VStack(spacing: Spacing.xxl) {
             Spacer()
@@ -134,7 +133,6 @@ struct IOSSidebarView: View {
 
     // MARK: - Conversation List View
 
-    @ViewBuilder
     private var conversationListView: some View {
         List(selection: $conversationManager.selectedConversationId) {
             ForEach(groupedConversations) { section in
@@ -191,7 +189,6 @@ struct IOSSidebarView: View {
         }
     }
 
-    @ViewBuilder
     private func conversationRowContent(for conversation: Conversation) -> some View {
         HStack {
             if isEditing {
@@ -464,6 +461,7 @@ struct ConversationRow: View {
 /// Uses glassEffect on iOS 26+, falls back to solid fill on earlier versions
 private struct IMessageCapsuleStyle: ViewModifier {
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: .capsule)
@@ -474,6 +472,13 @@ private struct IMessageCapsuleStyle: ViewModifier {
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
         }
+        #else
+        content
+            .background {
+                Capsule()
+                    .fill(Color(uiColor: .tertiarySystemFill))
+            }
+        #endif
     }
 }
 
@@ -481,6 +486,7 @@ private struct IMessageCapsuleStyle: ViewModifier {
 /// Uses interactive glassEffect on iOS 26+, falls back to solid fill on earlier versions
 private struct IMessageCircleStyle: ViewModifier {
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -491,5 +497,12 @@ private struct IMessageCircleStyle: ViewModifier {
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
         }
+        #else
+        content
+            .background {
+                Circle()
+                    .fill(Color(uiColor: .tertiarySystemFill))
+            }
+        #endif
     }
 }

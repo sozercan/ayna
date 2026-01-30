@@ -4,6 +4,7 @@
 //
 //  New chat view for macOS - handles initial conversation creation and message sending.
 //
+// swiftlint:disable file_length
 
 import Combine
 import OSLog
@@ -40,13 +41,13 @@ private final class CompletionCounter {
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
     @State private var isComposerFocused = true
     @State private var attachedFiles: [URL] = []
-    @State private var isGenerating = false
-    @State private var currentConversationId: UUID?
+    @State var isGenerating = false
+    @State var currentConversationId: UUID?
     @State private var selectedModel = OpenAIService.shared.selectedModel
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
@@ -54,19 +55,24 @@ struct MacNewChatView: View {
     @State private var selectedModels: Set<String> = []
     @State private var isToolSectionExpanded = false
 
-    @State private var errorMessage: String?
-    @State private var errorRecoverySuggestion: String?
-    @State private var shouldOfferOpenSettings = false
+    @State var errorMessage: String?
+    @State var errorRecoverySuggestion: String?
+    @State var shouldOfferOpenSettings = false
 
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
 
-    // Cached font for text height calculation (computed property to avoid lazy initialization issues)
-    private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
-    private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+    /// Cached font for text height calculation (computed property to avoid lazy initialization issues)
+    private var textFont: NSFont {
+        NSFont.systemFont(ofSize: 15)
+    }
 
-    // Get the current conversation being created
+    private var textAttributes: [NSAttributedString.Key: Any] {
+        [.font: textFont]
+    }
+
+    /// Get the current conversation being created
     private var currentConversation: Conversation? {
         guard let id = currentConversationId else { return nil }
         return conversationManager.conversations.first(where: { $0.id == id })
@@ -95,7 +101,7 @@ struct MacNewChatView: View {
         }
     }
 
-    // Get visible messages (filtering out system and tool messages)
+    /// Get visible messages (filtering out system and tool messages)
     private var visibleMessages: [Message] {
         guard let conversation = currentConversation else { return [] }
         return conversation.messages.filter { message in
@@ -173,7 +179,8 @@ struct MacNewChatView: View {
         }
 
         if let conversationModel = currentConversation?.model.trimmingCharacters(
-            in: .whitespacesAndNewlines),
+            in: .whitespacesAndNewlines
+        ),
             !conversationModel.isEmpty
         {
             return conversationModel
@@ -332,7 +339,6 @@ struct MacNewChatView: View {
 
     // MARK: - Input Area
 
-    @ViewBuilder
     private var inputArea: some View {
         VStack(spacing: 8) {
             MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
@@ -355,7 +361,6 @@ struct MacNewChatView: View {
         .background(.ultraThinMaterial)
     }
 
-    @ViewBuilder
     private var attachedFilesPreview: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -407,7 +412,6 @@ struct MacNewChatView: View {
         }
     }
 
-    @ViewBuilder
     private func attachedAppContentPreview(_ appContent: AppContent) -> some View {
         HStack(spacing: 8) {
             // App icon
@@ -463,7 +467,6 @@ struct MacNewChatView: View {
         .padding(.horizontal, 24)
     }
 
-    @ViewBuilder
     private var composerRow: some View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
@@ -523,7 +526,6 @@ struct MacNewChatView: View {
         .padding(.horizontal, 24)
     }
 
-    @ViewBuilder
     private var modelSelectorButton: some View {
         Button(action: { showModelSelector.toggle() }) {
             HStack(spacing: 4) {
@@ -561,13 +563,17 @@ struct MacNewChatView: View {
 
     @ViewBuilder
     private var modelSelectorPopover: some View {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
         VStack(alignment: .leading, spacing: 8) {
-            Text("Select models")
+            Text(multiModelEnabled ? "Select models" : "Select model")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Text("1 model = single response, 2+ = compare")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+            if multiModelEnabled {
+                Text("1 model = single response, 2+ = compare")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
             Divider()
                 .padding(.vertical, 4)
 
@@ -584,20 +590,33 @@ struct MacNewChatView: View {
                         guard let selectedType = selectedCapabilityType else { return false }
                         return modelCapability != selectedType
                     }()
-                    let isDisabled = !isSelected && isCapabilityMismatch
+                    // Only check capability mismatch in multi-model mode
+                    let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
                     Button(action: {
                         toggleModelSelection(model)
                     }) {
                         HStack {
-                            Image(
-                                systemName: isSelected
-                                    ? "checkmark.square.fill" : "square"
-                            )
-                            .foregroundStyle(
-                                isSelected ? Color.accentColor : Color.secondary
-                            )
-                            .font(.system(size: 14))
+                            // Show checkbox for multi-model, radio for single-model
+                            if multiModelEnabled {
+                                Image(
+                                    systemName: isSelected
+                                        ? "checkmark.square.fill" : "square"
+                                )
+                                .foregroundStyle(
+                                    isSelected ? Color.accentColor : Color.secondary
+                                )
+                                .font(.system(size: 14))
+                            } else {
+                                Image(
+                                    systemName: isSelected
+                                        ? "checkmark.circle.fill" : "circle"
+                                )
+                                .foregroundStyle(
+                                    isSelected ? Color.accentColor : Color.secondary
+                                )
+                                .font(.system(size: 14))
+                            }
                             Text(model)
                                 .font(.system(size: 13))
                             Spacer()
@@ -625,7 +644,7 @@ struct MacNewChatView: View {
                 }
             }
 
-            if selectedModels.count > 1 {
+            if multiModelEnabled, selectedModels.count > 1 {
                 Divider()
                     .padding(.vertical, 4)
                 Button(action: {
@@ -649,7 +668,6 @@ struct MacNewChatView: View {
         .frame(minWidth: 220)
     }
 
-    @ViewBuilder
     private var sendButton: some View {
         Button(action: sendMessage) {
             ZStack {
@@ -717,7 +735,8 @@ struct MacNewChatView: View {
 
     private func syncSelectedModelState() {
         if let conversationModel = currentConversation?.model.trimmingCharacters(
-            in: .whitespacesAndNewlines),
+            in: .whitespacesAndNewlines
+        ),
             !conversationModel.isEmpty
         {
             selectedModel = conversationModel
@@ -735,6 +754,17 @@ struct MacNewChatView: View {
     }
 
     private func toggleModelSelection(_ model: String) {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            selectedModels = [model]
+            selectedModel = model
+            openAIService.selectedModel = model
+            return
+        }
+
+        // Multi-select mode
         if selectedModels.contains(model) {
             // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)
@@ -773,12 +803,37 @@ struct MacNewChatView: View {
         attachedFiles.removeAll { $0 == fileURL }
     }
 
-    private func logNewChat(
-        _ message: String,
-        level: OSLogType = .default,
-        metadata: [String: String] = [:]
-    ) {
+    func logNewChat(_ message: String, level: OSLogType = .default, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
+    }
+
+    func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId }) {
+            conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
+        }
+    }
+
+    func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId) {
+            group.updateStatus(for: messageId, status: status)
+            conversationManager.conversations[ci].updateResponseGroup(group)
+        }
+    }
+
+    func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
+        var imagePath: String?
+        do { imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png") } catch {
+            logNewChat("❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
+        }
+        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+            message.content = ""
+            if let path = imagePath { message.imagePath = path; message.imageData = nil } else {
+                message.imageData = imageData; message.imagePath = nil
+            }
+        }
     }
 
     // MARK: - Send Message
@@ -904,6 +959,11 @@ struct MacNewChatView: View {
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+            logNewChat("💾 Memory command processed: \(memoryResponse)", level: .info)
+        }
+
         // Clear input first
         messageText = ""
         isComposerFocused = true
@@ -999,32 +1059,8 @@ struct MacNewChatView: View {
             model: model,
             onComplete: { imageData in
                 Task { @MainActor in
-                    // Save image to disk
-                    var imagePath: String?
-                    do {
-                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                    } catch {
-                        logNewChat(
-                            "❌ Failed to save generated image: \(error.localizedDescription)",
-                            level: .error
-                        )
-                    }
-
-                    // Update the placeholder message with actual image using the proper method
-                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = ""
-                        if let path = imagePath {
-                            message.imagePath = path
-                            message.imageData = nil // Don't store raw data if saved to disk
-                        } else {
-                            // Fallback to storing in message if save failed
-                            message.imageData = imageData
-                            message.imagePath = nil
-                        }
-                    }
-
+                    saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
                     isGenerating = false
-                    // Switch to chat view after image generation completes
                     selectedConversationId = conversation.id
                 }
             },
@@ -1109,42 +1145,10 @@ struct MacNewChatView: View {
                 model: model,
                 onComplete: { imageData in
                     Task { @MainActor in
-                        // Save image to disk
-                        var imagePath: String?
-                        do {
-                            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                        } catch {
-                            logNewChat(
-                                "❌ Failed to save generated image: \(error.localizedDescription)",
-                                level: .error
-                            )
-                        }
-
-                        // Update the placeholder message with actual image
-                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                            message.content = ""
-                            if let path = imagePath {
-                                message.imagePath = path
-                                message.imageData = nil
-                            } else {
-                                message.imageData = imageData
-                                message.imagePath = nil
-                            }
-                        }
-
-                        // Update response group status
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
-                        }
-
+                        saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
+                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
                         counter.increment()
-                        if counter.isComplete {
-                            isGenerating = false
-                            selectedConversationId = conversation.id
-                        }
+                        if counter.isComplete { isGenerating = false; selectedConversationId = conversation.id }
                     }
                 },
                 onError: { error in
@@ -1155,13 +1159,7 @@ struct MacNewChatView: View {
                             metadata: ["model": model]
                         )
 
-                        // Update response group status to failed
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
-                        }
+                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
 
                         // Update message with error
                         conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
@@ -1254,21 +1252,8 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIds[model] else { return }
 
-                    // Update response group status
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .completed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
-
-                    logNewChat(
-                        "✅ Model completed in multi-model",
-                        level: .info,
-                        metadata: ["model": model]
-                    )
+                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                    logNewChat("✅ Model completed in multi-model", level: .info, metadata: ["model": model])
                 }
             },
             onAllComplete: {
@@ -1291,21 +1276,8 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIds[model] else { return }
 
-                    // Update response group status to failed
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .failed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
-
-                    logNewChat(
-                        "❌ Model failed in multi-model",
-                        level: .error,
-                        metadata: ["model": model, "error": error.localizedDescription]
-                    )
+                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                    logNewChat("❌ Model failed in multi-model", level: .error, metadata: ["model": model, "error": error.localizedDescription])
 
                     if errorMessage == nil {
                         let safeMessage = ErrorPresenter.userMessage(for: error)
@@ -1607,7 +1579,7 @@ struct MacNewChatView: View {
         )
     }
 
-    private func presentError(_ error: Error) {
+    func presentError(_ error: Error) {
         errorMessage = ErrorPresenter.userMessage(for: error)
         errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
         shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings

@@ -91,7 +91,7 @@ enum TestIdentifiers {
             "watch.chat.message.\(messageId.uuidString)"
         }
 
-        // New chat view identifiers
+        /// New chat view identifiers
         static let newChatComposerTextField = "watch.newChat.composerTextField"
 
         static func conversationRow(for conversationId: UUID) -> String {

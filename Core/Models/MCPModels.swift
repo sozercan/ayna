@@ -57,7 +57,7 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
         self.serverName = serverName
     }
 
-    // Convert to OpenAI function format
+    /// Convert to OpenAI function format
     func toOpenAIFunction() -> [String: Any] {
         [
             "type": "function",

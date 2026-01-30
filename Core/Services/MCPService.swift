@@ -62,9 +62,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     // MARK: - Connection Management
 
-    // This routine wires up the MCP subprocess, pipes, and async stream handlers in one place so we
-    // can share the same cleanup/error propagation. Splitting it today would duplicate fragile state
-    // management, so we temporarily allow the longer body until the connection pipeline is refactored.
+    /// This routine wires up the MCP subprocess, pipes, and async stream handlers in one place so we
+    /// can share the same cleanup/error propagation. Splitting it today would duplicate fragile state
+    /// management, so we temporarily allow the longer body until the connection pipeline is refactored.
     func connect() async throws {
         guard !isConnected else { return }
 

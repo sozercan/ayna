@@ -6,6 +6,7 @@ enum SettingsTab: Hashable {
     case general
     case models
     case mcp
+    case memory
 }
 
 @MainActor

@@ -1,7 +1,6 @@
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("CitationReference Tests", .tags(.fast))
 struct CitationReferenceTests {
@@ -69,7 +68,7 @@ struct CitationReferenceTests {
             "favicon": null
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try #require(json.data(using: .utf8))
 
         let decoder = JSONDecoder()
         let citation = try decoder.decode(CitationReference.self, from: data)
@@ -86,7 +85,7 @@ struct CitationReferenceTests {
             "url": "https://example.com"
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try #require(json.data(using: .utf8))
 
         let decoder = JSONDecoder()
         let citation = try decoder.decode(CitationReference.self, from: data)
@@ -214,7 +213,7 @@ struct CitationReferenceTests {
             "isLiked": false
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try #require(json.data(using: .utf8))
 
         let decoder = JSONDecoder()
         let message = try decoder.decode(Message.self, from: data)

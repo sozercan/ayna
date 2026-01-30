@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 //
 //  IOSChatViewModel.swift
 //  ayna
@@ -23,7 +24,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 // IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
 // A shared ViewModel that encapsulates common chat logic for iOS views.
 // Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
-// swiftlint:disable:next type_body_length
 @MainActor final class IOSChatViewModel: ObservableObject {
     // MARK: - Published State
 
@@ -44,8 +44,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     // MARK: - Dependencies
 
-    private var conversationManager: ConversationManager
-    private let openAIService: OpenAIService
+    var conversationManager: ConversationManager
+    let openAIService: OpenAIService
 
     // MARK: - Tool Call State
 
@@ -60,7 +60,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// The conversation ID this view model is managing.
     /// For new chats, this starts as nil and gets set when first message is sent.
-    private(set) var conversationId: UUID?
+    var conversationId: UUID?
 
     /// Whether this is a "new chat" view model (creates conversation on first message).
     let isNewChatMode: Bool
@@ -359,7 +359,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         // Check for multi-model mode
         if selectedModels.count >= 2 {
-            sendMultiModelMessage()
+            sendToMultipleModels()
             return
         }
 
@@ -433,6 +433,16 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
 
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "💾 Memory command processed",
+                metadata: ["response": memoryResponse]
+            )
+        }
+
         // Store the message text for retry in case of failure
         pendingUserMessage = text
         messageText = ""
@@ -475,7 +485,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         // Check if this is an image generation model
         let capability = openAIService.getModelCapability(updatedConversation.model)
         if capability == .imageGeneration {
-            handleImageGeneration(
+            generateImage(
                 text: text,
                 assistantMessage: assistantMessage,
                 conversationId: targetConversationId
@@ -517,7 +527,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
     }
 
-    // Helper method to send messages with tool call support
+    /// Helper method to send messages with tool call support
     private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String,
@@ -980,114 +990,101 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     // MARK: - Multi-Model Message Sending
 
-    private func sendMultiModelMessage() {
+    // MARK: - Private Methods
+
+    private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
+        // Use safe ID-based append instead of index-based access
+        let success = conversationManager.appendToMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            chunk: chunk
+        )
+
+        if !success {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to update assistant message - not found",
+                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
+            )
+        }
+    }
+}
+
+// MARK: - File Handling Helpers
+
+private extension IOSChatViewModel {
+    /// Copies a security-scoped file to a temporary location.
+    func copyToTemporaryDirectory(url: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = url.lastPathComponent
+        // Use UUID to avoid collisions
+        let uniqueTempDir = tempDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: uniqueTempDir, withIntermediateDirectories: true, attributes: nil)
+        let destinationURL = uniqueTempDir.appendingPathComponent(fileName)
+        try FileManager.default.copyItem(at: url, to: destinationURL)
+        return destinationURL
+    }
+
+    /// Cleans up temporary attached files.
+    func cleanupAttachedFiles() {
+        for url in attachedFiles where FileManager.default.fileExists(atPath: url.path) {
+            // Only delete if it's in the temp directory to be safe
+            // Note: temporaryDirectory path might be symlinked, so we just check if it exists and is a file
+            try? FileManager.default.removeItem(at: url)
+        }
+        attachedFiles.removeAll()
+    }
+}
+
+// MARK: - Multi-Model Message Sending
+
+extension IOSChatViewModel {
+    /// Sends a message to multiple models in parallel for comparison
+    func sendToMultipleModels() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        // Get or create conversation
-        let targetConversation: Conversation
-        if let existing = conversation {
-            targetConversation = existing
-        } else if isNewChatMode {
-            conversationManager.createNewConversation()
-            guard let newConv = conversationManager.conversations.first else { return }
-            targetConversation = newConv
-            conversationId = newConv.id
+        guard let targetConversation = getOrCreateConversationForMultiModel() else { return }
+        let conversationId = targetConversation.id
 
-            // Update conversation with multi-model state
-            var updatedConv = newConv
-            updatedConv.activeModels = Array(selectedModels)
-            updatedConv.multiModelEnabled = true
-            // Set primary model to first selected
-            if let first = selectedModels.first {
-                updatedConv.model = first
-            }
-            conversationManager.updateConversation(updatedConv)
-
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .info,
-                message: "🆕 Created new multi-model conversation",
-                metadata: ["conversationId": newConv.id.uuidString]
-            )
-        } else {
+        // Check for image generation and route accordingly
+        if let firstModel = selectedModels.first,
+           openAIService.getModelCapability(firstModel) == .imageGeneration
+        {
+            generateImagesWithMultipleModels(prompt: text, models: Array(selectedModels), conversation: targetConversation)
             return
         }
 
-        let conversationId = targetConversation.id
+        DiagnosticsLogger.log(.chatView, level: .info, message: "🔀 Starting iOS multi-model request",
+                              metadata: ["models": selectedModels.map(\.self).joined(separator: ", ")])
 
-        // Check if this is multi-model image generation
-        // If any selected model is an image gen model, all should be (enforced by model selector)
-        if let firstModel = selectedModels.first {
-            let capability = openAIService.getModelCapability(firstModel)
-            if capability == .imageGeneration {
-                // Route to multi-model image generation
-                generateMultiModelImages(
-                    prompt: text,
-                    models: Array(selectedModels),
-                    conversation: targetConversation
-                )
-                return
-            }
-        }
-
-        // Auto-select response if continuing from a multi-model state without selection
-        // Note: This logic is simpler here than in View because we don't have direct access to previous message state easily
-        // But for new chat, there is no previous message. For existing, we rely on user selection.
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🔀 Starting iOS multi-model request",
-            metadata: ["models": selectedModels.map(\.self).joined(separator: ", ")]
-        )
-
-        // Create user message
         let userMessage = Message(role: .user, content: text)
         conversationManager.addMessage(to: targetConversation, message: userMessage)
+
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
+            DiagnosticsLogger.log(.chatView, level: .info, message: "💾 Memory command processed",
+                                  metadata: ["response": memoryResponse])
+        }
 
         messageText = ""
         isGenerating = true
         errorMessage = nil
 
-        // Create response group
         let responseGroupId = UUID()
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessage.id)
         let models = Array(selectedModels)
-
-        // Create placeholder messages for each model
         var messageIds: [String: UUID] = [:]
         var placeholderMessages: [Message] = []
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId
-            )
-            placeholderMessages.append(placeholderMessage)
-        }
-
-        // Add all messages and response group atomically to prevent UI flicker
-        conversationManager.addMultiModelResponse(
-            to: targetConversation,
-            messages: placeholderMessages,
-            responseGroup: responseGroup
+        let responseGroup = createPlaceholderMessagesForMultiModel(
+            models: models, userMessageId: userMessage.id, responseGroupId: responseGroupId,
+            messageIds: &messageIds, placeholderMessages: &placeholderMessages
         )
+        conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
 
-        // Prepare messages
         guard let updatedConversation = conversation else { return }
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        // Remove placeholders
-        messagesToSend = messagesToSend.filter { $0.responseGroupId != responseGroupId }
+        var messagesToSend = updatedConversation.getEffectiveHistory().filter { $0.responseGroupId != responseGroupId }
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
+            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
         // Send to all models
@@ -1099,7 +1096,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
-                    self.handleMultiModelChunk(
+                    self.processMultiModelChunk(
                         model: model,
                         chunk: chunk,
                         messageIds: messageIds,
@@ -1111,7 +1108,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
-                    self.handleMultiModelCompletion(
+                    self.processMultiModelCompletion(
                         model: model,
                         messageIds: messageIds,
                         conversationId: conversationId,
@@ -1138,7 +1135,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
-                    self.handleMultiModelError(
+                    self.processMultiModelError(
                         model: model,
                         error: error,
                         messageIds: messageIds,
@@ -1152,9 +1149,48 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
     }
 
-    // MARK: - Private Methods
+    /// Gets or creates a conversation configured for multi-model mode
+    func getOrCreateConversationForMultiModel() -> Conversation? {
+        if let existing = conversation {
+            return existing
+        }
+        guard isNewChatMode else { return nil }
 
-    private func handleMultiModelChunk(
+        conversationManager.createNewConversation()
+        guard let newConv = conversationManager.conversations.first else { return nil }
+        conversationId = newConv.id
+
+        var updatedConv = newConv
+        updatedConv.activeModels = Array(selectedModels)
+        updatedConv.multiModelEnabled = true
+        if let first = selectedModels.first { updatedConv.model = first }
+        conversationManager.updateConversation(updatedConv)
+
+        DiagnosticsLogger.log(.chatView, level: .info, message: "🆕 Created new multi-model conversation",
+                              metadata: ["conversationId": newConv.id.uuidString])
+        return updatedConv
+    }
+
+    /// Creates placeholder messages for each model in a multi-model request
+    func createPlaceholderMessagesForMultiModel(
+        models: [String],
+        userMessageId: UUID,
+        responseGroupId: UUID,
+        messageIds: inout [String: UUID],
+        placeholderMessages: inout [Message]
+    ) -> ResponseGroup {
+        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
+        for model in models {
+            let messageId = UUID()
+            messageIds[model] = messageId
+            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
+            placeholderMessages.append(Message(id: messageId, role: .assistant, content: "", model: model, responseGroupId: responseGroupId))
+        }
+        return responseGroup
+    }
+
+    /// Processes a streaming chunk for a specific model in multi-model mode
+    func processMultiModelChunk(
         model: String,
         chunk: String,
         messageIds: [String: UUID],
@@ -1170,7 +1206,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             return
         }
 
-        // Use safe ID-based append instead of index-based access
         let success = conversationManager.appendToMessage(
             conversationId: conversationId,
             messageId: messageId,
@@ -1187,7 +1222,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
     }
 
-    private func handleMultiModelCompletion(
+    /// Processes completion for a specific model in multi-model mode
+    func processMultiModelCompletion(
         model: String,
         messageIds: [String: UUID],
         conversationId: UUID,
@@ -1195,7 +1231,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     ) {
         guard let messageId = messageIds[model] else { return }
 
-        // Use safe ID-based update instead of index-based access
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,
             responseGroupId: responseGroupId,
@@ -1213,7 +1248,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
     }
 
-    private func handleMultiModelError(
+    /// Processes an error for a specific model in multi-model mode
+    func processMultiModelError(
         model: String,
         error: Error,
         messageIds: [String: UUID],
@@ -1222,7 +1258,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     ) {
         guard let messageId = messageIds[model] else { return }
 
-        // Use safe ID-based update instead of index-based access
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,
             responseGroupId: responseGroupId,
@@ -1246,9 +1281,13 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             metadata: ["model": model, "error": error.localizedDescription]
         )
     }
+}
 
+// MARK: - Image Generation
+
+extension IOSChatViewModel {
     /// Finds the most recent generated or selected image in the conversation for editing context.
-    private func findPreviousImageForEditing() -> Data? {
+    func findPreviousImage() -> Data? {
         guard let conversation else { return nil }
 
         // Look for the most recent assistant message with an image
@@ -1273,11 +1312,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         return nil
     }
 
-    private func handleImageGeneration(text: String, assistantMessage: Message, conversationId: UUID) {
+    /// Handles image generation or editing for a single model
+    func generateImage(text: String, assistantMessage: Message, conversationId: UUID) {
         guard let conversation else { return }
 
         // Check if we have a previous image to edit
-        let previousImage = findPreviousImageForEditing()
+        let previousImage = findPreviousImage()
 
         DiagnosticsLogger.log(
             .chatView,
@@ -1375,11 +1415,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     }
 
     /// Generates images from multiple models in parallel for comparison
-    private func generateMultiModelImages(prompt: String, models: [String], conversation: Conversation) {
+    func generateImagesWithMultipleModels(prompt: String, models: [String], conversation: Conversation) {
         let conversationId = conversation.id
 
         // Check if we have a previous image to edit (must check BEFORE adding user message)
-        let previousImage = findPreviousImageForEditing()
+        let previousImage = findPreviousImage()
 
         DiagnosticsLogger.log(
             .chatView,
@@ -1435,8 +1475,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             conversationManager.conversations[index].responseGroups.append(responseGroup)
         }
 
-        // Track completion state
-        var completedCount = 0
+        // Track completion state using a class to allow mutation in closures
+        final class CompletionTracker: @unchecked Sendable {
+            var count = 0
+        }
+        let tracker = CompletionTracker()
         let totalCount = models.count
 
         // Generate/edit images in parallel
@@ -1446,165 +1489,126 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             let onComplete: @Sendable (Data) -> Void = { [weak self] imageData in
                 Task { @MainActor in
                     guard let self else { return }
-
-                    // Save image to disk
-                    var imagePath: String?
-                    do {
-                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                    } catch {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .error,
-                            message: "❌ Failed to save generated image: \(error.localizedDescription)"
-                        )
-                    }
-
-                    // Update the placeholder message with actual image
-                    self.conversationManager.updateMessage(
+                    self.processImageSuccess(
+                        imageData: imageData,
                         conversationId: conversationId,
-                        messageId: messageId
-                    ) { message in
-                        message.content = ""
-                        if let path = imagePath {
-                            message.imagePath = path
-                            message.imageData = nil
-                        } else {
-                            message.imageData = imageData
-                            message.imagePath = nil
-                        }
-                    }
-
-                    // Update response group status
-                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       let groupIndex = self.conversationManager.conversations[convIndex].responseGroups
-                       .firstIndex(where: { $0.id == responseGroupId }),
-                       let entryIndex = self.conversationManager.conversations[convIndex].responseGroups[groupIndex]
-                       .responses.firstIndex(where: { $0.id == messageId })
-                    {
-                        self.conversationManager.conversations[convIndex].responseGroups[groupIndex]
-                            .responses[entryIndex].status = .completed
-                    }
-
-                    completedCount += 1
-                    if completedCount >= totalCount {
-                        self.isGenerating = false
-                        if let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                            self.conversationManager.save(conv)
-                        }
-                        // Notify that conversation is ready (for new chat navigation)
-                        if self.isNewChatMode {
-                            self.onConversationCreated?(conversationId)
-                        }
-                    }
+                        messageId: messageId,
+                        responseGroupId: responseGroupId,
+                        completedCount: &tracker.count,
+                        totalCount: totalCount
+                    )
                 }
             }
 
             let onError: @Sendable (Error) -> Void = { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
-
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "❌ Image generation failed for \(model): \(error.localizedDescription)",
-                        metadata: ["model": model]
-                    )
-
-                    // Update response group status to failed
-                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                       let groupIndex = self.conversationManager.conversations[convIndex].responseGroups
-                       .firstIndex(where: { $0.id == responseGroupId }),
-                       let entryIndex = self.conversationManager.conversations[convIndex].responseGroups[groupIndex]
-                       .responses.firstIndex(where: { $0.id == messageId })
-                    {
-                        self.conversationManager.conversations[convIndex].responseGroups[groupIndex]
-                            .responses[entryIndex].status = .failed
-                    }
-
-                    // Update message with error
-                    self.conversationManager.updateMessage(
+                    self.processImageError(
+                        error: error,
+                        model: model,
                         conversationId: conversationId,
-                        messageId: messageId
-                    ) { message in
-                        message.content = "Image generation failed: \(error.localizedDescription)"
-                    }
-
-                    completedCount += 1
-                    if completedCount >= totalCount {
-                        self.isGenerating = false
-                        if let conv = self.conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                            self.conversationManager.save(conv)
-                        }
-                        // Notify that conversation is ready (for new chat navigation)
-                        if self.isNewChatMode {
-                            self.onConversationCreated?(conversationId)
-                        }
-                    }
+                        messageId: messageId,
+                        responseGroupId: responseGroupId,
+                        completedCount: &tracker.count,
+                        totalCount: totalCount
+                    )
                 }
             }
 
             if let previousImage {
-                // Use image editing API for follow-up requests
-                openAIService.editImage(
-                    prompt: prompt,
-                    sourceImage: previousImage,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
+                openAIService.editImage(prompt: prompt, sourceImage: previousImage, model: model, onComplete: onComplete, onError: onError)
             } else {
-                // No previous image - use generation API
-                openAIService.generateImage(
-                    prompt: prompt,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
+                openAIService.generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
             }
         }
     }
 
-    private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
-        // Use safe ID-based append instead of index-based access
-        let success = conversationManager.appendToMessage(
-            conversationId: conversationId,
-            messageId: messageId,
-            chunk: chunk
-        )
-
-        if !success {
+    /// Processes successful image generation for a model
+    func processImageSuccess(
+        imageData: Data,
+        conversationId: UUID,
+        messageId: UUID,
+        responseGroupId: UUID,
+        completedCount: inout Int,
+        totalCount: Int
+    ) {
+        var imagePath: String?
+        do {
+            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
+        } catch {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,
-                message: "❌ Failed to update assistant message - not found",
-                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
+                message: "❌ Failed to save generated image: \(error.localizedDescription)"
             )
         }
-    }
-}
 
-// MARK: - File Handling Helpers
-
-private extension IOSChatViewModel {
-    /// Copies a security-scoped file to a temporary location.
-    func copyToTemporaryDirectory(url: URL) throws -> URL {
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileName = url.lastPathComponent
-        // Use UUID to avoid collisions
-        let uniqueTempDir = tempDir.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: uniqueTempDir, withIntermediateDirectories: true, attributes: nil)
-        let destinationURL = uniqueTempDir.appendingPathComponent(fileName)
-        try FileManager.default.copyItem(at: url, to: destinationURL)
-        return destinationURL
-    }
-
-    /// Cleans up temporary attached files.
-    func cleanupAttachedFiles() {
-        for url in attachedFiles where FileManager.default.fileExists(atPath: url.path) {
-            // Only delete if it's in the temp directory to be safe
-            // Note: temporaryDirectory path might be symlinked, so we just check if it exists and is a file
-            try? FileManager.default.removeItem(at: url)
+        conversationManager.updateMessage(conversationId: conversationId, messageId: messageId) { message in
+            message.content = ""
+            if let path = imagePath {
+                message.imagePath = path
+                message.imageData = nil
+            } else {
+                message.imageData = imageData
+                message.imagePath = nil
+            }
         }
-        attachedFiles.removeAll()
+
+        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+
+        completedCount += 1
+        if completedCount >= totalCount {
+            finalizeImageGenerationBatch(conversationId: conversationId)
+        }
+    }
+
+    /// Processes an error during image generation for a model
+    func processImageError(
+        error: Error,
+        model: String,
+        conversationId: UUID,
+        messageId: UUID,
+        responseGroupId: UUID,
+        completedCount: inout Int,
+        totalCount: Int
+    ) {
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .error,
+            message: "❌ Image generation failed for \(model): \(error.localizedDescription)",
+            metadata: ["model": model]
+        )
+
+        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+
+        conversationManager.updateMessage(conversationId: conversationId, messageId: messageId) { message in
+            message.content = "Image generation failed: \(error.localizedDescription)"
+        }
+
+        completedCount += 1
+        if completedCount >= totalCount {
+            finalizeImageGenerationBatch(conversationId: conversationId)
+        }
+    }
+
+    /// Updates the status of a response in a response group for image generation
+    func updateImageResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
+        {
+            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = status
+        }
+    }
+
+    /// Finalizes a batch of image generation requests
+    func finalizeImageGenerationBatch(conversationId: UUID) {
+        isGenerating = false
+        if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }) {
+            conversationManager.save(conv)
+        }
+        if isNewChatMode {
+            onConversationCreated?(conversationId)
+        }
     }
 }

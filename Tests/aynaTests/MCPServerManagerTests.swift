@@ -75,7 +75,7 @@ struct MCPServerManagerTests {
     }
 
     @Test("Schedules reconnect after unexpected termination", .timeLimit(.minutes(1)))
-    func schedulesReconnectAfterUnexpectedTermination() async throws {
+    func schedulesReconnectAfterUnexpectedTermination() async {
         let config = MCPServerConfig(name: "reconnect", command: "cmd", enabled: true)
         let primaryService = StubMCPService(config: config, connectResults: [.success(())])
         let reconnectService = StubMCPService(config: config, connectResults: [.success(())])
@@ -120,7 +120,7 @@ struct MCPServerManagerTests {
     }
 
     @Test("Updating enabled server restarts connection", .timeLimit(.minutes(1)))
-    func updatingEnabledServerRestartsConnection() async throws {
+    func updatingEnabledServerRestartsConnection() async {
         let originalConfig = MCPServerConfig(name: "filesystem", command: "cmd", args: ["--foo"], enabled: true)
         var updatedConfig = originalConfig
         updatedConfig.args = ["--bar"]

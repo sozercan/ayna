@@ -306,10 +306,8 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Copy image if present
-                if message.mediaType == .image, let imageData = message.effectiveImageData,
-                   let image = UIImage(data: imageData)
-                {
+                // Copy image if present - use cached decodedImage to prevent memory leaks
+                if message.mediaType == .image, let image = decodedImage {
                     Button {
                         UIPasteboard.general.image = image
                         // Use centralized haptic engine
@@ -359,6 +357,32 @@ struct IOSMessageView: View {
                     try? await Task.sleep(for: .milliseconds(Int(waitTime * 1000)))
                     guard !Task.isCancelled else { return }
                     performParse(content: newContent)
+                }
+            }
+        }
+        .onChange(of: message.imagePath) { _, newPath in
+            // Reload image when path changes (e.g., after generation completes)
+            if newPath != nil {
+                decodedImage = nil
+                Task {
+                    if let imageData = message.effectiveImageData {
+                        decodedImage = await Task.detached(priority: .userInitiated) {
+                            UIImage(data: imageData)
+                        }.value
+                    }
+                }
+            }
+        }
+        .onChange(of: message.imageData) { _, newData in
+            // Reload image when data changes
+            if newData != nil {
+                decodedImage = nil
+                Task {
+                    if let imageData = message.effectiveImageData {
+                        decodedImage = await Task.detached(priority: .userInitiated) {
+                            UIImage(data: imageData)
+                        }.value
+                    }
                 }
             }
         }
@@ -615,8 +639,8 @@ struct IOSContentBlockView: View {
     }
 }
 
-// Typing indicator for text responses (iOS version) - iMessage style wave
-// Uses phaseAnimator for efficient animation without Timer overhead
+/// Typing indicator for text responses (iOS version) - iMessage style wave
+/// Uses phaseAnimator for efficient animation without Timer overhead
 struct IOSTypingIndicatorView: View {
     var body: some View {
         HStack(spacing: Spacing.xs) {

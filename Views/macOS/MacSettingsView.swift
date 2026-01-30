@@ -35,6 +35,12 @@ struct MacSettingsView: View {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
                 .tag(SettingsTab.mcp)
+
+            MemorySettingsSection()
+                .tabItem {
+                    Label("Memory", systemImage: "brain")
+                }
+                .tag(SettingsTab.memory)
         }
         .frame(width: 650, height: 500)
         .onReceive(settingsRouter.$requestedTab) { tab in
@@ -49,6 +55,7 @@ struct GeneralSettingsView: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
+    @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
     @ObservedObject private var openAIService = OpenAIService.shared
     @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
@@ -58,6 +65,12 @@ struct GeneralSettingsView: View {
             Section {
                 Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                     .help("Automatically generate conversation titles from first message")
+
+                Toggle("Multi-Model Selection", isOn: $multiModelSelectionEnabled)
+                    .help("Allow selecting multiple models to compare responses side-by-side")
+                    .onChange(of: multiModelSelectionEnabled) { _, newValue in
+                        AppPreferences.multiModelSelectionEnabled = newValue
+                    }
             } header: {
                 Text("Behavior")
             }
@@ -1027,9 +1040,10 @@ struct APISettingsView: View {
                                             validationStatus = .notChecked
                                         }
                                         Text(
-                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name.")
-                                            .font(Typography.caption)
-                                            .foregroundStyle(.tertiary)
+                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name."
+                                        )
+                                        .font(Typography.caption)
+                                        .foregroundStyle(.tertiary)
                                     }
 
                                     // API Key
@@ -1095,7 +1109,8 @@ struct APISettingsView: View {
                                     }
                                     .disabled(
                                         tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                            || tempEndpoint.isEmpty)
+                                            || tempEndpoint.isEmpty
+                                    )
                                     .controlSize(.large)
 
                                     if let selectedName = selectedModelName,
@@ -1602,7 +1617,7 @@ struct APISettingsView: View {
     }
 }
 
-// Flow layout for quick add buttons
+/// Flow layout for quick add buttons
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 

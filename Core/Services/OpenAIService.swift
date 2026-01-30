@@ -20,7 +20,9 @@ enum AIProvider: String, CaseIterable, Codable {
     case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        rawValue
+    }
 }
 
 enum APIEndpointType: String, CaseIterable, Codable {
@@ -28,7 +30,9 @@ enum APIEndpointType: String, CaseIterable, Codable {
     case responses = "Responses"
     case imageGeneration = "Image Generation"
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        rawValue
+    }
 }
 
 @MainActor
@@ -80,7 +84,7 @@ class OpenAIService: ObservableObject {
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
     private let azureAPIVersion = "2025-04-01-preview"
 
-    // Custom URLSession with longer timeout for slow models
+    /// Custom URLSession with longer timeout for slow models
     private let urlSession: URLSession
 
     // Image generation service
@@ -158,7 +162,7 @@ class OpenAIService: ObservableObject {
         @Published var tavilyEnabled: Bool = false
     #endif
 
-    // Image generation settings
+    /// Image generation settings
     @Published var imageSize: String {
         didSet {
             AppPreferences.storage.set(imageSize, forKey: "imageSize")
@@ -219,7 +223,8 @@ class OpenAIService: ObservableObject {
         } else {
             // Default all initial models to OpenAI
             Dictionary(
-                uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) })
+                uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
+            )
         }
         modelProviders = loadedProviders
 
@@ -231,7 +236,8 @@ class OpenAIService: ObservableObject {
         } else {
             // Default all models to Chat Completions
             Dictionary(
-                uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) })
+                uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
+            )
         }
         modelEndpointTypes = loadedEndpointTypes
 
@@ -394,8 +400,8 @@ class OpenAIService: ObservableObject {
         OpenAIEndpointResolver.isAzureEndpoint(endpoint)
     }
 
-    // Get API key for a specific model, falling back to global key if not set
-    // For GitHub Models with OAuth, returns the OAuth token
+    /// Get API key for a specific model, falling back to global key if not set
+    /// For GitHub Models with OAuth, returns the OAuth token
     func getAPIKey(for model: String?) -> String {
         guard let model else { return apiKey }
 
@@ -795,6 +801,7 @@ class OpenAIService: ObservableObject {
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
+                conversationId: conversationId,
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
@@ -832,10 +839,22 @@ class OpenAIService: ObservableObject {
             ]
         )
 
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
         guard
             let request = OpenAIRequestBuilder.createChatCompletionsRequest(
                 url: url,
-                messages: messages,
+                messages: messagesWithMemory,
                 model: requestModel,
                 stream: stream,
                 tools: tools,
@@ -1115,6 +1134,7 @@ class OpenAIService: ObservableObject {
     private func responsesAPIRequest(
         messages: [Message],
         model: String,
+        conversationId: UUID? = nil,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
@@ -1141,10 +1161,22 @@ class OpenAIService: ObservableObject {
             return
         }
 
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
         guard
             let request = OpenAIRequestBuilder.createResponsesRequest(
                 url: url,
-                messages: messages,
+                messages: messagesWithMemory,
                 model: model,
                 apiKey: modelAPIKey,
                 isAzure: usesAzureEndpoint
@@ -1181,6 +1213,7 @@ class OpenAIService: ObservableObject {
                             self.responsesAPIRequest(
                                 messages: messages,
                                 model: model,
+                                conversationId: conversationId,
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
@@ -1725,11 +1758,15 @@ class OpenAIService: ObservableObject {
                 if let urlError = error as? URLError, urlError.code == .timedOut {
                     callbacks.onError(
                         OpenAIError.apiError(
-                            "Request timed out. The model may be slow or overloaded. Please try again."))
+                            "Request timed out. The model may be slow or overloaded. Please try again."
+                        )
+                    )
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
                     callbacks.onError(
                         OpenAIError.apiError(
-                            "Network connection was lost. The server may have rejected the request."))
+                            "Network connection was lost. The server may have rejected the request."
+                        )
+                    )
                 } else if (error as? CancellationError) != nil {
                     // Task was cancelled, don't report as error
                     DiagnosticsLogger.log(
@@ -1895,9 +1932,30 @@ class OpenAIService: ObservableObject {
             }
 
             // Extract system instructions (first system message if any)
-            let systemInstructions =
+            let baseSystemInstructions =
                 messages.first(where: { $0.role == .system })?.content
                     ?? "You are a helpful assistant."
+
+            // Inject memory context into system instructions
+            let memoryContext = MemoryContextProvider.shared.buildContext(
+                currentConversationId: conversationId
+            )
+            var systemInstructions = baseSystemInstructions
+            if memoryContext.hasContent {
+                var memoryParts: [String] = []
+                if let sessionMetadata = memoryContext.sessionMetadata {
+                    memoryParts.append(sessionMetadata)
+                }
+                if let userMemory = memoryContext.userMemory {
+                    memoryParts.append(userMemory)
+                }
+                if let summaries = memoryContext.conversationSummaries {
+                    memoryParts.append(summaries)
+                }
+                if !memoryParts.isEmpty {
+                    systemInstructions += "\n\n" + memoryParts.joined(separator: "\n\n")
+                }
+            }
 
             // Get the last user message as the prompt
             guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
@@ -1950,7 +2008,7 @@ class OpenAIService: ObservableObject {
         }
     #endif
 
-    // Retry logic delegated to OpenAIRetryPolicy
+    /// Retry logic delegated to OpenAIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
         OpenAIRetryPolicy.shouldRetry(
             error: error,
@@ -2034,7 +2092,9 @@ extension OpenAIService {
         providerRequiresAPIKey(provider)
     }
 
-    var latestAzureAPIVersion: String { azureAPIVersion }
+    var latestAzureAPIVersion: String {
+        azureAPIVersion
+    }
 
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard providerRequiresAPIKey(provider) else { return true }
@@ -2229,7 +2289,7 @@ extension OpenAIService {
         arguments: [String: Any]
     ) async -> (String, [CitationReference]?) {
         #if os(watchOS)
-            // watchOS doesn't support citations yet
+            /// watchOS doesn't support citations yet
             let result = await executeBuiltInTool(name: toolName, arguments: arguments)
             return (result, nil)
         #else

@@ -63,7 +63,7 @@
         // MARK: - AX Element Helper Tests
 
         @Test("Create application element returns valid element")
-        func createApplicationElementReturnsValidElement() throws {
+        func createApplicationElementReturnsValidElement() {
             // Get any running application
             guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName != nil }) else {
                 // Skip test if no running applications

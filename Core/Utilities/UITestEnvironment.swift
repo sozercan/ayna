@@ -46,7 +46,9 @@ enum UITestEnvironment {
     }
 
     /// Skip heavy background work (e.g., MCP connections) while UI tests run.
-    static var shouldSkipMCPInitialization: Bool { isEnabled }
+    static var shouldSkipMCPInitialization: Bool {
+        isEnabled
+    }
 
     private static func configureUserDefaults() {
         let suiteName = "AynaUITests.\(ProcessInfo.processInfo.processIdentifier)"

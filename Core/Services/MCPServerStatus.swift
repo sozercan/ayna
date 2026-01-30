@@ -10,7 +10,10 @@ struct MCPServerStatus: Identifiable, Equatable, Sendable {
         case idle
     }
 
-    var id: UUID { configID }
+    var id: UUID {
+        configID
+    }
+
     let configID: UUID
     let name: String
     let state: State

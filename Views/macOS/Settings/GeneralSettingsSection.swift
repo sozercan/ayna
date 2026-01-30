@@ -12,6 +12,7 @@ struct GeneralSettingsSection: View {
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
+    @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
     @ObservedObject private var openAIService = OpenAIService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
@@ -20,6 +21,12 @@ struct GeneralSettingsSection: View {
             Section {
                 Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                     .help("Automatically generate conversation titles from first message")
+
+                Toggle("Multi-Model Selection", isOn: $multiModelSelectionEnabled)
+                    .help("Allow selecting multiple models to compare responses side-by-side")
+                    .onChange(of: multiModelSelectionEnabled) { _, newValue in
+                        AppPreferences.multiModelSelectionEnabled = newValue
+                    }
             } header: {
                 Text("Behavior")
             }

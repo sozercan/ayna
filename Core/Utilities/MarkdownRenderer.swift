@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Converts markdown text into renderable content blocks tailored for the chat UI.
 enum MarkdownRenderer {
-    // Cache for parsed content blocks to improve performance
-    // Configured with limits to prevent unbounded memory growth
+    /// Cache for parsed content blocks to improve performance
+    /// Configured with limits to prevent unbounded memory growth
     private nonisolated(unsafe) static let cache: NSCache<NSString, ContentBlockWrapper> = {
         let cache = NSCache<NSString, ContentBlockWrapper>()
         cache.countLimit = 100 // Maximum 100 cached markdown parses
@@ -195,7 +195,8 @@ enum MarkdownRenderer {
             if isMarkdown {
                 if codeTrimmed.hasPrefix(fence) {
                     let after = codeTrimmed.dropFirst(backtickCount).trimmingCharacters(
-                        in: .whitespaces)
+                        in: .whitespaces
+                    )
                     if !after.isEmpty {
                         nestedDepth += 1
                     }

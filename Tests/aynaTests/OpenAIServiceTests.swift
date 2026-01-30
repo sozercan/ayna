@@ -79,7 +79,8 @@ struct OpenAIServiceTests {
             let body = Data(
                 """
                     {"choices":[{"message":{"content":"Hello"}}]}
-                """.utf8)
+                """.utf8
+            )
             return (response, body)
         }
 
@@ -159,7 +160,8 @@ struct OpenAIServiceTests {
             let body = Data(
                 """
                     {"choices":[{"message":{"content":[{"type":"text","text":"Structured hello"}]}}]}
-                """.utf8)
+                """.utf8
+            )
             return (response, body)
         }
 
@@ -194,13 +196,13 @@ struct OpenAIServiceTests {
     }
 
     @Test("GitHub Models rate limit tracking is per token")
-    func gitHubModelsRateLimitTrackingIsPerToken() {
+    func gitHubModelsRateLimitTrackingIsPerToken() throws {
         let oauth = GitHubOAuthService()
 
-        let url = URL(string: "https://models.github.ai/inference/chat/completions")!
+        let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
         let now = Date()
 
-        let responseA = HTTPURLResponse(
+        let responseA = try #require(HTTPURLResponse(
             url: url,
             statusCode: 200,
             httpVersion: nil,
@@ -210,9 +212,9 @@ struct OpenAIServiceTests {
                 "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(60).timeIntervalSince1970))",
                 "X-RateLimit-Resource": "ai-inference"
             ]
-        )!
+        ))
 
-        let responseB = HTTPURLResponse(
+        let responseB = try #require(HTTPURLResponse(
             url: url,
             statusCode: 200,
             httpVersion: nil,
@@ -222,7 +224,7 @@ struct OpenAIServiceTests {
                 "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(120).timeIntervalSince1970))",
                 "X-RateLimit-Resource": "ai-inference"
             ]
-        )!
+        ))
 
         oauth.updateRateLimit(from: responseA, forAccessToken: "token-A")
         oauth.updateRateLimit(from: responseB, forAccessToken: "token-B")
@@ -232,18 +234,18 @@ struct OpenAIServiceTests {
     }
 
     @Test("GitHub Models retry after is per token")
-    func gitHubModelsRetryAfterIsPerToken() {
+    func gitHubModelsRetryAfterIsPerToken() throws {
         let oauth = GitHubOAuthService()
 
-        let url = URL(string: "https://models.github.ai/inference/chat/completions")!
-        let response = HTTPURLResponse(
+        let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
+        let response = try #require(HTTPURLResponse(
             url: url,
             statusCode: 429,
             httpVersion: nil,
             headerFields: [
                 "Retry-After": "60"
             ]
-        )!
+        ))
 
         oauth.updateRetryAfter(from: response, forAccessToken: "token-A")
 

@@ -597,11 +597,10 @@ class MCPServerManager: ObservableObject {
         }
 
         do {
-            let result = try await withTimeout(seconds: 30) {
+            return try await withTimeout(seconds: 30) {
                 let bridgedArguments = context.arguments.mapValues { $0.value }
                 return try await context.service.callTool(name: name, arguments: bridgedArguments)
             }
-            return result
         } catch MCPServiceError.timeout {
             throw MCPManagerError.executionFailed(name, "Tool execution timed out after 30 seconds")
         } catch {
@@ -736,7 +735,8 @@ private extension MCPServerManager {
                         lastUpdated: now
                     )
                 )
-            })
+            }
+        )
     }
 
     func setStatus(

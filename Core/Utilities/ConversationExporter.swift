@@ -101,7 +101,8 @@ enum ConversationExporter {
 
         // Title
         fullContent.append(
-            NSAttributedString(string: conversation.title + "\n\n", attributes: titleAttributes))
+            NSAttributedString(string: conversation.title + "\n\n", attributes: titleAttributes)
+        )
 
         // Metadata
         let dateFormatter = DateFormatter()

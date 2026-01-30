@@ -200,6 +200,11 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Clean up Work with Apps
         GlobalHotkeyService.shared.unregister()
         AccessibilityService.shared.stopMonitoring()
+
+        // Save memory data immediately to prevent data loss
+        Task { @MainActor in
+            await MemoryContextProvider.shared.saveAll()
+        }
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

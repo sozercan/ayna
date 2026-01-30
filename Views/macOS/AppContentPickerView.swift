@@ -80,7 +80,6 @@
 
         // MARK: - Header
 
-        @ViewBuilder
         private var header: some View {
             HStack {
                 Text("Attach from App")
@@ -100,7 +99,6 @@
 
         // MARK: - Accessibility Prompt
 
-        @ViewBuilder
         private var accessibilityPrompt: some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "lock.shield")
@@ -131,7 +129,6 @@
 
         // MARK: - Empty State
 
-        @ViewBuilder
         private var emptyState: some View {
             VStack(spacing: Spacing.md) {
                 Image(systemName: "macwindow.on.rectangle")
@@ -157,7 +154,6 @@
 
         // MARK: - Window List
 
-        @ViewBuilder
         private var windowList: some View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -168,7 +164,6 @@
             }
         }
 
-        @ViewBuilder
         private func appGroupRow(_ group: AccessibilityService.AppWindowGroup) -> some View {
             VStack(spacing: 0) {
                 // App header row
@@ -231,7 +226,6 @@
             }
         }
 
-        @ViewBuilder
         private func windowRow(_ window: AccessibilityService.WindowInfo) -> some View {
             Button {
                 selectWindow(window)

@@ -61,7 +61,7 @@ enum AppleIntelligenceError: LocalizedError {
 
         private init() {}
 
-        // Check if Apple Intelligence is available on this device
+        /// Check if Apple Intelligence is available on this device
         var isAvailable: Bool {
             model.isAvailable
         }
@@ -90,7 +90,7 @@ enum AppleIntelligenceError: LocalizedError {
             }
         }
 
-        // Get or create a session for a conversation
+        /// Get or create a session for a conversation
         private func getSession(
             conversationId: String,
             systemInstructions: String
@@ -107,7 +107,7 @@ enum AppleIntelligenceError: LocalizedError {
             return newSession
         }
 
-        // Clear session for a conversation
+        /// Clear session for a conversation
         func clearSession(conversationId: String) {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -115,7 +115,7 @@ enum AppleIntelligenceError: LocalizedError {
             log("Cleared Apple Intelligence session", metadata: ["conversationId": conversationId])
         }
 
-        // Clear all sessions
+        /// Clear all sessions
         func clearAllSessions() {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -123,7 +123,7 @@ enum AppleIntelligenceError: LocalizedError {
             log("Cleared all Apple Intelligence sessions")
         }
 
-        // Stream response
+        /// Stream response
         func streamResponse(
             conversationId: String,
             prompt: String,
@@ -233,7 +233,7 @@ enum AppleIntelligenceError: LocalizedError {
             }
         }
 
-        // Non-streaming response
+        /// Non-streaming response
         func generateResponse(
             conversationId: String,
             prompt: String,
@@ -314,7 +314,9 @@ enum AppleIntelligenceError: LocalizedError {
     class AppleIntelligenceService: ObservableObject {
         static let shared = AppleIntelligenceService()
 
-        var isAvailable: Bool { false }
+        var isAvailable: Bool {
+            false
+        }
 
         func availabilityDescription() -> String {
             "Apple Intelligence frameworks are not installed on this system"

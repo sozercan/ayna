@@ -11,8 +11,13 @@
 
     /// A custom panel that can always become key window for text input
     final class KeyablePanel: NSPanel {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { false }
+        override var canBecomeKey: Bool {
+            true
+        }
+
+        override var canBecomeMain: Bool {
+            false
+        }
     }
 
     /// Controller for managing the Spotlight-style floating command bar.

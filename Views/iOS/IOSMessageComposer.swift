@@ -49,21 +49,29 @@ struct IOSMessageComposer: View {
     /// Background for the plus button - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerButtonBackground: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             Circle().fill(.regularMaterial).glassEffect()
         } else {
             Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
         }
+        #else
+        Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
+        #endif
     }
 
     /// Background for the text field - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerFieldBackground: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             Capsule().fill(.regularMaterial).glassEffect()
         } else {
             Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
         }
+        #else
+        Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
+        #endif
     }
 
     /// Background for the entire composer bar
@@ -223,7 +231,6 @@ struct IOSMessageComposer: View {
         .background(composerBarBackground)
     }
 
-    @ViewBuilder
     private func attachmentChip(for url: URL) -> some View {
         HStack(spacing: Spacing.xxs) {
             Image(systemName: "doc.fill")
@@ -246,7 +253,6 @@ struct IOSMessageComposer: View {
         .accessibilityIdentifier("\(identifierPrefix).attachment.\(url.lastPathComponent)")
     }
 
-    @ViewBuilder
     private func imageAttachmentChip(for image: UIImage, at index: Int) -> some View {
         HStack(spacing: Spacing.xxs) {
             Image(uiImage: image)

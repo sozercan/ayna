@@ -36,7 +36,6 @@
             }
         }
 
-        @ViewBuilder
         private var emptyStateView: some View {
             VStack(spacing: 12) {
                 Image(systemName: "bubble.left.and.bubble.right")

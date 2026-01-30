@@ -1,7 +1,6 @@
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("ConversationTimelineGrouper Tests", .tags(.fast))
 struct ConversationTimelineGrouperTests {
@@ -12,13 +11,13 @@ struct ConversationTimelineGrouperTests {
     }
 
     @Test("Timeline titles")
-    func timelineTitles() {
+    func timelineTitles() throws {
         let now = date(year: 2025, month: 11, day: 18)
-        let oneDayAgo = calendar.date(byAdding: .day, value: -1, to: now)!
-        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: now)!
-        let nineDaysAgo = calendar.date(byAdding: .day, value: -9, to: now)!
-        let fortyDaysAgo = calendar.date(byAdding: .day, value: -40, to: now)!
-        let fourHundredDaysAgo = calendar.date(byAdding: .day, value: -400, to: now)!
+        let oneDayAgo = try #require(calendar.date(byAdding: .day, value: -1, to: now))
+        let twoDaysAgo = try #require(calendar.date(byAdding: .day, value: -2, to: now))
+        let nineDaysAgo = try #require(calendar.date(byAdding: .day, value: -9, to: now))
+        let fortyDaysAgo = try #require(calendar.date(byAdding: .day, value: -40, to: now))
+        let fourHundredDaysAgo = try #require(calendar.date(byAdding: .day, value: -400, to: now))
 
         #expect(ConversationTimelineGrouper.title(for: now, calendar: calendar, now: now) == "Today")
         #expect(ConversationTimelineGrouper.title(for: oneDayAgo, calendar: calendar, now: now) == "Yesterday")
@@ -29,10 +28,10 @@ struct ConversationTimelineGrouperTests {
     }
 
     @Test("Sections are grouped and sorted")
-    func sectionsAreGroupedAndSorted() {
+    func sectionsAreGroupedAndSorted() throws {
         let now = date(year: 2025, month: 11, day: 18)
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
-        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: now)!
+        let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: now))
+        let twoDaysAgo = try #require(calendar.date(byAdding: .day, value: -2, to: now))
 
         let conversations = [
             Conversation(title: "Today A", updatedAt: now, model: "gpt-4o"),

@@ -159,6 +159,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 
 > ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
 
+> 🤖 **Document Your Prompts** — When completing a task, summarize the key prompt(s) used so the human can include them in the PR. This supports a workflow where prompts are reviewed alongside (or instead of) code.
+
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
 2. **Verify Builds**: After modifying shared code, verify both platforms:
@@ -232,6 +234,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 | `replacingOccurrences(of:with:)` | `replacing(_:with:)` |
 | Force unwraps (`!`) | Optional handling or `guard` |
 | XCTest for unit tests | Swift Testing (`@Suite`, `@Test`, `#expect`) |
+| `#available` for new SDK APIs | `#if compiler(>=version)` (compile-time check) |
+| `Task.detached` with `NSImage`/`UIImage` | Process on same actor or use `Data` |
 
 ## Common Bug Patterns to Avoid
 
@@ -363,6 +367,96 @@ class ConversationViewModel {
 }
 ```
 
+### Static Shared Singletons with Mutable Assignment
+
+```swift
+// ❌ BAD: Race condition if multiple instances created
+class ConversationViewModel {
+    static var shared: ConversationViewModel?
+    init() { Self.shared = self }  // Overwrites previous!
+}
+
+// ✅ GOOD: Use SwiftUI Environment for dependency injection
+@Observable @MainActor
+class ConversationViewModel { /* ... */ }
+
+// In parent view:
+.environment(conversationViewModel)
+
+// In child view:
+@Environment(ConversationViewModel.self) var viewModel
+```
+
+### Using `#available` for New SDK APIs
+
+```swift
+// ❌ BAD: #available is RUNTIME only — code still must COMPILE against older SDKs
+// This fails to build on Xcode 16.x because .glassEffect() doesn't exist in the SDK
+if #available(macOS 26.0, *) {
+    view.glassEffect(.regular)  // Compile error on older SDKs!
+}
+
+// ✅ GOOD: Use compile-time checks for APIs that don't exist in older SDKs
+#if compiler(>=6.2)  // Xcode 26+ ships Swift 6.2
+if #available(macOS 26.0, *) {
+    view.glassEffect(.regular)
+}
+#endif
+
+// ✅ ALSO GOOD: Separate source files with build configurations
+// Put macOS 26+ code in a separate file excluded from older SDK builds
+```
+
+**Key insight**: `#available` checks which OS version is *running*, but the compiler must still *parse and type-check* all code paths. For APIs that don't exist in older SDKs at all, use `#if compiler()` or `#if swift()` to hide the code from the compiler entirely.
+
+### Passing Non-Sendable Types Across Actor Boundaries
+
+```swift
+// ❌ BAD: NSImage/UIImage are non-Sendable — can't cross actor boundaries
+let image = await Task.detached(priority: .userInitiated) {
+    return NSImage(data: imageData)  // NSImage created off main actor
+}.value  // Error: non-sendable type cannot exit actor-isolated context
+
+// ✅ GOOD: Keep image creation on the same actor
+@MainActor
+func loadImage(from data: Data) -> NSImage? {
+    return NSImage(data: data)
+}
+
+// ✅ ALSO GOOD: Pass Sendable data, create image on destination actor
+let imageData = await Task.detached {
+    return processImageData(data)  // Data is Sendable
+}.value
+let image = NSImage(data: imageData)  // Create on @MainActor
+```
+
+**Why**: `NSImage` and `UIImage` are explicitly marked non-`Sendable` by Apple. Swift 6 strict concurrency enforces this to prevent data races.
+
+### Accessing @MainActor Singletons from Nonisolated Context
+
+```swift
+// ❌ BAD: Accessing @MainActor static property from nonisolated context
+@MainActor
+class MyService {
+    static let shared = MyService()
+}
+
+func someNonisolatedFunc() {
+    let service = MyService.shared  // Warning in Swift 5, Error in Swift 6!
+}
+
+// ✅ GOOD: Make the accessor async and await it
+func someNonisolatedFunc() async {
+    let service = await MyService.shared
+}
+
+// ✅ ALSO GOOD: Mark the calling function @MainActor
+@MainActor
+func someMainActorFunc() {
+    let service = MyService.shared  // OK — same actor isolation
+}
+```
+
 ## Quick Reference
 
 ### Build Commands
@@ -430,6 +524,8 @@ Before completing non-trivial features, verify these patterns are followed:
 - [ ] **Message views avoid re-renders** — Extract expensive markdown rendering to subviews
 - [ ] **No `await` calls inside `ForEach`** — Fetch data before iteration
 - [ ] **Images/attachments use async loading** — Never block UI thread for file I/O
+- [ ] **Search input is debounced** — Not firing on every keystroke
+- [ ] **Frequently updating UI caches formatted strings** — Don't recompute on every render
 
 ### Memory Management
 
@@ -463,6 +559,8 @@ Before completing non-trivial features, verify these patterns are followed:
 - [ ] **Background tasks cancelled in `deinit`** — Prevent work after deallocation
 - [ ] **Using `.task` instead of `.onAppear { Task { } }`** — Lifecycle-managed, auto-cancelled
 - [ ] **ForEach uses stable identity** — Use model ID, not array index
+- [ ] **Non-Sendable types stay on their actor** — `NSImage`/`UIImage` don't cross actor boundaries
+- [ ] **@MainActor singletons accessed correctly** — Use `await` or `@MainActor` caller
 
 ### Verification Commands
 
@@ -507,6 +605,7 @@ Before requesting human review, verify:
 - [ ] Builds on macOS, iOS, watchOS (as applicable)
 - [ ] `#if os()` guards for platform-specific code in Core/
 - [ ] No AppKit/UIKit imports in Core/ without guards
+- [ ] New SDK APIs wrapped in `#if compiler()` for older Xcode compatibility
 
 ### Accessibility
 - [ ] `.accessibilityLabel()` on image-only buttons
@@ -544,6 +643,76 @@ Before requesting human review, verify:
 - **Cause**: Task cancelled or error not propagated
 - **Fix**: Check `Task.isCancelled` and handle errors in stream
 - **Prevention**: Use `AsyncThrowingStream` with proper error handling
+
+### "Value of type X has no member Y" (new SDK APIs)
+- **Cause**: Using APIs from newer SDKs (e.g., macOS 26) with `#available` only
+- **Fix**: Wrap in `#if compiler(>=version)` to hide from older compilers entirely
+- **Prevention**: `#available` is runtime-only; new SDK APIs need compile-time guards
+
+### "Conformance of 'NSImage' to 'Sendable' is unavailable"
+- **Cause**: Passing `NSImage`/`UIImage` across actor boundaries via `Task.detached`
+- **Fix**: Process images on the same actor, or pass `Data` and create image on destination
+- **Prevention**: Platform image types are non-`Sendable`; don't cross actor boundaries with them
+
+### "Main actor-isolated static property 'shared' cannot be referenced from nonisolated context"
+- **Cause**: Accessing `@MainActor` singleton from nonisolated function
+- **Fix**: Make caller `@MainActor` or use `await` to access the property
+- **Prevention**: When using `@MainActor` singletons, ensure callers have compatible isolation
+
+## Subagents (Context-Isolated Tasks)
+
+VS Code's `#runSubagent` tool enables context-isolated task execution. Subagents run independently with their own context, preventing context confusion in complex tasks.
+
+### When to Use Subagents
+
+| Task Type | Use Subagent? | Rationale |
+|-----------|---------------|-----------|
+| Research unfamiliar code areas | Yes | Deep dives don't pollute main conversation |
+| Review a single file for patterns | Yes | Focused analysis, returns summary only |
+| Generate test fixtures | Yes | Boilerplate generation isolated from design discussion |
+| Simple edits to known files | No | Direct action is faster |
+| Multi-step refactoring | No | Needs continuous context across steps |
+| Tasks requiring user feedback | No | Subagents don't pause for input |
+
+### Subagent Prompts for This Project
+
+**Code Pattern Analysis** — Understand existing patterns:
+```
+With #runSubagent, analyze #file:Core/Services/OpenAIService.swift and identify:
+1. How provider requests are constructed
+2. Error handling patterns
+3. How streaming responses are processed
+Return a concise pattern guide for adding a new provider.
+```
+
+**Test Stub Generation** — Generate boilerplate:
+```
+Using #runSubagent, generate a Swift Testing test struct following the pattern in #file:Tests/aynaTests/
+for testing a new EncryptionService with encrypt/decrypt methods.
+Return only the struct definition with placeholder test methods.
+```
+
+**Performance Audit** — Isolated deep dive:
+```
+With #runSubagent, audit #file:Views/macOS/ConversationView.swift for SwiftUI performance issues.
+Check for: await in ForEach, missing LazyVStack, inline image loading, excessive state updates.
+Return a prioritized list of issues with line numbers.
+```
+
+### Subagent Best Practices
+
+1. **Be specific in prompts** — Subagents don't have conversation history; include all necessary context
+2. **Request structured output** — Ask for summaries, lists, or code snippets that integrate cleanly
+3. **Use for exploration, not execution** — Subagents are great for research; keep edits in main context
+4. **Combine with file references** — Use `#file:path` to give subagents focused context
+5. **Review before integrating** — Subagent results join main context; verify accuracy first
+
+### Anti-Patterns
+
+- Using subagents for quick lookups (overhead not worth it)
+- Chaining multiple subagents (use main context for multi-step work)
+- Expecting subagents to remember previous subagent results
+- Using subagents for tasks requiring user clarification
 
 ## When to Update This Document
 

@@ -131,8 +131,8 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
         #if !os(watchOS)
-            // Build a set of valid tool_call_ids that have matching tool responses
-            // First, collect all tool messages and their tool_call_ids
+            /// Build a set of valid tool_call_ids that have matching tool responses
+            /// First, collect all tool messages and their tool_call_ids
             var toolResponseIds = Set<String>()
             for message in messages {
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
@@ -140,10 +140,10 @@ enum OpenAIRequestBuilder {
                 }
             }
 
-            // Now filter messages:
-            // 1. Keep all non-tool, non-assistant messages
-            // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
-            // 3. For tool messages, only keep if preceding assistant has the matching tool_call
+            /// Now filter messages:
+            /// 1. Keep all non-tool, non-assistant messages
+            /// 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
+            /// 3. For tool messages, only keep if preceding assistant has the matching tool_call
             var filteredMessages: [Message] = []
             for (index, message) in messages.enumerated() {
                 if message.role == .tool {
@@ -463,5 +463,73 @@ enum OpenAIRequestBuilder {
 
         request.httpBody = bodyData
         return request
+    }
+
+    // MARK: - Memory Context Injection
+
+    /// Builds a complete message array with memory context injected.
+    ///
+    /// Context is injected in this order (following ChatGPT's pattern):
+    /// 1. System prompt (existing)
+    /// 2. Session metadata (ephemeral)
+    /// 3. User memory facts (persistent)
+    /// 4. Recent conversations summary (computed)
+    /// 5. Current conversation history (existing)
+    /// 6. Latest user message
+    ///
+    /// - Parameters:
+    ///   - systemPrompt: The system prompt for this conversation
+    ///   - memoryContext: Memory context from MemoryContextProvider
+    ///   - conversationHistory: The current conversation's message history
+    /// - Returns: Array of messages ready for API request
+    static func buildMessagesWithMemory(
+        systemPrompt: String?,
+        memoryContext: MemoryContext,
+        conversationHistory: [Message]
+    ) -> [Message] {
+        var messages: [Message] = []
+
+        // [0] System prompt (existing pattern)
+        if let systemPrompt, !systemPrompt.isEmpty {
+            messages.append(Message(role: .system, content: systemPrompt))
+        }
+
+        // Only inject memory context if available
+        guard memoryContext.hasContent else {
+            messages.append(contentsOf: conversationHistory)
+            return messages
+        }
+
+        // [1] Session metadata (ephemeral)
+        if let sessionMetadata = memoryContext.sessionMetadata {
+            messages.append(Message(role: .system, content: sessionMetadata))
+        }
+
+        // [2] User memory facts (persistent)
+        if let userMemory = memoryContext.userMemory {
+            messages.append(Message(role: .system, content: userMemory))
+        }
+
+        // [3] Recent conversations summary (computed)
+        if let summaries = memoryContext.conversationSummaries {
+            messages.append(Message(role: .system, content: summaries))
+        }
+
+        // [4-5] Current conversation history + latest message (existing)
+        messages.append(contentsOf: conversationHistory)
+
+        return messages
+    }
+
+    /// Estimates the token count for messages (rough approximation: 4 chars ≈ 1 token).
+    ///
+    /// - Note: This approximation works reasonably well for English text but significantly
+    ///   underestimates token counts for CJK languages (Chinese, Japanese, Korean) where
+    ///   1-2 characters typically equal 1 token. For production use with multilingual content,
+    ///   consider using a proper tokenizer like tiktoken.
+    static func estimateTokenCount(for messages: [Message]) -> Int {
+        messages.reduce(0) { total, message in
+            total + (message.content.count / 4) + 4 // +4 for role/message overhead
+        }
     }
 }

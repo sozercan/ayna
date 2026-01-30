@@ -413,6 +413,10 @@ struct IOSMultiModelSelector: View {
 
     @ObservedObject private var openAIService = OpenAIService.shared
 
+    private var multiModelEnabled: Bool {
+        AppPreferences.multiModelSelectionEnabled
+    }
+
     /// Determines the capability type of currently selected models (if any)
     private var selectedCapabilityType: OpenAIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
@@ -426,18 +430,24 @@ struct IOSMultiModelSelector: View {
                     modelRow(for: model)
                 }
             } header: {
-                Text("Select up to \(maxSelection) models")
-            } footer: {
-                if selectedCapabilityType == .imageGeneration {
-                    Text("Image generation models selected. Only other image models can be added for comparison.")
-                } else if selectedCapabilityType == .chat {
-                    Text("Text models selected. Only other text models can be added for comparison.")
+                if multiModelEnabled {
+                    Text("Select up to \(maxSelection) models")
                 } else {
-                    Text("Selected models will receive your message simultaneously for comparison.")
+                    Text("Select a model")
+                }
+            } footer: {
+                if multiModelEnabled {
+                    if selectedCapabilityType == .imageGeneration {
+                        Text("Image generation models selected. Only other image models can be added for comparison.")
+                    } else if selectedCapabilityType == .chat {
+                        Text("Text models selected. Only other text models can be added for comparison.")
+                    } else {
+                        Text("Selected models will receive your message simultaneously for comparison.")
+                    }
                 }
             }
         }
-        .navigationTitle("Multi-Model")
+        .navigationTitle(multiModelEnabled ? "Multi-Model" : "Select Model")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -445,12 +455,12 @@ struct IOSMultiModelSelector: View {
         let isModelSelected = selectedModels.contains(model)
         let modelCapability = openAIService.getModelCapability(model)
 
-        // Disable if max reached OR if mixing capability types
+        // Disable if max reached OR if mixing capability types (only in multi-model mode)
         let isCapabilityMismatch: Bool = {
             guard let selectedType = selectedCapabilityType else { return false }
             return modelCapability != selectedType
         }()
-        let isDisabled = !isModelSelected && (selectedModels.count >= maxSelection || isCapabilityMismatch)
+        let isDisabled = multiModelEnabled && !isModelSelected && (selectedModels.count >= maxSelection || isCapabilityMismatch)
 
         return Button {
             toggleModel(model)
@@ -480,6 +490,13 @@ struct IOSMultiModelSelector: View {
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
 
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            selectedModels = [model]
+            return
+        }
+
+        // Multi-select mode
         if selectedModels.contains(model) {
             selectedModels.remove(model)
         } else if selectedModels.count < maxSelection {

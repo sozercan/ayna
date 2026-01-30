@@ -115,7 +115,7 @@ struct ConversationManagerTests {
         }
 
         // Save immediately
-        let saveTask = manager.saveImmediately(manager.conversations.first!)
+        let saveTask = try manager.saveImmediately(#require(manager.conversations.first))
 
         // Wait for the save task to complete
         _ = await saveTask.value

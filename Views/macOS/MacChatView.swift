@@ -100,11 +100,16 @@ struct MacChatView: View {
     @State private var cachedConversationIndex: Int?
     @State private var cachedDisplayableItems: [DisplayableItem] = []
 
-    // Cached font for text height calculation (computed property to avoid lazy initialization issues)
-    private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
-    private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+    /// Cached font for text height calculation (computed property to avoid lazy initialization issues)
+    private var textFont: NSFont {
+        NSFont.systemFont(ofSize: 15)
+    }
 
-    // Cache the current conversation to avoid repeated lookups
+    private var textAttributes: [NSAttributedString.Key: Any] {
+        [.font: textFont]
+    }
+
+    /// Cache the current conversation to avoid repeated lookups
     private var currentConversation: Conversation {
         if let index = getConversationIndex() {
             return conversationManager.conversations[index]
@@ -112,7 +117,7 @@ struct MacChatView: View {
         return conversation
     }
 
-    // Helper to get conversation index with caching
+    /// Helper to get conversation index with caching
     private func getConversationIndex() -> Int? {
         if let cached = cachedConversationIndex,
            cached < conversationManager.conversations.count,
@@ -137,7 +142,7 @@ struct MacChatView: View {
         DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
     }
 
-    // Helper to filter visible messages
+    /// Helper to filter visible messages
     private func updateVisibleMessages() {
         visibleMessages = currentConversation.messages.filter { message in
             // Hide system messages entirely
@@ -614,13 +619,17 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                         .fixedSize()
                         .popover(isPresented: $showModelSelector) {
+                            let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
                             VStack(alignment: .leading, spacing: Spacing.sm) {
-                                Text("Select models")
+                                Text(multiModelEnabled ? "Select models" : "Select model")
                                     .font(Typography.captionBold)
                                     .foregroundStyle(Theme.textSecondary)
-                                Text("1 model = single response, 2+ = compare")
-                                    .font(Typography.footnote)
-                                    .foregroundStyle(Theme.textTertiary)
+                                if multiModelEnabled {
+                                    Text("1 model = single response, 2+ = compare")
+                                        .font(Typography.footnote)
+                                        .foregroundStyle(Theme.textTertiary)
+                                }
                                 Divider()
                                     .padding(.vertical, Spacing.xxs)
 
@@ -637,15 +646,23 @@ struct MacChatView: View {
                                             guard let selectedType = selectedCapabilityType else { return false }
                                             return modelCapability != selectedType
                                         }()
-                                        let isDisabled = !isSelected && isCapabilityMismatch
+                                        // Only check capability mismatch in multi-model mode
+                                        let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
                                         Button(action: {
                                             toggleModelSelection(model)
                                         }) {
                                             HStack {
-                                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-                                                    .font(.system(size: Typography.Size.body))
+                                                // Show checkbox for multi-model, radio for single-model
+                                                if multiModelEnabled {
+                                                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                                        .font(.system(size: Typography.Size.body))
+                                                } else {
+                                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                                        .font(.system(size: Typography.Size.body))
+                                                }
                                                 Text(model)
                                                     .font(Typography.modelName)
                                                 Spacer()
@@ -670,7 +687,7 @@ struct MacChatView: View {
                                     }
                                 }
 
-                                if selectedModels.count > 1 {
+                                if multiModelEnabled, selectedModels.count > 1 {
                                     Divider()
                                         .padding(.vertical, Spacing.xxs)
                                     Button(action: {
@@ -706,7 +723,8 @@ struct MacChatView: View {
                                     Image(systemName: "arrow.up.circle.fill")
                                         .font(.system(size: Typography.IconSize.xl))
                                         .foregroundStyle(
-                                            messageText.isEmpty ? Theme.textSecondary.opacity(0.5) : Theme.accent)
+                                            messageText.isEmpty ? Theme.textSecondary.opacity(0.5) : Theme.accent
+                                        )
                                 }
                             }
                         }
@@ -930,7 +948,8 @@ struct MacChatView: View {
         }
 
         let trimmedConversationModel = currentConversation.model.trimmingCharacters(
-            in: .whitespacesAndNewlines)
+            in: .whitespacesAndNewlines
+        )
         if !trimmedConversationModel.isEmpty {
             return trimmedConversationModel
         }
@@ -989,6 +1008,18 @@ struct MacChatView: View {
     }
 
     private func toggleModelSelection(_ model: String) {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            selectedModels = [model]
+            selectedModel = model
+            conversationManager.updateModel(for: conversation, model: model)
+            updateConversationMultiModelState()
+            return
+        }
+
+        // Multi-select mode
         if selectedModels.contains(model) {
             // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)
@@ -1059,7 +1090,7 @@ struct MacChatView: View {
         }
     }
 
-    // Auto-select response if we are continuing from a multi-model state without selection
+    /// Auto-select response if we are continuing from a multi-model state without selection
     private func autoSelectResponseIfNeeded() {
         guard let lastMessage = currentConversation.messages.last,
               let groupId = lastMessage.responseGroupId,
@@ -1265,6 +1296,11 @@ struct MacChatView: View {
             metadata: ["attachmentCount": "\(attachments.count)"]
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
+
+        // Process memory commands (e.g., "remember that I prefer dark mode")
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+            logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
+        }
 
         let promptText = messageText
         messageText = ""
@@ -1512,7 +1548,7 @@ struct MacChatView: View {
         isGenerating = false
     }
 
-    private func handleImageGenerationError(error: Error, messageId: UUID) {
+    private func handleImageGenerationError(error: Error, messageId _: UUID) {
         isGenerating = false
         errorMessage = ErrorPresenter.userMessage(for: error)
         errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
@@ -2245,7 +2281,7 @@ struct MacChatView: View {
         )
     }
 
-    // Retry the message that came before the specified assistant message
+    /// Retry the message that came before the specified assistant message
     private func retryLastMessage(beforeMessage: Message) {
         guard !isGenerating else { return }
 
@@ -2283,14 +2319,14 @@ struct MacChatView: View {
         resendMessage(userMessage)
     }
 
-    // Switch model and retry
+    /// Switch model and retry
     private func switchModelAndRetry(beforeMessage: Message, newModel: String) {
         // Don't update the global conversation model or selected model
         // Just retry with the specified model for this message only
         retryWithModel(beforeMessage: beforeMessage, model: newModel)
     }
 
-    // Retry with a specific model (without changing conversation's default model)
+    /// Retry with a specific model (without changing conversation's default model)
     private func retryWithModel(beforeMessage: Message, model: String) {
         guard !isGenerating else { return }
 
@@ -2328,7 +2364,7 @@ struct MacChatView: View {
         resendMessageWithModel(userMessage, model: model)
     }
 
-    // Resend a message
+    /// Resend a message
     private func resendMessage(_ message: Message) {
         errorMessage = nil
         isGenerating = true
@@ -2379,7 +2415,7 @@ struct MacChatView: View {
         )
     }
 
-    // Resend a message with a specific model (without changing conversation's default model)
+    /// Resend a message with a specific model (without changing conversation's default model)
     private func resendMessageWithModel(_ message: Message, model: String) {
         errorMessage = nil
         isGenerating = true

@@ -15,6 +15,7 @@ struct IOSSettingsView: View {
     @ObservedObject var tavilyService = TavilyService.shared
     @EnvironmentObject var conversationManager: ConversationManager
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
+    @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
 
     @State private var showingAddSheet = false
     @State private var selectedModelForEditing: String?
@@ -24,6 +25,16 @@ struct IOSSettingsView: View {
             "1 enabled"
         } else {
             "None"
+        }
+    }
+
+    private var memorySummary: String {
+        let provider = MemoryContextProvider.shared
+        if provider.isMemoryEnabled {
+            let factCount = UserMemoryService.shared.activeFacts().count
+            return factCount == 1 ? "1 fact" : "\(factCount) facts"
+        } else {
+            return "Disabled"
         }
     }
 
@@ -41,6 +52,12 @@ struct IOSSettingsView: View {
                         set: { SoundEngine.shared.isEnabled = $0 }
                     ))
                     .accessibilityIdentifier("settings.soundEffects.toggle")
+
+                    Toggle("Multi-Model Selection", isOn: $multiModelSelectionEnabled)
+                        .accessibilityIdentifier("settings.multiModelSelection.toggle")
+                        .onChange(of: multiModelSelectionEnabled) { _, newValue in
+                            AppPreferences.multiModelSelectionEnabled = newValue
+                        }
 
                     NavigationLink("System Prompt") {
                         IOSSystemPromptSettingsView()
@@ -78,6 +95,23 @@ struct IOSSettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings.tools.link")
+                }
+
+                // MARK: - Memory
+
+                Section("Memory") {
+                    NavigationLink {
+                        IOSMemorySettingsView()
+                    } label: {
+                        HStack {
+                            Text("Memory")
+                            Spacer()
+                            Text(memorySummary)
+                                .font(Typography.subheadline)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.memory.link")
                 }
 
                 // MARK: - Models
@@ -327,7 +361,7 @@ struct IOSModelEditView: View {
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
-        self.originalModelName = modelName
+        originalModelName = modelName
         self.isNew = isNew
     }
 
