@@ -4,6 +4,7 @@
 //
 //  New chat view for macOS - handles initial conversation creation and message sending.
 //
+// swiftlint:disable file_length
 
 import Combine
 import OSLog
@@ -40,13 +41,13 @@ private final class CompletionCounter {
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject var openAIService = OpenAIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
     @State private var isComposerFocused = true
     @State private var attachedFiles: [URL] = []
-    @State private var isGenerating = false
-    @State private var currentConversationId: UUID?
+    @State var isGenerating = false
+    @State var currentConversationId: UUID?
     @State private var selectedModel = OpenAIService.shared.selectedModel
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
@@ -54,9 +55,9 @@ struct MacNewChatView: View {
     @State private var selectedModels: Set<String> = []
     @State private var isToolSectionExpanded = false
 
-    @State private var errorMessage: String?
-    @State private var errorRecoverySuggestion: String?
-    @State private var shouldOfferOpenSettings = false
+    @State var errorMessage: String?
+    @State var errorRecoverySuggestion: String?
+    @State var shouldOfferOpenSettings = false
 
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
@@ -802,11 +803,11 @@ struct MacNewChatView: View {
         attachedFiles.removeAll { $0 == fileURL }
     }
 
-    private func logNewChat(_ message: String, level: OSLogType = .default, metadata: [String: String] = [:]) {
+    func logNewChat(_ message: String, level: OSLogType = .default, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
     }
 
-    private func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+    func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
         if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
            let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
            let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId }) {
@@ -814,7 +815,7 @@ struct MacNewChatView: View {
         }
     }
 
-    private func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+    func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
         if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
            var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId) {
             group.updateStatus(for: messageId, status: status)
@@ -822,7 +823,7 @@ struct MacNewChatView: View {
         }
     }
 
-    private func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
+    func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
         var imagePath: String?
         do { imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png") } catch {
             logNewChat("❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
@@ -1578,7 +1579,7 @@ struct MacNewChatView: View {
         )
     }
 
-    private func presentError(_ error: Error) {
+    func presentError(_ error: Error) {
         errorMessage = ErrorPresenter.userMessage(for: error)
         errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
         shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
