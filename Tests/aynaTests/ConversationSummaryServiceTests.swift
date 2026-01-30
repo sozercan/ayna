@@ -47,9 +47,9 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         var conversation = Conversation(title: "Long Chat")
-        for i in 1 ... 10 {
-            conversation.addMessage(Message(role: .user, content: "User message \(i)"))
-            conversation.addMessage(Message(role: .assistant, content: "Response \(i)"))
+        for index in 1 ... 10 {
+            conversation.addMessage(Message(role: .user, content: "User message \(index)"))
+            conversation.addMessage(Message(role: .assistant, content: "Response \(index)"))
         }
 
         let summary = service.generateSummary(for: conversation)
@@ -117,8 +117,8 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         // Add more than max summaries
-        for i in 1 ... (RecentConversationsDigest.defaultMaxSummaries + 5) {
-            let conversation = TestHelpers.sampleConversation(title: "Chat \(i)")
+        for index in 1 ... (RecentConversationsDigest.defaultMaxSummaries + 5) {
+            let conversation = TestHelpers.sampleConversation(title: "Chat \(index)")
             service.updateSummary(for: conversation)
         }
 
@@ -171,8 +171,8 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         // Add several summaries
-        for i in 1 ... 10 {
-            let conversation = TestHelpers.sampleConversation(title: "Conversation with a longer title number \(i)")
+        for index in 1 ... 10 {
+            let conversation = TestHelpers.sampleConversation(title: "Conversation with a longer title number \(index)")
             service.updateSummary(for: conversation)
         }
 
@@ -207,8 +207,8 @@ struct ConversationSummaryServiceTests {
     func backfillSummariesRespectsLimit() {
         let service = ConversationSummaryService()
 
-        let conversations = (1 ... 20).map { i in
-            TestHelpers.sampleConversation(title: "Chat \(i)")
+        let conversations = (1 ... 20).map { index in
+            TestHelpers.sampleConversation(title: "Chat \(index)")
         }
 
         service.backfillSummaries(from: conversations, limit: 5)

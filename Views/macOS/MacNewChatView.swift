@@ -802,12 +802,37 @@ struct MacNewChatView: View {
         attachedFiles.removeAll { $0 == fileURL }
     }
 
-    private func logNewChat(
-        _ message: String,
-        level: OSLogType = .default,
-        metadata: [String: String] = [:]
-    ) {
+    private func logNewChat(_ message: String, level: OSLogType = .default, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
+    }
+
+    private func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId }) {
+            conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
+        }
+    }
+
+    private func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
+        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId) {
+            group.updateStatus(for: messageId, status: status)
+            conversationManager.conversations[ci].updateResponseGroup(group)
+        }
+    }
+
+    private func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
+        var imagePath: String?
+        do { imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png") } catch {
+            logNewChat("❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
+        }
+        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+            message.content = ""
+            if let path = imagePath { message.imagePath = path; message.imageData = nil } else {
+                message.imageData = imageData; message.imagePath = nil
+            }
+        }
     }
 
     // MARK: - Send Message
@@ -1033,32 +1058,8 @@ struct MacNewChatView: View {
             model: model,
             onComplete: { imageData in
                 Task { @MainActor in
-                    // Save image to disk
-                    var imagePath: String?
-                    do {
-                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                    } catch {
-                        logNewChat(
-                            "❌ Failed to save generated image: \(error.localizedDescription)",
-                            level: .error
-                        )
-                    }
-
-                    // Update the placeholder message with actual image using the proper method
-                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = ""
-                        if let path = imagePath {
-                            message.imagePath = path
-                            message.imageData = nil // Don't store raw data if saved to disk
-                        } else {
-                            // Fallback to storing in message if save failed
-                            message.imageData = imageData
-                            message.imagePath = nil
-                        }
-                    }
-
+                    saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
                     isGenerating = false
-                    // Switch to chat view after image generation completes
                     selectedConversationId = conversation.id
                 }
             },
@@ -1143,42 +1144,10 @@ struct MacNewChatView: View {
                 model: model,
                 onComplete: { imageData in
                     Task { @MainActor in
-                        // Save image to disk
-                        var imagePath: String?
-                        do {
-                            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                        } catch {
-                            logNewChat(
-                                "❌ Failed to save generated image: \(error.localizedDescription)",
-                                level: .error
-                            )
-                        }
-
-                        // Update the placeholder message with actual image
-                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                            message.content = ""
-                            if let path = imagePath {
-                                message.imagePath = path
-                                message.imageData = nil
-                            } else {
-                                message.imageData = imageData
-                                message.imagePath = nil
-                            }
-                        }
-
-                        // Update response group status
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
-                        }
-
+                        saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
+                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
                         counter.increment()
-                        if counter.isComplete {
-                            isGenerating = false
-                            selectedConversationId = conversation.id
-                        }
+                        if counter.isComplete { isGenerating = false; selectedConversationId = conversation.id }
                     }
                 },
                 onError: { error in
@@ -1189,13 +1158,7 @@ struct MacNewChatView: View {
                             metadata: ["model": model]
                         )
 
-                        // Update response group status to failed
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
-                        }
+                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
 
                         // Update message with error
                         conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
@@ -1288,21 +1251,8 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIds[model] else { return }
 
-                    // Update response group status
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .completed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
-
-                    logNewChat(
-                        "✅ Model completed in multi-model",
-                        level: .info,
-                        metadata: ["model": model]
-                    )
+                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                    logNewChat("✅ Model completed in multi-model", level: .info, metadata: ["model": model])
                 }
             },
             onAllComplete: {
@@ -1325,21 +1275,8 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIds[model] else { return }
 
-                    // Update response group status to failed
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .failed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
-
-                    logNewChat(
-                        "❌ Model failed in multi-model",
-                        level: .error,
-                        metadata: ["model": model, "error": error.localizedDescription]
-                    )
+                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                    logNewChat("❌ Model failed in multi-model", level: .error, metadata: ["model": model, "error": error.localizedDescription])
 
                     if errorMessage == nil {
                         let safeMessage = ErrorPresenter.userMessage(for: error)
