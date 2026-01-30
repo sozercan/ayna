@@ -19,7 +19,7 @@ final class MemoryContextProvider {
     private let summaryService: ConversationSummaryService
 
     /// Task for loading memory data (tracked to avoid fire-and-forget)
-    private var loadTask: Task<Void, Never>?
+    private nonisolated(unsafe) var loadTask: Task<Void, Never>?
 
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
@@ -67,8 +67,12 @@ final class MemoryContextProvider {
         ])
 
         // Load stored values
-        self.isMemoryEnabled = AppPreferences.storage.bool(forKey: "memoryEnabled")
-        self.isAutoExtractionEnabled = AppPreferences.storage.bool(forKey: "memoryAutoExtraction")
+        isMemoryEnabled = AppPreferences.storage.bool(forKey: "memoryEnabled")
+        isAutoExtractionEnabled = AppPreferences.storage.bool(forKey: "memoryAutoExtraction")
+    }
+
+    deinit {
+        loadTask?.cancel()
     }
 
     /// Loads all memory data from storage.
@@ -188,10 +192,17 @@ final class MemoryContextProvider {
 
     // MARK: - Accessors
 
-    var memoryFactCount: Int { memoryService.activeFacts().count }
-    var summaryCount: Int { summaryService.summaryCount }
+    var memoryFactCount: Int {
+        memoryService.activeFacts().count
+    }
 
-    var memorySummary: String { memoryService.memorySummary }
+    var summaryCount: Int {
+        summaryService.summaryCount
+    }
+
+    var memorySummary: String {
+        memoryService.memorySummary
+    }
 }
 
 /// Container for memory context to inject into AI requests.
@@ -228,5 +239,5 @@ struct MemoryContext: Sendable {
     }
 }
 
-// Make ContextAllocation Sendable
+/// Make ContextAllocation Sendable
 extension MemoryContextProvider.ContextAllocation: Sendable {}

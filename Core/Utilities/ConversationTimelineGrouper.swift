@@ -4,7 +4,9 @@ struct ConversationTimelineSection: Identifiable, Equatable {
     let title: String
     var conversations: [Conversation]
 
-    var id: String { title }
+    var id: String {
+        title
+    }
 }
 
 enum ConversationTimelineGrouper {

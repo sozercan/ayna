@@ -731,16 +731,16 @@ final class ConversationManager: ObservableObject {
 
     private func generateTitle(for conversation: Conversation) {
         guard let firstMessage = conversation.messages.first(where: { $0.role == .user }) else {
-      return
-    }
+            return
+        }
 
-    // Skip AI title generation for image generation models - use fallback instead
-    let modelCapability = OpenAIService.shared.getModelCapability(conversation.model)
-    if modelCapability == .imageGeneration {
-      // Use simple fallback title for image generation conversations
-      let content = firstMessage.content
-      let fallbackTitle = String(content.prefix(50))
-      renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
+        // Skip AI title generation for image generation models - use fallback instead
+        let modelCapability = OpenAIService.shared.getModelCapability(conversation.model)
+        if modelCapability == .imageGeneration {
+            // Use simple fallback title for image generation conversations
+            let content = firstMessage.content
+            let fallbackTitle = String(content.prefix(50))
+            renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
             return
         }
 
@@ -966,7 +966,7 @@ final class ConversationManager: ObservableObject {
                     }
             }
         #else
-            // Use Core Spotlight for high-performance search
+            /// Use Core Spotlight for high-performance search
             let escapedQuery = query.replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             let queryString = "textContent == \"*\(escapedQuery)*\"c"
@@ -1016,7 +1016,7 @@ final class ConversationManager: ObservableObject {
     }
 }
 
-// Helper actor for thread-safe title generation
+/// Helper actor for thread-safe title generation
 private actor TitleAccumulator {
     var title = ""
 

@@ -35,12 +35,12 @@ final class KeychainStorage: Sendable {
     nonisolated static let shared = KeychainStorage()
 
     private let serviceIdentifier = "com.sertacozercan.ayna"
-    // Note: Shared keychain access groups require a paid developer account.
-    // For free accounts, each app uses its own keychain and syncs via WatchConnectivity.
-    // Uncomment below if using a paid account with App Groups capability:
-    // #if os(iOS) || os(watchOS)
-    // private let accessGroup = "group.com.sertacozercan.ayna"
-    // #endif
+    /// Note: Shared keychain access groups require a paid developer account.
+    /// For free accounts, each app uses its own keychain and syncs via WatchConnectivity.
+    /// Uncomment below if using a paid account with App Groups capability:
+    /// #if os(iOS) || os(watchOS)
+    /// private let accessGroup = "group.com.sertacozercan.ayna"
+    /// #endif
     private init() {}
 
     private nonisolated func log(
@@ -128,7 +128,7 @@ final class KeychainStorage: Sendable {
     }
 
     private nonisolated func baseQuery(for key: String) -> [String: Any] {
-        let query: [String: Any] = [
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key
@@ -140,7 +140,6 @@ final class KeychainStorage: Sendable {
         // #if os(iOS) || os(watchOS)
         // query[kSecAttrAccessGroup as String] = accessGroup
         // #endif
-        return query
     }
 }
 

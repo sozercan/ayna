@@ -5,10 +5,9 @@
 //  Created on 1/29/26.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("ConversationSummaryService Tests")
 @MainActor
@@ -48,7 +47,7 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         var conversation = Conversation(title: "Long Chat")
-        for i in 1...10 {
+        for i in 1 ... 10 {
             conversation.addMessage(Message(role: .user, content: "User message \(i)"))
             conversation.addMessage(Message(role: .assistant, content: "Response \(i)"))
         }
@@ -118,7 +117,7 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         // Add more than max summaries
-        for i in 1...(RecentConversationsDigest.defaultMaxSummaries + 5) {
+        for i in 1 ... (RecentConversationsDigest.defaultMaxSummaries + 5) {
             let conversation = TestHelpers.sampleConversation(title: "Chat \(i)")
             service.updateSummary(for: conversation)
         }
@@ -172,7 +171,7 @@ struct ConversationSummaryServiceTests {
         let service = ConversationSummaryService()
 
         // Add several summaries
-        for i in 1...10 {
+        for i in 1 ... 10 {
             let conversation = TestHelpers.sampleConversation(title: "Conversation with a longer title number \(i)")
             service.updateSummary(for: conversation)
         }
@@ -208,7 +207,7 @@ struct ConversationSummaryServiceTests {
     func backfillSummariesRespectsLimit() {
         let service = ConversationSummaryService()
 
-        let conversations = (1...20).map { i in
+        let conversations = (1 ... 20).map { i in
             TestHelpers.sampleConversation(title: "Chat \(i)")
         }
 
@@ -270,10 +269,10 @@ struct RecentConversationsDigestTests {
     }
 
     @Test("Prune older removes old summaries")
-    func pruneOlderRemovesOldSummaries() {
+    func pruneOlderRemovesOldSummaries() throws {
         var digest = RecentConversationsDigest()
 
-        let oldDate = Calendar.current.date(byAdding: .day, value: -10, to: Date())!
+        let oldDate = try #require(Calendar.current.date(byAdding: .day, value: -10, to: Date()))
         let oldSummary = ConversationSummary(id: UUID(), title: "Old", timestamp: oldDate)
         let newSummary = ConversationSummary(id: UUID(), title: "New", timestamp: Date())
 

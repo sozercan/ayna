@@ -195,7 +195,6 @@ struct IOSNewChatView: View {
         }
     }
 
-    @ViewBuilder
     private var chatInterface: some View {
         VStack(spacing: 0) {
             if let conversation = pendingConversation {
@@ -374,7 +373,6 @@ struct IOSNewChatView: View {
 
     // MARK: - Onboarding View
 
-    @ViewBuilder
     private var onboardingView: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -417,7 +415,6 @@ struct IOSNewChatView: View {
 
     // MARK: - Welcome View
 
-    @ViewBuilder
     private var welcomeView: some View {
         VStack(spacing: 24) {
             Spacer()

@@ -106,23 +106,33 @@ public enum Motion {
 
     /// Standard opacity transition
     @MainActor
-    public static var fadeTransition: AnyTransition { AnyTransition.opacity }
+    public static var fadeTransition: AnyTransition {
+        AnyTransition.opacity
+    }
 
     /// Scale + fade for popovers
     @MainActor
-    public static var scaleTransition: AnyTransition { AnyTransition.opacity.combined(with: .scale(scale: 0.95)) }
+    public static var scaleTransition: AnyTransition {
+        AnyTransition.opacity.combined(with: .scale(scale: 0.95))
+    }
 
     /// Slide from bottom (sheets)
     @MainActor
-    public static var slideUpTransition: AnyTransition { AnyTransition.move(edge: .bottom).combined(with: .opacity) }
+    public static var slideUpTransition: AnyTransition {
+        AnyTransition.move(edge: .bottom).combined(with: .opacity)
+    }
 
     /// Slide from top (notifications)
     @MainActor
-    public static var slideDownTransition: AnyTransition { AnyTransition.move(edge: .top).combined(with: .opacity) }
+    public static var slideDownTransition: AnyTransition {
+        AnyTransition.move(edge: .top).combined(with: .opacity)
+    }
 
     /// Message appearance transition
     @MainActor
-    public static var messageTransition: AnyTransition { AnyTransition.opacity.combined(with: .scale(scale: 0.98)) }
+    public static var messageTransition: AnyTransition {
+        AnyTransition.opacity.combined(with: .scale(scale: 0.98))
+    }
 }
 
 // MARK: - View Modifiers

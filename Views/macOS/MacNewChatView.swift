@@ -62,11 +62,16 @@ struct MacNewChatView: View {
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
 
-    // Cached font for text height calculation (computed property to avoid lazy initialization issues)
-    private var textFont: NSFont { NSFont.systemFont(ofSize: 15) }
-    private var textAttributes: [NSAttributedString.Key: Any] { [.font: textFont] }
+    /// Cached font for text height calculation (computed property to avoid lazy initialization issues)
+    private var textFont: NSFont {
+        NSFont.systemFont(ofSize: 15)
+    }
 
-    // Get the current conversation being created
+    private var textAttributes: [NSAttributedString.Key: Any] {
+        [.font: textFont]
+    }
+
+    /// Get the current conversation being created
     private var currentConversation: Conversation? {
         guard let id = currentConversationId else { return nil }
         return conversationManager.conversations.first(where: { $0.id == id })
@@ -95,7 +100,7 @@ struct MacNewChatView: View {
         }
     }
 
-    // Get visible messages (filtering out system and tool messages)
+    /// Get visible messages (filtering out system and tool messages)
     private var visibleMessages: [Message] {
         guard let conversation = currentConversation else { return [] }
         return conversation.messages.filter { message in
@@ -173,7 +178,8 @@ struct MacNewChatView: View {
         }
 
         if let conversationModel = currentConversation?.model.trimmingCharacters(
-            in: .whitespacesAndNewlines),
+            in: .whitespacesAndNewlines
+        ),
             !conversationModel.isEmpty
         {
             return conversationModel
@@ -332,7 +338,6 @@ struct MacNewChatView: View {
 
     // MARK: - Input Area
 
-    @ViewBuilder
     private var inputArea: some View {
         VStack(spacing: 8) {
             MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
@@ -355,7 +360,6 @@ struct MacNewChatView: View {
         .background(.ultraThinMaterial)
     }
 
-    @ViewBuilder
     private var attachedFilesPreview: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -407,7 +411,6 @@ struct MacNewChatView: View {
         }
     }
 
-    @ViewBuilder
     private func attachedAppContentPreview(_ appContent: AppContent) -> some View {
         HStack(spacing: 8) {
             // App icon
@@ -463,7 +466,6 @@ struct MacNewChatView: View {
         .padding(.horizontal, 24)
     }
 
-    @ViewBuilder
     private var composerRow: some View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
@@ -523,7 +525,6 @@ struct MacNewChatView: View {
         .padding(.horizontal, 24)
     }
 
-    @ViewBuilder
     private var modelSelectorButton: some View {
         Button(action: { showModelSelector.toggle() }) {
             HStack(spacing: 4) {
@@ -642,7 +643,7 @@ struct MacNewChatView: View {
                 }
             }
 
-            if multiModelEnabled && selectedModels.count > 1 {
+            if multiModelEnabled, selectedModels.count > 1 {
                 Divider()
                     .padding(.vertical, 4)
                 Button(action: {
@@ -666,7 +667,6 @@ struct MacNewChatView: View {
         .frame(minWidth: 220)
     }
 
-    @ViewBuilder
     private var sendButton: some View {
         Button(action: sendMessage) {
             ZStack {
@@ -734,7 +734,8 @@ struct MacNewChatView: View {
 
     private func syncSelectedModelState() {
         if let conversationModel = currentConversation?.model.trimmingCharacters(
-            in: .whitespacesAndNewlines),
+            in: .whitespacesAndNewlines
+        ),
             !conversationModel.isEmpty
         {
             selectedModel = conversationModel

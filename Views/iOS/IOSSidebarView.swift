@@ -85,7 +85,6 @@ struct IOSSidebarView: View {
 
     // MARK: - Empty State View
 
-    @ViewBuilder
     private var emptyStateView: some View {
         VStack(spacing: Spacing.xxl) {
             Spacer()
@@ -134,7 +133,6 @@ struct IOSSidebarView: View {
 
     // MARK: - Conversation List View
 
-    @ViewBuilder
     private var conversationListView: some View {
         List(selection: $conversationManager.selectedConversationId) {
             ForEach(groupedConversations) { section in
@@ -191,7 +189,6 @@ struct IOSSidebarView: View {
         }
     }
 
-    @ViewBuilder
     private func conversationRowContent(for conversation: Conversation) -> some View {
         HStack {
             if isEditing {

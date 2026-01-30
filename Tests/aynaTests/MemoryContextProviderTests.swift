@@ -5,10 +5,9 @@
 //  Created on 1/29/26.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("MemoryContextProvider Tests")
 @MainActor

@@ -148,8 +148,8 @@ enum MemoryCommandPattern {
     static func detect(in message: String) -> CommandType {
         let lowercased = message.lowercased()
 
-        // Check store patterns
-        for pattern in storePatterns where lowercased.contains(pattern) {
+        // Check store patterns (using word boundaries to avoid false positives)
+        for pattern in storePatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
             let content = extractContent(from: message, after: pattern)
             if !content.isEmpty {
                 return .store(content: content)
@@ -157,7 +157,7 @@ enum MemoryCommandPattern {
         }
 
         // Check remove patterns
-        for pattern in removePatterns where lowercased.contains(pattern) {
+        for pattern in removePatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
             let content = extractContent(from: message, after: pattern)
             if !content.isEmpty {
                 return .remove(content: content)
@@ -165,16 +165,30 @@ enum MemoryCommandPattern {
         }
 
         // Check query patterns
-        for pattern in queryPatterns where lowercased.contains(pattern) {
+        for pattern in queryPatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
             return .query
         }
 
         // Check clear patterns
-        for pattern in clearPatterns where lowercased.contains(pattern) {
+        for pattern in clearPatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
             return .clearAll
         }
 
         return .none
+    }
+
+    /// Checks if pattern matches with word boundaries to avoid false positives.
+    /// e.g., "remember that" matches "Remember that I like tea" but not "I can't remember that password"
+    private static func matchesWithWordBoundary(_ text: String, pattern: String) -> Bool {
+        // For patterns that should match at the start of a sentence or after common prefixes
+        // We check: start of string, after punctuation, or after "please"
+        let regexPattern = "(^|[.!?]\\s*|please\\s+)\(NSRegularExpression.escapedPattern(for: pattern))"
+        guard let regex = try? NSRegularExpression(pattern: regexPattern, options: .caseInsensitive) else {
+            // Fallback to simple contains if regex fails
+            return text.contains(pattern)
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, range: range) != nil
     }
 
     /// Extracts content following a pattern in the message.

@@ -5,7 +5,7 @@ import Testing
 
 // MARK: - CustomTestStringConvertible Extensions
 
-// Provides better test failure diagnostics per Swift Testing Playbook Section 10
+/// Provides better test failure diagnostics per Swift Testing Playbook Section 10
 extension Conversation: @retroactive CustomTestStringConvertible {
     public var testDescription: String {
         "Conversation(\(id.uuidString.prefix(8))..., title: \"\(title)\", messages: \(messages.count), model: \(model))"

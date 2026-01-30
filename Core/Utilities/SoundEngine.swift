@@ -44,7 +44,7 @@ public final class SoundEngine {
     /// Audio players for custom sounds (cached for performance)
     private var players: [Sound: AVAudioPlayer] = [:]
 
-    /// System sound IDs for iOS system sounds
+    // System sound IDs for iOS system sounds
     #if os(iOS)
         private var systemSoundIDs: [Sound: SystemSoundID] = [:]
     #endif

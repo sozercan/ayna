@@ -212,7 +212,6 @@ struct MultiModelResponseCard: View {
             .accessibilityIdentifier("multimodel.response.\(message.id.uuidString)")
     }
 
-    @ViewBuilder
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
@@ -223,13 +222,11 @@ struct MultiModelResponseCard: View {
         }
     }
 
-    @ViewBuilder
     private var cardBorder: some View {
         RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
             .strokeBorder(borderColor, lineWidth: isSelected ? Spacing.Border.thick : Spacing.Border.standard)
     }
 
-    @ViewBuilder
     private var headerView: some View {
         HStack {
             Text(modelName)
@@ -269,7 +266,6 @@ struct MultiModelResponseCard: View {
         }
     }
 
-    @ViewBuilder
     private var contentScrollView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -327,7 +323,6 @@ struct MultiModelResponseCard: View {
         .frame(minHeight: 120, maxHeight: 300)
     }
 
-    @ViewBuilder
     private var failedContentView: some View {
         VStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle")

@@ -59,7 +59,9 @@ struct SessionMetadata: Codable, Sendable {
         case iOS
         case watchOS
 
-        var displayName: String { rawValue }
+        var displayName: String {
+            rawValue
+        }
     }
 
     /// Patterns derived from the user's conversation history

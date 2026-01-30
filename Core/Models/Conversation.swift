@@ -81,7 +81,7 @@ struct Conversation: Identifiable, Equatable {
     var activeModels: [String] // Models selected for parallel queries
     var responseGroups: [ResponseGroup] // Track all response groups
 
-    // Deep link support - transient, not persisted
+    /// Deep link support - transient, not persisted
     /// When set, the chat view should auto-send this prompt on load
     var pendingAutoSendPrompt: String?
 

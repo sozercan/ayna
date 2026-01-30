@@ -135,19 +135,19 @@
     @Suite("GlobalHotkeyError Tests")
     struct GlobalHotkeyErrorTests {
         @Test("Event handler install failed description")
-        func eventHandlerInstallFailedDescription() {
+        func eventHandlerInstallFailedDescription() throws {
             let error = GlobalHotkeyError.eventHandlerInstallFailed(status: -1)
 
             #expect(error.errorDescription != nil)
-            #expect(error.errorDescription!.contains("event handler"))
+            #expect(try #require(error.errorDescription?.contains("event handler")))
         }
 
         @Test("Registration failed description")
-        func registrationFailedDescription() {
+        func registrationFailedDescription() throws {
             let error = GlobalHotkeyError.registrationFailed(status: -1)
 
             #expect(error.errorDescription != nil)
-            #expect(error.errorDescription!.contains("register"))
+            #expect(try #require(error.errorDescription?.contains("register")))
         }
     }
 #endif

@@ -223,7 +223,6 @@ struct IOSMessageComposer: View {
         .background(composerBarBackground)
     }
 
-    @ViewBuilder
     private func attachmentChip(for url: URL) -> some View {
         HStack(spacing: Spacing.xxs) {
             Image(systemName: "doc.fill")
@@ -246,7 +245,6 @@ struct IOSMessageComposer: View {
         .accessibilityIdentifier("\(identifierPrefix).attachment.\(url.lastPathComponent)")
     }
 
-    @ViewBuilder
     private func imageAttachmentChip(for image: UIImage, at index: Int) -> some View {
         HStack(spacing: Spacing.xxs) {
             Image(uiImage: image)

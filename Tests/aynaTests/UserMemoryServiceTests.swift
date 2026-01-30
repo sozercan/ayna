@@ -5,10 +5,9 @@
 //  Created on 12/25/25.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("UserMemoryService Tests")
 @MainActor
@@ -276,6 +275,52 @@ struct MemoryCommandPatternTests {
             // Success
         } else {
             Issue.record("Expected none command")
+        }
+    }
+
+    @Test("Avoid false positive for 'I can't remember that'")
+    func avoidFalsePositiveForCantRemember() {
+        // This should NOT trigger a store command
+        let command = MemoryCommandPattern.detect(in: "I can't remember that password")
+
+        if case .none = command {
+            // Success - correctly avoided false positive
+        } else {
+            Issue.record("Expected none command, but got \(command)")
+        }
+    }
+
+    @Test("Avoid false positive when 'remember that' is mid-sentence")
+    func avoidFalsePositiveForMidSentenceRemember() {
+        // This should NOT trigger a store command
+        let command = MemoryCommandPattern.detect(in: "Do you remember that meeting we had?")
+
+        if case .none = command {
+            // Success - correctly avoided false positive
+        } else {
+            Issue.record("Expected none command, but got \(command)")
+        }
+    }
+
+    @Test("Still detect valid store command at start")
+    func stillDetectValidStoreCommandAtStart() {
+        let command = MemoryCommandPattern.detect(in: "Remember that I like coffee")
+
+        if case let .store(content) = command {
+            #expect(content.lowercased().contains("coffee"))
+        } else {
+            Issue.record("Expected store command")
+        }
+    }
+
+    @Test("Detect store command after 'please'")
+    func detectStoreCommandAfterPlease() {
+        let command = MemoryCommandPattern.detect(in: "Please remember that I prefer dark mode")
+
+        if case let .store(content) = command {
+            #expect(content.lowercased().contains("dark mode"))
+        } else {
+            Issue.record("Expected store command")
         }
     }
 }

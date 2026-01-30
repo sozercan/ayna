@@ -190,7 +190,7 @@ private enum WatchMessageKeys {
                     let facts = UserMemoryService.shared.activeFacts()
                     if !facts.isEmpty, let factsData = try? JSONEncoder().encode(facts) {
                         // Only include facts if we have room (leave headroom for other context)
-                        if factsData.count < 15_000 {
+                        if factsData.count < 15000 {
                             context[WatchContextKeys.memoryFacts] = factsData
                         } else {
                             DiagnosticsLogger.log(

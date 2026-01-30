@@ -18,6 +18,7 @@ private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 struct AynaIOSApp: App {
     @StateObject private var conversationManager: ConversationManager
     @StateObject private var openAIService = OpenAIService.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Register defaults and configure UI test environment if needed
@@ -66,6 +67,14 @@ struct AynaIOSApp: App {
                     // Skip WatchConnectivity setup during UI tests
                     guard !UITestEnvironment.isEnabled else { return }
                     await setupWatchConnectivity()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .background {
+                        // Save memory data when app goes to background
+                        Task { @MainActor in
+                            await MemoryContextProvider.shared.saveAll()
+                        }
+                    }
                 }
         }
     }

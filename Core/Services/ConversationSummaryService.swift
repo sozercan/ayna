@@ -19,12 +19,12 @@ final class ConversationSummaryService {
     private(set) var isLoaded = false
 
     private let store: EncryptedMemoryStore
-    private var saveTask: Task<Void, Never>?
+    private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .seconds(2)
 
     /// Conversations pending summarization (debounced)
     private var pendingSummarization: Set<UUID> = []
-    private var summarizationTask: Task<Void, Never>?
+    private nonisolated(unsafe) var summarizationTask: Task<Void, Never>?
     private let summarizationDebounce: Duration = .seconds(300) // 5 minutes
 
     /// Token budget for summaries context (approximate)
@@ -32,6 +32,11 @@ final class ConversationSummaryService {
 
     init(store: EncryptedMemoryStore = .shared) {
         self.store = store
+    }
+
+    deinit {
+        saveTask?.cancel()
+        summarizationTask?.cancel()
     }
 
     // MARK: - Loading
@@ -221,7 +226,9 @@ final class ConversationSummaryService {
     }
 
     /// Returns the number of stored summaries.
-    var summaryCount: Int { digest.summaries.count }
+    var summaryCount: Int {
+        digest.summaries.count
+    }
 
     // MARK: - Persistence
 

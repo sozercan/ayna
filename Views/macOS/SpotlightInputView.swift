@@ -103,7 +103,6 @@
 
         // MARK: - Input Field
 
-        @ViewBuilder
         private var inputField: some View {
             HStack(spacing: Spacing.sm) {
                 // Search icon
@@ -166,7 +165,6 @@
 
         // MARK: - Attach Button
 
-        @ViewBuilder
         private var attachButton: some View {
             Button {
                 // Check/prompt for accessibility permission when user clicks attach
@@ -203,7 +201,6 @@
 
         // MARK: - Window Picker
 
-        @ViewBuilder
         private var windowPicker: some View {
             VStack(spacing: 0) {
                 // Header
@@ -250,7 +247,6 @@
             }
         }
 
-        @ViewBuilder
         private func appGroupRow(_ group: AccessibilityService.AppWindowGroup) -> some View {
             VStack(spacing: 0) {
                 // App header row
@@ -309,7 +305,6 @@
             }
         }
 
-        @ViewBuilder
         private func windowRow(_ window: AccessibilityService.WindowInfo) -> some View {
             Button {
                 selectWindow(window)
@@ -349,7 +344,6 @@
             )
         }
 
-        @ViewBuilder
         private var emptyWindowsView: some View {
             VStack(spacing: Spacing.sm) {
                 if !hasAccessibilityPermission {

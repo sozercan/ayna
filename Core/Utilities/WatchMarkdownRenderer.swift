@@ -21,8 +21,7 @@
             do {
                 var options = AttributedString.MarkdownParsingOptions()
                 options.interpretedSyntax = .inlineOnlyPreservingWhitespace
-                let attributed = try AttributedString(markdown: text, options: options)
-                return attributed
+                return try AttributedString(markdown: text, options: options)
             } catch {
                 // Fall back to plain text
                 return AttributedString(text)

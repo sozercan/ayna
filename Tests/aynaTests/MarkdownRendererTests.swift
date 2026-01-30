@@ -1,6 +1,5 @@
-import Testing
-
 @testable import Ayna
+import Testing
 
 @Suite("MarkdownRenderer Tests", .tags(.fast))
 struct MarkdownRendererTests {

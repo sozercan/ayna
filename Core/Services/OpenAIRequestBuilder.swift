@@ -131,8 +131,8 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
         #if !os(watchOS)
-            // Build a set of valid tool_call_ids that have matching tool responses
-            // First, collect all tool messages and their tool_call_ids
+            /// Build a set of valid tool_call_ids that have matching tool responses
+            /// First, collect all tool messages and their tool_call_ids
             var toolResponseIds = Set<String>()
             for message in messages {
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
@@ -140,10 +140,10 @@ enum OpenAIRequestBuilder {
                 }
             }
 
-            // Now filter messages:
-            // 1. Keep all non-tool, non-assistant messages
-            // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
-            // 3. For tool messages, only keep if preceding assistant has the matching tool_call
+            /// Now filter messages:
+            /// 1. Keep all non-tool, non-assistant messages
+            /// 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
+            /// 3. For tool messages, only keep if preceding assistant has the matching tool_call
             var filteredMessages: [Message] = []
             for (index, message) in messages.enumerated() {
                 if message.role == .tool {

@@ -64,7 +64,7 @@
         // MARK: - Permission Tests
 
         @Test("Extract content returns valid result")
-        func extractContentReturnsValidResult() async throws {
+        func extractContentReturnsValidResult() async {
             // This test will vary based on whether accessibility is enabled
             // We just verify it doesn't crash
             guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Finder" }) else {

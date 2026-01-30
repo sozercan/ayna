@@ -527,7 +527,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
     }
 
-    // Helper method to send messages with tool call support
+    /// Helper method to send messages with tool call support
     private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String,

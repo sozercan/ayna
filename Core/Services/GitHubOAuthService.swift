@@ -55,7 +55,9 @@ struct GitHubRateLimitInfo {
     }
 
     /// Whether rate limit is exhausted
-    var isExhausted: Bool { remaining == 0 }
+    var isExhausted: Bool {
+        remaining == 0
+    }
 
     /// Human-readable reset time
     var formattedReset: String {
@@ -218,8 +220,8 @@ class GitHubOAuthService: NSObject, ObservableObject {
     // Refresh deduplication - prevents multiple concurrent refresh attempts
     private var refreshTask: Task<String, Error>?
     private let callbackScheme = "ayna"
-    // GitHub Models inference requires 'models:read' scope per docs:
-    // https://docs.github.com/en/rest/models/inference
+    /// GitHub Models inference requires 'models:read' scope per docs:
+    /// https://docs.github.com/en/rest/models/inference
     private let scope = "user:email read:user models:read"
 
     // Published State
@@ -233,7 +235,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
     @Published var modelsError: String?
     @Published var tokenExpiresAt: Date?
 
-    // Rate Limit State
+    /// Rate Limit State
     /// Current rate limit info (updated on every GitHub Models API response)
     @Published var rateLimitInfo: GitHubRateLimitInfo?
     /// Retry-After date from a rate limit error (nil if not rate-limited)
@@ -1143,7 +1145,6 @@ struct GitHubModel: Codable, Identifiable {
             }
         }
 
-        @ViewBuilder
         private func warningBanner(icon: String, message: String, color: Color) -> some View {
             HStack(spacing: 8) {
                 Image(systemName: icon)

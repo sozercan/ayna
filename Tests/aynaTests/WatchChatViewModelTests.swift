@@ -28,7 +28,7 @@ struct WatchChatViewModelIntegrationTests {
     // MARK: - Tool Integration Tests
 
     @Test("OpenAI service includes Tavily tool when configured")
-    func openAIServiceIncludesTavilyToolWhenConfigured() async throws {
+    func openAIServiceIncludesTavilyToolWhenConfigured() {
         // Configure TavilyService with a test API key
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = "tvly-test-key"

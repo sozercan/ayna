@@ -5,10 +5,9 @@
 //  Unit tests for AynaError and ErrorPresenter.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 // MARK: - CustomTestStringConvertible Extension for Better Diagnostics
 
@@ -40,7 +39,9 @@ private struct ErrorDescriptionCase: Sendable {
     let expectedContains: String
     let hasRecoverySuggestion: Bool
 
-    var label: String { expectedContains }
+    var label: String {
+        expectedContains
+    }
 }
 
 /// Test case for URLError wrapping
@@ -159,7 +160,7 @@ struct AynaErrorTests {
     // MARK: - HTTP Response Conversion Tests
 
     @Test("HTTP response 401 returns invalid API key error")
-    func fromHTTPResponse401() throws {
+    func fromHTTPResponse401() {
         let error = AynaError.fromHTTPResponse(statusCode: 401, data: nil)
 
         guard case let .invalidAPIKey(provider) = error else {
@@ -180,7 +181,7 @@ struct AynaErrorTests {
     }
 
     @Test("HTTP response 500 with JSON error parses message")
-    func fromHTTPResponse500WithJSONError() throws {
+    func fromHTTPResponse500WithJSONError() {
         let json = Data("""
         {"error": {"message": "Internal server error"}}
         """.utf8)

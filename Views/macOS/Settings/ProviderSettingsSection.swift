@@ -207,7 +207,6 @@ struct AppleIntelligenceConfigurationSection: View {
         .padding(.horizontal)
     }
 
-    @ViewBuilder
     private var configurationContent: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             if #available(macOS 26.0, *) {

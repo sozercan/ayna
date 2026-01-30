@@ -8,7 +8,7 @@ import Testing
     @MainActor
     struct ConversationExporterIOSTests {
         @Test("Generate PDF for iOS")
-        func generatePDFiOS() async throws {
+        func generatePDFiOS() {
             // Create a dummy conversation
             let message = Message(role: .user, content: "Hello iOS PDF")
             let conversation = Conversation(

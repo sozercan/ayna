@@ -361,7 +361,7 @@ struct IOSModelEditView: View {
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
-        self.originalModelName = modelName
+        originalModelName = modelName
         self.isNew = isNew
     }
 
