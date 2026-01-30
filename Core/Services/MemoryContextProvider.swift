@@ -18,13 +18,17 @@ final class MemoryContextProvider {
     private let metadataService: SessionMetadataService
     private let summaryService: ConversationSummaryService
 
+    /// Task for loading memory data (tracked to avoid fire-and-forget)
+    private var loadTask: Task<Void, Never>?
+
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
         didSet {
             AppPreferences.storage.set(isMemoryEnabled, forKey: "memoryEnabled")
             if isMemoryEnabled, !memoryService.isLoaded {
-                Task {
-                    await loadAll()
+                loadTask?.cancel()
+                loadTask = Task { [weak self] in
+                    await self?.loadAll()
                 }
             }
         }

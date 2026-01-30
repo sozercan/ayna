@@ -11,6 +11,7 @@ import SwiftUI
 /// Service for collecting and formatting session metadata.
 /// Metadata is ephemeral and generated fresh each session.
 @MainActor
+@Observable
 final class SessionMetadataService {
     static let shared = SessionMetadataService()
 

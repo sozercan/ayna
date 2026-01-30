@@ -174,6 +174,7 @@ final class ConversationManager: ObservableObject {
         Task {
             do {
                 try await persistenceCoordinator.delete(conversationId)
+                MemoryContextProvider.shared.removeConversationSummary(for: conversationId)
                 await loadConversations()
                 if selectedConversationId == conversationId {
                     selectedConversationId = nil
@@ -375,6 +376,7 @@ final class ConversationManager: ObservableObject {
             let id = conversation.id
             conversations.remove(at: index)
             updateCacheForRemoval(id: id, at: index)
+            MemoryContextProvider.shared.removeConversationSummary(for: id)
             Task {
                 try? await store.delete(id)
                 #if !os(watchOS)

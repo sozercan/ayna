@@ -19,7 +19,7 @@ final class UserMemoryService {
     private(set) var isLoaded = false
 
     private let store: EncryptedMemoryStore
-    private nonisolated(unsafe) var saveTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .milliseconds(500)
 
     /// Maximum number of facts to store
@@ -30,10 +30,6 @@ final class UserMemoryService {
 
     init(store: EncryptedMemoryStore = .shared) {
         self.store = store
-    }
-
-    deinit {
-        saveTask?.cancel()
     }
 
     // MARK: - Loading
@@ -61,6 +57,21 @@ final class UserMemoryService {
             facts = []
             isLoaded = true
         }
+    }
+
+    /// Loads facts received from iOS sync (watchOS only).
+    /// Replaces local facts with synced facts and persists to disk.
+    func loadFactsFromSync(_ syncedFacts: [UserMemoryFact]) {
+        facts = syncedFacts
+        isLoaded = true
+        scheduleSave() // Persist to disk for offline access
+
+        DiagnosticsLogger.log(
+            .conversationManager,
+            level: .info,
+            message: "✅ Loaded user memory from sync",
+            metadata: ["factCount": "\(facts.count)"]
+        )
     }
 
     // MARK: - CRUD Operations

@@ -10,10 +10,10 @@ import SwiftUI
 /// iOS Memory Settings View.
 /// Allows users to manage memory facts, view summaries, and configure memory options.
 struct IOSMemorySettingsView: View {
-    private var memoryService = UserMemoryService.shared
-    private var summaryService = ConversationSummaryService.shared
-    private var memoryProvider = MemoryContextProvider.shared
-    private var metadataService = SessionMetadataService.shared
+    @Bindable private var memoryService = UserMemoryService.shared
+    @Bindable private var summaryService = ConversationSummaryService.shared
+    @Bindable private var memoryProvider = MemoryContextProvider.shared
+    @Bindable private var metadataService = SessionMetadataService.shared
 
     @State private var showClearConfirmation = false
     @State private var showFactEditor = false
