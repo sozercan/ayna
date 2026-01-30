@@ -265,8 +265,10 @@ struct IOSMemorySettingsView: View {
     }
 
     private func clearAllMemory() {
-        memoryService.clearAllFacts()
-        summaryService.clearAllSummaries()
+        Task {
+            await memoryService.clearAllFacts()
+            await summaryService.clearAllSummaries()
+        }
     }
 }
 

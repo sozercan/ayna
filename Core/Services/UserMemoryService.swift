@@ -19,7 +19,7 @@ final class UserMemoryService {
     private(set) var isLoaded = false
 
     private let store: EncryptedMemoryStore
-    private var saveTask: Task<Void, Never>?
+    private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .milliseconds(500)
 
     /// Maximum number of facts to store
@@ -30,6 +30,10 @@ final class UserMemoryService {
 
     init(store: EncryptedMemoryStore = .shared) {
         self.store = store
+    }
+
+    deinit {
+        saveTask?.cancel()
     }
 
     // MARK: - Loading
@@ -128,28 +132,25 @@ final class UserMemoryService {
     }
 
     /// Clears all facts.
-    func clearAllFacts() {
+    func clearAllFacts() async {
         facts.removeAll()
         saveTask?.cancel()
 
-        Task {
-            do {
-                try store.clearMemory()
-            } catch {
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .error,
-                    message: "❌ Failed to clear memory store",
-                    metadata: ["error": error.localizedDescription]
-                )
-            }
+        do {
+            try store.clearMemory()
+            DiagnosticsLogger.log(
+                .conversationManager,
+                level: .info,
+                message: "🧹 Cleared all memory facts"
+            )
+        } catch {
+            DiagnosticsLogger.log(
+                .conversationManager,
+                level: .error,
+                message: "❌ Failed to clear memory store",
+                metadata: ["error": error.localizedDescription]
+            )
         }
-
-        DiagnosticsLogger.log(
-            .conversationManager,
-            level: .info,
-            message: "🧹 Cleared all memory facts"
-        )
     }
 
     // MARK: - Query

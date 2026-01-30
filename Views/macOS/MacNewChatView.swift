@@ -561,13 +561,17 @@ struct MacNewChatView: View {
 
     @ViewBuilder
     private var modelSelectorPopover: some View {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
         VStack(alignment: .leading, spacing: 8) {
-            Text("Select models")
+            Text(multiModelEnabled ? "Select models" : "Select model")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Text("1 model = single response, 2+ = compare")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+            if multiModelEnabled {
+                Text("1 model = single response, 2+ = compare")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
             Divider()
                 .padding(.vertical, 4)
 
@@ -584,20 +588,33 @@ struct MacNewChatView: View {
                         guard let selectedType = selectedCapabilityType else { return false }
                         return modelCapability != selectedType
                     }()
-                    let isDisabled = !isSelected && isCapabilityMismatch
+                    // Only check capability mismatch in multi-model mode
+                    let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
                     Button(action: {
                         toggleModelSelection(model)
                     }) {
                         HStack {
-                            Image(
-                                systemName: isSelected
-                                    ? "checkmark.square.fill" : "square"
-                            )
-                            .foregroundStyle(
-                                isSelected ? Color.accentColor : Color.secondary
-                            )
-                            .font(.system(size: 14))
+                            // Show checkbox for multi-model, radio for single-model
+                            if multiModelEnabled {
+                                Image(
+                                    systemName: isSelected
+                                        ? "checkmark.square.fill" : "square"
+                                )
+                                .foregroundStyle(
+                                    isSelected ? Color.accentColor : Color.secondary
+                                )
+                                .font(.system(size: 14))
+                            } else {
+                                Image(
+                                    systemName: isSelected
+                                        ? "checkmark.circle.fill" : "circle"
+                                )
+                                .foregroundStyle(
+                                    isSelected ? Color.accentColor : Color.secondary
+                                )
+                                .font(.system(size: 14))
+                            }
                             Text(model)
                                 .font(.system(size: 13))
                             Spacer()
@@ -625,7 +642,7 @@ struct MacNewChatView: View {
                 }
             }
 
-            if selectedModels.count > 1 {
+            if multiModelEnabled && selectedModels.count > 1 {
                 Divider()
                     .padding(.vertical, 4)
                 Button(action: {
@@ -735,6 +752,17 @@ struct MacNewChatView: View {
     }
 
     private func toggleModelSelection(_ model: String) {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            selectedModels = [model]
+            selectedModel = model
+            openAIService.selectedModel = model
+            return
+        }
+
+        // Multi-select mode
         if selectedModels.contains(model) {
             // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)

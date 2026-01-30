@@ -137,6 +137,7 @@ struct MemorySettingsSection: View {
                 Image(systemName: "pencil")
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel("Edit fact")
 
             Button {
                 memoryService.deleteFact(fact.id)
@@ -145,6 +146,7 @@ struct MemorySettingsSection: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel("Delete fact")
         }
         .padding(.vertical, 4)
     }
@@ -271,8 +273,10 @@ struct MemorySettingsSection: View {
     }
 
     private func clearAllMemory() {
-        memoryService.clearAllFacts()
-        summaryService.clearAllSummaries()
+        Task {
+            await memoryService.clearAllFacts()
+            await summaryService.clearAllSummaries()
+        }
     }
 }
 

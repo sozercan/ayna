@@ -159,6 +159,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 
 > ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
 
+> 🤖 **Document Your Prompts** — When completing a task, summarize the key prompt(s) used so the human can include them in the PR. This supports a workflow where prompts are reviewed alongside (or instead of) code.
+
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
 2. **Verify Builds**: After modifying shared code, verify both platforms:
@@ -363,6 +365,26 @@ class ConversationViewModel {
 }
 ```
 
+### Static Shared Singletons with Mutable Assignment
+
+```swift
+// ❌ BAD: Race condition if multiple instances created
+class ConversationViewModel {
+    static var shared: ConversationViewModel?
+    init() { Self.shared = self }  // Overwrites previous!
+}
+
+// ✅ GOOD: Use SwiftUI Environment for dependency injection
+@Observable @MainActor
+class ConversationViewModel { /* ... */ }
+
+// In parent view:
+.environment(conversationViewModel)
+
+// In child view:
+@Environment(ConversationViewModel.self) var viewModel
+```
+
 ## Quick Reference
 
 ### Build Commands
@@ -430,6 +452,8 @@ Before completing non-trivial features, verify these patterns are followed:
 - [ ] **Message views avoid re-renders** — Extract expensive markdown rendering to subviews
 - [ ] **No `await` calls inside `ForEach`** — Fetch data before iteration
 - [ ] **Images/attachments use async loading** — Never block UI thread for file I/O
+- [ ] **Search input is debounced** — Not firing on every keystroke
+- [ ] **Frequently updating UI caches formatted strings** — Don't recompute on every render
 
 ### Memory Management
 
@@ -544,6 +568,61 @@ Before requesting human review, verify:
 - **Cause**: Task cancelled or error not propagated
 - **Fix**: Check `Task.isCancelled` and handle errors in stream
 - **Prevention**: Use `AsyncThrowingStream` with proper error handling
+
+## Subagents (Context-Isolated Tasks)
+
+VS Code's `#runSubagent` tool enables context-isolated task execution. Subagents run independently with their own context, preventing context confusion in complex tasks.
+
+### When to Use Subagents
+
+| Task Type | Use Subagent? | Rationale |
+|-----------|---------------|-----------|
+| Research unfamiliar code areas | Yes | Deep dives don't pollute main conversation |
+| Review a single file for patterns | Yes | Focused analysis, returns summary only |
+| Generate test fixtures | Yes | Boilerplate generation isolated from design discussion |
+| Simple edits to known files | No | Direct action is faster |
+| Multi-step refactoring | No | Needs continuous context across steps |
+| Tasks requiring user feedback | No | Subagents don't pause for input |
+
+### Subagent Prompts for This Project
+
+**Code Pattern Analysis** — Understand existing patterns:
+```
+With #runSubagent, analyze #file:Core/Services/OpenAIService.swift and identify:
+1. How provider requests are constructed
+2. Error handling patterns
+3. How streaming responses are processed
+Return a concise pattern guide for adding a new provider.
+```
+
+**Test Stub Generation** — Generate boilerplate:
+```
+Using #runSubagent, generate a Swift Testing test struct following the pattern in #file:Tests/aynaTests/
+for testing a new EncryptionService with encrypt/decrypt methods.
+Return only the struct definition with placeholder test methods.
+```
+
+**Performance Audit** — Isolated deep dive:
+```
+With #runSubagent, audit #file:Views/macOS/ConversationView.swift for SwiftUI performance issues.
+Check for: await in ForEach, missing LazyVStack, inline image loading, excessive state updates.
+Return a prioritized list of issues with line numbers.
+```
+
+### Subagent Best Practices
+
+1. **Be specific in prompts** — Subagents don't have conversation history; include all necessary context
+2. **Request structured output** — Ask for summaries, lists, or code snippets that integrate cleanly
+3. **Use for exploration, not execution** — Subagents are great for research; keep edits in main context
+4. **Combine with file references** — Use `#file:path` to give subagents focused context
+5. **Review before integrating** — Subagent results join main context; verify accuracy first
+
+### Anti-Patterns
+
+- Using subagents for quick lookups (overhead not worth it)
+- Chaining multiple subagents (use main context for multi-step work)
+- Expecting subagents to remember previous subagent results
+- Using subagents for tasks requiring user clarification
 
 ## When to Update This Document
 

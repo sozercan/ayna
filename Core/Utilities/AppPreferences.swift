@@ -25,13 +25,15 @@ enum AppPreferences {
     private static let globalSystemPromptKey = "globalSystemPrompt"
     private static let attachFromAppEnabledKey = "attachFromAppEnabled"
     private static let attachFromAppHotkeyKey = "attachFromAppHotkey"
+    private static let multiModelSelectionEnabledKey = "multiModelSelectionEnabled"
 
     private static var defaultValues: [String: Any] {
         [
             "autoGenerateTitle": true,
             globalSystemPromptKey: "",
             attachFromAppEnabledKey: false,
-            attachFromAppHotkeyKey: "⌘⇧Space"
+            attachFromAppHotkeyKey: "⌘⇧Space",
+            multiModelSelectionEnabledKey: true
         ]
     }
 
@@ -59,6 +61,22 @@ enum AppPreferences {
     static var attachFromAppHotkey: String {
         get { storage.string(forKey: attachFromAppHotkeyKey) ?? "⌘⇧Space" }
         set { storage.set(newValue, forKey: attachFromAppHotkeyKey) }
+    }
+
+    // MARK: - Multi-Model Selection
+
+    /// Whether multi-model selection is enabled in the model selector.
+    /// When enabled, users can select multiple models to compare responses.
+    /// When disabled, only single-model selection is allowed.
+    static var multiModelSelectionEnabled: Bool {
+        get {
+            // UserDefaults.bool returns false if key doesn't exist, so check explicitly
+            if storage.object(forKey: multiModelSelectionEnabledKey) == nil {
+                return true // Default to enabled
+            }
+            return storage.bool(forKey: multiModelSelectionEnabledKey)
+        }
+        set { storage.set(newValue, forKey: multiModelSelectionEnabledKey) }
     }
 
     static func registerDefaults() {

@@ -614,13 +614,17 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                         .fixedSize()
                         .popover(isPresented: $showModelSelector) {
+                            let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
                             VStack(alignment: .leading, spacing: Spacing.sm) {
-                                Text("Select models")
+                                Text(multiModelEnabled ? "Select models" : "Select model")
                                     .font(Typography.captionBold)
                                     .foregroundStyle(Theme.textSecondary)
-                                Text("1 model = single response, 2+ = compare")
-                                    .font(Typography.footnote)
-                                    .foregroundStyle(Theme.textTertiary)
+                                if multiModelEnabled {
+                                    Text("1 model = single response, 2+ = compare")
+                                        .font(Typography.footnote)
+                                        .foregroundStyle(Theme.textTertiary)
+                                }
                                 Divider()
                                     .padding(.vertical, Spacing.xxs)
 
@@ -637,15 +641,23 @@ struct MacChatView: View {
                                             guard let selectedType = selectedCapabilityType else { return false }
                                             return modelCapability != selectedType
                                         }()
-                                        let isDisabled = !isSelected && isCapabilityMismatch
+                                        // Only check capability mismatch in multi-model mode
+                                        let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
                                         Button(action: {
                                             toggleModelSelection(model)
                                         }) {
                                             HStack {
-                                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-                                                    .font(.system(size: Typography.Size.body))
+                                                // Show checkbox for multi-model, radio for single-model
+                                                if multiModelEnabled {
+                                                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                                        .font(.system(size: Typography.Size.body))
+                                                } else {
+                                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                                        .font(.system(size: Typography.Size.body))
+                                                }
                                                 Text(model)
                                                     .font(Typography.modelName)
                                                 Spacer()
@@ -670,7 +682,7 @@ struct MacChatView: View {
                                     }
                                 }
 
-                                if selectedModels.count > 1 {
+                                if multiModelEnabled && selectedModels.count > 1 {
                                     Divider()
                                         .padding(.vertical, Spacing.xxs)
                                     Button(action: {
@@ -989,6 +1001,18 @@ struct MacChatView: View {
     }
 
     private func toggleModelSelection(_ model: String) {
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            selectedModels = [model]
+            selectedModel = model
+            conversationManager.updateModel(for: conversation, model: model)
+            updateConversationMultiModelState()
+            return
+        }
+
+        // Multi-select mode
         if selectedModels.contains(model) {
             // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)

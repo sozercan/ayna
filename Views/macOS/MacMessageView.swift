@@ -36,6 +36,10 @@ struct MacMessageView: View {
     @State private var parseDebounceTask: Task<Void, Never>?
     @State private var lastParseTime: Date = .distantPast
 
+    // Image caching to prevent memory leaks from repeated decoding
+    @State private var cachedGeneratedImage: NSImage?
+    @State private var cachedAttachmentImages: [Int: NSImage] = [:]
+
     init(
         message: Message,
         modelName: String? = nil,
@@ -186,11 +190,42 @@ struct MacMessageView: View {
                 updateCachedBlocks()
                 updateCachedReasoningBlocks()
             }
+            .task {
+                // Pre-load images when view appears
+                if message.mediaType == .image, cachedGeneratedImage == nil {
+                    await loadGeneratedImage()
+                }
+                if let attachments = message.attachments {
+                    for (index, attachment) in attachments.enumerated() where attachment.mimeType.starts(with: "image/") {
+                        if cachedAttachmentImages[index] == nil {
+                            await loadAttachmentImage(at: index, attachment: attachment)
+                        }
+                    }
+                }
+            }
             .onChange(of: message.content) { _, _ in
                 updateCachedBlocks()
             }
             .onChange(of: message.reasoning) { _, _ in
                 updateCachedReasoningBlocks()
+            }
+            .onChange(of: message.imagePath) { _, newPath in
+                // Reload image when path changes (e.g., after generation completes)
+                if newPath != nil {
+                    cachedGeneratedImage = nil
+                    Task {
+                        await loadGeneratedImage()
+                    }
+                }
+            }
+            .onChange(of: message.imageData) { _, newData in
+                // Reload image when data changes
+                if newData != nil {
+                    cachedGeneratedImage = nil
+                    Task {
+                        await loadGeneratedImage()
+                    }
+                }
             }
     }
 
@@ -286,40 +321,45 @@ struct MacMessageView: View {
 
     @MainActor @ViewBuilder
     private var bubbleContent: some View {
-        // Attachments
+        // Attachments - use cached images to prevent memory leaks
         if let attachments = message.attachments, !attachments.isEmpty {
             ForEach(attachments.indices, id: \.self) { index in
                 let attachment = attachments[index]
-                if attachment.mimeType.starts(with: "image/"),
-                   let data = attachment.content,
-                   let nsImage = NSImage(data: data)
-                {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: 360)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                            .contextMenu {
-                                Button("Save Image...") {
-                                    saveImage(nsImage)
+                if attachment.mimeType.starts(with: "image/") {
+                    if let nsImage = cachedAttachmentImages[index] {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: 360)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                                .contextMenu {
+                                    Button("Save Image...") {
+                                        saveImage(nsImage)
+                                    }
+                                    Button("Copy Image") {
+                                        copyImage(nsImage)
+                                    }
                                 }
-                                Button("Copy Image") {
-                                    copyImage(nsImage)
-                                }
+                            Text(attachment.fileName)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                    } else {
+                        ProgressView()
+                            .frame(width: 100, height: 100)
+                            .task {
+                                await loadAttachmentImage(at: index, attachment: attachment)
                             }
-                        Text(attachment.fileName)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
                     }
                 }
             }
         }
 
-        // Generated images
+        // Generated images - use cached image to prevent memory leaks
         if message.mediaType == .image {
-            if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
+            if let nsImage = cachedGeneratedImage {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -336,6 +376,9 @@ struct MacMessageView: View {
                     }
             } else {
                 ImageGeneratingView()
+                    .task {
+                        await loadGeneratedImage()
+                    }
             }
         }
 
@@ -577,6 +620,34 @@ struct MacMessageView: View {
         }
     }
 
+    /// Loads and caches the generated image off the main thread to prevent memory leaks
+    private func loadGeneratedImage() async {
+        guard cachedGeneratedImage == nil else { return }
+        guard let imageData = message.effectiveImageData else { return }
+
+        let image = await Task.detached(priority: .userInitiated) {
+            NSImage(data: imageData)
+        }.value
+
+        if let image {
+            cachedGeneratedImage = image
+        }
+    }
+
+    /// Loads and caches an attachment image off the main thread
+    private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) async {
+        guard cachedAttachmentImages[index] == nil else { return }
+        guard let data = attachment.content else { return }
+
+        let image = await Task.detached(priority: .userInitiated) {
+            NSImage(data: data)
+        }.value
+
+        if let image {
+            cachedAttachmentImages[index] = image
+        }
+    }
+
     private func copyToClipboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -609,7 +680,7 @@ private struct MessageBubbleShape: Shape {
     var isFromCurrentUser: Bool
 
     func path(in rect: CGRect) -> Path {
-        let path = Path { path in
+        Path { path in
             let tailWidth: CGFloat = Spacing.xs
             let radius: CGFloat = Spacing.CornerRadius.bubble
 
@@ -717,7 +788,6 @@ private struct MessageBubbleShape: Shape {
                 path.closeSubpath()
             }
         }
-        return path
     }
 }
 
@@ -934,7 +1004,6 @@ extension ContentBlock {
         }
     }
 
-    @ViewBuilder
     private func tableRowView(
         _ cells: [AttributedString],
         alignments: [MarkdownTable.ColumnAlignment],
@@ -996,7 +1065,7 @@ extension ContentBlock {
     .frame(width: 600)
 }
 
-// Loading animation for image generation
+/// Loading animation for image generation
 struct ImageGeneratingView: View {
     @State private var phase: CGFloat = 0
 
@@ -1166,7 +1235,7 @@ private enum SyntaxRegexCache {
     }
 }
 
-// Syntax highlighted code view
+/// Syntax highlighted code view
 struct SyntaxHighlightedCodeView: View {
     let code: String
     let language: String
@@ -1410,7 +1479,7 @@ struct SyntaxHighlightedCodeView: View {
     }
 }
 
-// Compact thinking indicator dots for inline use
+/// Compact thinking indicator dots for inline use
 struct ThinkingIndicatorDots: View {
     @State private var animatingDot = 0
 
@@ -1431,7 +1500,7 @@ struct ThinkingIndicatorDots: View {
     }
 }
 
-// Typing indicator for text responses - iMessage style wave animation
+/// Typing indicator for text responses - iMessage style wave animation
 struct TypingIndicatorView: View {
     @State private var animatingDot = 0
 

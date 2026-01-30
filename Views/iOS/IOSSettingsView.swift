@@ -15,6 +15,7 @@ struct IOSSettingsView: View {
     @ObservedObject var tavilyService = TavilyService.shared
     @EnvironmentObject var conversationManager: ConversationManager
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
+    @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
 
     @State private var showingAddSheet = false
     @State private var selectedModelForEditing: String?
@@ -51,6 +52,12 @@ struct IOSSettingsView: View {
                         set: { SoundEngine.shared.isEnabled = $0 }
                     ))
                     .accessibilityIdentifier("settings.soundEffects.toggle")
+
+                    Toggle("Multi-Model Selection", isOn: $multiModelSelectionEnabled)
+                        .accessibilityIdentifier("settings.multiModelSelection.toggle")
+                        .onChange(of: multiModelSelectionEnabled) { _, newValue in
+                            AppPreferences.multiModelSelectionEnabled = newValue
+                        }
 
                     NavigationLink("System Prompt") {
                         IOSSystemPromptSettingsView()

@@ -436,6 +436,17 @@ struct IOSChatView: View {
         // Use centralized haptic engine
         HapticEngine.selection()
 
+        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
+
+        if !multiModelEnabled {
+            // Single-select mode: always replace selection
+            viewModel.selectedModels = [model]
+            conversationManager.updateModel(for: conversation, model: model)
+            updateConversationMultiModelState()
+            return
+        }
+
+        // Multi-select mode
         if viewModel.selectedModels.contains(model) {
             viewModel.selectedModels.remove(model)
             // Keep at least one model selected

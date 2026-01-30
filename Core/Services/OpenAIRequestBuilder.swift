@@ -521,7 +521,12 @@ enum OpenAIRequestBuilder {
         return messages
     }
 
-    /// Estimates the token count for messages (rough approximation: 4 chars ≈ 1 token)
+    /// Estimates the token count for messages (rough approximation: 4 chars ≈ 1 token).
+    ///
+    /// - Note: This approximation works reasonably well for English text but significantly
+    ///   underestimates token counts for CJK languages (Chinese, Japanese, Korean) where
+    ///   1-2 characters typically equal 1 token. For production use with multilingual content,
+    ///   consider using a proper tokenizer like tiktoken.
     static func estimateTokenCount(for messages: [Message]) -> Int {
         messages.reduce(0) { total, message in
             total + (message.content.count / 4) + 4 // +4 for role/message overhead

@@ -98,13 +98,13 @@ struct UserMemoryServiceTests {
     }
 
     @Test("Clear all facts removes all facts")
-    func clearAllFactsRemovesAllFacts() {
+    func clearAllFactsRemovesAllFacts() async {
         let service = UserMemoryService()
         service.addFact("Fact 1")
         service.addFact("Fact 2")
         service.addFact("Fact 3")
 
-        service.clearAllFacts()
+        await service.clearAllFacts()
 
         #expect(service.facts.isEmpty)
         #expect(service.activeFacts().isEmpty)
