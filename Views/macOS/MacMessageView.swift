@@ -190,15 +190,15 @@ struct MacMessageView: View {
                 updateCachedBlocks()
                 updateCachedReasoningBlocks()
             }
-            .task {
+            .onAppear {
                 // Pre-load images when view appears
                 if message.mediaType == .image, cachedGeneratedImage == nil {
-                    await loadGeneratedImage()
+                    loadGeneratedImage()
                 }
                 if let attachments = message.attachments {
                     for (index, attachment) in attachments.enumerated() where attachment.mimeType.starts(with: "image/") {
                         if cachedAttachmentImages[index] == nil {
-                            await loadAttachmentImage(at: index, attachment: attachment)
+                            loadAttachmentImage(at: index, attachment: attachment)
                         }
                     }
                 }
@@ -213,18 +213,14 @@ struct MacMessageView: View {
                 // Reload image when path changes (e.g., after generation completes)
                 if newPath != nil {
                     cachedGeneratedImage = nil
-                    Task {
-                        await loadGeneratedImage()
-                    }
+                    loadGeneratedImage()
                 }
             }
             .onChange(of: message.imageData) { _, newData in
                 // Reload image when data changes
                 if newData != nil {
                     cachedGeneratedImage = nil
-                    Task {
-                        await loadGeneratedImage()
-                    }
+                    loadGeneratedImage()
                 }
             }
     }
@@ -349,8 +345,8 @@ struct MacMessageView: View {
                     } else {
                         ProgressView()
                             .frame(width: 100, height: 100)
-                            .task {
-                                await loadAttachmentImage(at: index, attachment: attachment)
+                            .onAppear {
+                                loadAttachmentImage(at: index, attachment: attachment)
                             }
                     }
                 }
@@ -376,8 +372,8 @@ struct MacMessageView: View {
                     }
             } else {
                 ImageGeneratingView()
-                    .task {
-                        await loadGeneratedImage()
+                    .onAppear {
+                        loadGeneratedImage()
                     }
             }
         }
@@ -620,30 +616,24 @@ struct MacMessageView: View {
         }
     }
 
-    /// Loads and caches the generated image off the main thread to prevent memory leaks
-    private func loadGeneratedImage() async {
+    /// Loads and caches the generated image to prevent memory leaks from repeated decoding
+    /// Note: NSImage is non-Sendable so we create it on @MainActor directly
+    private func loadGeneratedImage() {
         guard cachedGeneratedImage == nil else { return }
         guard let imageData = message.effectiveImageData else { return }
 
-        let image = await Task.detached(priority: .userInitiated) {
-            NSImage(data: imageData)
-        }.value
-
-        if let image {
+        if let image = NSImage(data: imageData) {
             cachedGeneratedImage = image
         }
     }
 
-    /// Loads and caches an attachment image off the main thread
-    private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) async {
+    /// Loads and caches an attachment image to prevent memory leaks from repeated decoding
+    /// Note: NSImage is non-Sendable so we create it on @MainActor directly
+    private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) {
         guard cachedAttachmentImages[index] == nil else { return }
         guard let data = attachment.content else { return }
 
-        let image = await Task.detached(priority: .userInitiated) {
-            NSImage(data: data)
-        }.value
-
-        if let image {
+        if let image = NSImage(data: data) {
             cachedAttachmentImages[index] = image
         }
     }

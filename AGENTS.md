@@ -234,6 +234,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 | `replacingOccurrences(of:with:)` | `replacing(_:with:)` |
 | Force unwraps (`!`) | Optional handling or `guard` |
 | XCTest for unit tests | Swift Testing (`@Suite`, `@Test`, `#expect`) |
+| `#available` for new SDK APIs | `#if compiler(>=version)` (compile-time check) |
+| `Task.detached` with `NSImage`/`UIImage` | Process on same actor or use `Data` |
 
 ## Common Bug Patterns to Avoid
 
@@ -385,6 +387,76 @@ class ConversationViewModel { /* ... */ }
 @Environment(ConversationViewModel.self) var viewModel
 ```
 
+### Using `#available` for New SDK APIs
+
+```swift
+// ❌ BAD: #available is RUNTIME only — code still must COMPILE against older SDKs
+// This fails to build on Xcode 16.x because .glassEffect() doesn't exist in the SDK
+if #available(macOS 26.0, *) {
+    view.glassEffect(.regular)  // Compile error on older SDKs!
+}
+
+// ✅ GOOD: Use compile-time checks for APIs that don't exist in older SDKs
+#if compiler(>=6.2)  // Xcode 26+ ships Swift 6.2
+if #available(macOS 26.0, *) {
+    view.glassEffect(.regular)
+}
+#endif
+
+// ✅ ALSO GOOD: Separate source files with build configurations
+// Put macOS 26+ code in a separate file excluded from older SDK builds
+```
+
+**Key insight**: `#available` checks which OS version is *running*, but the compiler must still *parse and type-check* all code paths. For APIs that don't exist in older SDKs at all, use `#if compiler()` or `#if swift()` to hide the code from the compiler entirely.
+
+### Passing Non-Sendable Types Across Actor Boundaries
+
+```swift
+// ❌ BAD: NSImage/UIImage are non-Sendable — can't cross actor boundaries
+let image = await Task.detached(priority: .userInitiated) {
+    return NSImage(data: imageData)  // NSImage created off main actor
+}.value  // Error: non-sendable type cannot exit actor-isolated context
+
+// ✅ GOOD: Keep image creation on the same actor
+@MainActor
+func loadImage(from data: Data) -> NSImage? {
+    return NSImage(data: data)
+}
+
+// ✅ ALSO GOOD: Pass Sendable data, create image on destination actor
+let imageData = await Task.detached {
+    return processImageData(data)  // Data is Sendable
+}.value
+let image = NSImage(data: imageData)  // Create on @MainActor
+```
+
+**Why**: `NSImage` and `UIImage` are explicitly marked non-`Sendable` by Apple. Swift 6 strict concurrency enforces this to prevent data races.
+
+### Accessing @MainActor Singletons from Nonisolated Context
+
+```swift
+// ❌ BAD: Accessing @MainActor static property from nonisolated context
+@MainActor
+class MyService {
+    static let shared = MyService()
+}
+
+func someNonisolatedFunc() {
+    let service = MyService.shared  // Warning in Swift 5, Error in Swift 6!
+}
+
+// ✅ GOOD: Make the accessor async and await it
+func someNonisolatedFunc() async {
+    let service = await MyService.shared
+}
+
+// ✅ ALSO GOOD: Mark the calling function @MainActor
+@MainActor
+func someMainActorFunc() {
+    let service = MyService.shared  // OK — same actor isolation
+}
+```
+
 ## Quick Reference
 
 ### Build Commands
@@ -487,6 +559,8 @@ Before completing non-trivial features, verify these patterns are followed:
 - [ ] **Background tasks cancelled in `deinit`** — Prevent work after deallocation
 - [ ] **Using `.task` instead of `.onAppear { Task { } }`** — Lifecycle-managed, auto-cancelled
 - [ ] **ForEach uses stable identity** — Use model ID, not array index
+- [ ] **Non-Sendable types stay on their actor** — `NSImage`/`UIImage` don't cross actor boundaries
+- [ ] **@MainActor singletons accessed correctly** — Use `await` or `@MainActor` caller
 
 ### Verification Commands
 
@@ -531,6 +605,7 @@ Before requesting human review, verify:
 - [ ] Builds on macOS, iOS, watchOS (as applicable)
 - [ ] `#if os()` guards for platform-specific code in Core/
 - [ ] No AppKit/UIKit imports in Core/ without guards
+- [ ] New SDK APIs wrapped in `#if compiler()` for older Xcode compatibility
 
 ### Accessibility
 - [ ] `.accessibilityLabel()` on image-only buttons
@@ -568,6 +643,21 @@ Before requesting human review, verify:
 - **Cause**: Task cancelled or error not propagated
 - **Fix**: Check `Task.isCancelled` and handle errors in stream
 - **Prevention**: Use `AsyncThrowingStream` with proper error handling
+
+### "Value of type X has no member Y" (new SDK APIs)
+- **Cause**: Using APIs from newer SDKs (e.g., macOS 26) with `#available` only
+- **Fix**: Wrap in `#if compiler(>=version)` to hide from older compilers entirely
+- **Prevention**: `#available` is runtime-only; new SDK APIs need compile-time guards
+
+### "Conformance of 'NSImage' to 'Sendable' is unavailable"
+- **Cause**: Passing `NSImage`/`UIImage` across actor boundaries via `Task.detached`
+- **Fix**: Process images on the same actor, or pass `Data` and create image on destination
+- **Prevention**: Platform image types are non-`Sendable`; don't cross actor boundaries with them
+
+### "Main actor-isolated static property 'shared' cannot be referenced from nonisolated context"
+- **Cause**: Accessing `@MainActor` singleton from nonisolated function
+- **Fix**: Make caller `@MainActor` or use `await` to access the property
+- **Prevention**: When using `@MainActor` singletons, ensure callers have compatible isolation
 
 ## Subagents (Context-Isolated Tasks)
 

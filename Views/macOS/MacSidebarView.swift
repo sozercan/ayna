@@ -324,6 +324,7 @@ private struct SidebarBackgroundStyle: ViewModifier {
 /// Uses glassEffect on macOS 26+, falls back to material fill on earlier versions
 private struct IMessageSearchBarStyle: ViewModifier {
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: .capsule)
@@ -334,6 +335,13 @@ private struct IMessageSearchBarStyle: ViewModifier {
                         .fill(.regularMaterial)
                 }
         }
+        #else
+        content
+            .background {
+                Capsule()
+                    .fill(.regularMaterial)
+            }
+        #endif
     }
 }
 
