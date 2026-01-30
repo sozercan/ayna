@@ -49,21 +49,29 @@ struct IOSMessageComposer: View {
     /// Background for the plus button - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerButtonBackground: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             Circle().fill(.regularMaterial).glassEffect()
         } else {
             Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
         }
+        #else
+        Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
+        #endif
     }
 
     /// Background for the text field - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerFieldBackground: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             Capsule().fill(.regularMaterial).glassEffect()
         } else {
             Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
         }
+        #else
+        Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
+        #endif
     }
 
     /// Background for the entire composer bar
