@@ -41,11 +41,11 @@ protocol AIProviderProtocol: Sendable {
 
 ### 2. Provider Registry
 
-`OpenAIService` acts as the coordinator, maintaining a registry of providers:
+`AIService` acts as the coordinator, maintaining a registry of providers:
 
 ```swift
 @MainActor @Observable
-final class OpenAIService {
+final class AIService {
     private var providers: [String: any AIProviderProtocol] = [:]
     
     func registerProvider(_ provider: any AIProviderProtocol)
@@ -99,5 +99,5 @@ struct OpenAIEndpointResolver {
 ## References
 
 - [Core/Services/Providers/AIProviderProtocol.swift](../../Core/Services/Providers/AIProviderProtocol.swift)
-- [Core/Services/OpenAIService.swift](../../Core/Services/OpenAIService.swift)
+- [Core/Services/AIService.swift](../../Core/Services/AIService.swift)
 - [Core/Services/OpenAIEndpointResolver.swift](../../Core/Services/OpenAIEndpointResolver.swift)

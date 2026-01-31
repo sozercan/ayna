@@ -13,7 +13,7 @@ struct GeneralSettingsSection: View {
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
     var body: some View {
@@ -77,21 +77,21 @@ struct GeneralSettingsSection: View {
 
     private var imageGenerationSection: some View {
         Section {
-            Picker("Image Size", selection: $openAIService.imageSize) {
+            Picker("Image Size", selection: $aiService.imageSize) {
                 Text("1024×1024 (Square)").tag("1024x1024")
                 Text("1024×1536 (Portrait)").tag("1024x1536")
                 Text("1536×1024 (Landscape)").tag("1536x1024")
             }
             .help("Resolution for generated images")
 
-            Picker("Image Quality", selection: $openAIService.imageQuality) {
+            Picker("Image Quality", selection: $aiService.imageQuality) {
                 Text("Low").tag("low")
                 Text("Medium").tag("medium")
                 Text("High").tag("high")
             }
             .help("Quality level affects generation time and cost")
 
-            Picker("Output Format", selection: $openAIService.outputFormat) {
+            Picker("Output Format", selection: $aiService.outputFormat) {
                 Text("PNG").tag("png")
                 Text("JPEG").tag("jpeg")
             }
@@ -101,11 +101,11 @@ struct GeneralSettingsSection: View {
                 Text("Compression")
                 Spacer()
                 Slider(value: Binding(
-                    get: { Double(openAIService.outputCompression) },
-                    set: { openAIService.outputCompression = Int($0) }
+                    get: { Double(aiService.outputCompression) },
+                    set: { aiService.outputCompression = Int($0) }
                 ), in: 0 ... 100, step: 10)
                     .frame(width: 150)
-                Text("\(openAIService.outputCompression)%")
+                Text("\(aiService.outputCompression)%")
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 45, alignment: .trailing)
             }

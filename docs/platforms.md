@@ -175,7 +175,7 @@ Button {
 
 ### Filtering Providers by Platform
 
-`OpenAIService.usableModels` automatically filters providers:
+`AIService.usableModels` automatically filters providers:
 
 ```swift
 // watchOS: Filters out Apple Intelligence

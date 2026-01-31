@@ -40,6 +40,7 @@ The app supports multiple AI providers via the `AIProvider` enum.
 | Azure OpenAI | All | API Key | `<resource>.openai.azure.com` |
 | GitHub Models | All | OAuth (PKCE) | `models.github.ai` |
 | Apple Intelligence | macOS/iOS 26.0+ | None (on-device) | Local |
+| Anthropic | All | API Key | `api.anthropic.com` or custom |
 
 ### OpenAI Service Architecture
 
@@ -47,11 +48,11 @@ Decomposed into single-responsibility components:
 
 | File | Responsibility |
 |------|----------------|
-| `OpenAIService.swift` | Coordinator/Facade, manages all AI requests |
+| `AIService.swift` | Coordinator/Facade, manages all AI requests |
 | `OpenAIEndpointResolver.swift` | URL resolution for different providers |
 | `OpenAIRequestBuilder.swift` | Request factory, handles Chat Completions & Responses API formats |
 | `OpenAIStreamParser.swift` | SSE parsing, tool call handling |
-| `OpenAIRetryPolicy.swift` | Exponential backoff for transient failures |
+| `AIRetryPolicy.swift` | Exponential backoff for transient failures |
 | `OpenAIImageService.swift` | DALL·E image generation |
 | `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
 | `Providers/OpenAIProvider.swift` | OpenAI API implementation |
@@ -73,6 +74,43 @@ Decomposed into single-responsibility components:
 - **Headers**: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
 - **Model Catalog**: Fetched from `https://models.github.ai/catalog/models`
 
+### Anthropic Service
+
+Decomposed into single-responsibility components following the OpenAI pattern:
+
+| File | Responsibility |
+|------|----------------|
+| `Providers/AnthropicProvider.swift` | Main provider implementation, streaming and non-streaming |
+| `AnthropicEndpointResolver.swift` | URL resolution for direct API and custom endpoints |
+| `AnthropicRequestBuilder.swift` | Request construction, message/tool format conversion |
+| `AnthropicStreamParser.swift` | SSE parsing, multi-block state tracking |
+
+**Key Features:**
+- **Extended Thinking**: Supports thinking blocks with configurable `budget_tokens` (minimum 1024)
+- **Interleaved Thinking**: Claude 4+ models can have thinking blocks throughout a response (not just at the start)
+- **Tool Use**: Converts OpenAI tool format to Anthropic `input_schema` format, accumulates JSON deltas
+- **Vision**: Base64 image attachments with magic byte validation (JPEG, PNG, GIF, WebP)
+- **Custom Endpoints**: Supports Azure, proxies, and other compatible endpoints with HTTPS validation
+
+**Request Headers:**
+- `x-api-key`: API key authentication
+- `anthropic-version`: `2023-06-01` (stable API version)
+- `anthropic-beta`: Comma-separated beta features (e.g., `interleaved-thinking-2025-05-14`)
+
+**Stream Event Handling:**
+| Event | Action |
+|-------|--------|
+| `message_start` | Initialize message state |
+| `content_block_start` | Track block type (`text`, `thinking`, `tool_use`) |
+| `content_block_delta` | Dispatch to `onChunk`, `onReasoning`, or accumulate tool JSON |
+| `content_block_stop` | For tool_use: parse accumulated JSON, trigger `onToolCallRequested` |
+| `message_stop` | Call `onComplete` |
+
+**Image Limits:**
+- Max 20 images per request
+- Max 3.75 MB per image
+- Images only in `user` role messages
+
 ## Multi-Model Architecture
 
 Allows sending a single prompt to multiple models simultaneously for comparison.
@@ -80,7 +118,7 @@ Allows sending a single prompt to multiple models simultaneously for comparison.
 - **Data Model**:
   - `ResponseGroup`: Links a user message to multiple assistant messages
   - Each `Message` has a `model` property identifying which model generated it
-- **Execution**: `OpenAIService.sendToMultipleModels` manages concurrent `Task`s
+- **Execution**: `AIService.sendToMultipleModels` manages concurrent `Task`s
 - **Streaming**: Callbacks (`onChunk`, `onModelComplete`, `onError`) are keyed by model name
 
 ## Tool Integration
@@ -225,7 +263,7 @@ All services must log via `DiagnosticsLogger`:
 DiagnosticsLogger.log(.serviceName, level: .info, message: "✅ Action completed", metadata: ["key": value])
 ```
 
-- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.openAIService`, `.mcpServerManager`, `.cloudKit`)
+- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.aiService`, `.mcpServerManager`, `.cloudKit`)
 - **Levels**: `.debug`, `.info`, `.warning`, `.error`
 - **Output**: Logs persist to `breadcrumbs.json` for debugging
 
@@ -271,6 +309,6 @@ let action = ErrorPresenter.suggestedAction(for: error)  // .retry, .openSetting
 
 ### Legacy Errors
 
-- `OpenAIService.OpenAIError` — Still used internally by OpenAI-related services
+- `AIService.AIError` — Still used internally by OpenAI-related services
 - Display errors in UI with red text styling
 - Always log errors with context before handling

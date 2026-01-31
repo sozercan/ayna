@@ -72,13 +72,13 @@ final class OpenAIImageService: @unchecked Sendable {
     ) {
         // Validate provider
         guard requestConfig.provider == .openai else {
-            onError(OpenAIService.OpenAIError.unsupportedProvider)
+            onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
             return
         }
 
         // Validate API key
         guard !requestConfig.apiKey.isEmpty else {
-            onError(OpenAIService.OpenAIError.missingAPIKey)
+            onError(AynaError.missingAPIKey(provider: "OpenAI"))
             return
         }
 
@@ -92,7 +92,7 @@ final class OpenAIImageService: @unchecked Sendable {
         let imageURL = OpenAIEndpointResolver.imageGenerationURL(for: endpointConfig)
 
         guard let url = URL(string: imageURL) else {
-            onError(OpenAIService.OpenAIError.invalidURL)
+            onError(AynaError.invalidEndpoint(imageURL))
             return
         }
 
@@ -166,7 +166,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 ? "Image generation temporarily unavailable. Please try again in \(seconds)s."
                 : "Image generation temporarily unavailable. Please try again shortly."
             Task { @MainActor in
-                onError(OpenAIService.OpenAIError.apiError(message))
+                onError(AynaError.apiError(message: message))
             }
             return
         }
@@ -190,19 +190,19 @@ final class OpenAIImageService: @unchecked Sendable {
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.invalidResponse)
+                    onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
 
             guard let data else {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .error,
                     message: "No data received from image generation"
                 )
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.noData)
+                    onError(AynaError.invalidResponse(detail: "No data received"))
                 }
                 return
             }
@@ -223,7 +223,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 }()
 
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.apiError(message))
+                    onError(AynaError.apiError(message: message))
                 }
                 return
             }
@@ -244,14 +244,14 @@ final class OpenAIImageService: @unchecked Sendable {
         attempt: Int
     ) {
         Task { @MainActor [weak self] in
-            if OpenAIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
+            if AIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .info,
                     message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
                     metadata: ["error": error.localizedDescription]
                 )
-                await OpenAIRetryPolicy.wait(for: attempt)
+                await AIRetryPolicy.wait(for: attempt)
                 self?.generateImage(
                     prompt: prompt,
                     requestConfig: requestConfig,
@@ -274,7 +274,7 @@ final class OpenAIImageService: @unchecked Sendable {
         do {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.invalidResponse)
+                    onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
@@ -285,16 +285,16 @@ final class OpenAIImageService: @unchecked Sendable {
                let message = errorDict["message"] as? String
             {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .error,
                     message: "API error in image generation",
                     metadata: ["code": code, "message": message]
                 )
                 Task { @MainActor in
                     if code == "contentFilter" {
-                        onError(OpenAIService.OpenAIError.contentFiltered(message))
+                        onError(AynaError.contentFiltered(reason: message))
                     } else {
-                        onError(OpenAIService.OpenAIError.apiError(message))
+                        onError(AynaError.apiError(message: message))
                     }
                 }
                 return
@@ -305,7 +305,7 @@ final class OpenAIImageService: @unchecked Sendable {
                   let firstItem = dataArray.first
             else {
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.invalidResponse)
+                    onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
@@ -340,7 +340,7 @@ final class OpenAIImageService: @unchecked Sendable {
             }
 
             Task { @MainActor in
-                onError(OpenAIService.OpenAIError.invalidResponse)
+                onError(AynaError.invalidResponse(detail: nil))
             }
         } catch {
             Task { @MainActor in
@@ -370,13 +370,13 @@ final class OpenAIImageService: @unchecked Sendable {
     ) {
         // Validate provider
         guard requestConfig.provider == .openai else {
-            onError(OpenAIService.OpenAIError.unsupportedProvider)
+            onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
             return
         }
 
         // Validate API key
         guard !requestConfig.apiKey.isEmpty else {
-            onError(OpenAIService.OpenAIError.missingAPIKey)
+            onError(AynaError.missingAPIKey(provider: "OpenAI"))
             return
         }
 
@@ -390,7 +390,7 @@ final class OpenAIImageService: @unchecked Sendable {
         let editURL = OpenAIEndpointResolver.imageEditURL(for: endpointConfig)
 
         guard let url = URL(string: editURL) else {
-            onError(OpenAIService.OpenAIError.invalidURL)
+            onError(AynaError.invalidEndpoint(editURL))
             return
         }
 
@@ -466,7 +466,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 ? "Image editing temporarily unavailable. Please try again in \(seconds)s."
                 : "Image editing temporarily unavailable. Please try again shortly."
             Task { @MainActor in
-                onError(OpenAIService.OpenAIError.apiError(message))
+                onError(AynaError.apiError(message: message))
             }
             return
         }
@@ -484,19 +484,19 @@ final class OpenAIImageService: @unchecked Sendable {
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.invalidResponse)
+                    onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
 
             guard let data else {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .error,
                     message: "No data received from image editing"
                 )
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.noData)
+                    onError(AynaError.invalidResponse(detail: "No data received"))
                 }
                 return
             }
@@ -517,7 +517,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 }()
 
                 Task { @MainActor in
-                    onError(OpenAIService.OpenAIError.apiError(message))
+                    onError(AynaError.apiError(message: message))
                 }
                 return
             }

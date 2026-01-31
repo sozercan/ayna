@@ -10,7 +10,7 @@ import SwiftUI
 
 struct MacSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
@@ -325,22 +325,22 @@ private struct SidebarBackgroundStyle: ViewModifier {
 private struct IMessageSearchBarStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
+            if #available(macOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                content
+                    .background {
+                        Capsule()
+                            .fill(.regularMaterial)
+                    }
+            }
+        #else
             content
                 .background {
                     Capsule()
                         .fill(.regularMaterial)
                 }
-        }
-        #else
-        content
-            .background {
-                Capsule()
-                    .fill(.regularMaterial)
-            }
         #endif
     }
 }

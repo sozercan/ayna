@@ -50,6 +50,7 @@ What trade-offs are we accepting?
 | [0002](0002-encrypted-conversation-storage.md) | Encrypted Conversation Storage | Accepted |
 | [0003](0003-cross-platform-core.md) | Cross-Platform Core Module | Accepted |
 | [0004](0004-sparkle-auto-updates.md) | Sparkle Auto-Updates | Accepted |
+| [0005](0005-anthropic-provider.md) | Anthropic Provider Architecture | Accepted |
 
 ## When to Create an ADR
 

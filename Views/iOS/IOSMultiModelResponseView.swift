@@ -411,16 +411,16 @@ struct IOSMultiModelSelector: View {
     let availableModels: [String]
     let maxSelection: Int
 
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
 
     private var multiModelEnabled: Bool {
         AppPreferences.multiModelSelectionEnabled
     }
 
     /// Determines the capability type of currently selected models (if any)
-    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+    private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
-        return openAIService.getModelCapability(firstSelected)
+        return aiService.getModelCapability(firstSelected)
     }
 
     var body: some View {
@@ -453,7 +453,7 @@ struct IOSMultiModelSelector: View {
 
     private func modelRow(for model: String) -> some View {
         let isModelSelected = selectedModels.contains(model)
-        let modelCapability = openAIService.getModelCapability(model)
+        let modelCapability = aiService.getModelCapability(model)
 
         // Disable if max reached OR if mixing capability types (only in multi-model mode)
         let isCapabilityMismatch: Bool = {

@@ -30,7 +30,7 @@ enum UITestEnvironment {
 
         configureUserDefaults()
         configureKeychain()
-        configureOpenAIService()
+        configureAIService()
         clearConversationArtifacts()
     }
 
@@ -40,7 +40,7 @@ enum UITestEnvironment {
         let store = EncryptedConversationStore(
             directoryURL: conversationDirectoryURL,
             keyIdentifier: "uitest-conversation-key",
-            keychain: OpenAIService.keychain
+            keychain: AIService.keychain
         )
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
@@ -61,12 +61,12 @@ enum UITestEnvironment {
 
     @MainActor
     private static func configureKeychain() {
-        OpenAIService.keychain = EphemeralKeychainStorage()
+        AIService.keychain = EphemeralKeychainStorage()
     }
 
     @MainActor
-    private static func configureOpenAIService() {
-        let service = OpenAIService.shared
+    private static func configureAIService() {
+        let service = AIService.shared
 
         // Always ensure test model exists - add it if not present
         if !service.customModels.contains(defaultModel) {
@@ -78,7 +78,10 @@ enum UITestEnvironment {
 
         // Always set selected model to test model for deterministic tests
         service.selectedModel = defaultModel
-        service.apiKey = service.apiKey.isEmpty ? "ui-test-api-key" : service.apiKey
+        // Set API key for the test model if not already configured
+        if service.modelAPIKeys[defaultModel]?.isEmpty ?? true {
+            service.modelAPIKeys[defaultModel] = "ui-test-api-key"
+        }
 
         DiagnosticsLogger.log(
             .app,

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 // Note: WatchChatViewModel is only available on watchOS. These tests verify the
-// OpenAIService tool integration and the data flow patterns used by the watch.
+// AIService tool integration and the data flow patterns used by the watch.
 // The actual WatchChatViewModel cannot be tested directly on macOS.
 
 @Suite("WatchChatViewModel Integration Tests", .serialized)
@@ -28,13 +28,13 @@ struct WatchChatViewModelIntegrationTests {
     // MARK: - Tool Integration Tests
 
     @Test("OpenAI service includes Tavily tool when configured")
-    func openAIServiceIncludesTavilyToolWhenConfigured() {
+    func aiServiceIncludesTavilyToolWhenConfigured() {
         // Configure TavilyService with a test API key
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = "tvly-test-key"
         tavilyService.isEnabled = true
 
-        // Note: In the actual app, OpenAIService.getAllAvailableTools() includes Tavily
+        // Note: In the actual app, AIService.getAllAvailableTools() includes Tavily
         // when TavilyService.shared.isAvailable is true
         #expect(tavilyService.isAvailable)
         #expect(tavilyService.isConfigured)
@@ -51,7 +51,7 @@ struct WatchChatViewModelIntegrationTests {
     }
 
     @Test("OpenAI service excludes Tavily tool when disabled")
-    func openAIServiceExcludesTavilyToolWhenDisabled() {
+    func aiServiceExcludesTavilyToolWhenDisabled() {
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = "tvly-test-key"
         tavilyService.isEnabled = false
@@ -61,7 +61,7 @@ struct WatchChatViewModelIntegrationTests {
     }
 
     @Test("OpenAI service excludes Tavily tool when not configured")
-    func openAIServiceExcludesTavilyToolWhenNotConfigured() {
+    func aiServiceExcludesTavilyToolWhenNotConfigured() {
         let tavilyService = TavilyService(keychain: keychain)
         tavilyService.apiKey = ""
         tavilyService.isEnabled = true

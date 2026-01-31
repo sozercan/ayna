@@ -5,12 +5,13 @@ A native macOS, iOS, and watchOS ChatGPT client built for speed and simplicity.
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for Apple platforms.
-- ☁️ **Multi-Provider**: Works with OpenAI-compatible endpoints, including OpenAI, Azure OpenAI, [GitHub Models](https://github.com/marketplace/models), [Gemini](https://ai.google.dev/gemini-api/docs/openai) and [Claude](https://platform.claude.com/docs/en/api/openai-sdk) providers.
+- ☁️ **Multi-Provider**: Native support for OpenAI, [Anthropic](https://www.anthropic.com), Azure OpenAI, and [GitHub Models](https://github.com/marketplace/models). Also works with any OpenAI-compatible endpoint (Gemini, Ollama, etc.).
 - 🔀 **Multi-Model Chat**: Compare responses from multiple models simultaneously.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available (macOS/iOS).
-- 🏠 **Local Models**: Run models locally for complete privacy (macOS).
-- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools (macOS).
+- 🏠 **Local Models**: Connect to local servers like Ollama via custom endpoint.
+- 🛠️ **MCP Support**: Use Model Context Protocol (MCP) tools.
 - 🎨 **Image Generation**: Create images using models like `gpt-image-1`.
+- 🧠 **Memory**: Remember facts across conversations with natural language commands.
 - 🗂️ **Organization**: Searchable conversations with auto-generated titles.
 - 🔒 **Secure**: API keys stored in Keychain; conversations encrypted on disk.
 - 📝 **Export**: Save chats as Markdown or PDF.
@@ -40,16 +41,17 @@ brew install --cask ayna
 ### Requirements
 
 - macOS 14.0 (Sonoma) or newer, iOS 17.0 or newer, or watchOS 10.0 or newer.
-- An API key for OpenAI, Azure OpenAI, Gemini or Claude, or a GitHub account for GitHub Models (optional if using local models).
+- An API key for OpenAI, Anthropic, or Azure OpenAI, or a GitHub account for GitHub Models (optional if using local models).
 
 ## User Guide
 
 ### Connect to AI Providers
-1. Open **Settings** (`Cmd+,`) → **API**.
+1. Open **Settings** (`Cmd+,`) → **Models**.
 2. Select your provider and add a model:
-   - **OpenAI**: Use the default endpoint or a custom OpenAI-compatible endpoint.
-   - **Azure OpenAI**: Use `https://<resource>.openai.azure.com` with your deployment name as the model.
-   - **GitHub Models**: Sign in with your GitHub account (OAuth).
+   - **OpenAI**: Use the default endpoint or a custom OpenAI API-compatible endpoint.
+   - **Anthropic**: Use the default endpoint or a custom Anthropic API-compatible endpoint.
+   - **Azure**: Use `https://<resource>.openai.azure.com` (Azure OpenAI) or `https://<resource>.services.ai.azure.com` (Microsoft Foundry) with your deployment name as the model.
+   - **GitHub Models**: Sign in with your GitHub account.
    - **Apple Intelligence**: For on-device inference.
 3. Start chatting!
 
@@ -60,8 +62,8 @@ brew install --cask ayna
 4. Ayna will stream responses from all selected models in parallel, allowing you to compare their outputs side-by-side.
 
 ### Enable Tools (MCP)
-1. Go to **Settings** → **MCP Tools**.
-2. Enable the default `wassette` runtime (requires the [Wassette CLI](https://github.com/microsoft/wassette) and runs `wassette serve --stdio`) or add any other MCP server to give the AI more capabilities.
+1. Go to **Settings** → **Tools**.
+2. Add an MCP server to give the AI more capabilities.
 
 ### Keyboard Shortcuts
 - `Cmd+N`: New conversation

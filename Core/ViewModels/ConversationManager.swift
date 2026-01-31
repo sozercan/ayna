@@ -194,8 +194,8 @@ final class ConversationManager: ObservableObject {
             var decodedFromDisk = try await store.loadConversations()
 
             // Validate and fix models that no longer exist
-            let availableModels = OpenAIService.shared.customModels
-            let defaultModel = OpenAIService.shared.selectedModel
+            let availableModels = AIService.shared.customModels
+            let defaultModel = AIService.shared.selectedModel
 
             for index in decodedFromDisk.indices where !availableModels.contains(decodedFromDisk[index].model) {
                 // Model no longer exists, update to default
@@ -309,7 +309,7 @@ final class ConversationManager: ObservableObject {
     }
 
     func createNewConversation(title: String = "New Conversation") {
-        let defaultModel = OpenAIService.shared.selectedModel
+        let defaultModel = AIService.shared.selectedModel
         let conversation = Conversation(title: title, model: defaultModel)
         conversations.insert(conversation, at: 0)
         updateCacheForInsertion(at: 0)
@@ -329,13 +329,13 @@ final class ConversationManager: ObservableObject {
         prompt: String? = nil,
         systemPrompt: String? = nil
     ) -> Conversation {
-        let effectiveModel = model ?? OpenAIService.shared.selectedModel
+        let effectiveModel = model ?? AIService.shared.selectedModel
 
         // Validate model exists
-        let availableModels = OpenAIService.shared.customModels
+        let availableModels = AIService.shared.customModels
         let validatedModel = availableModels.contains(effectiveModel)
             ? effectiveModel
-            : OpenAIService.shared.selectedModel
+            : AIService.shared.selectedModel
 
         var conversation = Conversation(
             title: "New Conversation",
@@ -673,7 +673,7 @@ final class ConversationManager: ObservableObject {
             content: String,
             userMessage: String
         ) -> Conversation {
-            let defaultModel = OpenAIService.shared.selectedModel
+            let defaultModel = AIService.shared.selectedModel
 
             // Build the system message with context
             var systemContent = """
@@ -735,7 +735,7 @@ final class ConversationManager: ObservableObject {
         }
 
         // Skip AI title generation for image generation models - use fallback instead
-        let modelCapability = OpenAIService.shared.getModelCapability(conversation.model)
+        let modelCapability = AIService.shared.getModelCapability(conversation.model)
         if modelCapability == .imageGeneration {
             // Use simple fallback title for image generation conversations
             let content = firstMessage.content
@@ -753,7 +753,7 @@ final class ConversationManager: ObservableObject {
 
         let accumulator = TitleAccumulator()
 
-        OpenAIService.shared.sendMessage(
+        AIService.shared.sendMessage(
             messages: [titleMessage],
             model: conversation.model,
             stream: false,

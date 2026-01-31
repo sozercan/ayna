@@ -12,13 +12,13 @@
     struct WatchModelSelectionView: View {
         @Environment(\.dismiss) private var dismiss
         @EnvironmentObject var connectivityService: WatchConnectivityService
-        @ObservedObject private var openAIService = OpenAIService.shared
+        @ObservedObject private var aiService = AIService.shared
 
         /// Filter models to only show those usable on watchOS
         private var watchUsableModels: [String] {
             connectivityService.availableModels.filter { model in
                 // Filter out Apple Intelligence - it can't run on watchOS
-                let provider = openAIService.modelProviders[model]
+                let provider = aiService.modelProviders[model]
                 return provider != .appleIntelligence
             }
         }
@@ -41,7 +41,7 @@
                     ForEach(watchUsableModels, id: \.self) { model in
                         Button {
                             connectivityService.selectedModel = model
-                            openAIService.selectedModel = model
+                            aiService.selectedModel = model
                             dismiss()
                         } label: {
                             HStack {
@@ -62,7 +62,7 @@
                 // Auto-select if only one model available
                 if watchUsableModels.count == 1, let onlyModel = watchUsableModels.first {
                     connectivityService.selectedModel = onlyModel
-                    openAIService.selectedModel = onlyModel
+                    aiService.selectedModel = onlyModel
                 }
             }
         }

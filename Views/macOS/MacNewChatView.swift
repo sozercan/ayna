@@ -41,14 +41,14 @@ private final class CompletionCounter {
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
     @State private var isComposerFocused = true
     @State private var attachedFiles: [URL] = []
     @State var isGenerating = false
     @State var currentConversationId: UUID?
-    @State private var selectedModel = OpenAIService.shared.selectedModel
+    @State private var selectedModel = AIService.shared.selectedModel
     @State private var toolCallDepth = 0
     @State private var currentToolName: String?
     @State private var showModelSelector = false
@@ -79,9 +79,9 @@ struct MacNewChatView: View {
     }
 
     /// Determines the capability type of currently selected models (if any)
-    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+    private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
-        return openAIService.getModelCapability(firstSelected)
+        return aiService.getModelCapability(firstSelected)
     }
 
     // MARK: - Multi-Model Display
@@ -158,12 +158,12 @@ struct MacNewChatView: View {
     }
 
     private var needsModelSetup: Bool {
-        openAIService.usableModels.isEmpty
-            || openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        aiService.usableModels.isEmpty
+            || aiService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var modelSetupIssues: [String] {
-        let modelSpecificIssues = openAIService.configurationIssues.filter {
+        let modelSpecificIssues = aiService.configurationIssues.filter {
             $0.localizedCaseInsensitiveContains("model")
         }
         if !modelSpecificIssues.isEmpty {
@@ -186,7 +186,7 @@ struct MacNewChatView: View {
             return conversationModel
         }
 
-        return openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return aiService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var composerModelLabel: String {
@@ -319,7 +319,7 @@ struct MacNewChatView: View {
         .onChange(of: currentConversation?.model ?? "") { _, _ in
             syncSelectedModelState()
         }
-        .onChange(of: openAIService.selectedModel) { _, newValue in
+        .onChange(of: aiService.selectedModel) { _, newValue in
             // Only follow global selection if we don't have a conversation yet
             guard currentConversation == nil else { return }
             selectedModel = newValue
@@ -577,15 +577,15 @@ struct MacNewChatView: View {
             Divider()
                 .padding(.vertical, 4)
 
-            if openAIService.usableModels.isEmpty {
+            if aiService.usableModels.isEmpty {
                 SettingsLink {
                     Label("Add Model in Settings", systemImage: "slider.horizontal.3")
                 }
                 .routeSettings(to: .models)
             } else {
-                ForEach(openAIService.usableModels, id: \.self) { model in
+                ForEach(aiService.usableModels, id: \.self) { model in
                     let isSelected = selectedModels.contains(model)
-                    let modelCapability = openAIService.getModelCapability(model)
+                    let modelCapability = aiService.getModelCapability(model)
                     let isCapabilityMismatch: Bool = {
                         guard let selectedType = selectedCapabilityType else { return false }
                         return modelCapability != selectedType
@@ -651,7 +651,7 @@ struct MacNewChatView: View {
                     if let first = selectedModels.first {
                         selectedModels = [first]
                         selectedModel = first
-                        openAIService.selectedModel = first
+                        aiService.selectedModel = first
                     }
                 }) {
                     HStack {
@@ -742,12 +742,12 @@ struct MacNewChatView: View {
             selectedModel = conversationModel
             selectedModels = [conversationModel]
         } else {
-            selectedModel = openAIService.selectedModel
-            selectedModels = [openAIService.selectedModel]
+            selectedModel = aiService.selectedModel
+            selectedModels = [aiService.selectedModel]
         }
 
         // Ensure we have at least one model selected if possible
-        if selectedModels.isEmpty, let first = openAIService.usableModels.first {
+        if selectedModels.isEmpty, let first = aiService.usableModels.first {
             selectedModels = [first]
             selectedModel = first
         }
@@ -760,7 +760,7 @@ struct MacNewChatView: View {
             // Single-select mode: always replace selection
             selectedModels = [model]
             selectedModel = model
-            openAIService.selectedModel = model
+            aiService.selectedModel = model
             return
         }
 
@@ -770,7 +770,7 @@ struct MacNewChatView: View {
             selectedModels.remove(model)
         } else {
             // Check if we're trying to mix capability types
-            let modelCapability = openAIService.getModelCapability(model)
+            let modelCapability = aiService.getModelCapability(model)
             if let selectedType = selectedCapabilityType, modelCapability != selectedType {
                 // Clear existing selections and start fresh with the new type
                 selectedModels.removeAll()
@@ -781,7 +781,7 @@ struct MacNewChatView: View {
         // Update single selection state for compatibility
         if selectedModels.count == 1, let first = selectedModels.first {
             selectedModel = first
-            openAIService.selectedModel = first
+            aiService.selectedModel = first
         }
     }
 
@@ -810,14 +810,16 @@ struct MacNewChatView: View {
     func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
         if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
            let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId }) {
+           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId })
+        {
             conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
         }
     }
 
     func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
         if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId) {
+           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId)
+        {
             group.updateStatus(for: messageId, status: status)
             conversationManager.conversations[ci].updateResponseGroup(group)
         }
@@ -843,7 +845,7 @@ struct MacNewChatView: View {
         if isGenerating {
             // Stop generation immediately
             logNewChat("🛑 Stop button clicked in NewChatView, cancelling...", level: .info)
-            OpenAIService.shared.cancelCurrentRequest()
+            AIService.shared.cancelCurrentRequest()
             isGenerating = false
             logNewChat("✅ isGenerating set to FALSE after stop", level: .info)
             isComposerFocused = true
@@ -863,7 +865,7 @@ struct MacNewChatView: View {
             return
         }
 
-        openAIService.selectedModel = activeModel
+        aiService.selectedModel = activeModel
         ensureConversationModelMatchesSelection(activeModel)
 
         let textToSend = messageText
@@ -974,7 +976,7 @@ struct MacNewChatView: View {
         // The view switch will happen in the completion handler after generation finishes
 
         // Check if we're in image generation mode (any selected model is image gen means all are)
-        let modelCapability = openAIService.getModelCapability(activeModel)
+        let modelCapability = aiService.getModelCapability(activeModel)
         if modelCapability == .imageGeneration {
             // Image generation flow - handle multi-model image gen
             isGenerating = true
@@ -1028,7 +1030,7 @@ struct MacNewChatView: View {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Get available tools (Tavily + MCP)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
@@ -1054,7 +1056,7 @@ struct MacNewChatView: View {
         )
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
-        openAIService.generateImage(
+        aiService.generateImage(
             prompt: prompt,
             model: model,
             onComplete: { imageData in
@@ -1140,7 +1142,7 @@ struct MacNewChatView: View {
         for model in models {
             guard let messageId = messageIds[model] else { continue }
 
-            openAIService.generateImage(
+            aiService.generateImage(
                 prompt: prompt,
                 model: model,
                 onComplete: { imageData in
@@ -1230,7 +1232,7 @@ struct MacNewChatView: View {
         }
 
         // Send to all models in parallel
-        openAIService.sendToMultipleModels(
+        aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
             temperature: temperature,
@@ -1303,7 +1305,7 @@ struct MacNewChatView: View {
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
 
-        openAIService.sendMessage(
+        aiService.sendMessage(
             messages: messages,
             model: model,
             temperature: temperature,
@@ -1430,9 +1432,9 @@ struct MacNewChatView: View {
                             let result: String
                             var citations: [CitationReference]?
 
-                            if openAIService.isBuiltInTool(toolName) {
+                            if aiService.isBuiltInTool(toolName) {
                                 // Built-in tool (e.g., web_search via Tavily) - get citations
-                                let (toolResult, toolCitations) = await openAIService
+                                let (toolResult, toolCitations) = await aiService
                                     .executeBuiltInToolWithCitations(
                                         name: toolName,
                                         arguments: argumentsWrapper.value

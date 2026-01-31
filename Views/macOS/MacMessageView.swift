@@ -23,7 +23,7 @@ struct MacMessageView: View {
     @State private var showReasoning = false
     @State private var showModelMenu = false
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
 
     // Performance: Cache parsed content blocks to avoid re-parsing on every render
     // Initialize synchronously to avoid flash of empty bubbles on first render
@@ -253,7 +253,7 @@ struct MacMessageView: View {
         let isCurrentUser = message.role == .user
         let alignment: HorizontalAlignment = isCurrentUser ? .trailing : .leading
 
-        return VStack(alignment: alignment, spacing: 6) {
+        return VStack(alignment: alignment, spacing: 4) {
             if message.role == .assistant, let modelName {
                 Text(modelName)
                     .font(Typography.captionBold)
@@ -310,7 +310,6 @@ struct MacMessageView: View {
             actionControls(for: message.role)
                 .offset(y: -26)
         }
-        .padding(.top, 30) // Extra space for action controls above bubble
         .contentShape(Rectangle()) // Make entire area including controls hoverable
         .animation(Motion.easeStandard, value: isHovered)
     }
@@ -471,7 +470,7 @@ struct MacMessageView: View {
                         }
 
                         Menu {
-                            ForEach(openAIService.usableModels, id: \.self) { model in
+                            ForEach(aiService.usableModels, id: \.self) { model in
                                 Button(action: {
                                     onSwitchModel?(model)
                                 }) {

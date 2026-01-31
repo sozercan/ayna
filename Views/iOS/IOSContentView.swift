@@ -75,7 +75,7 @@ struct IOSContentView: View {
             if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
                 // Model was added (or cancelled), process the pending chat if model now exists
                 if let model = chatRequest.model,
-                   OpenAIService.shared.customModels.contains(model)
+                   AIService.shared.customModels.contains(model)
                 {
                     _ = conversationManager.startConversation(
                         model: chatRequest.model,
@@ -91,7 +91,7 @@ struct IOSContentView: View {
 
 struct IOSNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
@@ -188,7 +188,7 @@ struct IOSNewChatView: View {
     }
 
     var body: some View {
-        if openAIService.usableModels.isEmpty {
+        if aiService.usableModels.isEmpty {
             onboardingView
         } else {
             chatInterface
@@ -213,7 +213,7 @@ struct IOSNewChatView: View {
                                         onSwitchModel: message.role == .assistant ? { newModel in
                                             viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                         } : nil,
-                                        availableModels: openAIService.usableModels
+                                        availableModels: aiService.usableModels
                                     )
                                     .id(message.id)
                                     .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
@@ -335,7 +335,7 @@ struct IOSNewChatView: View {
             NavigationStack {
                 IOSMultiModelSelector(
                     selectedModels: $viewModel.selectedModels,
-                    availableModels: openAIService.usableModels,
+                    availableModels: aiService.usableModels,
                     maxSelection: 4
                 )
                 .toolbar {
@@ -345,7 +345,7 @@ struct IOSNewChatView: View {
                             // Update primary model if needed
                             if let first = viewModel.selectedModels.first, viewModel.selectedModels.count == 1 {
                                 viewModel.selectedModel = first
-                                openAIService.selectedModel = first
+                                aiService.selectedModel = first
                             }
                         }
                     }

@@ -30,7 +30,7 @@ All shared logic lives in `Core/`:
 Core/
 ├── Models/           # Data types (Conversation, Message, etc.)
 ├── ViewModels/       # @Observable state management
-├── Services/         # Business logic (OpenAIService, etc.)
+├── Services/         # Business logic (AIService, etc.)
 │   └── Providers/    # AI provider implementations
 ├── Utilities/        # Helpers (ErrorPresenter, etc.)
 ├── Design/           # Shared design tokens

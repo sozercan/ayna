@@ -59,7 +59,7 @@ struct MacChatView: View {
     }
 
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @ObservedObject private var mcpManager = MCPServerManager.shared
 
     @State private var messageText = ""
@@ -81,9 +81,9 @@ struct MacChatView: View {
     @State private var isToolSectionExpanded = false
 
     /// Determines the capability type of currently selected models (if any)
-    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+    private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
-        return openAIService.getModelCapability(firstSelected)
+        return aiService.getModelCapability(firstSelected)
     }
 
     // App content attachment (Work with Apps)
@@ -239,7 +239,7 @@ struct MacChatView: View {
     private var composerModelLabel: String {
         let displayName = normalizedSelectedModel
         if displayName.isEmpty {
-            return openAIService.usableModels.isEmpty ? "Add Model" : "Select Model"
+            return aiService.usableModels.isEmpty ? "Add Model" : "Select Model"
         }
         return displayName
     }
@@ -394,7 +394,7 @@ struct MacChatView: View {
                 }
 
                 // Rate Limit Warning Banner (GitHub Models only)
-                if openAIService.provider == .githubModels {
+                if aiService.provider == .githubModels {
                     RateLimitWarningBanner(
                         rateLimitInfo: GitHubOAuthService.shared.rateLimitInfo,
                         retryAfterDate: GitHubOAuthService.shared.retryAfterDate
@@ -633,15 +633,15 @@ struct MacChatView: View {
                                 Divider()
                                     .padding(.vertical, Spacing.xxs)
 
-                                if openAIService.usableModels.isEmpty {
+                                if aiService.usableModels.isEmpty {
                                     SettingsLink {
                                         Label("Add Model in Settings", systemImage: "slider.horizontal.3")
                                     }
                                     .routeSettings(to: .models)
                                 } else {
-                                    ForEach(openAIService.usableModels, id: \.self) { model in
+                                    ForEach(aiService.usableModels, id: \.self) { model in
                                         let isSelected = selectedModels.contains(model)
-                                        let modelCapability = openAIService.getModelCapability(model)
+                                        let modelCapability = aiService.getModelCapability(model)
                                         let isCapabilityMismatch: Bool = {
                                             guard let selectedType = selectedCapabilityType else { return false }
                                             return modelCapability != selectedType
@@ -861,7 +861,7 @@ struct MacChatView: View {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Use unified tool collection (includes Tavily + MCP tools)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
 
         // Send to AI
         sendMessageWithToolSupport(
@@ -954,7 +954,7 @@ struct MacChatView: View {
             return trimmedConversationModel
         }
 
-        let trimmedGlobal = openAIService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGlobal = aiService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedGlobal.isEmpty ? nil : trimmedGlobal
     }
 
@@ -989,7 +989,7 @@ struct MacChatView: View {
             // Initialize selectedModels if empty (for new conversations or first load)
             if !latest.isEmpty {
                 selectedModels = [latest]
-            } else if let firstAvailable = openAIService.usableModels.first {
+            } else if let firstAvailable = aiService.usableModels.first {
                 // Fallback to first available model if conversation model is empty
                 selectedModels = [firstAvailable]
                 selectedModel = firstAvailable
@@ -1030,7 +1030,7 @@ struct MacChatView: View {
             }
         } else {
             // Check if we're trying to mix capability types
-            let modelCapability = openAIService.getModelCapability(model)
+            let modelCapability = aiService.getModelCapability(model)
             if let selectedType = selectedCapabilityType, modelCapability != selectedType {
                 // Clear existing selections and start fresh with the new type
                 selectedModels.removeAll()
@@ -1153,7 +1153,7 @@ struct MacChatView: View {
         if isGenerating {
             // Stop generation immediately
             logChat("🛑 Stop button clicked, cancelling...", level: .info)
-            OpenAIService.shared.cancelCurrentRequest()
+            AIService.shared.cancelCurrentRequest()
 
             // Flush any pending chunks before stopping
             batchUpdateTask?.cancel()
@@ -1323,7 +1323,7 @@ struct MacChatView: View {
         }
 
         // Check if we're in image generation mode (any selected model is image gen means all are)
-        let modelCapability = openAIService.getModelCapability(activeModel)
+        let modelCapability = aiService.getModelCapability(activeModel)
 
         if modelCapability == .imageGeneration {
             // Image generation flow - handle multi-model image gen
@@ -1398,7 +1398,7 @@ struct MacChatView: View {
         }
 
         // Use unified tool collection (includes Tavily + MCP tools)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
 
         if let tools, !tools.isEmpty {
             let toolNames = tools.compactMap { tool -> String? in
@@ -1487,7 +1487,7 @@ struct MacChatView: View {
             // Use image editing API for follow-up requests
             logChat("📝 Using image edit API with previous image context", level: .info)
 
-            openAIService.editImage(
+            aiService.editImage(
                 prompt: prompt,
                 sourceImage: previousImage,
                 model: model,
@@ -1504,7 +1504,7 @@ struct MacChatView: View {
             )
         } else {
             // No previous image - use generation API
-            openAIService.generateImage(
+            aiService.generateImage(
                 prompt: prompt,
                 model: model,
                 onComplete: { imageData in
@@ -1695,7 +1695,7 @@ struct MacChatView: View {
 
             if let sourceImage = previousImage {
                 // Use image editing API
-                openAIService.editImage(
+                aiService.editImage(
                     prompt: prompt,
                     sourceImage: sourceImage,
                     model: model,
@@ -1704,7 +1704,7 @@ struct MacChatView: View {
                 )
             } else {
                 // Use image generation API
-                openAIService.generateImage(
+                aiService.generateImage(
                     prompt: prompt,
                     model: model,
                     onComplete: onComplete,
@@ -1770,7 +1770,7 @@ struct MacChatView: View {
         let conversationId = conversation.id
 
         // Send to all models in parallel
-        openAIService.sendToMultipleModels(
+        aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
             temperature: temperature,
@@ -1898,7 +1898,7 @@ struct MacChatView: View {
             $0.id == conversation.id
         })
 
-        openAIService.sendMessage(
+        aiService.sendMessage(
             messages: messages,
             model: model,
             temperature: temperature,
@@ -2138,9 +2138,9 @@ struct MacChatView: View {
                             let result: String
                             var citations: [CitationReference]?
 
-                            if openAIService.isBuiltInTool(toolName) {
+                            if aiService.isBuiltInTool(toolName) {
                                 // Built-in tool (e.g., web_search via Tavily) - get citations
-                                let (toolResult, toolCitations) = await openAIService.executeBuiltInToolWithCitations(
+                                let (toolResult, toolCitations) = await aiService.executeBuiltInToolWithCitations(
                                     name: toolName,
                                     arguments: argumentsWrapper.value
                                 )
@@ -2379,7 +2379,7 @@ struct MacChatView: View {
         }
 
         // Check if current model is for image generation
-        let modelCapability = openAIService.getModelCapability(updatedConversation.model)
+        let modelCapability = aiService.getModelCapability(updatedConversation.model)
 
         if modelCapability == .imageGeneration {
             // Image generation flow
@@ -2401,7 +2401,7 @@ struct MacChatView: View {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Get available tools (Tavily + MCP)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
 
         // Reset tool call depth
         toolCallDepth = 0
@@ -2430,7 +2430,7 @@ struct MacChatView: View {
         }
 
         // Check if specified model is for image generation
-        let modelCapability = openAIService.getModelCapability(model)
+        let modelCapability = aiService.getModelCapability(model)
 
         if modelCapability == .imageGeneration {
             // Image generation flow
@@ -2452,7 +2452,7 @@ struct MacChatView: View {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Get available tools (Tavily + MCP)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
 
         // Reset tool call depth
         toolCallDepth = 0

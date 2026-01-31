@@ -107,7 +107,7 @@ struct MacContentView: View {
             if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
                 // Model was added (or cancelled), process the pending chat if model now exists
                 if let model = chatRequest.model,
-                   OpenAIService.shared.customModels.contains(model)
+                   AIService.shared.customModels.contains(model)
                 {
                     _ = conversationManager.startConversation(
                         model: chatRequest.model,

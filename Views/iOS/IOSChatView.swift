@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 struct IOSChatView: View {
     let conversationId: UUID
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @ObservedObject private var gitHubOAuthService = GitHubOAuthService.shared
 
     @State private var isFileImporterPresented = false
@@ -126,7 +126,7 @@ struct IOSChatView: View {
                                             onSwitchModel: message.role == .assistant ? { newModel in
                                                 viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                             } : nil,
-                                            availableModels: openAIService.usableModels
+                                            availableModels: aiService.usableModels
                                         )
                                         .id(message.id)
                                         .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
@@ -219,7 +219,7 @@ struct IOSChatView: View {
             }
 
             // Rate Limit Warning Banner (GitHub Models only)
-            if openAIService.provider == .githubModels {
+            if aiService.provider == .githubModels {
                 RateLimitWarningBanner(
                     rateLimitInfo: gitHubOAuthService.rateLimitInfo,
                     retryAfterDate: gitHubOAuthService.retryAfterDate
@@ -312,7 +312,7 @@ struct IOSChatView: View {
             NavigationStack {
                 IOSMultiModelSelector(
                     selectedModels: $viewModel.selectedModels,
-                    availableModels: openAIService.usableModels,
+                    availableModels: aiService.usableModels,
                     maxSelection: 4
                 )
                 .toolbar {
@@ -364,7 +364,7 @@ struct IOSChatView: View {
 
         if !conversation.model.isEmpty {
             viewModel.selectedModels = [conversation.model]
-        } else if let firstAvailable = openAIService.usableModels.first {
+        } else if let firstAvailable = aiService.usableModels.first {
             // Fallback to first available model if conversation model is empty
             viewModel.selectedModels = [firstAvailable]
             conversationManager.updateModel(for: conversation, model: firstAvailable)

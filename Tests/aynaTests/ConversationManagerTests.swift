@@ -30,7 +30,7 @@ struct ConversationManagerTests {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let expectedModel = "unit-test-model"
 
-        OpenAIService.shared.selectedModel = expectedModel
+        AIService.shared.selectedModel = expectedModel
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
 

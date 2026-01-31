@@ -83,7 +83,7 @@ enum OpenAIStreamParser {
         // Log all non-empty lines to track what we receive
         if !trimmedLine.isEmpty {
             DiagnosticsLogger.logThrottled(
-                .openAIService,
+                .aiService,
                 level: .debug,
                 throttleKey: "stream.parser.processingLine",
                 interval: 2.0,
@@ -110,7 +110,7 @@ enum OpenAIStreamParser {
         // Check for stream completion marker
         if jsonString == "[DONE]" {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .debug,
                 message: "📍 Parser: [DONE] marker received"
             )
@@ -133,7 +133,7 @@ enum OpenAIStreamParser {
             // Log unparseable lines for debugging
             if !jsonString.isEmpty, jsonString != "[DONE]" {
                 DiagnosticsLogger.logThrottled(
-                    .openAIService,
+                    .aiService,
                     level: .debug,
                     throttleKey: "stream.parser.unparseable",
                     interval: 2.0,
@@ -161,7 +161,7 @@ enum OpenAIStreamParser {
             if !textSegments.isEmpty {
                 extractedContent = textSegments.joined()
                 DiagnosticsLogger.logThrottled(
-                    .openAIService,
+                    .aiService,
                     level: .debug,
                     throttleKey: "stream.parser.extractedContent",
                     interval: 1.0,
@@ -308,7 +308,7 @@ enum OpenAIStreamParser {
         if let contentArray = contentField as? [[String: Any]] {
             let meta = mergedMetadata(metadata, additions: ["source": source, "parts": "\(contentArray.count)"])
             DiagnosticsLogger.logThrottled(
-                .openAIService,
+                .aiService,
                 level: .debug,
                 throttleKey: "stream.parser.structuredContentArray",
                 interval: 5.0,
@@ -321,7 +321,7 @@ enum OpenAIStreamParser {
                 guard let type = part["type"] as? String else {
                     let meta = mergedMetadata(metadata, additions: ["source": source, "index": "\(index)"])
                     DiagnosticsLogger.logThrottled(
-                        .openAIService,
+                        .aiService,
                         level: .debug,
                         throttleKey: "stream.parser.structuredMissingType",
                         interval: 5.0,
@@ -356,7 +356,7 @@ enum OpenAIStreamParser {
                     ]
                 )
                 DiagnosticsLogger.logThrottled(
-                    .openAIService,
+                    .aiService,
                     level: .debug,
                     throttleKey: "stream.parser.structuredMissingText",
                     interval: 5.0,
@@ -380,7 +380,7 @@ enum OpenAIStreamParser {
                 additions: ["source": source, "payloadType": "\(type(of: contentField))"]
             )
             DiagnosticsLogger.logThrottled(
-                .openAIService,
+                .aiService,
                 level: .debug,
                 throttleKey: "stream.parser.unsupportedContentPayload",
                 interval: 5.0,

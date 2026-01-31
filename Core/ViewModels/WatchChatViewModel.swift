@@ -26,7 +26,7 @@
 
         private let conversationStore: WatchConversationStore
         private let connectivityService: WatchConnectivityService
-        private let openAIService: OpenAIService
+        private let aiService: AIService
         private var currentConversationId: UUID?
         private var toolCallDepth = 0
         private let maxToolCallDepth = 5
@@ -39,11 +39,11 @@
         init(
             conversationStore: WatchConversationStore = .shared,
             connectivityService: WatchConnectivityService = .shared,
-            openAIService: OpenAIService = .shared
+            aiService: AIService = .shared
         ) {
             self.conversationStore = conversationStore
             self.connectivityService = connectivityService
-            self.openAIService = openAIService
+            self.aiService = aiService
         }
 
         /// Set the current conversation being viewed
@@ -125,11 +125,11 @@
                 : connectivityService.selectedModel
 
             // Check if the selected model is usable on watchOS
-            let provider = openAIService.modelProviders[model]
+            let provider = aiService.modelProviders[model]
             if provider == .appleIntelligence {
                 // Fall back to first usable model
                 let usableModels = connectivityService.availableModels.filter { modelName in
-                    let modelProvider = openAIService.modelProviders[modelName]
+                    let modelProvider = aiService.modelProviders[modelName]
                     return modelProvider != .appleIntelligence
                 }
                 if let fallback = usableModels.first {
@@ -144,7 +144,7 @@
             }
 
             // Check if the model is configured (has API key or doesn't need one like Apple Intelligence)
-            guard openAIService.isModelConfigured(model) else {
+            guard aiService.isModelConfigured(model) else {
                 isLoading = false
                 isStreaming = false
                 errorMessage = "API key not configured. Please configure on iPhone."
@@ -153,7 +153,7 @@
             }
 
             // Get available tools (Tavily web search if configured)
-            let tools = openAIService.getAllAvailableTools()
+            let tools = aiService.getAllAvailableTools()
 
             sendMessageWithToolSupport(
                 messages: Array(messagesForAPI),
@@ -174,7 +174,7 @@
             isFirstMessage: Bool,
             userContent: String
         ) {
-            openAIService.sendMessage(
+            aiService.sendMessage(
                 messages: messages,
                 model: model,
                 stream: true,
@@ -335,8 +335,8 @@
 
                         // Execute the tool
                         Task {
-                            let result: String = if self.openAIService.isBuiltInTool(toolName) {
-                                await self.openAIService.executeBuiltInTool(name: toolName, arguments: arguments)
+                            let result: String = if self.aiService.isBuiltInTool(toolName) {
+                                await self.aiService.executeBuiltInTool(name: toolName, arguments: arguments)
                             } else {
                                 "Tool not available on Apple Watch"
                             }
@@ -387,7 +387,7 @@
 
         /// Cancel the current request
         func cancelRequest() {
-            openAIService.cancelCurrentRequest()
+            aiService.cancelCurrentRequest()
             isLoading = false
             isStreaming = false
             currentToolName = nil
@@ -413,13 +413,13 @@
         func createNewConversation() -> UUID {
             // Filter to only models usable on watchOS (exclude Apple Intelligence)
             let usableModels = connectivityService.availableModels.filter { model in
-                let provider = openAIService.modelProviders[model]
+                let provider = aiService.modelProviders[model]
                 return provider != .appleIntelligence
             }
 
             // Use selected model if it's usable, otherwise pick first usable model
             let selectedModel = connectivityService.selectedModel
-            let selectedProvider = openAIService.modelProviders[selectedModel]
+            let selectedProvider = aiService.modelProviders[selectedModel]
             let isSelectedUsable = selectedProvider != .appleIntelligence
 
             let model: String = if !selectedModel.isEmpty, isSelectedUsable {
@@ -443,7 +443,7 @@
             let titleMessage = Message(role: .user, content: titlePrompt)
             var generatedTitle = ""
 
-            openAIService.sendMessage(
+            aiService.sendMessage(
                 messages: [titleMessage],
                 model: conversation.model,
                 stream: false,

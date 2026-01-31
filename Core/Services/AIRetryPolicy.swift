@@ -1,5 +1,5 @@
 //
-//  OpenAIRetryPolicy.swift
+//  AIRetryPolicy.swift
 //  ayna
 //
 //  Created on 11/24/25.
@@ -57,7 +57,7 @@ final class CircuitBreaker: @unchecked Sendable {
             _state = .halfOpen
             consecutiveSuccesses = 0
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .info,
                 message: "⚡ Circuit breaker transitioning to half-open"
             )
@@ -89,7 +89,7 @@ final class CircuitBreaker: @unchecked Sendable {
                 _state = .closed
                 consecutiveSuccesses = 0
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .info,
                     message: "✅ Circuit breaker closed after recovery"
                 )
@@ -113,7 +113,7 @@ final class CircuitBreaker: @unchecked Sendable {
                 let openUntil = Date().addingTimeInterval(config.openDuration)
                 _state = .open(until: openUntil)
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .error,
                     message: "🔴 Circuit breaker opened after \(consecutiveFailures) failures",
                     metadata: ["reopensAt": openUntil.description]
@@ -124,7 +124,7 @@ final class CircuitBreaker: @unchecked Sendable {
             let openUntil = Date().addingTimeInterval(config.openDuration)
             _state = .open(until: openUntil)
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "🔴 Circuit breaker reopened after half-open failure"
             )
@@ -262,7 +262,7 @@ enum NetworkCircuitBreaker {
 
 /// Stateless helper that determines retry behavior for API requests.
 /// Implements exponential backoff with jitter for transient failures.
-enum OpenAIRetryPolicy {
+enum AIRetryPolicy {
     // MARK: - Configuration
 
     struct Config {
@@ -306,8 +306,13 @@ enum OpenAIRetryPolicy {
             return isRetryableURLError(urlError)
         }
 
-        // Check for retryable API errors
-        if let openAIError = error as? OpenAIService.OpenAIError {
+        // Check for retryable API errors (AynaError)
+        if let aynaError = error as? AynaError {
+            return isRetryableAynaError(aynaError)
+        }
+
+        // Legacy support for AIService.AIError
+        if let openAIError = error as? AIService.AIError {
             return isRetryableAPIError(openAIError)
         }
 
@@ -379,12 +384,29 @@ enum OpenAIRetryPolicy {
         }
     }
 
-    private static func isRetryableAPIError(_ error: OpenAIService.OpenAIError) -> Bool {
+    private static func isRetryableAPIError(_ error: AIService.AIError) -> Bool {
         switch error {
         case let .apiError(message):
             // Retry on rate limits and server errors
             let retryableStatusCodes = ["429", "500", "502", "503", "504"]
             return retryableStatusCodes.contains { message.contains($0) }
+        default:
+            return false
+        }
+    }
+
+    private static func isRetryableAynaError(_ error: AynaError) -> Bool {
+        switch error {
+        case let .apiError(message):
+            // Retry on rate limits and server errors
+            let retryableStatusCodes = ["429", "500", "502", "503", "504"]
+            return retryableStatusCodes.contains { message.contains($0) }
+        case .rateLimited:
+            return true
+        case let .httpError(statusCode, _):
+            return statusCode >= 500 || statusCode == 429
+        case .timeout:
+            return true
         default:
             return false
         }

@@ -10,7 +10,7 @@ import SwiftUI
 
 struct IOSSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var aiService = AIService.shared
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var searchText = ""
     @State private var showSettings = false
@@ -89,7 +89,7 @@ struct IOSSidebarView: View {
         VStack(spacing: Spacing.xxl) {
             Spacer()
 
-            if openAIService.usableModels.isEmpty {
+            if aiService.usableModels.isEmpty {
                 Image(systemName: "sparkles")
                     .font(.system(size: Typography.IconSize.heroLarge + 10))
                     .foregroundStyle(Theme.accent.opacity(0.9))
@@ -100,11 +100,11 @@ struct IOSSidebarView: View {
             }
 
             VStack(spacing: Spacing.sm) {
-                Text(openAIService.usableModels.isEmpty ? "Welcome to Ayna" : "No Conversations Yet")
+                Text(aiService.usableModels.isEmpty ? "Welcome to Ayna" : "No Conversations Yet")
                     .font(Typography.title2)
                     .fontWeight(.semibold)
 
-                Text(openAIService.usableModels.isEmpty ? "Please add an AI model to get started" : "Start a new conversation to get started")
+                Text(aiService.usableModels.isEmpty ? "Please add an AI model to get started" : "Start a new conversation to get started")
                     .font(Typography.bodySecondary)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -114,8 +114,8 @@ struct IOSSidebarView: View {
                 startNewConversation()
             } label: {
                 Label(
-                    openAIService.usableModels.isEmpty ? "Add Model" : "New Conversation",
-                    systemImage: openAIService.usableModels.isEmpty ? "gearshape.fill" : "plus.circle.fill"
+                    aiService.usableModels.isEmpty ? "Add Model" : "New Conversation",
+                    systemImage: aiService.usableModels.isEmpty ? "gearshape.fill" : "plus.circle.fill"
                 )
                 .font(Typography.headline)
                 .padding(.horizontal, Spacing.xxl)
@@ -346,7 +346,7 @@ struct IOSSidebarView: View {
     /// Start a new conversation and navigate to it
     private func startNewConversation() {
         // If no models are available, direct user to settings
-        if openAIService.usableModels.isEmpty {
+        if aiService.usableModels.isEmpty {
             showSettings = true
             return
         }
@@ -462,22 +462,22 @@ struct ConversationRow: View {
 private struct IMessageCapsuleStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                content
+                    .background {
+                        Capsule()
+                            .fill(Color(uiColor: .tertiarySystemFill))
+                    }
+            }
+        #else
             content
                 .background {
                     Capsule()
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
-        }
-        #else
-        content
-            .background {
-                Capsule()
-                    .fill(Color(uiColor: .tertiarySystemFill))
-            }
         #endif
     }
 }
@@ -487,22 +487,22 @@ private struct IMessageCapsuleStyle: ViewModifier {
 private struct IMessageCircleStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .circle)
+            } else {
+                content
+                    .background {
+                        Circle()
+                            .fill(Color(uiColor: .tertiarySystemFill))
+                    }
+            }
+        #else
             content
                 .background {
                     Circle()
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
-        }
-        #else
-        content
-            .background {
-                Circle()
-                    .fill(Color(uiColor: .tertiarySystemFill))
-            }
         #endif
     }
 }

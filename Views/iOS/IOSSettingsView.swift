@@ -10,7 +10,7 @@ import SwiftUI
 
 struct IOSSettingsView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var aiService = AIService.shared
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
     @ObservedObject var tavilyService = TavilyService.shared
     @EnvironmentObject var conversationManager: ConversationManager
@@ -117,7 +117,7 @@ struct IOSSettingsView: View {
                 // MARK: - Models
 
                 Section("Models") {
-                    ForEach(openAIService.customModels, id: \.self) { model in
+                    ForEach(aiService.customModels, id: \.self) { model in
                         NavigationLink {
                             IOSModelEditView(modelName: model, isNew: false)
                         } label: {
@@ -125,14 +125,14 @@ struct IOSSettingsView: View {
                                 VStack(alignment: .leading) {
                                     Text(model)
                                         .font(Typography.headline)
-                                    if let provider = openAIService.modelProviders[model] {
+                                    if let provider = aiService.modelProviders[model] {
                                         Text(provider.displayName)
                                             .font(Typography.caption)
                                             .foregroundStyle(Theme.textSecondary)
                                     }
                                 }
                                 Spacer()
-                                if model == openAIService.selectedModel {
+                                if model == aiService.selectedModel {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(Theme.accent)
                                 }
@@ -148,12 +148,12 @@ struct IOSSettingsView: View {
                         .swipeActions(edge: .leading) {
                             Button {
                                 DiagnosticsLogger.log(
-                                    .openAIService,
+                                    .aiService,
                                     level: .info,
                                     message: "✅ Model selected as default",
                                     metadata: ["model": model]
                                 )
-                                openAIService.selectedModel = model
+                                aiService.selectedModel = model
                             } label: {
                                 Label("Select", systemImage: "checkmark")
                             }
@@ -162,12 +162,12 @@ struct IOSSettingsView: View {
                         .contextMenu {
                             Button {
                                 DiagnosticsLogger.log(
-                                    .openAIService,
+                                    .aiService,
                                     level: .info,
                                     message: "✅ Model set as default via context menu",
                                     metadata: ["model": model]
                                 )
-                                openAIService.selectedModel = model
+                                aiService.selectedModel = model
                             } label: {
                                 Label("Set as Default", systemImage: "checkmark")
                             }
@@ -214,7 +214,7 @@ struct IOSSettingsView: View {
                     .app,
                     level: .info,
                     message: "⚙️ IOSSettingsView appeared",
-                    metadata: ["modelCount": "\(openAIService.customModels.count)"]
+                    metadata: ["modelCount": "\(aiService.customModels.count)"]
                 )
             }
         }
@@ -222,21 +222,21 @@ struct IOSSettingsView: View {
 
     private func removeModel(_ model: String) {
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "🗑️ Removing model",
             metadata: ["model": model]
         )
-        if let index = openAIService.customModels.firstIndex(of: model) {
-            openAIService.customModels.remove(at: index)
-            openAIService.modelProviders.removeValue(forKey: model)
-            openAIService.modelEndpoints.removeValue(forKey: model)
-            openAIService.modelAPIKeys.removeValue(forKey: model)
-            openAIService.modelEndpointTypes.removeValue(forKey: model)
+        if let index = aiService.customModels.firstIndex(of: model) {
+            aiService.customModels.remove(at: index)
+            aiService.modelProviders.removeValue(forKey: model)
+            aiService.modelEndpoints.removeValue(forKey: model)
+            aiService.modelAPIKeys.removeValue(forKey: model)
+            aiService.modelEndpointTypes.removeValue(forKey: model)
 
             // If we removed the selected model, select the first available one
-            if openAIService.selectedModel == model, let first = openAIService.customModels.first {
-                openAIService.selectedModel = first
+            if aiService.selectedModel == model, let first = aiService.customModels.first {
+                aiService.selectedModel = first
             }
         }
     }
@@ -245,71 +245,71 @@ struct IOSSettingsView: View {
         // Generate a unique name by appending "Copy" or "Copy N"
         var newName = "\(model) Copy"
         var copyNumber = 2
-        while openAIService.customModels.contains(newName) {
+        while aiService.customModels.contains(newName) {
             newName = "\(model) Copy \(copyNumber)"
             copyNumber += 1
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📋 Duplicating model",
             metadata: ["original": model, "duplicate": newName]
         )
 
         // Add the new model
-        openAIService.customModels.append(newName)
+        aiService.customModels.append(newName)
 
         // Copy all settings from the original model
-        if let provider = openAIService.modelProviders[model] {
-            openAIService.modelProviders[newName] = provider
+        if let provider = aiService.modelProviders[model] {
+            aiService.modelProviders[newName] = provider
         }
-        if let endpoint = openAIService.modelEndpoints[model] {
-            openAIService.modelEndpoints[newName] = endpoint
+        if let endpoint = aiService.modelEndpoints[model] {
+            aiService.modelEndpoints[newName] = endpoint
         }
-        if let apiKey = openAIService.modelAPIKeys[model] {
-            openAIService.modelAPIKeys[newName] = apiKey
+        if let apiKey = aiService.modelAPIKeys[model] {
+            aiService.modelAPIKeys[newName] = apiKey
         }
-        if let endpointType = openAIService.modelEndpointTypes[model] {
-            openAIService.modelEndpointTypes[newName] = endpointType
+        if let endpointType = aiService.modelEndpointTypes[model] {
+            aiService.modelEndpointTypes[newName] = endpointType
         }
-        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
-            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
+        if let usesOAuth = aiService.modelUsesGitHubOAuth[model] {
+            aiService.modelUsesGitHubOAuth[newName] = usesOAuth
         }
     }
 }
 
 struct IOSImageGenerationSettingsView: View {
-    @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var aiService = AIService.shared
 
     var body: some View {
         Form {
             Section {
-                Picker("Image Size", selection: $openAIService.imageSize) {
+                Picker("Image Size", selection: $aiService.imageSize) {
                     Text("1024×1024 (Square)").tag("1024x1024")
                     Text("1024×1536 (Portrait)").tag("1024x1536")
                     Text("1536×1024 (Landscape)").tag("1536x1024")
                 }
                 .accessibilityIdentifier("settings.imageGeneration.sizeSelector")
 
-                Picker("Image Quality", selection: $openAIService.imageQuality) {
+                Picker("Image Quality", selection: $aiService.imageQuality) {
                     Text("Low").tag("low")
                     Text("Medium").tag("medium")
                     Text("High").tag("high")
                 }
                 .accessibilityIdentifier("settings.imageGeneration.qualitySelector")
 
-                Picker("Output Format", selection: $openAIService.outputFormat) {
+                Picker("Output Format", selection: $aiService.outputFormat) {
                     Text("PNG").tag("png")
                     Text("JPEG").tag("jpeg")
                 }
                 .accessibilityIdentifier("settings.imageGeneration.formatSelector")
 
                 VStack(alignment: .leading) {
-                    Text("Compression: \(openAIService.outputCompression)%")
+                    Text("Compression: \(aiService.outputCompression)%")
                     Slider(value: Binding(
-                        get: { Double(openAIService.outputCompression) },
-                        set: { openAIService.outputCompression = Int($0) }
+                        get: { Double(aiService.outputCompression) },
+                        set: { aiService.outputCompression = Int($0) }
                     ), in: 0 ... 100, step: 10)
                         .accessibilityLabel("Compression")
                         .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
@@ -347,7 +347,7 @@ struct IOSSystemPromptSettingsView: View {
 struct IOSModelEditView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
-    @ObservedObject var openAIService = OpenAIService.shared
+    @ObservedObject var aiService = AIService.shared
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
 
     let isNew: Bool
@@ -386,6 +386,7 @@ struct IOSModelEditView: View {
 
                 Picker("Provider", selection: $provider) {
                     Text("OpenAI").tag(AIProvider.openai)
+                    Text("Anthropic").tag(AIProvider.anthropic)
                     Text("GitHub Models").tag(AIProvider.githubModels)
                     Text("Apple Intelligence").tag(AIProvider.appleIntelligence)
                 }
@@ -529,6 +530,31 @@ struct IOSModelEditView: View {
                 } footer: {
                     Text("Select from available GitHub Models or enter model ID in format: publisher/model_name")
                 }
+            } else if provider == .anthropic {
+                Section("Configuration") {
+                    TextField("Model Name", text: $modelName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Model Name")
+                        .accessibilityIdentifier("settings.addModel.anthropicModelName")
+
+                    SecureField("API Key", text: $apiKey)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("settings.addModel.anthropicApiKey")
+
+                    TextField("Endpoint URL (Optional)", text: $endpoint)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Endpoint URL")
+                        .accessibilityIdentifier("settings.addModel.anthropicEndpoint")
+                }
+
+                Section {
+                    Text("Enter your Anthropic model name (e.g., claude-sonnet-4-20250514) and API key. Leave endpoint empty for the default Anthropic API.")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
         }
         .navigationTitle(isNew ? "Add Model" : "Edit Model")
@@ -547,7 +573,11 @@ struct IOSModelEditView: View {
                     saveModel()
                     dismiss()
                 }
-                .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated))
+                .disabled(
+                    modelName.isEmpty ||
+                        (provider == .githubModels && !githubOAuth.isAuthenticated) ||
+                        (provider == .anthropic && apiKey.isEmpty)
+                )
                 .accessibilityIdentifier("settings.addModel.saveButton")
             }
         }
@@ -560,21 +590,21 @@ struct IOSModelEditView: View {
 
     private func loadModelData() {
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📂 Loading model data",
             metadata: ["model": modelName]
         )
-        if let savedProvider = openAIService.modelProviders[modelName] {
+        if let savedProvider = aiService.modelProviders[modelName] {
             provider = savedProvider
         }
-        if let savedKey = openAIService.modelAPIKeys[modelName] {
+        if let savedKey = aiService.modelAPIKeys[modelName] {
             apiKey = savedKey
         }
-        if let savedEndpoint = openAIService.modelEndpoints[modelName] {
+        if let savedEndpoint = aiService.modelEndpoints[modelName] {
             endpoint = savedEndpoint
         }
-        if let savedType = openAIService.modelEndpointTypes[modelName] {
+        if let savedType = aiService.modelEndpointTypes[modelName] {
             endpointType = savedType
         }
     }
@@ -584,7 +614,7 @@ struct IOSModelEditView: View {
         let isRename = !isNew && trimmedName != originalModelName
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: isNew ? "➕ Adding new model" : (isRename ? "✏️ Renaming model" : "💾 Saving model changes"),
             metadata: [
@@ -596,21 +626,21 @@ struct IOSModelEditView: View {
         )
 
         if isNew {
-            if openAIService.customModels.contains(trimmedName) {
+            if aiService.customModels.contains(trimmedName) {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .default,
                     message: "⚠️ Duplicate model name, skipping",
                     metadata: ["model": trimmedName]
                 )
                 return
             }
-            openAIService.customModels.append(trimmedName)
+            aiService.customModels.append(trimmedName)
         } else if isRename {
             // Check if new name already exists
-            if openAIService.customModels.contains(trimmedName) {
+            if aiService.customModels.contains(trimmedName) {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .default,
                     message: "⚠️ Model name already exists, skipping rename",
                     metadata: ["model": trimmedName]
@@ -619,44 +649,51 @@ struct IOSModelEditView: View {
             }
 
             // Update the model list: replace old name with new name
-            if let index = openAIService.customModels.firstIndex(of: originalModelName) {
-                openAIService.customModels[index] = trimmedName
+            if let index = aiService.customModels.firstIndex(of: originalModelName) {
+                aiService.customModels[index] = trimmedName
             }
 
             // Remove old model settings
-            openAIService.modelProviders.removeValue(forKey: originalModelName)
-            openAIService.modelAPIKeys.removeValue(forKey: originalModelName)
-            openAIService.modelEndpoints.removeValue(forKey: originalModelName)
-            openAIService.modelEndpointTypes.removeValue(forKey: originalModelName)
-            openAIService.modelUsesGitHubOAuth.removeValue(forKey: originalModelName)
+            aiService.modelProviders.removeValue(forKey: originalModelName)
+            aiService.modelAPIKeys.removeValue(forKey: originalModelName)
+            aiService.modelEndpoints.removeValue(forKey: originalModelName)
+            aiService.modelEndpointTypes.removeValue(forKey: originalModelName)
+            aiService.modelUsesGitHubOAuth.removeValue(forKey: originalModelName)
 
             // Update selected model if it was the renamed one
-            if openAIService.selectedModel == originalModelName {
-                openAIService.selectedModel = trimmedName
+            if aiService.selectedModel == originalModelName {
+                aiService.selectedModel = trimmedName
             }
         }
 
-        openAIService.modelProviders[trimmedName] = provider
+        aiService.modelProviders[trimmedName] = provider
 
         if provider == .openai {
             if !apiKey.isEmpty {
-                openAIService.modelAPIKeys[trimmedName] = apiKey
+                aiService.modelAPIKeys[trimmedName] = apiKey
             }
             if !endpoint.isEmpty {
-                openAIService.modelEndpoints[trimmedName] = endpoint
+                aiService.modelEndpoints[trimmedName] = endpoint
             }
-            openAIService.modelEndpointTypes[trimmedName] = endpointType
+            aiService.modelEndpointTypes[trimmedName] = endpointType
+        } else if provider == .anthropic {
+            if !apiKey.isEmpty {
+                aiService.modelAPIKeys[trimmedName] = apiKey
+            }
+            if !endpoint.isEmpty {
+                aiService.modelEndpoints[trimmedName] = endpoint
+            }
         } else if provider == .githubModels {
             // Use OAuth if signed in
             if githubOAuth.isAuthenticated {
-                openAIService.modelUsesGitHubOAuth[trimmedName] = true
-                openAIService.modelAPIKeys.removeValue(forKey: trimmedName)
+                aiService.modelUsesGitHubOAuth[trimmedName] = true
+                aiService.modelAPIKeys.removeValue(forKey: trimmedName)
             }
         }
 
         // If this is the first model, select it
-        if openAIService.customModels.count == 1 {
-            openAIService.selectedModel = trimmedName
+        if aiService.customModels.count == 1 {
+            aiService.selectedModel = trimmedName
         }
     }
 }

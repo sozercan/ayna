@@ -28,7 +28,7 @@ struct ChatInputArea: View {
     let onClearMultiSelection: () -> Void
     let onRemoveFile: (URL) -> Void
 
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
@@ -229,13 +229,13 @@ struct ChatInputArea: View {
             Divider()
                 .padding(.vertical, Spacing.xxs)
 
-            if openAIService.usableModels.isEmpty {
+            if aiService.usableModels.isEmpty {
                 SettingsLink {
                     Label("Add Model in Settings", systemImage: "slider.horizontal.3")
                 }
                 .routeSettings(to: .models)
             } else {
-                ForEach(openAIService.usableModels, id: \.self) { model in
+                ForEach(aiService.usableModels, id: \.self) { model in
                     Button(action: { onToggleModelSelection(model) }) {
                         HStack {
                             Image(systemName: selectedModels.contains(model) ? "checkmark.square.fill" : "square")

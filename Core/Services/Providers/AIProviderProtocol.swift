@@ -14,16 +14,31 @@ struct AIProviderRequestConfig: Sendable {
     let customEndpoint: String?
     let azureAPIVersion: String
 
+    /// Maximum tokens to generate (optional, provider-specific defaults apply)
+    let maxTokens: Int?
+
+    /// Temperature for response generation (optional, provider defaults apply)
+    let temperature: Double?
+
+    /// Budget tokens for extended thinking (Anthropic only)
+    let thinkingBudget: Int?
+
     init(
         model: String,
         apiKey: String,
         customEndpoint: String? = nil,
-        azureAPIVersion: String = "2025-04-01-preview"
+        azureAPIVersion: String = "2025-04-01-preview",
+        maxTokens: Int? = nil,
+        temperature: Double? = nil,
+        thinkingBudget: Int? = nil
     ) {
         self.model = model
         self.apiKey = apiKey
         self.customEndpoint = customEndpoint
         self.azureAPIVersion = azureAPIVersion
+        self.maxTokens = maxTokens
+        self.temperature = temperature
+        self.thinkingBudget = thinkingBudget
     }
 }
 
@@ -96,10 +111,10 @@ protocol AIProviderProtocol: AnyObject, Sendable {
 extension AIProviderProtocol {
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error? {
         if requiresAPIKey, config.apiKey.isEmpty {
-            return OpenAIService.OpenAIError.missingAPIKey
+            return AynaError.missingAPIKey(provider: String(describing: providerType))
         }
         if config.model.isEmpty {
-            return OpenAIService.OpenAIError.missingModel
+            return AynaError.noModelSelected
         }
         return nil
     }
@@ -124,6 +139,8 @@ enum AIProviderFactory {
             // Apple Intelligence is handled separately by its dedicated service
             // Return OpenAI provider as fallback (should not be used)
             OpenAIProvider(urlSession: urlSession)
+        case .anthropic:
+            AnthropicProvider(urlSession: urlSession)
         }
     }
 }

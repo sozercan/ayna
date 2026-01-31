@@ -1,12 +1,12 @@
 //
-//  OpenAIService.swift
+//  AIService.swift
 //  ayna
 //
 //  Created on 11/2/25.
 //
 
 // swiftlint:disable file_length
-// OpenAIService aggregates multiple provider workflows until modularization.
+// AIService aggregates multiple provider workflows until modularization.
 
 import Combine
 import Foundation
@@ -19,6 +19,7 @@ enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
     case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
+    case anthropic = "Anthropic"
 
     var displayName: String {
         rawValue
@@ -36,22 +37,12 @@ enum APIEndpointType: String, CaseIterable, Codable {
 }
 
 @MainActor
-class OpenAIService: ObservableObject {
-    static let shared = OpenAIService()
+class AIService: ObservableObject {
+    static let shared = AIService()
     static var keychain: KeychainStoring = KeychainStorage.shared
 
     private enum KeychainKeys {
-        static let globalAPIKey = "openai_api_key"
         static let modelAPIKeys = "model_api_keys"
-    }
-
-    @Published var apiKey: String {
-        didSet {
-            // Only persist API key on iOS/macOS, not watchOS (Watch receives via WatchConnectivity)
-            #if !os(watchOS)
-                saveAPIKey()
-            #endif
-        }
     }
 
     @Published var selectedModel: String {
@@ -72,6 +63,9 @@ class OpenAIService: ObservableObject {
     #if !os(watchOS)
         private var appleIntelligenceTask: Task<Void, Never>?
     #endif
+
+    /// Holds the Anthropic provider during streaming to prevent deallocation
+    private var currentAnthropicProvider: AnthropicProvider?
 
     @Published var provider: AIProvider {
         didSet {
@@ -252,7 +246,7 @@ class OpenAIService: ObservableObject {
         modelEndpoints = loadedEndpoints
 
         // Load per-model API keys
-        modelAPIKeys = OpenAIService.loadModelAPIKeys()
+        modelAPIKeys = AIService.loadModelAPIKeys()
 
         // Load GitHub OAuth flags for models
         if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
@@ -270,9 +264,6 @@ class OpenAIService: ObservableObject {
         } else {
             selectedModel = ""
         }
-
-        // Initialize API key
-        apiKey = OpenAIService.loadGlobalAPIKey()
 
         // Initialize provider
         if let providerString = AppPreferences.storage.string(forKey: "aiProvider"),
@@ -295,50 +286,17 @@ class OpenAIService: ObservableObject {
         // setupiCloudSync()
     }
 
-    private func saveAPIKey() {
-        do {
-            if apiKey.isEmpty {
-                try OpenAIService.keychain.removeValue(for: KeychainKeys.globalAPIKey)
-            } else {
-                try OpenAIService.keychain.setString(apiKey, for: KeychainKeys.globalAPIKey)
-            }
-        } catch {
-            DiagnosticsLogger.log(
-                .openAIService,
-                level: .error,
-                message: "Failed to persist API key",
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-    }
-
     private func persistModelAPIKeys() {
         do {
-            try OpenAIService.storeModelAPIKeys(modelAPIKeys)
+            try AIService.storeModelAPIKeys(modelAPIKeys)
         } catch {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "Failed to persist model API keys",
                 metadata: ["error": error.localizedDescription]
             )
         }
-    }
-
-    private static func loadGlobalAPIKey() -> String {
-        do {
-            if let storedKey = try keychain.string(for: KeychainKeys.globalAPIKey) {
-                return storedKey
-            }
-        } catch {
-            DiagnosticsLogger.log(
-                .openAIService,
-                level: .error,
-                message: "Unable to read API key from Keychain",
-                metadata: ["error": error.localizedDescription]
-            )
-        }
-        return ""
     }
 
     private static func loadModelAPIKeys() -> [String: String] {
@@ -348,7 +306,7 @@ class OpenAIService: ObservableObject {
                     return try JSONDecoder().decode([String: String].self, from: data)
                 } catch {
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .error,
                         message: "Failed to decode model API keys from Keychain",
                         metadata: ["error": error.localizedDescription]
@@ -357,7 +315,7 @@ class OpenAIService: ObservableObject {
             }
         } catch {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "Unable to read model API keys from Keychain",
                 metadata: ["error": error.localizedDescription]
@@ -400,17 +358,18 @@ class OpenAIService: ObservableObject {
         OpenAIEndpointResolver.isAzureEndpoint(endpoint)
     }
 
-    /// Get API key for a specific model, falling back to global key if not set
-    /// For GitHub Models with OAuth, returns the OAuth token
+    /// Get API key for a specific model.
+    /// For GitHub Models with OAuth, returns the OAuth token.
+    /// Returns empty string if no key is configured for the model.
     func getAPIKey(for model: String?) -> String {
-        guard let model else { return apiKey }
+        guard let model else { return "" }
 
         // Check if this model uses GitHub OAuth
         let usesOAuth = modelUsesGitHubOAuth[model] == true
         let isGitHubModel = modelProviders[model] == .githubModels
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .debug,
             message: "🔑 Getting API key for model",
             metadata: [
@@ -428,7 +387,7 @@ class OpenAIService: ObservableObject {
                !token.isEmpty
             {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .debug,
                     message: "🔑 Using GitHub OAuth token",
                     metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
@@ -436,21 +395,22 @@ class OpenAIService: ObservableObject {
                 return token
             } else {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .info,
                     message: "⚠️ GitHub OAuth not available, using stored API key"
                 )
             }
         }
 
-        return modelAPIKeys[model] ?? apiKey
+        return modelAPIKeys[model] ?? ""
     }
 
     /// Async version of getAPIKey that ensures the token is valid before returning.
     /// For GitHub Models with OAuth, this will refresh the token if it's expiring soon.
     /// Use this for critical API requests where you can await.
+    /// Returns empty string if no key is configured for the model.
     func getValidAPIKey(for model: String?) async throws -> String {
-        guard let model else { return apiKey }
+        guard let model else { return "" }
 
         let isGitHubModel = modelProviders[model] == .githubModels
 
@@ -459,7 +419,7 @@ class OpenAIService: ObservableObject {
             do {
                 let token = try await GitHubOAuthService.shared.getValidAccessToken()
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .debug,
                     message: "🔑 Using validated GitHub OAuth token",
                     metadata: ["tokenPrefix": String(token.prefix(10)) + "..."]
@@ -467,7 +427,7 @@ class OpenAIService: ObservableObject {
                 return token
             } catch {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .error,
                     message: "❌ Failed to get valid GitHub token: \(error.localizedDescription)"
                 )
@@ -475,7 +435,7 @@ class OpenAIService: ObservableObject {
             }
         }
 
-        return modelAPIKeys[model] ?? apiKey
+        return modelAPIKeys[model] ?? ""
     }
 
     private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
@@ -524,7 +484,7 @@ class OpenAIService: ObservableObject {
 
     func cancelCurrentRequest() {
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "Canceling current request"
         )
@@ -538,7 +498,7 @@ class OpenAIService: ObservableObject {
         for (model, task) in multiModelStreamTasks {
             task.cancel()
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .info,
                 message: "Cancelled multi-model stream task",
                 metadata: ["model": model]
@@ -550,7 +510,7 @@ class OpenAIService: ObservableObject {
             appleIntelligenceTask = nil
         #endif
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "Request cancellation initiated"
         )
@@ -568,7 +528,7 @@ class OpenAIService: ObservableObject {
         ) {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
-                onError(OpenAIError.missingModel)
+                onError(AIError.missingModel)
                 return
             }
 
@@ -611,7 +571,7 @@ class OpenAIService: ObservableObject {
         ) {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
-                onError(OpenAIError.missingModel)
+                onError(AIError.missingModel)
                 return
             }
 
@@ -650,7 +610,7 @@ class OpenAIService: ObservableObject {
         guard providerRequiresAPIKey(provider) else { return }
 
         if !isAPIKeyConfigured(for: provider, model: model) {
-            throw OpenAIError.missingAPIKey
+            throw AynaError.missingAPIKey(provider: "API")
         }
     }
 
@@ -698,7 +658,7 @@ class OpenAIService: ObservableObject {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📤 sendMessage called",
             metadata: [
@@ -724,11 +684,11 @@ class OpenAIService: ObservableObject {
 
         guard !requestModel.isEmpty else {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "❌ Model is empty"
             )
-            onError(OpenAIError.missingModel)
+            onError(AIError.missingModel)
             return
         }
         let effectiveProvider = modelProviders[requestModel] ?? provider
@@ -736,7 +696,7 @@ class OpenAIService: ObservableObject {
         let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📤 Provider resolved",
             metadata: [
@@ -761,17 +721,32 @@ class OpenAIService: ObservableObject {
                         onError: onError
                     )
                 } else {
-                    onError(OpenAIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
+                    onError(AIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
                 }
                 return
             }
         #else
             // Apple Intelligence is not available on watchOS
             if effectiveProvider == .appleIntelligence {
-                onError(OpenAIError.apiError("Apple Intelligence is not available on Apple Watch"))
+                onError(AIError.apiError("Apple Intelligence is not available on Apple Watch"))
                 return
             }
         #endif
+
+        // Handle Anthropic provider separately
+        if effectiveProvider == .anthropic {
+            handleAnthropicRequest(
+                messages: messages,
+                model: requestModel,
+                stream: stream,
+                conversationId: conversationId,
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onReasoning: onReasoning
+            )
+            return
+        }
 
         // Validate provider settings
         do {
@@ -786,7 +761,7 @@ class OpenAIService: ObservableObject {
         // Check GitHub Models rate limit before making request
         if effectiveProvider == .githubModels {
             if let rateLimitError = checkGitHubModelsRateLimit(accessToken: modelAPIKey) {
-                onError(OpenAIError.apiError(rateLimitError))
+                onError(AIError.apiError(rateLimitError))
                 return
             }
         }
@@ -795,7 +770,7 @@ class OpenAIService: ObservableObject {
         let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
         if endpointType == .responses {
             if effectiveProvider == .githubModels {
-                onError(OpenAIError.apiError("GitHub Models does not support the Responses API endpoint"))
+                onError(AIError.apiError("GitHub Models does not support the Responses API endpoint"))
                 return
             }
             responsesAPIRequest(
@@ -815,12 +790,12 @@ class OpenAIService: ObservableObject {
 
         guard let url = URL(string: apiURL) else {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "❌ Invalid URL",
                 metadata: ["url": apiURL]
             )
-            onError(OpenAIError.invalidURL)
+            onError(AIError.invalidURL)
             return
         }
 
@@ -828,7 +803,7 @@ class OpenAIService: ObservableObject {
         let isGitHubModels = effectiveProvider == .githubModels
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📤 Building request",
             metadata: [
@@ -864,16 +839,16 @@ class OpenAIService: ObservableObject {
             )
         else {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "❌ Failed to create request"
             )
-            onError(OpenAIError.invalidRequest)
+            onError(AIError.invalidRequest)
             return
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "🌐 Starting stream request",
             metadata: [
@@ -929,12 +904,12 @@ class OpenAIService: ObservableObject {
     ) {
         // Validate we have models to query
         guard !models.isEmpty else {
-            onError("", OpenAIError.missingModel)
+            onError("", AIError.missingModel)
             return
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "🔀 Starting multi-model request",
             metadata: ["models": models.joined(separator: ", ")]
@@ -957,7 +932,7 @@ class OpenAIService: ObservableObject {
                         // Check for cancellation before starting
                         if Task.isCancelled {
                             DiagnosticsLogger.log(
-                                .openAIService,
+                                .aiService,
                                 level: .info,
                                 message: "🛑 Multi-model task cancelled before starting model",
                                 metadata: ["model": model]
@@ -995,7 +970,7 @@ class OpenAIService: ObservableObject {
                                         },
                                         onComplete: { [gateRelease] in
                                             DiagnosticsLogger.log(
-                                                .openAIService,
+                                                .aiService,
                                                 level: .info,
                                                 message: "✅ Model completed in multi-model request",
                                                 metadata: ["model": model]
@@ -1006,7 +981,7 @@ class OpenAIService: ObservableObject {
                                         },
                                         onError: { [gateRelease] error in
                                             DiagnosticsLogger.log(
-                                                .openAIService,
+                                                .aiService,
                                                 level: .error,
                                                 message: "❌ Model failed in multi-model request",
                                                 metadata: ["model": model, "error": error.localizedDescription]
@@ -1047,7 +1022,7 @@ class OpenAIService: ObservableObject {
 
                                     if let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: accessTokenForGate) {
                                         gateRelease.run()
-                                        onError(model, OpenAIError.apiError(rateLimitError))
+                                        onError(model, AIError.apiError(rateLimitError))
                                         continuation.resume()
                                         return
                                     }
@@ -1065,7 +1040,7 @@ class OpenAIService: ObservableObject {
             // Check for cancellation before calling onAllComplete
             if Task.isCancelled {
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .info,
                     message: "🛑 Multi-model task cancelled, not calling onAllComplete"
                 )
@@ -1077,7 +1052,7 @@ class OpenAIService: ObservableObject {
                 self.multiModelTask = nil
                 self.multiModelStreamTasks.removeAll()
                 DiagnosticsLogger.log(
-                    .openAIService,
+                    .aiService,
                     level: .info,
                     message: "🏁 All models completed in multi-model request"
                 )
@@ -1148,7 +1123,7 @@ class OpenAIService: ObservableObject {
 
         // Apple Intelligence doesn't support the responses API
         if effectiveProvider == .appleIntelligence {
-            onError(OpenAIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
+            onError(AIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
             return
         }
 
@@ -1157,7 +1132,7 @@ class OpenAIService: ObservableObject {
         let apiURL = getResponsesAPIURL(deploymentName: model, provider: effectiveProvider)
 
         guard let url = URL(string: apiURL) else {
-            onError(OpenAIError.invalidURL)
+            onError(AIError.invalidURL)
             return
         }
 
@@ -1182,7 +1157,7 @@ class OpenAIService: ObservableObject {
                 isAzure: usesAzureEndpoint
             )
         else {
-            onError(OpenAIError.invalidRequest)
+            onError(AIError.invalidRequest)
             return
         }
 
@@ -1202,7 +1177,7 @@ class OpenAIService: ObservableObject {
 
                     if self.shouldRetry(error: error, attempt: attempt) {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
                             metadata: ["error": error.localizedDescription]
@@ -1229,7 +1204,7 @@ class OpenAIService: ObservableObject {
                 }
 
                 guard let data else {
-                    onError(OpenAIError.noData)
+                    onError(AIError.noData)
                     return
                 }
 
@@ -1239,7 +1214,7 @@ class OpenAIService: ObservableObject {
                     if let errorDict = json?["error"] as? [String: Any],
                        let message = errorDict["message"] as? String
                     {
-                        onError(OpenAIError.apiError(message))
+                        onError(AIError.apiError(message))
                         return
                     }
 
@@ -1357,7 +1332,7 @@ class OpenAIService: ObservableObject {
         // Skip cancellation for multi-model requests to allow parallel streaming
         if currentStreamTask != nil, !isMultiModelRequest {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .info,
                 message: "⚠️ Cancelling existing stream task before starting new one"
             )
@@ -1365,7 +1340,7 @@ class OpenAIService: ObservableObject {
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "🔄 Creating new stream task",
             metadata: ["url": request.url?.absoluteString ?? "unknown"]
@@ -1382,15 +1357,15 @@ class OpenAIService: ObservableObject {
 
                     guard let httpResponse = response as? HTTPURLResponse else {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .error,
                             message: "❌ Invalid response type"
                         )
-                        throw OpenAIError.invalidResponse
+                        throw AIError.invalidResponse
                     }
 
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .info,
                         message: "📥 HTTP response received",
                         metadata: [
@@ -1443,7 +1418,7 @@ class OpenAIService: ObservableObject {
                         }
 
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .error,
                             message: "❌ API error response",
                             metadata: [
@@ -1452,7 +1427,7 @@ class OpenAIService: ObservableObject {
                                 "url": request.url?.absoluteString ?? "unknown"
                             ]
                         )
-                        throw OpenAIError.apiError(errorMessage)
+                        throw AIError.apiError(errorMessage)
                     }
 
                     // Capture rate limit headers on success for GitHub Models (scoped per token).
@@ -1487,7 +1462,7 @@ class OpenAIService: ObservableObject {
                         // Log first byte received
                         if totalBytesReceived == 1 {
                             DiagnosticsLogger.log(
-                                .openAIService,
+                                .aiService,
                                 level: .info,
                                 message: "📦 First byte received from stream"
                             )
@@ -1553,7 +1528,7 @@ class OpenAIService: ObservableObject {
                     let bytesReceived = totalBytesReceived
                     await MainActor.run {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "📊 Stream ended",
                             metadata: [
@@ -1571,7 +1546,7 @@ class OpenAIService: ObservableObject {
                         // Log warning if no data was received but no error occurred
                         if !receivedData {
                             DiagnosticsLogger.log(
-                                .openAIService,
+                                .aiService,
                                 level: .error,
                                 message: "⚠️ Stream completed with no data received",
                                 metadata: ["url": request.url?.absoluteString ?? "unknown"]
@@ -1582,7 +1557,7 @@ class OpenAIService: ObservableObject {
                     }
                 } onCancel: {
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .info,
                         message: "Stream task cancellation handler triggered"
                     )
@@ -1590,7 +1565,7 @@ class OpenAIService: ObservableObject {
             } catch is CancellationError {
                 await MainActor.run {
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .info,
                         message: "Stream task cancelled via CancellationError"
                     )
@@ -1728,7 +1703,7 @@ class OpenAIService: ObservableObject {
             }
 
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .info,
                 message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
                 metadata: [
@@ -1757,20 +1732,20 @@ class OpenAIService: ObservableObject {
                 // Check if it's a timeout error and provide a better message
                 if let urlError = error as? URLError, urlError.code == .timedOut {
                     callbacks.onError(
-                        OpenAIError.apiError(
+                        AIError.apiError(
                             "Request timed out. The model may be slow or overloaded. Please try again."
                         )
                     )
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
                     callbacks.onError(
-                        OpenAIError.apiError(
+                        AIError.apiError(
                             "Network connection was lost. The server may have rejected the request."
                         )
                     )
                 } else if (error as? CancellationError) != nil {
                     // Task was cancelled, don't report as error
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .info,
                         message: "Stream task cancelled via CancellationError"
                     )
@@ -1797,7 +1772,7 @@ class OpenAIService: ObservableObject {
                 if let error {
                     if self.shouldRetry(error: error, attempt: attempt) {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "⚠️ Retrying non-stream request (attempt \(attempt + 1))",
                             metadata: ["error": error.localizedDescription]
@@ -1822,7 +1797,7 @@ class OpenAIService: ObservableObject {
                 }
 
                 guard let data else {
-                    onError(OpenAIError.invalidResponse)
+                    onError(AIError.invalidResponse)
                     return
                 }
 
@@ -1832,7 +1807,7 @@ class OpenAIService: ObservableObject {
                     if let errorDict = json?["error"] as? [String: Any],
                        let message = errorDict["message"] as? String
                     {
-                        onError(OpenAIError.apiError(message))
+                        onError(AIError.apiError(message))
                         return
                     }
 
@@ -1901,7 +1876,7 @@ class OpenAIService: ObservableObject {
 
                         onComplete()
                     } else {
-                        onError(OpenAIError.invalidResponse)
+                        onError(AIError.invalidResponse)
                     }
                 } catch {
                     onError(error)
@@ -1927,7 +1902,7 @@ class OpenAIService: ObservableObject {
 
             // Check availability
             guard service.isAvailable else {
-                onError(OpenAIError.apiError(service.availabilityDescription()))
+                onError(AIError.apiError(service.availabilityDescription()))
                 return
             }
 
@@ -1959,7 +1934,7 @@ class OpenAIService: ObservableObject {
 
             // Get the last user message as the prompt
             guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
-                onError(OpenAIError.apiError("No user message found"))
+                onError(AIError.apiError("No user message found"))
                 return
             }
 
@@ -2008,9 +1983,85 @@ class OpenAIService: ObservableObject {
         }
     #endif
 
-    /// Retry logic delegated to OpenAIRetryPolicy
+    // MARK: - Anthropic Provider Handler
+
+    private func handleAnthropicRequest(
+        messages: [Message],
+        model: String,
+        stream: Bool,
+        conversationId: UUID?,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onReasoning: (@Sendable (String) -> Void)? = nil
+    ) {
+        let modelAPIKey = getAPIKey(for: model)
+        let endpointInfo = customEndpoint(for: model)
+
+        // Validate API key
+        guard !modelAPIKey.isEmpty else {
+            onError(AynaError.missingAPIKey(provider: "API"))
+            return
+        }
+
+        // Build provider config
+        let config = AIProviderRequestConfig(
+            model: model,
+            apiKey: modelAPIKey,
+            customEndpoint: endpointInfo?.endpoint,
+            maxTokens: nil, // Use provider default
+            temperature: nil, // Use provider default
+            thinkingBudget: nil // TODO: Add UI for thinking budget
+        )
+
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
+        // Get provider and send request
+        // Store provider to prevent deallocation during streaming
+        let provider = AnthropicProvider(urlSession: urlSession)
+        currentAnthropicProvider = provider
+
+        // Wrap callbacks to clear provider reference on completion
+        let wrappedCallbacks = AIProviderStreamCallbacks(
+            onChunk: onChunk,
+            onComplete: { [weak self] in
+                Task { @MainActor in
+                    self?.currentAnthropicProvider = nil
+                }
+                onComplete()
+            },
+            onError: { [weak self] error in
+                Task { @MainActor in
+                    self?.currentAnthropicProvider = nil
+                }
+                onError(error)
+            },
+            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
+            onReasoning: onReasoning
+        )
+
+        provider.sendMessage(
+            messages: messagesWithMemory,
+            config: config,
+            stream: stream,
+            tools: nil, // TODO: Add MCP tool support for Anthropic
+            callbacks: wrappedCallbacks
+        )
+    }
+
+    /// Retry logic delegated to AIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
-        OpenAIRetryPolicy.shouldRetry(
+        AIRetryPolicy.shouldRetry(
             error: error,
             attempt: attempt,
             hasReceivedData: hasReceivedData
@@ -2018,10 +2069,10 @@ class OpenAIService: ObservableObject {
     }
 
     private func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
-        await OpenAIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
+        await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
     }
 
-    enum OpenAIError: LocalizedError {
+    enum AIError: LocalizedError {
         case missingAPIKey
         case missingModel
         case invalidResponse
@@ -2078,12 +2129,12 @@ class OpenAIService: ObservableObject {
     }
 }
 
-extension OpenAIService {
+extension AIService {
     private func providerRequiresAPIKey(_ provider: AIProvider) -> Bool {
         switch provider {
         case .appleIntelligence:
             false
-        case .openai, .githubModels:
+        case .openai, .githubModels, .anthropic:
             true
         }
     }
@@ -2109,6 +2160,7 @@ extension OpenAIService {
             }
         }
 
+        // Check for per-model key
         if let model,
            let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !modelKey.isEmpty
@@ -2116,11 +2168,7 @@ extension OpenAIService {
             return true
         }
 
-        let trimmedGlobalKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedGlobalKey.isEmpty {
-            return true
-        }
-
+        // Check if any model has an API key configured
         return modelAPIKeys.values.contains {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -2218,7 +2266,7 @@ extension OpenAIService {
 
 // MARK: - Tool Management
 
-extension OpenAIService {
+extension AIService {
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
     /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
     func getAllAvailableTools() -> [[String: Any]]? {
@@ -2226,7 +2274,7 @@ extension OpenAIService {
 
         // Add Tavily web search if available
         #if os(watchOS)
-            // On watchOS, use synced settings stored in OpenAIService
+            // On watchOS, use synced settings stored in AIService
             if tavilyEnabled, !tavilyAPIKey.isEmpty {
                 tools.append(tavilyToolDefinition())
             }

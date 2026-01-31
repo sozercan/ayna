@@ -7,16 +7,16 @@ import Testing
 struct DeepLinkManagerTests {
     // MARK: - Helper
 
-    /// Creates a fresh manager with its own OpenAIService instance for test isolation
-    private func makeManager() -> (manager: DeepLinkManager, service: OpenAIService) {
+    /// Creates a fresh manager with its own AIService instance for test isolation
+    private func makeManager() -> (manager: DeepLinkManager, service: AIService) {
         // Create a dedicated service instance for this test - NOT the shared singleton
-        let service = OpenAIService()
+        let service = AIService()
         service.customModels = []
         service.modelProviders = [:]
         service.modelEndpoints = [:]
         service.modelAPIKeys = [:]
         service.modelEndpointTypes = [:]
-        let manager = DeepLinkManager(openAIService: service)
+        let manager = DeepLinkManager(aiService: service)
         return (manager, service)
     }
 

@@ -8,7 +8,7 @@
 import Foundation
 
 /// Stateless helper that resolves API endpoint URLs for various providers.
-/// Extracts the complex URL-building logic from OpenAIService for better testability.
+/// Extracts the complex URL-building logic from AIService for better testability.
 enum OpenAIEndpointResolver {
     // MARK: - Configuration
 
@@ -50,6 +50,8 @@ enum OpenAIEndpointResolver {
             githubModelsChatURL
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
+        case .anthropic:
+            "" // Anthropic uses its own endpoint resolver
         }
     }
 
@@ -62,6 +64,8 @@ enum OpenAIEndpointResolver {
             "" // GitHub Models doesn't support the Responses API
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
+        case .anthropic:
+            "" // Anthropic uses its own endpoint resolver
         }
     }
 
