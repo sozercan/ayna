@@ -116,7 +116,7 @@ enum AnthropicRequestBuilder {
         let authHeader = "x-api-key"
 
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .info,
             message: "📋 Anthropic request headers configured",
             metadata: [

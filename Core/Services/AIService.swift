@@ -2001,7 +2001,7 @@ class AIService: ObservableObject {
         // Log API key info for debugging (prefix only for security)
         let keyPrefix = String(modelAPIKey.prefix(8))
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .debug,
             message: "🔑 Anthropic request API key",
             metadata: [

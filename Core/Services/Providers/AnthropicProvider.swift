@@ -47,7 +47,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             url = try AnthropicEndpointResolver.messagesURL(customEndpoint: config.customEndpoint)
         } catch {
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .error,
                 message: "❌ Invalid Anthropic endpoint",
                 metadata: ["error": error.localizedDescription]
@@ -99,7 +99,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             )
         } catch {
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .error,
                 message: "❌ Failed to build Anthropic request",
                 metadata: ["error": error.localizedDescription]
@@ -112,7 +112,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         request.timeoutInterval = 120
 
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .info,
             message: "🌐 AnthropicProvider: Starting request",
             metadata: [
@@ -156,7 +156,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             var hasReceivedData = false
 
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .debug,
                 message: "🚀 Starting stream task",
                 metadata: ["url": request.url?.absoluteString ?? "(nil)"]
@@ -171,17 +171,17 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                     )
                 } onCancel: {
                     DiagnosticsLogger.log(
-                        .anthropicService,
+                        .aiService,
                         level: .info,
                         message: "AnthropicProvider: Stream task cancelled"
                     )
                 }
             } catch is CancellationError {
-                DiagnosticsLogger.log(.anthropicService, level: .info, message: "🛑 Stream cancelled")
+                DiagnosticsLogger.log(.aiService, level: .info, message: "🛑 Stream cancelled")
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
                 DiagnosticsLogger.log(
-                    .anthropicService,
+                    .aiService,
                     level: .error,
                     message: "❌ Stream error caught",
                     metadata: ["error": error.localizedDescription, "type": String(describing: type(of: error))]
@@ -207,16 +207,16 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks,
         circuitKey: String
     ) async throws -> Bool {
-        DiagnosticsLogger.log(.anthropicService, level: .debug, message: "📡 Awaiting stream response...")
+        DiagnosticsLogger.log(.aiService, level: .debug, message: "📡 Awaiting stream response...")
         let (bytes, response) = try await urlSession.bytes(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Invalid response type from Anthropic")
+            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Invalid response type from Anthropic")
             throw AynaError.apiError(message: "Invalid Anthropic response")
         }
 
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .info,
             message: "📥 Anthropic HTTP response received",
             metadata: ["statusCode": "\(httpResponse.statusCode)"]
@@ -225,7 +225,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         guard httpResponse.statusCode == 200 else {
             let errorMessage = await handleHTTPError(bytes: bytes, statusCode: httpResponse.statusCode)
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .error,
                 message: "❌ Anthropic API error",
                 metadata: ["statusCode": "\(httpResponse.statusCode)", "error": errorMessage]
@@ -266,7 +266,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         for try await byte in bytes {
             try Task.checkCancellation()
             if !hasReceivedData {
-                DiagnosticsLogger.log(.anthropicService, level: .debug, message: "📥 First byte received in stream")
+                DiagnosticsLogger.log(.aiService, level: .debug, message: "📥 First byte received in stream")
             }
             hasReceivedData = true
             buffer.append(byte)
@@ -308,7 +308,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     ) async -> Bool {
         if lineCount <= 5 || lineCount % 50 == 0 {
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .debug,
                 message: "📜 Processing SSE line",
                 metadata: ["lineNumber": "\(lineCount)", "preview": String(line.prefix(80))]
@@ -384,7 +384,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     ) async {
         if let error {
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .error,
                 message: "❌ Anthropic network error (non-stream)",
                 metadata: ["error": error.localizedDescription]
@@ -402,20 +402,20 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Invalid response type (non-stream)")
+            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Invalid response type (non-stream)")
             callbacks.onError(AynaError.apiError(message: "Invalid Anthropic response"))
             return
         }
 
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .info,
             message: "📥 Anthropic HTTP response received (non-stream)",
             metadata: ["statusCode": "\(httpResponse.statusCode)"]
         )
 
         guard let data else {
-            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Empty response data (non-stream)")
+            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Empty response data (non-stream)")
             callbacks.onError(AynaError.apiError(message: "Empty Anthropic response"))
             return
         }
@@ -441,7 +441,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let message = extractAPIErrorMessage(from: data, statusCode: statusCode)
         let rawBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .error,
             message: "❌ Anthropic API error (non-stream)",
             metadata: ["statusCode": "\(statusCode)", "error": message, "rawBody": String(rawBody.prefix(500))]
@@ -453,7 +453,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         do {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             DiagnosticsLogger.log(
-                .anthropicService,
+                .aiService,
                 level: .debug,
                 message: "📦 Anthropic response parsed",
                 metadata: [
@@ -473,10 +473,10 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             if let content = json?["content"] as? [[String: Any]] {
                 parseContentBlocks(content, callbacks: callbacks)
             } else {
-                DiagnosticsLogger.log(.anthropicService, level: .error, message: "⚠️ No content array in response")
+                DiagnosticsLogger.log(.aiService, level: .error, message: "⚠️ No content array in response")
             }
 
-            DiagnosticsLogger.log(.anthropicService, level: .debug, message: "✅ Non-stream response complete")
+            DiagnosticsLogger.log(.aiService, level: .debug, message: "✅ Non-stream response complete")
             callbacks.onComplete()
         } catch {
             callbacks.onError(error)
@@ -485,7 +485,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
     private func parseContentBlocks(_ content: [[String: Any]], callbacks: AIProviderStreamCallbacks) {
         DiagnosticsLogger.log(
-            .anthropicService,
+            .aiService,
             level: .debug,
             message: "📄 Parsing content blocks",
             metadata: ["blockCount": "\(content.count)"]
@@ -498,7 +498,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             case "text":
                 if let text = block["text"] as? String {
                     DiagnosticsLogger.log(
-                        .anthropicService,
+                        .aiService,
                         level: .debug,
                         message: "📝 Text block received",
                         metadata: ["length": "\(text.count)"]
@@ -518,7 +518,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                 }
             default:
                 DiagnosticsLogger.log(
-                    .anthropicService,
+                    .aiService,
                     level: .debug,
                     message: "⚠️ Unknown block type",
                     metadata: ["type": blockType]

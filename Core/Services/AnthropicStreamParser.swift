@@ -173,7 +173,7 @@ final class AnthropicStreamParser {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             DiagnosticsLogger.logThrottled(
-                .anthropicService,
+                .aiService,
                 level: .debug,
                 throttleKey: "anthropic.parser.unparseable",
                 interval: 2.0,
@@ -220,7 +220,7 @@ final class AnthropicStreamParser {
 
         default:
             DiagnosticsLogger.logThrottled(
-                .anthropicService,
+                .aiService,
                 level: .debug,
                 throttleKey: "anthropic.parser.unknownType",
                 interval: 5.0,
@@ -341,7 +341,7 @@ final class AnthropicStreamParser {
                 // JSON parse failure
                 let bufferPreview = String(data: state.buffer.prefix(200), encoding: .utf8) ?? ""
                 DiagnosticsLogger.log(
-                    .anthropicService,
+                    .aiService,
                     level: .error,
                     message: "Failed to parse tool input JSON",
                     metadata: ["toolName": toolName, "bufferPreview": bufferPreview]
