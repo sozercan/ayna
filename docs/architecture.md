@@ -40,6 +40,7 @@ The app supports multiple AI providers via the `AIProvider` enum.
 | Azure OpenAI | All | API Key | `<resource>.openai.azure.com` |
 | GitHub Models | All | OAuth (PKCE) | `models.github.ai` |
 | Apple Intelligence | macOS/iOS 26.0+ | None (on-device) | Local |
+| Anthropic | All | API Key | `api.anthropic.com` or custom |
 
 ### OpenAI Service Architecture
 
@@ -72,6 +73,43 @@ Decomposed into single-responsibility components:
 - **Token Exchange**: Proxied via Cloudflare Worker to secure `client_secret`
 - **Headers**: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
 - **Model Catalog**: Fetched from `https://models.github.ai/catalog/models`
+
+### Anthropic Service
+
+Decomposed into single-responsibility components following the OpenAI pattern:
+
+| File | Responsibility |
+|------|----------------|
+| `Providers/AnthropicProvider.swift` | Main provider implementation, streaming and non-streaming |
+| `AnthropicEndpointResolver.swift` | URL resolution for direct API and custom endpoints |
+| `AnthropicRequestBuilder.swift` | Request construction, message/tool format conversion |
+| `AnthropicStreamParser.swift` | SSE parsing, multi-block state tracking |
+
+**Key Features:**
+- **Extended Thinking**: Supports thinking blocks with configurable `budget_tokens` (minimum 1024)
+- **Interleaved Thinking**: Claude 4+ models can have thinking blocks throughout a response (not just at the start)
+- **Tool Use**: Converts OpenAI tool format to Anthropic `input_schema` format, accumulates JSON deltas
+- **Vision**: Base64 image attachments with magic byte validation (JPEG, PNG, GIF, WebP)
+- **Custom Endpoints**: Supports Azure, proxies, and other compatible endpoints with HTTPS validation
+
+**Request Headers:**
+- `x-api-key`: API key authentication
+- `anthropic-version`: `2023-06-01` (stable API version)
+- `anthropic-beta`: Comma-separated beta features (e.g., `interleaved-thinking-2025-05-14`)
+
+**Stream Event Handling:**
+| Event | Action |
+|-------|--------|
+| `message_start` | Initialize message state |
+| `content_block_start` | Track block type (`text`, `thinking`, `tool_use`) |
+| `content_block_delta` | Dispatch to `onChunk`, `onReasoning`, or accumulate tool JSON |
+| `content_block_stop` | For tool_use: parse accumulated JSON, trigger `onToolCallRequested` |
+| `message_stop` | Call `onComplete` |
+
+**Image Limits:**
+- Max 20 images per request
+- Max 3.75 MB per image
+- Images only in `user` role messages
 
 ## Multi-Model Architecture
 
