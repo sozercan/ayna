@@ -923,7 +923,7 @@ struct APISettingsView: View {
 
                     // Provider Selection
                     VStack(alignment: .leading, spacing: Spacing.md) {
-                        Label("AI Provider", systemImage: "cloud.fill")
+                        Text("AI Provider")
                             .font(Typography.headline)
                             .foregroundStyle(.primary)
 
@@ -953,7 +953,7 @@ struct APISettingsView: View {
                            aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.md) {
-                                Label("API Endpoint", systemImage: "arrow.left.arrow.right")
+                                Text("API Endpoint")
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
@@ -989,7 +989,7 @@ struct APISettingsView: View {
                         if aiService.provider == .openai {
                             // OpenAI Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
-                                Label("OpenAI Configuration", systemImage: "key.fill")
+                                Text("OpenAI Configuration")
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
@@ -1206,7 +1206,7 @@ struct APISettingsView: View {
                         } else if aiService.provider == .appleIntelligence {
                             // Apple Intelligence Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
-                                Label("Apple Intelligence Configuration", systemImage: "apple.logo")
+                                Text("Apple Intelligence Configuration")
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
@@ -1341,7 +1341,7 @@ struct APISettingsView: View {
                            aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
-                                Label("Validation Status", systemImage: "checkmark.seal.fill")
+                                Text("Validation Status")
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
@@ -1715,7 +1715,7 @@ struct GitHubModelsConfigurationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
-            Label("GitHub Models Configuration", systemImage: "mark.fill")
+            Text("GitHub Models Configuration")
                 .font(Typography.headline)
                 .foregroundStyle(.primary)
 
@@ -2120,10 +2120,11 @@ struct AnthropicConfigurationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
-            Label("Anthropic Configuration", systemImage: "cpu")
+            Text("Anthropic Configuration")
                 .font(Typography.headline)
                 .foregroundStyle(.primary)
 
+            // Fields card (matching OpenAI style)
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 // Model Name
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -2150,49 +2151,10 @@ struct AnthropicConfigurationView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // API Key
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack {
-                        Text("API Key")
-                            .font(Typography.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("Required")
-                            .font(Typography.micro)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxxs)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                    }
-                    HStack {
-                        if showAPIKey {
-                            TextField("sk-ant-...", text: $tempAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("sk-ant-...", text: $tempAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        Button {
-                            showAPIKey.toggle()
-                        } label: {
-                            Image(systemName: showAPIKey ? "eye.slash" : "eye")
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .onChange(of: tempAPIKey) { _, _ in
-                        validationStatus = .notChecked
-                    }
-                    Text("Your Anthropic API key (stored securely)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
                 // Custom Endpoint (Optional)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
-                        Text("Custom Endpoint")
+                        Text("Endpoint URL")
                             .font(Typography.subheadline)
                             .fontWeight(.medium)
                         Spacer()
@@ -2214,90 +2176,168 @@ struct AnthropicConfigurationView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Validation Status
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack(spacing: Spacing.md) {
-                        switch validationStatus {
-                        case .notChecked:
-                            Image(systemName: "circle.dotted")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Theme.textSecondary)
-                            Text("Not Validated")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                        case .checking:
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Validating...")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                        case .valid:
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Theme.statusConnected)
-                            Text("Configuration Valid")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.statusConnected)
-                        case let .invalid(message):
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(Theme.statusError)
-                            Text(message)
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.statusError)
-                        }
+                // API Key
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack {
+                        Text("API Key")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
                         Spacer()
+                        Text("Required")
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                     }
-                }
-
-                // Action Buttons
-                HStack(spacing: Spacing.md) {
-                    Button {
-                        Task {
-                            await validateAnthropicConfiguration()
+                    HStack(spacing: Spacing.sm) {
+                        if showAPIKey {
+                            TextField("sk-ant-...", text: $tempAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField("sk-ant-...", text: $tempAPIKey)
+                                .textFieldStyle(.roundedBorder)
                         }
+                        Button(action: {
+                            showAPIKey.toggle()
+                        }) {
+                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: Typography.Size.sm))
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .onChange(of: tempAPIKey) { _, _ in
+                        validationStatus = .notChecked
+                    }
+                    Text("Your Anthropic API key (stored securely)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(Spacing.lg)
+            .background(Theme.backgroundSecondary)
+            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
+
+            // Action Buttons (outside the card, matching OpenAI)
+            HStack(spacing: Spacing.md) {
+                Button {
+                    Task {
+                        await validateAnthropicConfiguration()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle")
+                        Text("Validate")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty || isValidating)
+                .controlSize(.large)
+
+                if let selectedName = selectedModelName,
+                   aiService.customModels.contains(selectedName)
+                {
+                    // Update existing model
+                    Button {
+                        saveAnthropicModel()
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle")
-                            Text("Validate")
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                            Text("Update Model")
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty || isValidating)
+                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-
-                    if let selectedName = selectedModelName,
-                       aiService.customModels.contains(selectedName)
-                    {
-                        // Update existing model
-                        Button {
-                            saveAnthropicModel()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise.circle.fill")
-                                Text("Update Model")
-                            }
-                            .frame(maxWidth: .infinity)
+                } else {
+                    // Add new model
+                    Button {
+                        saveAnthropicModel()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Add Model")
                         }
-                        .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                    } else {
-                        // Add new model
-                        Button {
-                            saveAnthropicModel()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Add Model")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
                     }
+                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                 }
+            }
+
+            // Validation Status Section (matching OpenAI style)
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                Text("Validation Status")
+                    .font(Typography.headline)
+                    .foregroundStyle(.primary)
+
+                HStack(spacing: Spacing.md) {
+                    switch validationStatus {
+                    case .notChecked:
+                        Image(systemName: "circle.dotted")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Theme.textSecondary)
+                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                            Text("Not Validated")
+                                .font(Typography.subheadline)
+                                .fontWeight(.medium)
+                            Text("Click 'Validate' to test your configuration")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    case .checking:
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .frame(width: 24, height: 24)
+                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                            Text("Validating...")
+                                .font(Typography.subheadline)
+                                .fontWeight(.medium)
+                            Text("Testing connection to API")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    case .valid:
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Theme.statusConnected)
+                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                            Text("Configuration Valid")
+                                .font(Typography.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Theme.statusConnected)
+                            Text("Ready to add model")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    case let .invalid(message):
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Theme.statusError)
+                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                            Text("Configuration Invalid")
+                                .font(Typography.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Theme.statusError)
+                            Text(message)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.backgroundSecondary)
+                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
             }
         }
     }
