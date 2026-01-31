@@ -81,6 +81,9 @@
 		BF65DE7844D1F51671D21D67 /* GlobalHotkeyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2915B243E4E84EB9ED8F7FC7 /* GlobalHotkeyServiceTests.swift */; };
 		BF8498C967537054EFCA290C /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
 		C3427A91EED5B0E9C5E67C18 /* FloatingPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A778EF766A48372FF1B30067 /* FloatingPanelController.swift */; };
+		C807F72E2F2DEC81004DA5DE /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C807F72D2F2DEC81004DA5DE /* WidgetKit.framework */; };
+		C807F7302F2DEC81004DA5DE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C807F72F2F2DEC81004DA5DE /* SwiftUI.framework */; };
+		C807F73D2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C807F72B2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */; };
 		C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C81393A62ED3DE9900F5E7F9 /* Info.plist */; };
 		C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */; };
@@ -230,6 +233,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C807F73B2F2DEC81004DA5DE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C807F72A2F2DEC81004DA5DE;
+			remoteInfo = "Ayna ComplicationExtension";
+		};
 		C82E6B6A2EDBD6460055158F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 11000001 /* Project object */;
@@ -282,6 +292,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		C807F7422F2DEC82004DA5DE /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C807F73D2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C82E6B6D2EDBD6460055158F /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -333,6 +354,9 @@
 		AF7CFB8FBA4B848BF47B1E32 /* MacNewChatView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacNewChatView.swift; sourceTree = "<group>"; };
 		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		C2301BAF35D7E0265F2C36E4 /* AnthropicStreamParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnthropicStreamParser.swift; sourceTree = "<group>"; };
+		C807F72B2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Ayna ComplicationExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C807F72D2F2DEC81004DA5DE /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		C807F72F2F2DEC81004DA5DE /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaIOSApp.swift; sourceTree = "<group>"; };
 		C81393A42ED3DE9900F5E7F9 /* ayna.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ayna.entitlements; sourceTree = "<group>"; };
 		C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aynaApp.swift; sourceTree = "<group>"; };
@@ -432,9 +456,38 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C807F73E2F2DEC81004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */;
+		};
+		C807F7442F2DECF9004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AynaComplicationWidget.swift,
+			);
+			target = C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */;
+		};
+		C807F7462F2DED07004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AynaComplication.swift,
+			);
+			target = C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */;
+		};
+		C807F7472F2DED07004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AynaComplication.swift,
+			);
+			target = C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */;
+		};
 		C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AynaComplicationWidget.swift,
 				Info.plist,
 			);
 			target = C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */;
@@ -442,8 +495,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C82E6B7A2EDBD7090055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
-		C82E6B822EDBD7260055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
+		C807F7312F2DEC81004DA5DE /* Ayna Complication */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C807F73E2F2DEC81004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Ayna Complication"; sourceTree = "<group>"; };
+		C82E6B7A2EDBD7090055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C82E6BA52EDBE1290055158F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, C807F7442F2DECF9004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
+		C82E6B822EDBD7260055158F /* watchOS */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C807F7462F2DED07004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */, C807F7472F2DED07004DA5DE /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = watchOS; sourceTree = "<group>"; };
 		C855BF4F2EE144630073EB99 /* Ayna-iOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-iOSUITests"; sourceTree = "<group>"; };
 		C855BF542EE1448C0073EB99 /* Ayna-watchOSUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSUITests"; sourceTree = "<group>"; };
 		C855C1072EE15D700073EB99 /* Ayna-watchOSTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Ayna-watchOSTests"; sourceTree = "<group>"; };
@@ -457,6 +511,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				C8SPARKLE12EFDF87B00404D13 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C807F7282F2DEC81004DA5DE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C807F7302F2DEC81004DA5DE /* SwiftUI.framework in Frameworks */,
+				C807F72E2F2DEC81004DA5DE /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -522,6 +585,8 @@
 		06000001 = {
 			isa = PBXGroup;
 			children = (
+				C807F7312F2DEC81004DA5DE /* Ayna Complication */,
+				C807F72C2F2DEC81004DA5DE /* Frameworks */,
 				06000003 /* Products */,
 				C81393A82ED3DE9900F5E7F9 /* App */,
 				C81393CE2ED3DEB800F5E7F9 /* Core */,
@@ -542,6 +607,7 @@
 				C855BF2E2EE13C910073EB99 /* Ayna-iOSUITests.xctest */,
 				C855BF3D2EE13CB50073EB99 /* Ayna-watchOSUITests.xctest */,
 				C855C1062EE15D700073EB99 /* Ayna-watchOSTests.xctest */,
+				C807F72B2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -572,6 +638,15 @@
 				CCC6E73E1A44C13C68D1D1E5 /* OpenAIProvider.swift */,
 			);
 			path = Providers;
+			sourceTree = "<group>";
+		};
+		C807F72C2F2DEC81004DA5DE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C807F72D2F2DEC81004DA5DE /* WidgetKit.framework */,
+				C807F72F2F2DEC81004DA5DE /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		C81393A22ED3DE9900F5E7F9 /* iOS */ = {
@@ -848,6 +923,28 @@
 			productReference = 03000001 /* Ayna.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C807F73F2F2DEC81004DA5DE /* Build configuration list for PBXNativeTarget "Ayna ComplicationExtension" */;
+			buildPhases = (
+				C807F7272F2DEC81004DA5DE /* Sources */,
+				C807F7282F2DEC81004DA5DE /* Frameworks */,
+				C807F7292F2DEC81004DA5DE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C807F7312F2DEC81004DA5DE /* Ayna Complication */,
+			);
+			name = "Ayna ComplicationExtension";
+			packageProductDependencies = (
+			);
+			productName = "Ayna ComplicationExtension";
+			productReference = C807F72B2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C82E6B702EDBD6460055158F /* Build configuration list for PBXNativeTarget "Ayna-watchOS Watch App" */;
@@ -855,10 +952,12 @@
 				C82E6B5E2EDBD6450055158F /* Sources */,
 				C82E6B5F2EDBD6450055158F /* Frameworks */,
 				C82E6B602EDBD6450055158F /* Resources */,
+				C807F7422F2DEC82004DA5DE /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C807F73C2F2DEC81004DA5DE /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C82E6B7A2EDBD7090055158F /* watchOS */,
@@ -1017,11 +1116,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2610;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					07000001 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					C807F72A2F2DEC81004DA5DE = {
+						CreatedOnToolsVersion = 26.2;
 					};
 					C82E6B612EDBD6450055158F = {
 						CreatedOnToolsVersion = 26.1.1;
@@ -1075,6 +1177,7 @@
 				07000001 /* Ayna */,
 				C8FBD3B72ED2F42A00E39928 /* Ayna-iOS */,
 				C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */,
+				C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */,
 				C8F1C0012ED5B4F500B5BC45 /* aynaTests */,
 				C9A1C1013090F5E900ABCD01 /* aynaUITests */,
 				C8C534DB2ED41F89003D2BAC /* Ayna-iOSTests */,
@@ -1092,6 +1195,13 @@
 			files = (
 				C86FBCEC2EFE5CAA0023BAE5 /* ayna.icon in Resources */,
 				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C807F7292F2DEC81004DA5DE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1227,6 +1337,13 @@
 				4C7616C558DB80ADCE912BD2 /* AynaError.swift in Sources */,
 				859FCF912760A05A910C883E /* AnthropicRequestBuilder.swift in Sources */,
 				292B46B68D8A2FD4F8750CF5 /* AnthropicStreamParser.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C807F7272F2DEC81004DA5DE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1422,6 +1539,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		C807F73C2F2DEC81004DA5DE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C807F72A2F2DEC81004DA5DE /* Ayna ComplicationExtension */;
+			targetProxy = C807F73B2F2DEC81004DA5DE /* PBXContainerItemProxy */;
+		};
 		C82E6B6B2EDBD6460055158F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C82E6B612EDBD6450055158F /* Ayna-watchOS Watch App */;
@@ -1609,7 +1731,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1647,7 +1769,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1655,6 +1777,75 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C807F7402F2DEC81004DA5DE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ayna Complication/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Ayna Complication";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.watchkitapp.Ayna-Complication";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited) AYNA_COMPLICATION_EXTENSION";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		C807F7412F2DEC81004DA5DE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Ayna Complication/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Ayna Complication";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.watchkitapp.Ayna-Complication";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = AYNA_COMPLICATION_EXTENSION;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
 		};
@@ -1688,7 +1879,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Debug;
 		};
@@ -1723,7 +1914,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Release;
 		};
@@ -1735,7 +1926,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1763,7 +1954,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1801,7 +1992,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "Ayna-watchOS Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Debug;
 		};
@@ -1824,7 +2015,7 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "Ayna-watchOS Watch App";
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Release;
 		};
@@ -1847,7 +2038,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna-watchOS Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna-watchOS Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Debug;
 		};
@@ -1871,7 +2062,7 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna-watchOS Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna-watchOS Watch App";
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.6;
 			};
 			name = Release;
 		};
@@ -1883,7 +2074,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1910,7 +2101,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 57QNR9B89Q;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.Ayna-iOSTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1944,7 +2135,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.aynaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1968,7 +2159,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.aynaTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1997,7 +2188,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -2039,7 +2230,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -2075,7 +2266,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.aynaUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2097,7 +2288,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.aynaUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2124,6 +2315,15 @@
 			buildConfigurations = (
 				13000001 /* Debug */,
 				13000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C807F73F2F2DEC81004DA5DE /* Build configuration list for PBXNativeTarget "Ayna ComplicationExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C807F7402F2DEC81004DA5DE /* Debug */,
+				C807F7412F2DEC81004DA5DE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
