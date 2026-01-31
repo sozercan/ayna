@@ -162,15 +162,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                         callbacks: callbacks,
                         circuitKey: circuitKey
                     )
-                } onCancel: {
-                    DiagnosticsLogger.log(
-                        .aiService,
-                        level: .info,
-                        message: "AnthropicProvider: Stream task cancelled"
-                    )
-                }
+                } onCancel: { }
             } catch is CancellationError {
-                DiagnosticsLogger.log(.aiService, level: .info, message: "🛑 Stream cancelled")
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
                 DiagnosticsLogger.log(
@@ -203,16 +196,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let (bytes, response) = try await urlSession.bytes(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Invalid response type from Anthropic")
             throw AynaError.apiError(message: "Invalid Anthropic response")
         }
-
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "📥 Anthropic HTTP response received",
-            metadata: ["statusCode": "\(httpResponse.statusCode)"]
-        )
 
         guard httpResponse.statusCode == 200 else {
             let errorMessage = await handleHTTPError(bytes: bytes, statusCode: httpResponse.statusCode)
@@ -378,20 +363,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Invalid response type (non-stream)")
             callbacks.onError(AynaError.apiError(message: "Invalid Anthropic response"))
             return
         }
 
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "📥 Anthropic HTTP response received (non-stream)",
-            metadata: ["statusCode": "\(httpResponse.statusCode)"]
-        )
-
         guard let data else {
-            DiagnosticsLogger.log(.aiService, level: .error, message: "❌ Empty response data (non-stream)")
             callbacks.onError(AynaError.apiError(message: "Empty Anthropic response"))
             return
         }
