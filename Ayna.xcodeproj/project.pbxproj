@@ -94,7 +94,7 @@
 		C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */; };
 		C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
-		C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C81393E82ED3DEB800F5E7F9 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* AIService.swift */; };
 		C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C81393EC2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
 		C81393ED2ED3DEB800F5E7F9 /* AttachmentStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BA2ED3DEB800F5E7F9 /* AttachmentStorage.swift */; };
@@ -114,7 +114,7 @@
 		C81394062ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B92ED3DEB800F5E7F9 /* AppleIntelligenceService.swift */; };
 		C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C82ED3DEB800F5E7F9 /* SettingsNavigator.swift */; };
-		C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C81394092ED3DEB800F5E7F9 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* AIService.swift */; };
 		C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
 		C813940B2ED3DEB800F5E7F9 /* MCPServerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */; };
 		C813940D2ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C52ED3DEB800F5E7F9 /* EphemeralKeychainStorage.swift */; };
@@ -154,8 +154,8 @@
 		C82E6B992EDBD7A00055158F /* ResponseGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D413064F88B81B4CA2 /* ResponseGroup.swift */; };
 		C82E6B9A2EDBD7A00055158F /* ContentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B32ED3DEB800F5E7F9 /* ContentBlock.swift */; };
 		C82E6B9B2EDBD7AA0055158F /* KeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393BC2ED3DEB800F5E7F9 /* KeychainStorage.swift */; };
-		C82E6B9C2EDBD7BF0055158F /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
-		C82E6B9D2EDBD7BF0055158F /* OpenAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */; };
+		C82E6B9C2EDBD7BF0055158F /* AIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* AIRetryPolicy.swift */; };
+		C82E6B9D2EDBD7BF0055158F /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C02ED3DEB800F5E7F9 /* AIService.swift */; };
 		C82E6B9E2EDBD7BF0055158F /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
 		C82E6B9F2EDBD7BF0055158F /* OpenAIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */; };
 		C82E6BA02EDBD7BF0055158F /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
@@ -179,7 +179,7 @@
 		C86FBCED2EFE5CAA0023BAE5 /* ayna.icon in Resources */ = {isa = PBXBuildFile; fileRef = C86FBCEA2EFE5CAA0023BAE5 /* ayna.icon */; };
 		C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */; };
 		C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */; };
-		C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */; };
+		C8C534D12ED40B39003D2BAC /* AIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D42ED3DEB800F5E7F9 /* AIServiceTests.swift */; };
 		C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D02ED3DEB800F5E7F9 /* ConversationTimelineGrouperTests.swift */; };
 		C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393CF2ED3DEB800F5E7F9 /* ConversationManagerTests.swift */; };
 		C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */; };
@@ -192,9 +192,9 @@
 		CITATION0TEST13064F88B81B01 /* CitationReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */; };
 		CITATION0VIEW13064F88B81B01 /* CitationSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */; };
 		D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
+		D0A1B2C613064F88B81B4CA2 /* AIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* AIRetryPolicy.swift */; };
 		D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */; };
-		D0A1B2C813064F88B81B4CA3 /* OpenAIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */; };
+		D0A1B2C813064F88B81B4CA3 /* AIRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C413064F88B81B4CA1 /* AIRetryPolicy.swift */; };
 		D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
 		D0A1B2CA13064F88B81B4CA3 /* OpenAIImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */; };
 		D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */; };
@@ -349,7 +349,7 @@
 		C81393BD2ED3DEB800F5E7F9 /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
 		C81393BE2ED3DEB800F5E7F9 /* MCPServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerStatus.swift; sourceTree = "<group>"; };
 		C81393BF2ED3DEB800F5E7F9 /* MCPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPService.swift; sourceTree = "<group>"; };
-		C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIService.swift; sourceTree = "<group>"; };
+		C81393C02ED3DEB800F5E7F9 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		C81393C22ED3DEB800F5E7F9 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		C81393C32ED3DEB800F5E7F9 /* ConversationExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporter.swift; sourceTree = "<group>"; };
 		C81393C42ED3DEB800F5E7F9 /* ConversationTimelineGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineGrouper.swift; sourceTree = "<group>"; };
@@ -365,7 +365,7 @@
 		C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedConversationStoreTests.swift; sourceTree = "<group>"; };
 		C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendererTests.swift; sourceTree = "<group>"; };
 		C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManagerTests.swift; sourceTree = "<group>"; };
-		C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIServiceTests.swift; sourceTree = "<group>"; };
+		C81393D42ED3DEB800F5E7F9 /* AIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIServiceTests.swift; sourceTree = "<group>"; };
 		C81393D52ED3DEB800F5E7F9 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
 		C81393D72ED3DEB800F5E7F9 /* AynaSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaSmokeUITests.swift; sourceTree = "<group>"; };
 		C81393D82ED3DEB800F5E7F9 /* AynaUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AynaUITestCase.swift; sourceTree = "<group>"; };
@@ -407,7 +407,7 @@
 		CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationReferenceTests.swift; sourceTree = "<group>"; };
 		CITATION0VIEW13064F88B81B00 /* CitationSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationSourcesView.swift; sourceTree = "<group>"; };
 		D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIEndpointResolver.swift; sourceTree = "<group>"; };
-		D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRetryPolicy.swift; sourceTree = "<group>"; };
+		D0A1B2C413064F88B81B4CA1 /* AIRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIRetryPolicy.swift; sourceTree = "<group>"; };
 		D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIImageService.swift; sourceTree = "<group>"; };
 		D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIStreamParser.swift; sourceTree = "<group>"; };
 		D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIRequestBuilder.swift; sourceTree = "<group>"; };
@@ -718,8 +718,8 @@
 				D0A1B2C313064F88B81B4CA1 /* OpenAIEndpointResolver.swift */,
 				D0A1B2C513064F88B81B4CA5 /* OpenAIImageService.swift */,
 				D0A1B2C713064F88B81B4CA5 /* OpenAIRequestBuilder.swift */,
-				D0A1B2C413064F88B81B4CA1 /* OpenAIRetryPolicy.swift */,
-				C81393C02ED3DEB800F5E7F9 /* OpenAIService.swift */,
+				D0A1B2C413064F88B81B4CA1 /* AIRetryPolicy.swift */,
+				C81393C02ED3DEB800F5E7F9 /* AIService.swift */,
 				D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				0725D9936B654575806A8555 /* TavilyService.swift */,
 				C8UPDATER12EFDF87B00404D1 /* UpdaterService.swift */,
@@ -793,7 +793,7 @@
 				C81393D12ED3DEB800F5E7F9 /* EncryptedConversationStoreTests.swift */,
 				C81393D22ED3DEB800F5E7F9 /* MarkdownRendererTests.swift */,
 				C81393D32ED3DEB800F5E7F9 /* MCPServerManagerTests.swift */,
-				C81393D42ED3DEB800F5E7F9 /* OpenAIServiceTests.swift */,
+				C81393D42ED3DEB800F5E7F9 /* AIServiceTests.swift */,
 				TAVILY0TEST13064F88B81B00 /* TavilyServiceTests.swift */,
 				CITATION0TEST13064F88B81B00 /* CitationReferenceTests.swift */,
 				WATCH0CHAT0VM0TEST13064F88 /* WatchChatViewModelTests.swift */,
@@ -1232,11 +1232,11 @@
 				C81394062ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
 				C81394072ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
 				C81394082ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
-				C81394092ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
+				C81394092ED3DEB800F5E7F9 /* AIService.swift in Sources */,
 				D0A1B2C513064F88B81B4CA2 /* OpenAIEndpointResolver.swift in Sources */,
 				D0A1B2C913064F88B81B4CA2 /* OpenAIImageService.swift in Sources */,
 				C855C1752EE20A040073EB99 /* MacScrollToBottomButton.swift in Sources */,
-				D0A1B2C613064F88B81B4CA2 /* OpenAIRetryPolicy.swift in Sources */,
+				D0A1B2C613064F88B81B4CA2 /* AIRetryPolicy.swift in Sources */,
 				D0A1B2CB13064F88B81B4CA2 /* OpenAIStreamParser.swift in Sources */,
 				D0A1B2CD13064F88B81B4CA2 /* OpenAIRequestBuilder.swift in Sources */,
 				C813940A2ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,
@@ -1322,8 +1322,8 @@
 				C82E6B992EDBD7A00055158F /* ResponseGroup.swift in Sources */,
 				C82E6B9A2EDBD7A00055158F /* ContentBlock.swift in Sources */,
 				C855BF482EE143310073EB99 /* TestIdentifiers.swift in Sources */,
-				C82E6B9C2EDBD7BF0055158F /* OpenAIRetryPolicy.swift in Sources */,
-				C82E6B9D2EDBD7BF0055158F /* OpenAIService.swift in Sources */,
+				C82E6B9C2EDBD7BF0055158F /* AIRetryPolicy.swift in Sources */,
+				C82E6B9D2EDBD7BF0055158F /* AIService.swift in Sources */,
 				C82E6B9E2EDBD7BF0055158F /* OpenAIStreamParser.swift in Sources */,
 				C82E6B9F2EDBD7BF0055158F /* OpenAIRequestBuilder.swift in Sources */,
 				C82E6BA02EDBD7BF0055158F /* OpenAIEndpointResolver.swift in Sources */,
@@ -1385,7 +1385,7 @@
 				C8C534CF2ED40B39003D2BAC /* TestHelpers.swift in Sources */,
 				TESTTAGS0001A13064F88B81B1 /* TestTags.swift in Sources */,
 				C8C534D02ED40B39003D2BAC /* MCPServerManagerTests.swift in Sources */,
-				C8C534D12ED40B39003D2BAC /* OpenAIServiceTests.swift in Sources */,
+				C8C534D12ED40B39003D2BAC /* AIServiceTests.swift in Sources */,
 				C8C534D22ED40B39003D2BAC /* ConversationTimelineGrouperTests.swift in Sources */,
 				C8C534D32ED40B39003D2BAC /* ConversationManagerTests.swift in Sources */,
 				C8C534D42ED40B39003D2BAC /* EncryptedConversationStoreTests.swift in Sources */,
@@ -1423,10 +1423,10 @@
 				C81393E52ED3DEB800F5E7F9 /* AppleIntelligenceService.swift in Sources */,
 				C81393E62ED3DEB800F5E7F9 /* ContentBlock.swift in Sources */,
 				C81393E72ED3DEB800F5E7F9 /* SettingsNavigator.swift in Sources */,
-				C81393E82ED3DEB800F5E7F9 /* OpenAIService.swift in Sources */,
+				C81393E82ED3DEB800F5E7F9 /* AIService.swift in Sources */,
 				D0A1B2C713064F88B81B4CA3 /* OpenAIEndpointResolver.swift in Sources */,
 				D0A1B2CA13064F88B81B4CA3 /* OpenAIImageService.swift in Sources */,
-				D0A1B2C813064F88B81B4CA3 /* OpenAIRetryPolicy.swift in Sources */,
+				D0A1B2C813064F88B81B4CA3 /* AIRetryPolicy.swift in Sources */,
 				D0A1B2CC13064F88B81B4CA3 /* OpenAIStreamParser.swift in Sources */,
 				D0A1B2CE13064F88B81B4CA3 /* OpenAIRequestBuilder.swift in Sources */,
 				C81393E92ED3DEB800F5E7F9 /* KeychainStorage.swift in Sources */,

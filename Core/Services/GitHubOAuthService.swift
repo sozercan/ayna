@@ -927,7 +927,7 @@ class GitHubOAuthService: NSObject, ObservableObject {
             }
         } catch {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "Failed to fetch GitHub user info",
                 metadata: ["error": error.localizedDescription]

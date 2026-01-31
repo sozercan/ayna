@@ -10,7 +10,7 @@ import os.log
 
 enum DiagnosticsCategory: String, CaseIterable, Codable {
     case app = "App"
-    case openAIService = "OpenAIService"
+    case aiService = "AIService"
     case anthropicService = "AnthropicService"
     case mcpServerManager = "MCPServerManager"
     case mcpService = "MCPService"

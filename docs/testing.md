@@ -269,8 +269,10 @@ MockURLProtocol.requestHandler = { request in
 
 ```swift
 let keychain = InMemoryKeychainStorage()
-let service = OpenAIService(keychainStorage: keychain)
-keychain.set("test-api-key", forKey: "openai_api_key")
+AIService.keychain = keychain
+let service = AIService.shared
+// Set API key for specific model
+service.modelAPIKeys["gpt-4o"] = "test-api-key"
 ```
 
 ## UI Testing Guidelines

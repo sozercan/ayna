@@ -2,31 +2,31 @@
 import Foundation
 import Testing
 
-@Suite("OpenAIService Tests", .tags(.networking, .async), .serialized)
+@Suite("AIService Tests", .tags(.networking, .async), .serialized)
 @MainActor
-struct OpenAIServiceTests {
+struct AIServiceTests {
     private var defaults: UserDefaults
 
     init() {
-        guard let suite = UserDefaults(suiteName: "OpenAIServiceTests") else {
-            fatalError("Failed to create UserDefaults suite for OpenAIServiceTests")
+        guard let suite = UserDefaults(suiteName: "AIServiceTests") else {
+            fatalError("Failed to create UserDefaults suite for AIServiceTests")
         }
         defaults = suite
-        defaults.removePersistentDomain(forName: "OpenAIServiceTests")
+        defaults.removePersistentDomain(forName: "AIServiceTests")
         defaults.synchronize()
         AppPreferences.use(defaults)
 
         // Use in-memory keychain to avoid touching the real Keychain in tests
-        OpenAIService.keychain = InMemoryKeychainStorage()
+        AIService.keychain = InMemoryKeychainStorage()
         GitHubOAuthService.keychain = InMemoryKeychainStorage()
         MockURLProtocol.reset()
     }
 
-    private func makeService() -> OpenAIService {
+    private func makeService() -> AIService {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config)
-        let service = OpenAIService(urlSession: session)
+        let service = AIService(urlSession: session)
         service.customModels = ["gpt-4o"]
         service.selectedModel = "gpt-4o"
         return service
@@ -35,7 +35,7 @@ struct OpenAIServiceTests {
     @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
     func sendMessageWithoutAPIKeyThrowsError() async {
         let service = makeService()
-        service.apiKey = ""
+        service.modelAPIKeys["gpt-4o"] = ""
 
         await confirmation("onError called") { errorReceived in
             service.sendMessage(
@@ -52,7 +52,7 @@ struct OpenAIServiceTests {
                     Issue.record("Completion should not fire when API key is missing")
                 },
                 onError: { error in
-                    guard case OpenAIService.OpenAIError.missingAPIKey = error else {
+                    guard case AIService.AIError.missingAPIKey = error else {
                         Issue.record("Unexpected error: \(error)")
                         return
                     }
@@ -71,7 +71,7 @@ struct OpenAIServiceTests {
     @Test("Send message adds authorization header and payload", .timeLimit(.minutes(1)))
     func sendMessageAddsAuthorizationHeaderAndPayload() async throws {
         let service = makeService()
-        service.apiKey = "sk-unit-test"
+        service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
 
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request
@@ -152,7 +152,7 @@ struct OpenAIServiceTests {
     @Test("Send message parses structured content response", .timeLimit(.minutes(1)))
     func sendMessageParsesStructuredContentResponse() async {
         let service = makeService()
-        service.apiKey = "sk-unit-test"
+        service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
 
         MockURLProtocol.requestHandler = { request in
             MockURLProtocol.lastRequest = request

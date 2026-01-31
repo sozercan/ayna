@@ -138,13 +138,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     ) {
         currentStreamTask?.cancel()
 
-        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
-        if !circuitGate.allowed {
-            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
-            let message = seconds > 0
-                ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
-                : "Anthropic service temporarily unavailable. Please try again shortly."
-            callbacks.onError(AynaError.apiError(message: message))
+        if let errorMessage = checkCircuitBreaker(key: circuitKey) {
+            callbacks.onError(AynaError.apiError(message: errorMessage))
             return
         }
 
@@ -161,150 +156,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
             do {
                 try await withTaskCancellationHandler {
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .debug,
-                        message: "📡 Awaiting stream response..."
+                    hasReceivedData = try await processStreamRequest(
+                        request: request,
+                        callbacks: callbacks,
+                        circuitKey: circuitKey
                     )
-                    let (bytes, response) = try await urlSession.bytes(for: request)
-
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        DiagnosticsLogger.log(
-                            .anthropicService,
-                            level: .error,
-                            message: "❌ Invalid response type from Anthropic"
-                        )
-                        throw AynaError.apiError(message: "Invalid Anthropic response")
-                    }
-
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .info,
-                        message: "📥 Anthropic HTTP response received",
-                        metadata: ["statusCode": "\(httpResponse.statusCode)"]
-                    )
-
-                    guard httpResponse.statusCode == 200 else {
-                        let errorMessage = await handleHTTPError(
-                            bytes: bytes,
-                            statusCode: httpResponse.statusCode
-                        )
-
-                        DiagnosticsLogger.log(
-                            .anthropicService,
-                            level: .error,
-                            message: "❌ Anthropic API error",
-                            metadata: [
-                                "statusCode": "\(httpResponse.statusCode)",
-                                "error": errorMessage
-                            ]
-                        )
-
-                        if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
-                            NetworkCircuitBreaker.recordFailure(key: circuitKey)
-                        }
-
-                        throw AynaError.apiError(message: errorMessage)
-                    }
-
-                    NetworkCircuitBreaker.recordSuccess(key: circuitKey)
-
-                    // Create parser without direct callbacks - we batch updates instead
-                    // The parser returns content/reasoning in the result, and we flush via flushBuffers
-                    let parser = AnthropicStreamParser(
-                        onChunk: nil, // Don't call directly, use buffered approach
-                        onReasoning: nil, // Don't call directly, use buffered approach
-                        onToolCallRequested: { id, name, input in
-                            callbacks.onToolCallRequested?(id, name, input)
-                        },
-                        onComplete: nil, // We handle completion in the main loop
-                        onError: { error in callbacks.onError(error) }
-                    )
-
-                    var buffer = Data()
-                    var contentBuffer = ""
-                    var reasoningBuffer = ""
-                    var lastUpdateTime = CFAbsoluteTimeGetCurrent()
-                    var lineCount = 0
-
-                    for try await byte in bytes {
-                        try Task.checkCancellation()
-                        if !hasReceivedData {
-                            DiagnosticsLogger.log(
-                                .anthropicService,
-                                level: .debug,
-                                message: "📥 First byte received in stream"
-                            )
-                        }
-                        hasReceivedData = true
-                        buffer.append(byte)
-
-                        // Process line when we hit newline
-                        if byte == 0x0A {
-                            lineCount += 1
-                            if let line = String(data: buffer, encoding: .utf8) {
-                                if lineCount <= 5 || lineCount % 50 == 0 {
-                                    DiagnosticsLogger.log(
-                                        .anthropicService,
-                                        level: .debug,
-                                        message: "📜 Processing SSE line",
-                                        metadata: [
-                                            "lineNumber": "\(lineCount)",
-                                            "preview": String(line.prefix(80))
-                                        ]
-                                    )
-                                }
-                                let result = parser.processLine(line)
-
-                                if let content = result.content {
-                                    contentBuffer += content
-                                }
-                                if let reasoning = result.reasoning {
-                                    reasoningBuffer += reasoning
-                                }
-
-                                if result.shouldComplete {
-                                    await flushBuffers(
-                                        contentBuffer: contentBuffer,
-                                        reasoningBuffer: reasoningBuffer,
-                                        callbacks: callbacks
-                                    )
-                                    await MainActor.run {
-                                        self.currentStreamTask = nil
-                                        callbacks.onComplete()
-                                    }
-                                    return
-                                }
-
-                                // Batch updates
-                                if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
-                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
-                                        await flushBuffers(
-                                            contentBuffer: contentBuffer,
-                                            reasoningBuffer: reasoningBuffer,
-                                            callbacks: callbacks
-                                        )
-                                        contentBuffer = ""
-                                        reasoningBuffer = ""
-                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
-                                    }
-                                }
-                            }
-                            buffer.removeAll()
-                        }
-                    }
-
-                    // Flush remaining content
-                    await flushBuffers(
-                        contentBuffer: contentBuffer,
-                        reasoningBuffer: reasoningBuffer,
-                        callbacks: callbacks
-                    )
-                    await MainActor.run {
-                        self.currentStreamTask = nil
-                        callbacks.onComplete()
-                    }
                 } onCancel: {
                     DiagnosticsLogger.log(
                         .anthropicService,
@@ -313,21 +169,14 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                     )
                 }
             } catch is CancellationError {
-                DiagnosticsLogger.log(
-                    .anthropicService,
-                    level: .info,
-                    message: "🛑 Stream cancelled"
-                )
+                DiagnosticsLogger.log(.anthropicService, level: .info, message: "🛑 Stream cancelled")
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
                 DiagnosticsLogger.log(
                     .anthropicService,
                     level: .error,
                     message: "❌ Stream error caught",
-                    metadata: [
-                        "error": error.localizedDescription,
-                        "type": String(describing: type(of: error))
-                    ]
+                    metadata: ["error": error.localizedDescription, "type": String(describing: type(of: error))]
                 )
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
@@ -345,6 +194,140 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask = task
     }
 
+    private func processStreamRequest(
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String
+    ) async throws -> Bool {
+        DiagnosticsLogger.log(.anthropicService, level: .debug, message: "📡 Awaiting stream response...")
+        let (bytes, response) = try await urlSession.bytes(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Invalid response type from Anthropic")
+            throw AynaError.apiError(message: "Invalid Anthropic response")
+        }
+
+        DiagnosticsLogger.log(
+            .anthropicService,
+            level: .info,
+            message: "📥 Anthropic HTTP response received",
+            metadata: ["statusCode": "\(httpResponse.statusCode)"]
+        )
+
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = await handleHTTPError(bytes: bytes, statusCode: httpResponse.statusCode)
+            DiagnosticsLogger.log(
+                .anthropicService,
+                level: .error,
+                message: "❌ Anthropic API error",
+                metadata: ["statusCode": "\(httpResponse.statusCode)", "error": errorMessage]
+            )
+            if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
+                NetworkCircuitBreaker.recordFailure(key: circuitKey)
+            }
+            throw AynaError.apiError(message: errorMessage)
+        }
+
+        NetworkCircuitBreaker.recordSuccess(key: circuitKey)
+        return try await processStreamBytes(bytes: bytes, callbacks: callbacks)
+    }
+
+    private func processStreamBytes(
+        bytes: URLSession.AsyncBytes,
+        callbacks: AIProviderStreamCallbacks
+    ) async throws -> Bool {
+        let parser = AnthropicStreamParser(
+            onChunk: nil,
+            onReasoning: nil,
+            onToolCallRequested: { id, name, input in callbacks.onToolCallRequested?(id, name, input) },
+            onComplete: nil,
+            onError: { error in callbacks.onError(error) }
+        )
+
+        var buffer = Data()
+        var contentBuffer = ""
+        var reasoningBuffer = ""
+        var lastUpdateTime = CFAbsoluteTimeGetCurrent()
+        var lineCount = 0
+        var hasReceivedData = false
+
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if !hasReceivedData {
+                DiagnosticsLogger.log(.anthropicService, level: .debug, message: "📥 First byte received in stream")
+            }
+            hasReceivedData = true
+            buffer.append(byte)
+
+            if byte == 0x0A {
+                lineCount += 1
+                if let line = String(data: buffer, encoding: .utf8) {
+                    let completed = await processSSELine(
+                        line: line,
+                        lineCount: lineCount,
+                        parser: parser,
+                        contentBuffer: &contentBuffer,
+                        reasoningBuffer: &reasoningBuffer,
+                        lastUpdateTime: &lastUpdateTime,
+                        callbacks: callbacks
+                    )
+                    if completed { return hasReceivedData }
+                }
+                buffer.removeAll()
+            }
+        }
+
+        await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
+        await MainActor.run {
+            self.currentStreamTask = nil
+            callbacks.onComplete()
+        }
+        return hasReceivedData
+    }
+
+    private func processSSELine(
+        line: String,
+        lineCount: Int,
+        parser: AnthropicStreamParser,
+        contentBuffer: inout String,
+        reasoningBuffer: inout String,
+        lastUpdateTime: inout CFAbsoluteTime,
+        callbacks: AIProviderStreamCallbacks
+    ) async -> Bool {
+        if lineCount <= 5 || lineCount % 50 == 0 {
+            DiagnosticsLogger.log(
+                .anthropicService,
+                level: .debug,
+                message: "📜 Processing SSE line",
+                metadata: ["lineNumber": "\(lineCount)", "preview": String(line.prefix(80))]
+            )
+        }
+
+        let result = parser.processLine(line)
+        if let content = result.content { contentBuffer += content }
+        if let reasoning = result.reasoning { reasoningBuffer += reasoning }
+
+        if result.shouldComplete {
+            await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
+            await MainActor.run {
+                self.currentStreamTask = nil
+                callbacks.onComplete()
+            }
+            return true
+        }
+
+        if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+            let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
+            if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
+                await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
+                contentBuffer = ""
+                reasoningBuffer = ""
+                lastUpdateTime = CFAbsoluteTimeGetCurrent()
+            }
+        }
+        return false
+    }
+
     // MARK: - Non-Streaming Response
 
     private func nonStreamResponse(
@@ -353,186 +336,190 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String,
         attempt: Int = 0
     ) {
-        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
-        if !circuitGate.allowed {
-            let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
-            let message = seconds > 0
-                ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
-                : "Anthropic service temporarily unavailable. Please try again shortly."
-            callbacks.onError(AynaError.apiError(message: message))
+        if let errorMessage = checkCircuitBreaker(key: circuitKey) {
+            callbacks.onError(AynaError.apiError(message: errorMessage))
             return
         }
 
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor in
-                if let error {
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .error,
-                        message: "❌ Anthropic network error (non-stream)",
-                        metadata: ["error": error.localizedDescription]
-                    )
-                    if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
-                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
-                    }
-                    if self?.shouldRetry(error: error, attempt: attempt) == true {
-                        Task {
-                            await self?.delay(for: attempt)
-                            await MainActor.run {
-                                self?.nonStreamResponse(
-                                    request: request,
-                                    callbacks: callbacks,
-                                    circuitKey: circuitKey,
-                                    attempt: attempt + 1
-                                )
-                            }
-                        }
-                        return
-                    }
-                    callbacks.onError(error)
-                    return
-                }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .error,
-                        message: "❌ Invalid response type (non-stream)"
-                    )
-                    callbacks.onError(AynaError.apiError(message: "Invalid Anthropic response"))
-                    return
-                }
-
-                DiagnosticsLogger.log(
-                    .anthropicService,
-                    level: .info,
-                    message: "📥 Anthropic HTTP response received (non-stream)",
-                    metadata: ["statusCode": "\(httpResponse.statusCode)"]
+                await self?.handleNonStreamResponse(
+                    data: data,
+                    response: response,
+                    error: error,
+                    request: request,
+                    callbacks: callbacks,
+                    circuitKey: circuitKey,
+                    attempt: attempt
                 )
-
-                guard let data else {
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .error,
-                        message: "❌ Empty response data (non-stream)"
-                    )
-                    callbacks.onError(AynaError.apiError(message: "Empty Anthropic response"))
-                    return
-                }
-
-                guard httpResponse.statusCode == 200 else {
-                    if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
-                        NetworkCircuitBreaker.recordFailure(key: circuitKey)
-                    }
-                    let message = self?.extractAPIErrorMessage(from: data, statusCode: httpResponse.statusCode)
-                        ?? "HTTP \(httpResponse.statusCode)"
-
-                    // Log raw response body for debugging auth errors
-                    let rawBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .error,
-                        message: "❌ Anthropic API error (non-stream)",
-                        metadata: [
-                            "statusCode": "\(httpResponse.statusCode)",
-                            "error": message,
-                            "rawBody": String(rawBody.prefix(500))
-                        ]
-                    )
-                    callbacks.onError(AynaError.apiError(message: message))
-                    return
-                }
-
-                NetworkCircuitBreaker.recordSuccess(key: circuitKey)
-
-                do {
-                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-
-                    // Debug: Log raw response structure
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .debug,
-                        message: "📦 Anthropic response parsed",
-                        metadata: [
-                            "type": json?["type"] as? String ?? "(nil)",
-                            "hasContent": "\(json?["content"] != nil)",
-                            "contentType": "\(type(of: json?["content"] ?? "(nil)"))",
-                            "keys": json?.keys.joined(separator: ", ") ?? "(nil)"
-                        ]
-                    )
-
-                    // Check for error response
-                    if let errorType = json?["type"] as? String, errorType == "error" {
-                        let errorObj = json?["error"] as? [String: Any]
-                        let message = errorObj?["message"] as? String ?? "Anthropic API error"
-                        callbacks.onError(AynaError.apiError(message: message))
-                        return
-                    }
-
-                    // Parse content blocks
-                    if let content = json?["content"] as? [[String: Any]] {
-                        DiagnosticsLogger.log(
-                            .anthropicService,
-                            level: .debug,
-                            message: "📄 Parsing content blocks",
-                            metadata: ["blockCount": "\(content.count)"]
-                        )
-
-                        for block in content {
-                            guard let blockType = block["type"] as? String else { continue }
-
-                            switch blockType {
-                            case "text":
-                                if let text = block["text"] as? String {
-                                    DiagnosticsLogger.log(
-                                        .anthropicService,
-                                        level: .debug,
-                                        message: "📝 Text block received",
-                                        metadata: ["length": "\(text.count)"]
-                                    )
-                                    callbacks.onChunk(text)
-                                }
-                            case "thinking":
-                                if let thinking = block["thinking"] as? String {
-                                    callbacks.onReasoning?(thinking)
-                                }
-                            case "tool_use":
-                                if let toolId = block["id"] as? String,
-                                   let toolName = block["name"] as? String,
-                                   let toolInput = block["input"] as? [String: Any]
-                                {
-                                    callbacks.onToolCallRequested?(toolId, toolName, toolInput)
-                                }
-                            default:
-                                DiagnosticsLogger.log(
-                                    .anthropicService,
-                                    level: .debug,
-                                    message: "⚠️ Unknown block type",
-                                    metadata: ["type": blockType]
-                                )
-                                break
-                            }
-                        }
-                    } else {
-                        DiagnosticsLogger.log(
-                            .anthropicService,
-                            level: .error,
-                            message: "⚠️ No content array in response"
-                        )
-                    }
-
-                    DiagnosticsLogger.log(
-                        .anthropicService,
-                        level: .debug,
-                        message: "✅ Non-stream response complete"
-                    )
-                    callbacks.onComplete()
-                } catch {
-                    callbacks.onError(error)
-                }
             }
         }
         task.resume()
+    }
+
+    private func handleNonStreamResponse(
+        data: Data?,
+        response: URLResponse?,
+        error: Error?,
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String,
+        attempt: Int
+    ) async {
+        if let error {
+            DiagnosticsLogger.log(
+                .anthropicService,
+                level: .error,
+                message: "❌ Anthropic network error (non-stream)",
+                metadata: ["error": error.localizedDescription]
+            )
+            if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
+                NetworkCircuitBreaker.recordFailure(key: circuitKey)
+            }
+            if shouldRetry(error: error, attempt: attempt) {
+                await delay(for: attempt)
+                nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
+                return
+            }
+            callbacks.onError(error)
+            return
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Invalid response type (non-stream)")
+            callbacks.onError(AynaError.apiError(message: "Invalid Anthropic response"))
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .anthropicService,
+            level: .info,
+            message: "📥 Anthropic HTTP response received (non-stream)",
+            metadata: ["statusCode": "\(httpResponse.statusCode)"]
+        )
+
+        guard let data else {
+            DiagnosticsLogger.log(.anthropicService, level: .error, message: "❌ Empty response data (non-stream)")
+            callbacks.onError(AynaError.apiError(message: "Empty Anthropic response"))
+            return
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            handleNonStreamHTTPError(data: data, statusCode: httpResponse.statusCode, circuitKey: circuitKey, callbacks: callbacks)
+            return
+        }
+
+        NetworkCircuitBreaker.recordSuccess(key: circuitKey)
+        parseNonStreamResponse(data: data, callbacks: callbacks)
+    }
+
+    private func handleNonStreamHTTPError(
+        data: Data,
+        statusCode: Int,
+        circuitKey: String,
+        callbacks: AIProviderStreamCallbacks
+    ) {
+        if NetworkCircuitBreaker.shouldRecordFailure(statusCode: statusCode) {
+            NetworkCircuitBreaker.recordFailure(key: circuitKey)
+        }
+        let message = extractAPIErrorMessage(from: data, statusCode: statusCode)
+        let rawBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
+        DiagnosticsLogger.log(
+            .anthropicService,
+            level: .error,
+            message: "❌ Anthropic API error (non-stream)",
+            metadata: ["statusCode": "\(statusCode)", "error": message, "rawBody": String(rawBody.prefix(500))]
+        )
+        callbacks.onError(AynaError.apiError(message: message))
+    }
+
+    private func parseNonStreamResponse(data: Data, callbacks: AIProviderStreamCallbacks) {
+        do {
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            DiagnosticsLogger.log(
+                .anthropicService,
+                level: .debug,
+                message: "📦 Anthropic response parsed",
+                metadata: [
+                    "type": json?["type"] as? String ?? "(nil)",
+                    "hasContent": "\(json?["content"] != nil)",
+                    "keys": json?.keys.joined(separator: ", ") ?? "(nil)"
+                ]
+            )
+
+            if let errorType = json?["type"] as? String, errorType == "error" {
+                let errorObj = json?["error"] as? [String: Any]
+                let message = errorObj?["message"] as? String ?? "Anthropic API error"
+                callbacks.onError(AynaError.apiError(message: message))
+                return
+            }
+
+            if let content = json?["content"] as? [[String: Any]] {
+                parseContentBlocks(content, callbacks: callbacks)
+            } else {
+                DiagnosticsLogger.log(.anthropicService, level: .error, message: "⚠️ No content array in response")
+            }
+
+            DiagnosticsLogger.log(.anthropicService, level: .debug, message: "✅ Non-stream response complete")
+            callbacks.onComplete()
+        } catch {
+            callbacks.onError(error)
+        }
+    }
+
+    private func parseContentBlocks(_ content: [[String: Any]], callbacks: AIProviderStreamCallbacks) {
+        DiagnosticsLogger.log(
+            .anthropicService,
+            level: .debug,
+            message: "📄 Parsing content blocks",
+            metadata: ["blockCount": "\(content.count)"]
+        )
+
+        for block in content {
+            guard let blockType = block["type"] as? String else { continue }
+
+            switch blockType {
+            case "text":
+                if let text = block["text"] as? String {
+                    DiagnosticsLogger.log(
+                        .anthropicService,
+                        level: .debug,
+                        message: "📝 Text block received",
+                        metadata: ["length": "\(text.count)"]
+                    )
+                    callbacks.onChunk(text)
+                }
+            case "thinking":
+                if let thinking = block["thinking"] as? String {
+                    callbacks.onReasoning?(thinking)
+                }
+            case "tool_use":
+                if let toolId = block["id"] as? String,
+                   let toolName = block["name"] as? String,
+                   let toolInput = block["input"] as? [String: Any]
+                {
+                    callbacks.onToolCallRequested?(toolId, toolName, toolInput)
+                }
+            default:
+                DiagnosticsLogger.log(
+                    .anthropicService,
+                    level: .debug,
+                    message: "⚠️ Unknown block type",
+                    metadata: ["type": blockType]
+                )
+            }
+        }
+    }
+
+    // MARK: - Circuit Breaker
+
+    private nonisolated func checkCircuitBreaker(key: String) -> String? {
+        let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: key)
+        guard !circuitGate.allowed else { return nil }
+        let seconds = Int(circuitGate.retryAfterSeconds ?? 0)
+        return seconds > 0
+            ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
+            : "Anthropic service temporarily unavailable. Please try again shortly."
     }
 
     // MARK: - Error Handling
@@ -645,10 +632,10 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     // MARK: - Retry Logic
 
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
-        OpenAIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)
+        AIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)
     }
 
     private func delay(for attempt: Int) async {
-        await OpenAIRetryPolicy.wait(for: attempt)
+        await AIRetryPolicy.wait(for: attempt)
     }
 }

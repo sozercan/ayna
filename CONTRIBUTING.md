@@ -66,7 +66,7 @@ open ayna.xcodeproj
   ```
 - Unit tests live in `Tests/aynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
   - `InMemoryKeychainStorage` keeps credentials in-memory during tests.
-  - `MockURLProtocol` intercepts `URLSession` traffic for `OpenAIService`.
+  - `MockURLProtocol` intercepts `URLSession` traffic for `AIService`.
   - `EncryptedConversationStore` and `ConversationManager` accept dependency-injected stores/file URLs for isolation.
 - Keep every test deterministic—avoid real network calls, timers, or writes outside temporary directories.
 
@@ -98,7 +98,7 @@ Models → ViewModels → Views → Services
 - `MacSettingsView` / `IOSSettingsView`: Configuration tabs
 
 **Services**
-- `OpenAIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection and Apple Intelligence)
+- `AIService`: Manages API communication (OpenAI-compatible endpoints with Azure auto-detection and Apple Intelligence)
 - `MCPServerManager`: Handles Model Context Protocol tools (macOS only)
 - `KeychainStorage`: Securely stores API keys
 
@@ -132,7 +132,7 @@ Text("Hello").font(.system(size: 14)).foregroundColor(.primary)
 ## Common Development Tasks
 
 ### Adding a New AI Model
-1. Add the model identifier to `OpenAIService.availableModels`.
+1. Add the model identifier to `AIService.availableModels`.
 2. The model will automatically appear in the Settings picker.
 
 ### Modifying UI Layout

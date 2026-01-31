@@ -29,7 +29,7 @@ Add Anthropic (Claude) API support to Ayna, following the existing provider arch
 
 | File | Changes |
 |------|---------|
-| `Core/Services/OpenAIService.swift` | Add `.anthropic` case to `AIProvider` enum |
+| `Core/Services/AIService.swift` | Add `.anthropic` case to `AIProvider` enum |
 | `Core/Services/Providers/AIProviderProtocol.swift` | Update `AIProviderFactory` |
 | `Core/Diagnostics/DiagnosticsLogger.swift` | Add `.anthropicService` category |
 
@@ -40,7 +40,7 @@ Add Anthropic (Claude) API support to Ayna, following the existing provider arch
 ### Phase 1: Core Infrastructure
 
 **Deliverables:**
-1. Add `anthropic` case to `AIProvider` enum in `OpenAIService.swift`
+1. Add `anthropic` case to `AIProvider` enum in `AIService.swift`
 2. Update `AIProviderFactory.createProvider()` to handle `.anthropic` (stub returning `fatalError("Not implemented")`)
 3. Add `.anthropicService` diagnostic category in `DiagnosticsLogger.swift`
 
@@ -237,7 +237,7 @@ var activeBlocks: [Int: BlockState] = [:]
 - Use `AnthropicRequestBuilder` for request construction
 - Use `AnthropicStreamParser` for response parsing
 - Circuit breaker with key `"anthropic"`
-- Retry logic via `OpenAIRetryPolicy`
+- Retry logic via `AIRetryPolicy`
 - `#if os(macOS)` guards for MCP tool-related code
 - Track `currentStreamTask` with `defer { currentStreamTask = nil }`
 - Check `Task.isCancelled` in stream loop; don't call `onError` for cancellation
@@ -425,7 +425,7 @@ Streaming: `thinking_delta` with `thinking` property
 User Message
     |
     v
-OpenAIService.sendMessage()
+AIService.sendMessage()
     |
     +-> modelProviders[model] == .anthropic
     |

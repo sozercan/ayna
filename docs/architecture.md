@@ -47,11 +47,11 @@ Decomposed into single-responsibility components:
 
 | File | Responsibility |
 |------|----------------|
-| `OpenAIService.swift` | Coordinator/Facade, manages all AI requests |
+| `AIService.swift` | Coordinator/Facade, manages all AI requests |
 | `OpenAIEndpointResolver.swift` | URL resolution for different providers |
 | `OpenAIRequestBuilder.swift` | Request factory, handles Chat Completions & Responses API formats |
 | `OpenAIStreamParser.swift` | SSE parsing, tool call handling |
-| `OpenAIRetryPolicy.swift` | Exponential backoff for transient failures |
+| `AIRetryPolicy.swift` | Exponential backoff for transient failures |
 | `OpenAIImageService.swift` | DALL·E image generation |
 | `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
 | `Providers/OpenAIProvider.swift` | OpenAI API implementation |
@@ -80,7 +80,7 @@ Allows sending a single prompt to multiple models simultaneously for comparison.
 - **Data Model**:
   - `ResponseGroup`: Links a user message to multiple assistant messages
   - Each `Message` has a `model` property identifying which model generated it
-- **Execution**: `OpenAIService.sendToMultipleModels` manages concurrent `Task`s
+- **Execution**: `AIService.sendToMultipleModels` manages concurrent `Task`s
 - **Streaming**: Callbacks (`onChunk`, `onModelComplete`, `onError`) are keyed by model name
 
 ## Tool Integration
@@ -225,7 +225,7 @@ All services must log via `DiagnosticsLogger`:
 DiagnosticsLogger.log(.serviceName, level: .info, message: "✅ Action completed", metadata: ["key": value])
 ```
 
-- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.openAIService`, `.mcpServerManager`, `.cloudKit`)
+- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.aiService`, `.mcpServerManager`, `.cloudKit`)
 - **Levels**: `.debug`, `.info`, `.warning`, `.error`
 - **Output**: Logs persist to `breadcrumbs.json` for debugging
 
@@ -271,6 +271,6 @@ let action = ErrorPresenter.suggestedAction(for: error)  // .retry, .openSetting
 
 ### Legacy Errors
 
-- `OpenAIService.OpenAIError` — Still used internally by OpenAI-related services
+- `AIService.AIError` — Still used internally by OpenAI-related services
 - Display errors in UI with red text styling
 - Always log errors with context before handling

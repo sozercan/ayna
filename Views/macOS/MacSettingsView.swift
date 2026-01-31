@@ -11,7 +11,7 @@ import SwiftUI
 // swiftlint:disable file_length type_body_length
 
 struct MacSettingsView: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @ObservedObject private var settingsRouter = SettingsRouter.shared
     @State private var showAPIKeyInfo = false
     @State private var selectedTab: SettingsTab = SettingsRouter.shared.consumeRequestedTab() ?? .general
@@ -56,7 +56,7 @@ struct GeneralSettingsView: View {
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
@@ -105,21 +105,21 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Picker("Image Size", selection: $openAIService.imageSize) {
+                Picker("Image Size", selection: $aiService.imageSize) {
                     Text("1024×1024 (Square)").tag("1024x1024")
                     Text("1024×1536 (Portrait)").tag("1024x1536")
                     Text("1536×1024 (Landscape)").tag("1536x1024")
                 }
                 .help("Resolution for generated images")
 
-                Picker("Image Quality", selection: $openAIService.imageQuality) {
+                Picker("Image Quality", selection: $aiService.imageQuality) {
                     Text("Low").tag("low")
                     Text("Medium").tag("medium")
                     Text("High").tag("high")
                 }
                 .help("Quality level affects generation time and cost")
 
-                Picker("Output Format", selection: $openAIService.outputFormat) {
+                Picker("Output Format", selection: $aiService.outputFormat) {
                     Text("PNG").tag("png")
                     Text("JPEG").tag("jpeg")
                 }
@@ -129,11 +129,11 @@ struct GeneralSettingsView: View {
                     Text("Compression")
                     Spacer()
                     Slider(value: Binding(
-                        get: { Double(openAIService.outputCompression) },
-                        set: { openAIService.outputCompression = Int($0) }
+                        get: { Double(aiService.outputCompression) },
+                        set: { aiService.outputCompression = Int($0) }
                     ), in: 0 ... 100, step: 10)
                         .frame(width: 150)
-                    Text("\(openAIService.outputCompression)%")
+                    Text("\(aiService.outputCompression)%")
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 45, alignment: .trailing)
                 }
@@ -767,7 +767,7 @@ struct ToolConfigurationPanel: View {
 }
 
 struct APISettingsView: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @State private var showAPIKey = false
     @State private var tempAPIKey = ""
     @State private var tempEndpoint = ""
@@ -817,7 +817,7 @@ struct APISettingsView: View {
 
                 // Model list
                 ScrollView {
-                    if openAIService.customModels.isEmpty {
+                    if aiService.customModels.isEmpty {
                         VStack(spacing: Spacing.md) {
                             Image(systemName: "cpu")
                                 .font(.system(size: 32))
@@ -830,12 +830,12 @@ struct APISettingsView: View {
                         .padding(.vertical, 40)
                     } else {
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            ForEach(openAIService.customModels, id: \.self) { model in
+                            ForEach(aiService.customModels, id: \.self) { model in
                                 HStack {
                                     VStack(alignment: .leading, spacing: Spacing.xxxs) {
                                         Text(model)
                                             .font(Typography.modelName)
-                                        if let provider = openAIService.modelProviders[model] {
+                                        if let provider = aiService.modelProviders[model] {
                                             Text(provider.displayName)
                                                 .font(.system(size: Typography.Size.xs))
                                                 .foregroundStyle(Theme.textSecondary)
@@ -846,14 +846,14 @@ struct APISettingsView: View {
 
                                     HStack(spacing: Spacing.sm) {
                                         Button(action: {
-                                            openAIService.selectedModel = model
+                                            aiService.selectedModel = model
                                         }) {
-                                            Image(systemName: model == openAIService.selectedModel ? "star.fill" : "star")
-                                                .foregroundStyle(model == openAIService.selectedModel ? .yellow : Theme.textSecondary)
+                                            Image(systemName: model == aiService.selectedModel ? "star.fill" : "star")
+                                                .foregroundStyle(model == aiService.selectedModel ? .yellow : Theme.textSecondary)
                                                 .font(.system(size: Typography.Size.caption))
                                         }
                                         .buttonStyle(.plain)
-                                        .help(model == openAIService.selectedModel ? "Default model" : "Set as default")
+                                        .help(model == aiService.selectedModel ? "Default model" : "Set as default")
 
                                         Button(action: {
                                             removeModel(model)
@@ -879,7 +879,7 @@ struct APISettingsView: View {
                                 }
                                 .contextMenu {
                                     Button {
-                                        openAIService.selectedModel = model
+                                        aiService.selectedModel = model
                                     } label: {
                                         Label("Set as Default", systemImage: "star")
                                     }
@@ -927,14 +927,14 @@ struct APISettingsView: View {
                             .font(Typography.headline)
                             .foregroundStyle(.primary)
 
-                        Picker("", selection: $openAIService.provider) {
+                        Picker("", selection: $aiService.provider) {
                             ForEach(AIProvider.allCases, id: \.self) { provider in
                                 Text(provider.displayName)
                                     .tag(provider)
                             }
                         }
                         .pickerStyle(.segmented)
-                        .onChange(of: openAIService.provider) { _, _ in
+                        .onChange(of: aiService.provider) { _, _ in
                             validationStatus = .notChecked
                         }
                     }
@@ -949,8 +949,8 @@ struct APISettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
                         // API Endpoint Type Selection (not applicable for Apple Intelligence, GitHub Models, or Anthropic)
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels,
-                           openAIService.provider != .anthropic
+                        if aiService.provider != .appleIntelligence, aiService.provider != .githubModels,
+                           aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Label("API Endpoint", systemImage: "arrow.left.arrow.right")
@@ -960,14 +960,14 @@ struct APISettingsView: View {
                                 Picker("", selection: Binding(
                                     get: {
                                         if let modelName = selectedModelName {
-                                            openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
+                                            aiService.modelEndpointTypes[modelName] ?? .chatCompletions
                                         } else {
                                             tempEndpointType
                                         }
                                     },
                                     set: { newValue in
                                         if let modelName = selectedModelName {
-                                            openAIService.modelEndpointTypes[modelName] = newValue
+                                            aiService.modelEndpointTypes[modelName] = newValue
                                         } else {
                                             tempEndpointType = newValue
                                         }
@@ -986,7 +986,7 @@ struct APISettingsView: View {
                             .padding(.horizontal)
                         }
 
-                        if openAIService.provider == .openai {
+                        if aiService.provider == .openai {
                             // OpenAI Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("OpenAI Configuration", systemImage: "key.fill")
@@ -1116,7 +1116,7 @@ struct APISettingsView: View {
                                     .controlSize(.large)
 
                                     if let selectedName = selectedModelName,
-                                       openAIService.customModels.contains(selectedName)
+                                       aiService.customModels.contains(selectedName)
                                     {
                                         // Update existing model
                                         Button {
@@ -1126,21 +1126,21 @@ struct APISettingsView: View {
 
                                             if !modelName.isEmpty {
                                                 // Update provider and endpoint type
-                                                openAIService.modelProviders[modelName] = .openai
-                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+                                                aiService.modelProviders[modelName] = .openai
+                                                aiService.modelEndpointTypes[modelName] = tempEndpointType
 
                                                 // Update per-model API key
                                                 if !apiKey.isEmpty {
-                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                    aiService.modelAPIKeys[modelName] = apiKey
                                                 } else {
-                                                    openAIService.modelAPIKeys.removeValue(forKey: modelName)
+                                                    aiService.modelAPIKeys.removeValue(forKey: modelName)
                                                 }
 
                                                 // Update custom endpoint
                                                 if !endpoint.isEmpty {
-                                                    openAIService.modelEndpoints[modelName] = endpoint
+                                                    aiService.modelEndpoints[modelName] = endpoint
                                                 } else {
-                                                    openAIService.modelEndpoints.removeValue(forKey: modelName)
+                                                    aiService.modelEndpoints.removeValue(forKey: modelName)
                                                 }
 
                                                 validationStatus = .notChecked
@@ -1165,23 +1165,23 @@ struct APISettingsView: View {
                                             let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                                            if !modelName.isEmpty, !openAIService.customModels.contains(modelName) {
-                                                openAIService.customModels.append(modelName)
-                                                openAIService.modelProviders[modelName] = .openai
-                                                openAIService.modelEndpointTypes[modelName] = tempEndpointType
+                                            if !modelName.isEmpty, !aiService.customModels.contains(modelName) {
+                                                aiService.customModels.append(modelName)
+                                                aiService.modelProviders[modelName] = .openai
+                                                aiService.modelEndpointTypes[modelName] = tempEndpointType
 
                                                 // Save per-model API key if provided
                                                 if !apiKey.isEmpty {
-                                                    openAIService.modelAPIKeys[modelName] = apiKey
+                                                    aiService.modelAPIKeys[modelName] = apiKey
                                                 }
 
                                                 // Save custom endpoint if provided
                                                 if !endpoint.isEmpty {
-                                                    openAIService.modelEndpoints[modelName] = endpoint
+                                                    aiService.modelEndpoints[modelName] = endpoint
                                                 }
 
-                                                if openAIService.customModels.count == 1 {
-                                                    openAIService.selectedModel = modelName
+                                                if aiService.customModels.count == 1 {
+                                                    aiService.selectedModel = modelName
                                                 }
                                                 selectedModelName = modelName
                                                 validationStatus = .notChecked
@@ -1203,7 +1203,7 @@ struct APISettingsView: View {
                                 }
                             }
                             .padding(.horizontal)
-                        } else if openAIService.provider == .appleIntelligence {
+                        } else if aiService.provider == .appleIntelligence {
                             // Apple Intelligence Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Apple Intelligence Configuration", systemImage: "apple.logo")
@@ -1291,11 +1291,11 @@ struct APISettingsView: View {
                                             let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
 
-                                            if !openAIService.customModels.contains(finalModelName) {
-                                                openAIService.customModels.append(finalModelName)
-                                                openAIService.modelProviders[finalModelName] = .appleIntelligence
-                                                if openAIService.customModels.count == 1 {
-                                                    openAIService.selectedModel = finalModelName
+                                            if !aiService.customModels.contains(finalModelName) {
+                                                aiService.customModels.append(finalModelName)
+                                                aiService.modelProviders[finalModelName] = .appleIntelligence
+                                                if aiService.customModels.count == 1 {
+                                                    aiService.selectedModel = finalModelName
                                                 }
                                                 selectedModelName = finalModelName
                                                 tempModelName = ""
@@ -1313,7 +1313,7 @@ struct APISettingsView: View {
                                 }
                             }
                             .padding(.horizontal)
-                        } else if openAIService.provider == .githubModels {
+                        } else if aiService.provider == .githubModels {
                             // GitHub Models Configuration
                             GitHubModelsConfigurationView(
                                 tempModelName: $tempModelName,
@@ -1323,7 +1323,7 @@ struct APISettingsView: View {
                                 validationStatus: $validationStatus
                             )
                             .padding(.horizontal)
-                        } else if openAIService.provider == .anthropic {
+                        } else if aiService.provider == .anthropic {
                             // Anthropic Configuration
                             AnthropicConfigurationView(
                                 tempModelName: $tempModelName,
@@ -1337,8 +1337,8 @@ struct APISettingsView: View {
                         }
 
                         // Status Section
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels,
-                           openAIService.provider != .anthropic
+                        if aiService.provider != .appleIntelligence, aiService.provider != .githubModels,
+                           aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Validation Status", systemImage: "checkmark.seal.fill")
@@ -1415,18 +1415,18 @@ struct APISettingsView: View {
         }
         .onAppear {
             // If there's a selected model, load its config; otherwise set defaults
-            if let model = selectedModelName, openAIService.customModels.contains(model) {
+            if let model = selectedModelName, aiService.customModels.contains(model) {
                 loadModelConfig(model)
             } else {
-                tempAPIKey = openAIService.apiKey
+                tempAPIKey = ""
                 tempEndpoint = "https://api.openai.com/"
                 // Default to "new model" state for GitHub Models and Anthropic
-                if openAIService.provider == .githubModels || openAIService.provider == .anthropic {
+                if aiService.provider == .githubModels || aiService.provider == .anthropic {
                     createNewModel()
                 }
             }
         }
-        .onChange(of: openAIService.provider) { _, newProvider in
+        .onChange(of: aiService.provider) { _, newProvider in
             // Reset to "new model" state when switching to GitHub Models or Anthropic
             if newProvider == .githubModels || newProvider == .anthropic {
                 createNewModel()
@@ -1441,7 +1441,7 @@ struct APISettingsView: View {
         tempAPIKey = ""
         // For Anthropic, use empty endpoint (defaults to api.anthropic.com)
         // For others, use OpenAI endpoint
-        tempEndpoint = openAIService.provider == .anthropic ? "" : "https://api.openai.com/"
+        tempEndpoint = aiService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
         validationStatus = .notChecked
     }
@@ -1449,7 +1449,7 @@ struct APISettingsView: View {
     private func validateConfiguration() async {
         validationStatus = .checking
 
-        guard openAIService.provider == .openai else {
+        guard aiService.provider == .openai else {
             validationStatus = .invalid("Validation is only available for OpenAI-compatible models")
             return
         }
@@ -1478,7 +1478,7 @@ struct APISettingsView: View {
 
                 // Use the /openai/models endpoint to validate Azure credentials without consuming tokens
                 let baseEndpoint = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
-                let modelsURL = "\(baseEndpoint)/openai/models?api-version=\(openAIService.latestAzureAPIVersion)"
+                let modelsURL = "\(baseEndpoint)/openai/models?api-version=\(aiService.latestAzureAPIVersion)"
 
                 guard let url = URL(string: modelsURL) else {
                     validationStatus = .invalid("Invalid endpoint URL")
@@ -1554,40 +1554,40 @@ struct APISettingsView: View {
 
     private func loadModelConfig(_ model: String) {
         // Switch to the correct provider for this model
-        if let modelProvider = openAIService.modelProviders[model] {
-            openAIService.provider = modelProvider
+        if let modelProvider = aiService.modelProviders[model] {
+            aiService.provider = modelProvider
         }
 
         tempModelName = model
-        // Load per-model API key if available, otherwise use global
-        tempAPIKey = openAIService.modelAPIKeys[model] ?? openAIService.apiKey
-        tempEndpointType = openAIService.modelEndpointTypes[model] ?? .chatCompletions
+        // Load per-model API key if available
+        tempAPIKey = aiService.modelAPIKeys[model] ?? ""
+        tempEndpointType = aiService.modelEndpointTypes[model] ?? .chatCompletions
 
         // Load endpoint based on provider
-        switch openAIService.provider {
+        switch aiService.provider {
         case .openai:
-            tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
+            tempEndpoint = aiService.modelEndpoints[model] ?? "https://api.openai.com"
         case .anthropic:
             // For Anthropic, empty string means use default (api.anthropic.com)
-            tempEndpoint = openAIService.modelEndpoints[model] ?? ""
+            tempEndpoint = aiService.modelEndpoints[model] ?? ""
         default:
-            tempEndpoint = openAIService.modelEndpoints[model] ?? ""
+            tempEndpoint = aiService.modelEndpoints[model] ?? ""
         }
     }
 
     private func removeModel(_ model: String) {
-        openAIService.customModels.removeAll { $0 == model }
+        aiService.customModels.removeAll { $0 == model }
         // Also remove from provider mapping and per-model settings
-        openAIService.modelProviders.removeValue(forKey: model)
-        openAIService.modelEndpoints.removeValue(forKey: model)
-        openAIService.modelAPIKeys.removeValue(forKey: model)
+        aiService.modelProviders.removeValue(forKey: model)
+        aiService.modelEndpoints.removeValue(forKey: model)
+        aiService.modelAPIKeys.removeValue(forKey: model)
 
         // If we removed the selected default model, pick the next available one or clear it
-        if openAIService.selectedModel == model {
-            if let nextModel = openAIService.customModels.first {
-                openAIService.selectedModel = nextModel
+        if aiService.selectedModel == model {
+            if let nextModel = aiService.customModels.first {
+                aiService.selectedModel = nextModel
             } else {
-                openAIService.selectedModel = ""
+                aiService.selectedModel = ""
             }
         }
 
@@ -1602,36 +1602,36 @@ struct APISettingsView: View {
         // Generate a unique name by appending "Copy" or "Copy N"
         var newName = "\(model) Copy"
         var copyNumber = 2
-        while openAIService.customModels.contains(newName) {
+        while aiService.customModels.contains(newName) {
             newName = "\(model) Copy \(copyNumber)"
             copyNumber += 1
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "📋 Duplicating model",
             metadata: ["original": model, "duplicate": newName]
         )
 
         // Add the new model
-        openAIService.customModels.append(newName)
+        aiService.customModels.append(newName)
 
         // Copy all settings from the original model
-        if let provider = openAIService.modelProviders[model] {
-            openAIService.modelProviders[newName] = provider
+        if let provider = aiService.modelProviders[model] {
+            aiService.modelProviders[newName] = provider
         }
-        if let endpoint = openAIService.modelEndpoints[model] {
-            openAIService.modelEndpoints[newName] = endpoint
+        if let endpoint = aiService.modelEndpoints[model] {
+            aiService.modelEndpoints[newName] = endpoint
         }
-        if let apiKey = openAIService.modelAPIKeys[model] {
-            openAIService.modelAPIKeys[newName] = apiKey
+        if let apiKey = aiService.modelAPIKeys[model] {
+            aiService.modelAPIKeys[newName] = apiKey
         }
-        if let endpointType = openAIService.modelEndpointTypes[model] {
-            openAIService.modelEndpointTypes[newName] = endpointType
+        if let endpointType = aiService.modelEndpointTypes[model] {
+            aiService.modelEndpointTypes[newName] = endpointType
         }
-        if let usesOAuth = openAIService.modelUsesGitHubOAuth[model] {
-            openAIService.modelUsesGitHubOAuth[newName] = usesOAuth
+        if let usesOAuth = aiService.modelUsesGitHubOAuth[model] {
+            aiService.modelUsesGitHubOAuth[newName] = usesOAuth
         }
 
         // Select the new model for editing
@@ -1695,7 +1695,7 @@ struct FlowLayout: Layout {
 // MARK: - GitHub Models Configuration View
 
 struct GitHubModelsConfigurationView: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
@@ -1947,7 +1947,7 @@ struct GitHubModelsConfigurationView: View {
                 .controlSize(.large)
 
                 if let selectedName = selectedModelName,
-                   openAIService.customModels.contains(selectedName)
+                   aiService.customModels.contains(selectedName)
                 {
                     // Update existing model
                     Button {
@@ -2073,18 +2073,18 @@ struct GitHubModelsConfigurationView: View {
     private func addModel() {
         let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !modelName.isEmpty, !openAIService.customModels.contains(modelName) else { return }
+        guard !modelName.isEmpty, !aiService.customModels.contains(modelName) else { return }
 
-        openAIService.customModels.append(modelName)
-        openAIService.modelProviders[modelName] = .githubModels
+        aiService.customModels.append(modelName)
+        aiService.modelProviders[modelName] = .githubModels
 
         // Mark that this model uses OAuth if signed in
         if githubOAuth.isAuthenticated {
-            openAIService.modelUsesGitHubOAuth[modelName] = true
+            aiService.modelUsesGitHubOAuth[modelName] = true
         }
 
-        if openAIService.customModels.count == 1 {
-            openAIService.selectedModel = modelName
+        if aiService.customModels.count == 1 {
+            aiService.selectedModel = modelName
         }
         selectedModelName = modelName
         validationStatus = .notChecked
@@ -2095,11 +2095,11 @@ struct GitHubModelsConfigurationView: View {
 
         guard !modelName.isEmpty else { return }
 
-        openAIService.modelProviders[modelName] = .githubModels
+        aiService.modelProviders[modelName] = .githubModels
 
         // Using OAuth, remove any stored PAT
-        openAIService.modelAPIKeys.removeValue(forKey: modelName)
-        openAIService.modelUsesGitHubOAuth[modelName] = true
+        aiService.modelAPIKeys.removeValue(forKey: modelName)
+        aiService.modelUsesGitHubOAuth[modelName] = true
 
         validationStatus = .notChecked
     }
@@ -2108,7 +2108,7 @@ struct GitHubModelsConfigurationView: View {
 // MARK: - Anthropic Configuration View
 
 struct AnthropicConfigurationView: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
     @Binding var tempEndpoint: String
@@ -2267,7 +2267,7 @@ struct AnthropicConfigurationView: View {
                     .controlSize(.large)
 
                     if let selectedName = selectedModelName,
-                       openAIService.customModels.contains(selectedName)
+                       aiService.customModels.contains(selectedName)
                     {
                         // Update existing model
                         Button {
@@ -2394,24 +2394,24 @@ struct AnthropicConfigurationView: View {
 
         // Remove old model if updating
         if let oldName = selectedModelName, oldName != modelName {
-            openAIService.customModels.removeAll { $0 == oldName }
-            openAIService.modelProviders.removeValue(forKey: oldName)
-            openAIService.modelAPIKeys.removeValue(forKey: oldName)
-            openAIService.modelEndpoints.removeValue(forKey: oldName)
+            aiService.customModels.removeAll { $0 == oldName }
+            aiService.modelProviders.removeValue(forKey: oldName)
+            aiService.modelAPIKeys.removeValue(forKey: oldName)
+            aiService.modelEndpoints.removeValue(forKey: oldName)
         }
 
         // Add or update model
-        if !openAIService.customModels.contains(modelName) {
-            openAIService.customModels.append(modelName)
+        if !aiService.customModels.contains(modelName) {
+            aiService.customModels.append(modelName)
         }
 
-        openAIService.modelProviders[modelName] = .anthropic
-        openAIService.modelAPIKeys[modelName] = apiKey
+        aiService.modelProviders[modelName] = .anthropic
+        aiService.modelAPIKeys[modelName] = apiKey
 
         if !endpoint.isEmpty {
-            openAIService.modelEndpoints[modelName] = endpoint
+            aiService.modelEndpoints[modelName] = endpoint
         } else {
-            openAIService.modelEndpoints.removeValue(forKey: modelName)
+            aiService.modelEndpoints.removeValue(forKey: modelName)
         }
 
         selectedModelName = modelName

@@ -413,12 +413,12 @@ struct MultiModelSelector: View {
     let maxSelection: Int
 
     @State private var isExpanded = false
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
 
     /// Determines the capability type of currently selected models (if any)
-    private var selectedCapabilityType: OpenAIService.ModelCapability? {
+    private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
-        return openAIService.getModelCapability(firstSelected)
+        return aiService.getModelCapability(firstSelected)
     }
 
     var body: some View {
@@ -502,7 +502,7 @@ struct MultiModelSelector: View {
 
     private func modelRow(for model: String) -> some View {
         let isSelected = selectedModels.contains(model)
-        let modelCapability = openAIService.getModelCapability(model)
+        let modelCapability = aiService.getModelCapability(model)
 
         // Disable if max reached OR if mixing capability types
         let isCapabilityMismatch: Bool = {

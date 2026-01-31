@@ -8,7 +8,7 @@
 import Foundation
 
 /// Stateless helper that resolves API endpoint URLs for various providers.
-/// Extracts the complex URL-building logic from OpenAIService for better testability.
+/// Extracts the complex URL-building logic from AIService for better testability.
 enum OpenAIEndpointResolver {
     // MARK: - Configuration
 

@@ -87,42 +87,42 @@ struct ErrorBannerViewTests {
 
 @Suite("Error Recovery Suggestion Tests")
 struct ErrorRecoverySuggestionTests {
-    // MARK: - OpenAIError Tests
+    // MARK: - AIError Tests
 
-    @Test("OpenAIError missingAPIKey has recovery suggestion")
+    @Test("AIError missingAPIKey has recovery suggestion")
     func openAIErrorMissingAPIKeyHasRecoverySuggestion() {
         // Given
-        let error = OpenAIService.OpenAIError.missingAPIKey
+        let error = AIService.AIError.missingAPIKey
 
         // Then
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("Settings") ?? false)
     }
 
-    @Test("OpenAIError missingModel has recovery suggestion")
+    @Test("AIError missingModel has recovery suggestion")
     func openAIErrorMissingModelHasRecoverySuggestion() {
         // Given
-        let error = OpenAIService.OpenAIError.missingModel
+        let error = AIService.AIError.missingModel
 
         // Then
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("Models") ?? false)
     }
 
-    @Test("OpenAIError invalidResponse has recovery suggestion")
+    @Test("AIError invalidResponse has recovery suggestion")
     func openAIErrorInvalidResponseHasRecoverySuggestion() {
         // Given
-        let error = OpenAIService.OpenAIError.invalidResponse
+        let error = AIService.AIError.invalidResponse
 
         // Then
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("again") ?? false)
     }
 
-    @Test("OpenAIError contentFiltered has recovery suggestion")
+    @Test("AIError contentFiltered has recovery suggestion")
     func openAIErrorContentFilteredHasRecoverySuggestion() {
         // Given
-        let error = OpenAIService.OpenAIError.contentFiltered("test content")
+        let error = AIService.AIError.contentFiltered("test content")
 
         // Then
         #expect(error.recoverySuggestion != nil)
@@ -170,9 +170,9 @@ struct LocalizedErrorExtensionTests {
     func errorDescriptionIsNotNil() {
         // Given
         let errors: [any LocalizedError] = [
-            OpenAIService.OpenAIError.missingAPIKey,
-            OpenAIService.OpenAIError.missingModel,
-            OpenAIService.OpenAIError.invalidResponse,
+            AIService.AIError.missingAPIKey,
+            AIService.AIError.missingModel,
+            AIService.AIError.invalidResponse,
             TavilyError.notConfigured,
             TavilyError.invalidAPIKey,
         ]
@@ -187,9 +187,9 @@ struct LocalizedErrorExtensionTests {
     func recoverySuggestionIsNotNil() {
         // Given
         let errors: [any LocalizedError] = [
-            OpenAIService.OpenAIError.missingAPIKey,
-            OpenAIService.OpenAIError.missingModel,
-            OpenAIService.OpenAIError.invalidResponse,
+            AIService.AIError.missingAPIKey,
+            AIService.AIError.missingModel,
+            AIService.AIError.invalidResponse,
             TavilyError.notConfigured,
             TavilyError.invalidAPIKey,
         ]

@@ -13,7 +13,7 @@ import Foundation
 /// Unified error enum covering all failure modes in the Ayna app
 ///
 /// Use this type for new error handling. Existing service-specific errors
-/// (OpenAIError, TavilyError, etc.) are preserved for backward compatibility
+/// (AIError, TavilyError, etc.) are preserved for backward compatibility
 /// and can be wrapped in AynaError cases.
 enum AynaError: LocalizedError, Sendable {
     // MARK: - Network & Connectivity

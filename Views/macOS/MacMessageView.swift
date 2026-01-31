@@ -23,7 +23,7 @@ struct MacMessageView: View {
     @State private var showReasoning = false
     @State private var showModelMenu = false
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
 
     // Performance: Cache parsed content blocks to avoid re-parsing on every render
     // Initialize synchronously to avoid flash of empty bubbles on first render
@@ -470,7 +470,7 @@ struct MacMessageView: View {
                         }
 
                         Menu {
-                            ForEach(openAIService.usableModels, id: \.self) { model in
+                            ForEach(aiService.usableModels, id: \.self) { model in
                                 Button(action: {
                                     onSwitchModel?(model)
                                 }) {

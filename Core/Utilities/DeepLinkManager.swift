@@ -130,10 +130,10 @@ final class DeepLinkManager: ObservableObject {
         pendingAddModel != nil
     }
 
-    private let openAIService: OpenAIService
+    private let aiService: AIService
 
-    init(openAIService: OpenAIService? = nil) {
-        self.openAIService = openAIService ?? .shared
+    init(aiService: AIService? = nil) {
+        self.aiService = aiService ?? .shared
     }
 
     // MARK: - Public Methods
@@ -170,8 +170,8 @@ final class DeepLinkManager: ObservableObject {
             case let .chat(request):
                 // Check if this is a unified flow (chat with model config)
                 if let modelConfig = request.modelConfig {
-                    let modelExists = openAIService.customModels.contains(modelConfig.name)
-                    print("🔗 DEBUG: modelConfig.name=\(modelConfig.name), modelExists=\(modelExists), customModels=\(openAIService.customModels)")
+                    let modelExists = aiService.customModels.contains(modelConfig.name)
+                    print("🔗 DEBUG: modelConfig.name=\(modelConfig.name), modelExists=\(modelExists), customModels=\(aiService.customModels)")
                     if !modelExists {
                         // Model doesn't exist - show add confirmation first, store chat for after
                         pendingAddModel = modelConfig
@@ -485,23 +485,23 @@ final class DeepLinkManager: ObservableObject {
     /// Add a model configuration from a request
     private func addModelConfig(_ request: AddModelRequest) throws {
         // Check if model already exists
-        if openAIService.customModels.contains(request.name) {
+        if aiService.customModels.contains(request.name) {
             throw DeepLinkError.modelAlreadyExists(request.name)
         }
 
         // Add the model
-        openAIService.customModels.append(request.name)
-        openAIService.modelProviders[request.name] = request.provider
-        openAIService.modelEndpointTypes[request.name] = request.endpointType
+        aiService.customModels.append(request.name)
+        aiService.modelProviders[request.name] = request.provider
+        aiService.modelEndpointTypes[request.name] = request.endpointType
 
         // Set custom endpoint if provided
         if let endpoint = request.endpoint, !endpoint.isEmpty {
-            openAIService.modelEndpoints[request.name] = endpoint
+            aiService.modelEndpoints[request.name] = endpoint
         }
 
         // Set API key if provided
         if let apiKey = request.apiKey, !apiKey.isEmpty {
-            openAIService.modelAPIKeys[request.name] = apiKey
+            aiService.modelAPIKeys[request.name] = apiKey
         }
 
         // Optionally select the new model as default

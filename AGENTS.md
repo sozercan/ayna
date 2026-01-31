@@ -104,7 +104,7 @@ Every task should be broken into phases. Each phase must have:
 
 ```
 Phase 1: Research
-├── Exit: Understand OpenAIService pattern, confirm no existing solution
+├── Exit: Understand AIService pattern, confirm no existing solution
 
 Phase 2: Interface
 ├── Create NewService.swift with protocol + stub
@@ -499,7 +499,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUIT
 
 ## Key Files
 
-- `Core/Services/OpenAIService.swift` — Main AI service coordinator
+- `Core/Services/AIService.swift` — Main AI service coordinator
 - `Core/Services/Providers/AIProviderProtocol.swift` — Provider abstraction protocol
 - `Core/ViewModels/ConversationManager.swift` — App-wide state management
 - `Core/Services/ConversationPersistenceCoordinator.swift` — Save/load orchestration
@@ -515,7 +515,7 @@ Before completing non-trivial features, verify these patterns are followed:
 
 - [ ] **Streaming responses handled incrementally** — Never buffer entire response before displaying
 - [ ] **Network requests are cancellable** — Use `Task` with proper cancellation, not fire-and-forget
-- [ ] **Retry logic uses exponential backoff** — See `OpenAIRetryPolicy` for the pattern
+- [ ] **Retry logic uses exponential backoff** — See `AIRetryPolicy` for the pattern
 - [ ] **Large payloads are chunked** — Don't send/receive massive JSON in one request
 
 ### UI Performance
@@ -678,7 +678,7 @@ VS Code's `#runSubagent` tool enables context-isolated task execution. Subagents
 
 **Code Pattern Analysis** — Understand existing patterns:
 ```
-With #runSubagent, analyze #file:Core/Services/OpenAIService.swift and identify:
+With #runSubagent, analyze #file:Core/Services/AIService.swift and identify:
 1. How provider requests are constructed
 2. Error handling patterns
 3. How streaming responses are processed

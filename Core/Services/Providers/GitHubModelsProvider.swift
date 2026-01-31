@@ -37,12 +37,12 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     ) {
         // Check rate limit before making request
         if let rateLimitError = checkRateLimit(accessToken: config.apiKey) {
-            callbacks.onError(OpenAIService.OpenAIError.apiError(rateLimitError))
+            callbacks.onError(AIService.AIError.apiError(rateLimitError))
             return
         }
 
         guard let url = URL(string: Self.chatCompletionsURL) else {
-            callbacks.onError(OpenAIService.OpenAIError.invalidURL)
+            callbacks.onError(AIService.AIError.invalidURL)
             return
         }
 
@@ -53,7 +53,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Service temporarily unavailable. Please try again in \(seconds)s."
                 : "Service temporarily unavailable. Please try again shortly."
-            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            callbacks.onError(AIService.AIError.apiError(message))
             return
         }
 
@@ -67,12 +67,12 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             isAzure: false,
             isGitHubModels: true
         ) else {
-            callbacks.onError(OpenAIService.OpenAIError.invalidRequest)
+            callbacks.onError(AIService.AIError.invalidRequest)
             return
         }
 
         DiagnosticsLogger.log(
-            .openAIService,
+            .aiService,
             level: .info,
             message: "🌐 GitHubModelsProvider: Starting request",
             metadata: [
@@ -155,7 +155,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Service temporarily unavailable. Please try again in \(seconds)s."
                 : "Service temporarily unavailable. Please try again shortly."
-            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            callbacks.onError(AIService.AIError.apiError(message))
             return
         }
 
@@ -168,7 +168,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     let (bytes, response) = try await urlSession.bytes(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
-                        throw OpenAIService.OpenAIError.invalidResponse
+                        throw AIService.AIError.invalidResponse
                     }
 
                     guard httpResponse.statusCode == 200 else {
@@ -185,7 +185,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                             NetworkCircuitBreaker.recordFailure(key: circuitKey)
                         }
 
-                        throw OpenAIService.OpenAIError.apiError(errorMessage)
+                        throw AIService.AIError.apiError(errorMessage)
                     }
 
                     // Update rate limit on success
@@ -279,7 +279,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     }
                 } onCancel: {
                     DiagnosticsLogger.log(
-                        .openAIService,
+                        .aiService,
                         level: .info,
                         message: "GitHubModelsProvider: Stream task cancelled"
                     )
@@ -317,7 +317,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Service temporarily unavailable. Please try again in \(seconds)s."
                 : "Service temporarily unavailable. Please try again shortly."
-            callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+            callbacks.onError(AIService.AIError.apiError(message))
             return
         }
 
@@ -351,12 +351,12 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                 }
 
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
+                    callbacks.onError(AIService.AIError.invalidResponse)
                     return
                 }
 
                 guard let data else {
-                    callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
+                    callbacks.onError(AIService.AIError.invalidResponse)
                     return
                 }
 
@@ -366,7 +366,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     }
                     let message = self?.extractAPIErrorMessage(from: data, statusCode: httpResponse.statusCode)
                         ?? "HTTP \(httpResponse.statusCode)"
-                    callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+                    callbacks.onError(AIService.AIError.apiError(message))
                     return
                 }
 
@@ -382,7 +382,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     if let errorDict = json?["error"] as? [String: Any],
                        let message = errorDict["message"] as? String
                     {
-                        callbacks.onError(OpenAIService.OpenAIError.apiError(message))
+                        callbacks.onError(AIService.AIError.apiError(message))
                         return
                     }
 
@@ -409,7 +409,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
 
                         callbacks.onComplete()
                     } else {
-                        callbacks.onError(OpenAIService.OpenAIError.invalidResponse)
+                        callbacks.onError(AIService.AIError.invalidResponse)
                     }
                 } catch {
                     callbacks.onError(error)
@@ -527,11 +527,11 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             await MainActor.run {
                 self.currentStreamTask = nil
                 if let urlError = error as? URLError, urlError.code == .timedOut {
-                    callbacks.onError(OpenAIService.OpenAIError.apiError(
+                    callbacks.onError(AIService.AIError.apiError(
                         "Request timed out. The model may be slow or overloaded. Please try again."
                     ))
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                    callbacks.onError(OpenAIService.OpenAIError.apiError(
+                    callbacks.onError(AIService.AIError.apiError(
                         "Network connection was lost. The server may have rejected the request."
                     ))
                 } else if error is CancellationError {
@@ -557,10 +557,10 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     // MARK: - Retry Logic
 
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
-        OpenAIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)
+        AIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)
     }
 
     private func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
-        await OpenAIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
+        await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
     }
 }

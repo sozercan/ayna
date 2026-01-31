@@ -57,7 +57,7 @@ enum OpenAIRequestBuilder {
                           let argumentsString = String(data: argumentsJSON, encoding: .utf8)
                     else {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .error,
                             message: "Failed to encode arguments for tool call",
                             metadata: ["tool": toolCall.toolName]
@@ -150,7 +150,7 @@ enum OpenAIRequestBuilder {
                     // Get the tool_call_id from this tool message
                     guard let toolCallId = message.toolCalls?.first?.id else {
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "⚠️ Skipping tool message without tool_call_id",
                             metadata: ["index": "\(index)"]
@@ -169,7 +169,7 @@ enum OpenAIRequestBuilder {
                             filteredMessages.append(message)
                         } else {
                             DiagnosticsLogger.log(
-                                .openAIService,
+                                .aiService,
                                 level: .info,
                                 message: "⚠️ Skipping orphaned/mismatched tool message",
                                 metadata: ["index": "\(index)", "toolCallId": toolCallId]
@@ -186,7 +186,7 @@ enum OpenAIRequestBuilder {
                         modifiedMessage.toolCalls = nil
                         filteredMessages.append(modifiedMessage)
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "⚠️ Stripped orphaned tool_calls from assistant message",
                             metadata: [
@@ -200,7 +200,7 @@ enum OpenAIRequestBuilder {
                         modifiedMessage.toolCalls = validToolCalls
                         filteredMessages.append(modifiedMessage)
                         DiagnosticsLogger.log(
-                            .openAIService,
+                            .aiService,
                             level: .info,
                             message: "⚠️ Filtered some orphaned tool_calls from assistant",
                             metadata: [
@@ -453,7 +453,7 @@ enum OpenAIRequestBuilder {
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             DiagnosticsLogger.log(
-                .openAIService,
+                .aiService,
                 level: .error,
                 message: "❌ Failed to encode Responses API body",
                 metadata: ["model": model]

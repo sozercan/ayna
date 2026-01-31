@@ -290,7 +290,7 @@ final class TavilyService: ObservableObject {
     }
 
     private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
-        DiagnosticsLogger.log(.openAIService, level: level, message: message, metadata: metadata)
+        DiagnosticsLogger.log(.aiService, level: level, message: message, metadata: metadata)
     }
 }
 

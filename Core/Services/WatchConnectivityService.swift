@@ -24,7 +24,6 @@ private enum WatchContextKeys {
     static let modelEndpoints = "modelEndpoints"
     static let modelEndpointTypes = "modelEndpointTypes"
     static let modelUsesGitHubOAuth = "modelUsesGitHubOAuth"
-    static let apiKey = "apiKey"
     static let modelAPIKeys = "modelAPIKeys"
     static let githubAccessToken = "githubAccessToken"
     static let tavilyAPIKey = "tavilyAPIKey"
@@ -133,18 +132,17 @@ private enum WatchMessageKeys {
                 }
 
                 // Get all model configuration for Watch
-                let availableModels = OpenAIService.shared.usableModels
-                let selectedModel = OpenAIService.shared.selectedModel
-                let customModels = OpenAIService.shared.customModels
-                let defaultProvider = OpenAIService.shared.provider.rawValue
-                let modelProviders = OpenAIService.shared.modelProviders.mapValues { $0.rawValue }
-                let modelEndpoints = OpenAIService.shared.modelEndpoints
-                let modelEndpointTypes = OpenAIService.shared.modelEndpointTypes.mapValues { $0.rawValue }
-                let modelUsesGitHubOAuth = OpenAIService.shared.modelUsesGitHubOAuth
+                let availableModels = AIService.shared.usableModels
+                let selectedModel = AIService.shared.selectedModel
+                let customModels = AIService.shared.customModels
+                let defaultProvider = AIService.shared.provider.rawValue
+                let modelProviders = AIService.shared.modelProviders.mapValues { $0.rawValue }
+                let modelEndpoints = AIService.shared.modelEndpoints
+                let modelEndpointTypes = AIService.shared.modelEndpointTypes.mapValues { $0.rawValue }
+                let modelUsesGitHubOAuth = AIService.shared.modelUsesGitHubOAuth
 
                 // API keys via WatchConnectivity (for free dev accounts without shared Keychain)
-                let globalAPIKey = OpenAIService.shared.apiKey
-                let modelAPIKeys = OpenAIService.shared.modelAPIKeys
+                let modelAPIKeys = AIService.shared.modelAPIKeys
 
                 // GitHub OAuth token for GitHub Models
                 let githubAccessToken = GitHubOAuthService.shared.getAccessToken() ?? ""
@@ -167,9 +165,6 @@ private enum WatchMessageKeys {
                 ]
 
                 // Only send API keys/tokens if they exist (don't overwrite with empty)
-                if !globalAPIKey.isEmpty {
-                    context[WatchContextKeys.apiKey] = globalAPIKey
-                }
                 if !modelAPIKeys.isEmpty {
                     context[WatchContextKeys.modelAPIKeys] = modelAPIKeys
                 }
@@ -239,7 +234,7 @@ private enum WatchMessageKeys {
                 )
             } else {
                 // Conversation doesn't exist, create it
-                let model = OpenAIService.shared.selectedModel
+                let model = AIService.shared.selectedModel
                 let newConversation = Conversation(
                     id: conversationId,
                     title: "Watch Chat",
@@ -718,7 +713,7 @@ private enum WatchMessageKeys {
         private func processModelSettingsFromContext(_ context: [String: Any]) {
             if let model = context[WatchContextKeys.selectedModel] as? String {
                 selectedModel = model
-                OpenAIService.shared.selectedModel = model
+                AIService.shared.selectedModel = model
             }
 
             if let models = context[WatchContextKeys.availableModels] as? [String] {
@@ -726,7 +721,7 @@ private enum WatchMessageKeys {
             }
 
             if let customModels = context[WatchContextKeys.customModels] as? [String] {
-                OpenAIService.shared.customModels = customModels
+                AIService.shared.customModels = customModels
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -738,7 +733,7 @@ private enum WatchMessageKeys {
             if let providerRaw = context[WatchContextKeys.defaultProvider] as? String,
                let provider = AIProvider(rawValue: providerRaw)
             {
-                OpenAIService.shared.provider = provider
+                AIService.shared.provider = provider
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -760,7 +755,7 @@ private enum WatchMessageKeys {
                         modelProviders[model] = provider
                     }
                 }
-                OpenAIService.shared.modelProviders = modelProviders
+                AIService.shared.modelProviders = modelProviders
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -770,7 +765,7 @@ private enum WatchMessageKeys {
             }
 
             if let modelUsesGitHubOAuth = context[WatchContextKeys.modelUsesGitHubOAuth] as? [String: Bool] {
-                OpenAIService.shared.modelUsesGitHubOAuth = modelUsesGitHubOAuth
+                AIService.shared.modelUsesGitHubOAuth = modelUsesGitHubOAuth
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -783,7 +778,7 @@ private enum WatchMessageKeys {
         /// Process model endpoint settings from context
         private func processModelEndpointSettings(_ context: [String: Any]) {
             if let modelEndpoints = context[WatchContextKeys.modelEndpoints] as? [String: String] {
-                OpenAIService.shared.modelEndpoints = modelEndpoints
+                AIService.shared.modelEndpoints = modelEndpoints
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -799,7 +794,7 @@ private enum WatchMessageKeys {
                         modelEndpointTypes[model] = endpointType
                     }
                 }
-                OpenAIService.shared.modelEndpointTypes = modelEndpointTypes
+                AIService.shared.modelEndpointTypes = modelEndpointTypes
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -811,17 +806,8 @@ private enum WatchMessageKeys {
 
         /// Process API keys from iPhone context
         private func processAPIKeysFromContext(_ context: [String: Any]) {
-            if let apiKey = context[WatchContextKeys.apiKey] as? String, !apiKey.isEmpty {
-                OpenAIService.shared.apiKey = apiKey
-                DiagnosticsLogger.log(
-                    .watchConnectivity,
-                    level: .info,
-                    message: "⌚ Received API key from iPhone"
-                )
-            }
-
             if let modelAPIKeys = context[WatchContextKeys.modelAPIKeys] as? [String: String], !modelAPIKeys.isEmpty {
-                OpenAIService.shared.modelAPIKeys = modelAPIKeys
+                AIService.shared.modelAPIKeys = modelAPIKeys
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -843,7 +829,7 @@ private enum WatchMessageKeys {
         /// Process Tavily web search settings from iPhone context
         private func processTavilySettingsFromContext(_ context: [String: Any]) {
             if let tavilyKey = context[WatchContextKeys.tavilyAPIKey] as? String, !tavilyKey.isEmpty {
-                OpenAIService.shared.tavilyAPIKey = tavilyKey
+                AIService.shared.tavilyAPIKey = tavilyKey
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
@@ -851,7 +837,7 @@ private enum WatchMessageKeys {
                 )
             }
             if let tavilyEnabled = context[WatchContextKeys.tavilyEnabled] as? Bool {
-                OpenAIService.shared.tavilyEnabled = tavilyEnabled
+                AIService.shared.tavilyEnabled = tavilyEnabled
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,

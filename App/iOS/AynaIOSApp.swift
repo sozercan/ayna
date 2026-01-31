@@ -17,7 +17,7 @@ private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 @main
 struct AynaIOSApp: App {
     @StateObject private var conversationManager: ConversationManager
-    @StateObject private var openAIService = OpenAIService.shared
+    @StateObject private var aiService = AIService.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -43,7 +43,7 @@ struct AynaIOSApp: App {
         WindowGroup {
             IOSContentView()
                 .environmentObject(conversationManager)
-                .environmentObject(openAIService)
+                .environmentObject(aiService)
                 .onOpenURL { url in
                     Task {
                         // Handle deep links (including OAuth callbacks)

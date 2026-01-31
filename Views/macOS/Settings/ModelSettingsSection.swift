@@ -9,7 +9,7 @@ import SwiftUI
 
 /// Model list panel showing all configured models with selection and management
 struct ModelListPanel: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var selectedModelName: String?
     let onCreateNew: () -> Void
     let onModelSelected: (String) -> Void
@@ -57,7 +57,7 @@ struct ModelListPanel: View {
 
     private var modelListView: some View {
         ScrollView {
-            if openAIService.customModels.isEmpty {
+            if aiService.customModels.isEmpty {
                 emptyStateView
             } else {
                 modelRows
@@ -80,14 +80,14 @@ struct ModelListPanel: View {
 
     private var modelRows: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
-            ForEach(openAIService.customModels, id: \.self) { model in
+            ForEach(aiService.customModels, id: \.self) { model in
                 ModelRowView(
                     model: model,
                     isSelected: selectedModelName == model,
-                    isDefault: model == openAIService.selectedModel,
-                    provider: openAIService.modelProviders[model],
+                    isDefault: model == aiService.selectedModel,
+                    provider: aiService.modelProviders[model],
                     onTap: { onModelSelected(model) },
-                    onSetDefault: { openAIService.selectedModel = model },
+                    onSetDefault: { aiService.selectedModel = model },
                     onRemove: { onRemoveModel(model) }
                 )
             }

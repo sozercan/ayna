@@ -33,7 +33,7 @@ struct AnthropicRequestConfig: Sendable {
         self.budgetTokens = budgetTokens
         self.betaHeaders = betaHeaders
         // Detect Azure endpoints by URL pattern
-        self.isAzureEndpoint = customEndpoint?.contains(".azure.com") == true ||
+        isAzureEndpoint = customEndpoint?.contains(".azure.com") == true ||
             customEndpoint?.contains("azure.") == true
     }
 }

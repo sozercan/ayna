@@ -45,7 +45,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     // MARK: - Dependencies
 
     var conversationManager: ConversationManager
-    let openAIService: OpenAIService
+    let aiService: AIService
 
     // MARK: - Tool Call State
 
@@ -82,7 +82,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     static func placeholder() -> IOSChatViewModel {
         IOSChatViewModel(
             conversationManager: ConversationManager(),
-            openAIService: nil
+            aiService: nil
         )
     }
 
@@ -90,29 +90,29 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     init(
         conversationId: UUID,
         conversationManager: ConversationManager,
-        openAIService: OpenAIService? = nil
+        aiService: AIService? = nil
     ) {
-        let resolvedOpenAIService = openAIService ?? .shared
+        let resolvedAIService = aiService ?? .shared
         self.conversationId = conversationId
         isNewChatMode = false
         self.conversationManager = conversationManager
-        self.openAIService = resolvedOpenAIService
-        selectedModel = resolvedOpenAIService.selectedModel
-        selectedModels = [resolvedOpenAIService.selectedModel]
+        self.aiService = resolvedAIService
+        selectedModel = resolvedAIService.selectedModel
+        selectedModels = [resolvedAIService.selectedModel]
     }
 
     /// Initialize for a new chat (no conversation yet).
     init(
         conversationManager: ConversationManager,
-        openAIService: OpenAIService? = nil
+        aiService: AIService? = nil
     ) {
-        let resolvedOpenAIService = openAIService ?? .shared
+        let resolvedAIService = aiService ?? .shared
         conversationId = nil
         isNewChatMode = true
         self.conversationManager = conversationManager
-        self.openAIService = resolvedOpenAIService
-        selectedModel = resolvedOpenAIService.selectedModel
-        selectedModels = [resolvedOpenAIService.selectedModel]
+        self.aiService = resolvedAIService
+        selectedModel = resolvedAIService.selectedModel
+        selectedModels = [resolvedAIService.selectedModel]
     }
 
     // MARK: - Computed Properties
@@ -161,8 +161,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         failedMessage = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
-        selectedModel = openAIService.selectedModel
-        selectedModels = [openAIService.selectedModel]
+        selectedModel = aiService.selectedModel
+        selectedModels = [aiService.selectedModel]
 
         DiagnosticsLogger.log(
             .chatView,
@@ -318,7 +318,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             message: "🛑 Cancelling generation",
             metadata: logMetadata
         )
-        openAIService.cancelCurrentRequest()
+        aiService.cancelCurrentRequest()
         isGenerating = false
     }
 
@@ -483,7 +483,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Check if this is an image generation model
-        let capability = openAIService.getModelCapability(updatedConversation.model)
+        let capability = aiService.getModelCapability(updatedConversation.model)
         if capability == .imageGeneration {
             generateImage(
                 text: text,
@@ -503,7 +503,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Get available tools (Tavily web search on iOS)
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
         DiagnosticsLogger.log(
@@ -547,7 +547,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             ]
         )
 
-        openAIService.sendMessage(
+        aiService.sendMessage(
             messages: messages,
             model: model,
             stream: true,
@@ -758,7 +758,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         )
 
                         // Execute built-in tool with citations (Tavily web search)
-                        let (result, citations) = await self.openAIService.executeBuiltInToolWithCitations(
+                        let (result, citations) = await self.aiService.executeBuiltInToolWithCitations(
                             name: toolName,
                             arguments: argumentsWrapper.value
                         )
@@ -916,7 +916,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Get available tools and use helper method
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
@@ -975,7 +975,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Get available tools and use helper method
-        let tools = openAIService.getAllAvailableTools()
+        let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
         // Use the new model for this request
@@ -1050,7 +1050,7 @@ extension IOSChatViewModel {
 
         // Check for image generation and route accordingly
         if let firstModel = selectedModels.first,
-           openAIService.getModelCapability(firstModel) == .imageGeneration
+           aiService.getModelCapability(firstModel) == .imageGeneration
         {
             generateImagesWithMultipleModels(prompt: text, models: Array(selectedModels), conversation: targetConversation)
             return
@@ -1088,7 +1088,7 @@ extension IOSChatViewModel {
         }
 
         // Send to all models
-        openAIService.sendToMultipleModels(
+        aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
             temperature: updatedConversation.temperature,
@@ -1396,7 +1396,7 @@ extension IOSChatViewModel {
 
         if let previousImage {
             // Use image editing API for follow-up requests
-            openAIService.editImage(
+            aiService.editImage(
                 prompt: text,
                 sourceImage: previousImage,
                 model: conversation.model,
@@ -1405,7 +1405,7 @@ extension IOSChatViewModel {
             )
         } else {
             // No previous image - use generation API
-            openAIService.generateImage(
+            aiService.generateImage(
                 prompt: text,
                 model: conversation.model,
                 onComplete: onComplete,
@@ -1516,9 +1516,9 @@ extension IOSChatViewModel {
             }
 
             if let previousImage {
-                openAIService.editImage(prompt: prompt, sourceImage: previousImage, model: model, onComplete: onComplete, onError: onError)
+                aiService.editImage(prompt: prompt, sourceImage: previousImage, model: model, onComplete: onComplete, onError: onError)
             } else {
-                openAIService.generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
+                aiService.generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
             }
         }
     }

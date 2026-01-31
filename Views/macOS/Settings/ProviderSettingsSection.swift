@@ -9,7 +9,7 @@ import SwiftUI
 
 /// OpenAI provider configuration form
 struct OpenAIConfigurationSection: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
     @Binding var tempEndpoint: String
@@ -140,7 +140,7 @@ struct OpenAIConfigurationSection: View {
             .disabled(tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tempEndpoint.isEmpty)
             .controlSize(.large)
 
-            if let selectedName = selectedModelName, openAIService.customModels.contains(selectedName) {
+            if let selectedName = selectedModelName, aiService.customModels.contains(selectedName) {
                 Button(action: onUpdateModel) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise.circle.fill")
@@ -191,7 +191,7 @@ struct OpenAIConfigurationSection: View {
 
 /// Apple Intelligence provider configuration
 struct AppleIntelligenceConfigurationSection: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var tempModelName: String
     @Binding var selectedModelName: String?
 
@@ -300,11 +300,11 @@ struct AppleIntelligenceConfigurationSection: View {
                     let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                     let finalModelName = modelName.isEmpty ? "apple-intelligence" : modelName
 
-                    if !openAIService.customModels.contains(finalModelName) {
-                        openAIService.customModels.append(finalModelName)
-                        openAIService.modelProviders[finalModelName] = .appleIntelligence
-                        if openAIService.customModels.count == 1 {
-                            openAIService.selectedModel = finalModelName
+                    if !aiService.customModels.contains(finalModelName) {
+                        aiService.customModels.append(finalModelName)
+                        aiService.modelProviders[finalModelName] = .appleIntelligence
+                        if aiService.customModels.count == 1 {
+                            aiService.selectedModel = finalModelName
                         }
                         selectedModelName = finalModelName
                         tempModelName = ""
@@ -325,7 +325,7 @@ struct AppleIntelligenceConfigurationSection: View {
 
 /// API Endpoint type selection view
 struct EndpointTypeSelector: View {
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var selectedModelName: String?
     @Binding var tempEndpointType: APIEndpointType
 
@@ -338,14 +338,14 @@ struct EndpointTypeSelector: View {
             Picker("", selection: Binding(
                 get: {
                     if let modelName = selectedModelName {
-                        openAIService.modelEndpointTypes[modelName] ?? .chatCompletions
+                        aiService.modelEndpointTypes[modelName] ?? .chatCompletions
                     } else {
                         tempEndpointType
                     }
                 },
                 set: { newValue in
                     if let modelName = selectedModelName {
-                        openAIService.modelEndpointTypes[modelName] = newValue
+                        aiService.modelEndpointTypes[modelName] = newValue
                     } else {
                         tempEndpointType = newValue
                     }

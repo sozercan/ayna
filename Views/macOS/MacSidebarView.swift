@@ -10,7 +10,7 @@ import SwiftUI
 
 struct MacSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var openAIService = OpenAIService.shared
+    @ObservedObject private var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
