@@ -9,12 +9,12 @@ import Foundation
 import os
 
 /// Result from parsing Anthropic SSE events
-struct AnthropicStreamResult: @unchecked Sendable {
+struct AnthropicStreamResult: Sendable {
     let shouldComplete: Bool
     let content: String?
     let reasoning: String?
     let toolCall: AnthropicToolCall?
-    let error: Error?
+    let error: (any Error)?
 
     static var empty: AnthropicStreamResult {
         AnthropicStreamResult(
@@ -28,10 +28,10 @@ struct AnthropicStreamResult: @unchecked Sendable {
 }
 
 /// Represents a parsed tool call from the stream
-struct AnthropicToolCall: @unchecked Sendable {
+struct AnthropicToolCall: Sendable {
     let id: String
     let name: String
-    let input: [String: Any]
+    let input: [String: AnyCodable]
 }
 
 /// Content block types in Anthropic responses
@@ -71,7 +71,11 @@ struct AnthropicBlockState {
 /// - Interleaved thinking (multiple thinking blocks)
 /// - Tool use with JSON fragment accumulation
 /// - Error events
-final class AnthropicStreamParser: @unchecked Sendable {
+///
+/// Note: This parser maintains mutable state and should only be used from a single
+/// task/actor context. It is used exclusively within `AnthropicProvider` which is
+/// `@MainActor`, ensuring sequential access to the parser's state.
+final class AnthropicStreamParser {
     // MARK: - State
 
     /// Pending event type from the previous line
@@ -90,9 +94,9 @@ final class AnthropicStreamParser: @unchecked Sendable {
 
     typealias ChunkCallback = @Sendable (String) -> Void
     typealias ReasoningCallback = @Sendable (String) -> Void
-    typealias ToolCallCallback = @Sendable (String, String, [String: Any]) -> Void
+    typealias ToolCallCallback = @Sendable (String, String, [String: AnyCodable]) -> Void
     typealias CompleteCallback = @Sendable () -> Void
-    typealias ErrorCallback = @Sendable (Error) -> Void
+    typealias ErrorCallback = @Sendable (any Error) -> Void
 
     private let onChunk: ChunkCallback?
     private let onReasoning: ReasoningCallback?
@@ -330,7 +334,9 @@ final class AnthropicStreamParser: @unchecked Sendable {
                 // Empty input, use empty object
                 toolCall = AnthropicToolCall(id: toolId, name: toolName, input: [:])
             } else if let inputJson = try? JSONSerialization.jsonObject(with: state.buffer) as? [String: Any] {
-                toolCall = AnthropicToolCall(id: toolId, name: toolName, input: inputJson)
+                // Convert [String: Any] to [String: AnyCodable] for Sendable safety
+                let codableInput = inputJson.mapValues { AnyCodable($0) }
+                toolCall = AnthropicToolCall(id: toolId, name: toolName, input: codableInput)
             } else {
                 // JSON parse failure
                 let bufferPreview = String(data: state.buffer.prefix(200), encoding: .utf8) ?? ""
@@ -344,7 +350,7 @@ final class AnthropicStreamParser: @unchecked Sendable {
                 toolCall = AnthropicToolCall(
                     id: toolId,
                     name: toolName,
-                    input: ["_error": "Failed to parse tool input"]
+                    input: ["_error": AnyCodable("Failed to parse tool input")]
                 )
             }
 

@@ -386,6 +386,7 @@ struct IOSModelEditView: View {
 
                 Picker("Provider", selection: $provider) {
                     Text("OpenAI").tag(AIProvider.openai)
+                    Text("Anthropic").tag(AIProvider.anthropic)
                     Text("GitHub Models").tag(AIProvider.githubModels)
                     Text("Apple Intelligence").tag(AIProvider.appleIntelligence)
                 }
@@ -529,6 +530,31 @@ struct IOSModelEditView: View {
                 } footer: {
                     Text("Select from available GitHub Models or enter model ID in format: publisher/model_name")
                 }
+            } else if provider == .anthropic {
+                Section("Configuration") {
+                    TextField("Model Name", text: $modelName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Model Name")
+                        .accessibilityIdentifier("settings.addModel.anthropicModelName")
+
+                    SecureField("API Key", text: $apiKey)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("settings.addModel.anthropicApiKey")
+
+                    TextField("Endpoint URL (Optional)", text: $endpoint)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Endpoint URL")
+                        .accessibilityIdentifier("settings.addModel.anthropicEndpoint")
+                }
+
+                Section {
+                    Text("Enter your Anthropic model name (e.g., claude-sonnet-4-20250514) and API key. Leave endpoint empty for the default Anthropic API.")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
         }
         .navigationTitle(isNew ? "Add Model" : "Edit Model")
@@ -547,7 +573,11 @@ struct IOSModelEditView: View {
                     saveModel()
                     dismiss()
                 }
-                .disabled(modelName.isEmpty || (provider == .githubModels && !githubOAuth.isAuthenticated))
+                .disabled(
+                    modelName.isEmpty ||
+                        (provider == .githubModels && !githubOAuth.isAuthenticated) ||
+                        (provider == .anthropic && apiKey.isEmpty)
+                )
                 .accessibilityIdentifier("settings.addModel.saveButton")
             }
         }
@@ -646,6 +676,13 @@ struct IOSModelEditView: View {
                 aiService.modelEndpoints[trimmedName] = endpoint
             }
             aiService.modelEndpointTypes[trimmedName] = endpointType
+        } else if provider == .anthropic {
+            if !apiKey.isEmpty {
+                aiService.modelAPIKeys[trimmedName] = apiKey
+            }
+            if !endpoint.isEmpty {
+                aiService.modelEndpoints[trimmedName] = endpoint
+            }
         } else if provider == .githubModels {
             // Use OAuth if signed in
             if githubOAuth.isAuthenticated {

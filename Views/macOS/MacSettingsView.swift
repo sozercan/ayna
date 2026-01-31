@@ -216,6 +216,7 @@ struct WebSearchSettingsSection: View {
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
                         .accessibilityIdentifier("settings.webSearch.apiKey.toggleVisibility")
                     }
 
@@ -1083,6 +1084,7 @@ struct APISettingsView: View {
                                                     .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                                             }
                                             .buttonStyle(.plain)
+                                            .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
                                         }
                                         .onChange(of: tempAPIKey) { _, _ in
                                             validationStatus = .notChecked
@@ -2210,6 +2212,7 @@ struct AnthropicConfigurationView: View {
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
                     }
                     .onChange(of: tempAPIKey) { _, _ in
                         validationStatus = .notChecked

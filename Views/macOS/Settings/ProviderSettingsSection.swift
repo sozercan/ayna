@@ -114,6 +114,7 @@ struct OpenAIConfigurationSection: View {
                         .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
             }
             .onChange(of: tempAPIKey) { _, _ in
                 validationStatus = .notChecked

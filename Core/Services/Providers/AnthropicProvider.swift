@@ -23,9 +23,15 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
     private let urlSession: URLSession
     private var currentStreamTask: Task<Void, Never>?
+    private var currentDataTask: URLSessionDataTask?
 
     init(urlSession: URLSession) {
         self.urlSession = urlSession
+    }
+
+    deinit {
+        currentStreamTask?.cancel()
+        currentDataTask?.cancel()
     }
 
     func sendMessage(
@@ -126,6 +132,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     func cancelRequest() {
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        currentDataTask?.cancel()
+        currentDataTask = nil
     }
 
     // MARK: - Streaming Response
@@ -239,7 +247,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let parser = AnthropicStreamParser(
             onChunk: nil,
             onReasoning: nil,
-            onToolCallRequested: { id, name, input in callbacks.onToolCallRequested?(id, name, input) },
+            onToolCallRequested: { id, name, input in
+                // Convert [String: AnyCodable] to [String: Any] for the callback interface
+                let anyInput = input.mapValues { $0.value }
+                callbacks.onToolCallRequested?(id, name, anyInput)
+            },
             onComplete: nil,
             onError: { error in callbacks.onError(error) }
         )
@@ -341,6 +353,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
+        // Cancel any previous data task
+        currentDataTask?.cancel()
+
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor in
                 await self?.handleNonStreamResponse(
@@ -354,6 +369,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                 )
             }
         }
+        currentDataTask = task
         task.resume()
     }
 

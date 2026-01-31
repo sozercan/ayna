@@ -143,7 +143,7 @@ struct AnthropicStreamParserTests {
         #expect(result.toolCall != nil)
         #expect(result.toolCall?.id == "toolu_123")
         #expect(result.toolCall?.name == "web_search")
-        #expect(result.toolCall?.input["query"] as? String == "test")
+        #expect(result.toolCall?.input["query"]?.value as? String == "test")
     }
 
     @Test("Malformed tool JSON creates error input")
