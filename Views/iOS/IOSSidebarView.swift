@@ -462,22 +462,22 @@ struct ConversationRow: View {
 private struct IMessageCapsuleStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                content
+                    .background {
+                        Capsule()
+                            .fill(Color(uiColor: .tertiarySystemFill))
+                    }
+            }
+        #else
             content
                 .background {
                     Capsule()
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
-        }
-        #else
-        content
-            .background {
-                Capsule()
-                    .fill(Color(uiColor: .tertiarySystemFill))
-            }
         #endif
     }
 }
@@ -487,22 +487,22 @@ private struct IMessageCapsuleStyle: ViewModifier {
 private struct IMessageCircleStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .circle)
+            } else {
+                content
+                    .background {
+                        Circle()
+                            .fill(Color(uiColor: .tertiarySystemFill))
+                    }
+            }
+        #else
             content
                 .background {
                     Circle()
                         .fill(Color(uiColor: .tertiarySystemFill))
                 }
-        }
-        #else
-        content
-            .background {
-                Circle()
-                    .fill(Color(uiColor: .tertiarySystemFill))
-            }
         #endif
     }
 }

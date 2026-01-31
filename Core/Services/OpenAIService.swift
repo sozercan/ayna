@@ -19,6 +19,7 @@ enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
     case githubModels = "GitHub Models"
     case appleIntelligence = "Apple Intelligence"
+    case anthropic = "Anthropic"
 
     var displayName: String {
         rawValue
@@ -72,6 +73,9 @@ class OpenAIService: ObservableObject {
     #if !os(watchOS)
         private var appleIntelligenceTask: Task<Void, Never>?
     #endif
+
+    /// Holds the Anthropic provider during streaming to prevent deallocation
+    private var currentAnthropicProvider: AnthropicProvider?
 
     @Published var provider: AIProvider {
         didSet {
@@ -772,6 +776,21 @@ class OpenAIService: ObservableObject {
                 return
             }
         #endif
+
+        // Handle Anthropic provider separately
+        if effectiveProvider == .anthropic {
+            handleAnthropicRequest(
+                messages: messages,
+                model: requestModel,
+                stream: stream,
+                conversationId: conversationId,
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onReasoning: onReasoning
+            )
+            return
+        }
 
         // Validate provider settings
         do {
@@ -2008,6 +2027,103 @@ class OpenAIService: ObservableObject {
         }
     #endif
 
+    // MARK: - Anthropic Provider Handler
+
+    private func handleAnthropicRequest(
+        messages: [Message],
+        model: String,
+        stream: Bool,
+        conversationId: UUID?,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onReasoning: (@Sendable (String) -> Void)? = nil
+    ) {
+        let modelAPIKey = getAPIKey(for: model)
+        let endpointInfo = customEndpoint(for: model)
+
+        // Log API key info for debugging (prefix only for security)
+        let keyPrefix = String(modelAPIKey.prefix(8))
+        DiagnosticsLogger.log(
+            .anthropicService,
+            level: .debug,
+            message: "🔑 Anthropic request API key",
+            metadata: [
+                "model": model,
+                "keyPrefix": keyPrefix,
+                "endpoint": endpointInfo?.endpoint ?? "default"
+            ]
+        )
+
+        // Validate API key
+        guard !modelAPIKey.isEmpty else {
+            onError(OpenAIError.missingAPIKey)
+            return
+        }
+
+        // Build provider config
+        let config = AIProviderRequestConfig(
+            model: model,
+            apiKey: modelAPIKey,
+            customEndpoint: endpointInfo?.endpoint,
+            maxTokens: nil, // Use provider default
+            temperature: nil, // Use provider default
+            thinkingBudget: nil // TODO: Add UI for thinking budget
+        )
+
+        let callbacks = AIProviderStreamCallbacks(
+            onChunk: onChunk,
+            onComplete: onComplete,
+            onError: onError,
+            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
+            onReasoning: onReasoning
+        )
+
+        // Inject memory context into messages
+        let systemPrompt = messages.first { $0.role == .system }?.content
+        let conversationHistory = messages.filter { $0.role != .system }
+        let memoryContext = MemoryContextProvider.shared.buildContext(
+            currentConversationId: conversationId
+        )
+        let messagesWithMemory = OpenAIRequestBuilder.buildMessagesWithMemory(
+            systemPrompt: systemPrompt,
+            memoryContext: memoryContext,
+            conversationHistory: conversationHistory
+        )
+
+        // Get provider and send request
+        // Store provider to prevent deallocation during streaming
+        let provider = AnthropicProvider(urlSession: URLSession.shared)
+        currentAnthropicProvider = provider
+
+        // Wrap callbacks to clear provider reference on completion
+        let wrappedCallbacks = AIProviderStreamCallbacks(
+            onChunk: onChunk,
+            onComplete: { [weak self] in
+                Task { @MainActor in
+                    self?.currentAnthropicProvider = nil
+                }
+                onComplete()
+            },
+            onError: { [weak self] error in
+                Task { @MainActor in
+                    self?.currentAnthropicProvider = nil
+                }
+                onError(error)
+            },
+            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
+            onReasoning: onReasoning
+        )
+
+        provider.sendMessage(
+            messages: messagesWithMemory,
+            config: config,
+            stream: stream,
+            tools: nil, // TODO: Add MCP tool support for Anthropic
+            callbacks: wrappedCallbacks
+        )
+    }
+
     /// Retry logic delegated to OpenAIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
         OpenAIRetryPolicy.shouldRetry(
@@ -2083,7 +2199,7 @@ extension OpenAIService {
         switch provider {
         case .appleIntelligence:
             false
-        case .openai, .githubModels:
+        case .openai, .githubModels, .anthropic:
             true
         }
     }

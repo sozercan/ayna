@@ -21,9 +21,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     }
 }
 
-// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
-// A shared ViewModel that encapsulates common chat logic for iOS views.
-// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
+/// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
+/// A shared ViewModel that encapsulates common chat logic for iOS views.
+/// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
 @MainActor final class IOSChatViewModel: ObservableObject {
     // MARK: - Published State
 

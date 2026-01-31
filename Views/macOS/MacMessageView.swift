@@ -253,7 +253,7 @@ struct MacMessageView: View {
         let isCurrentUser = message.role == .user
         let alignment: HorizontalAlignment = isCurrentUser ? .trailing : .leading
 
-        return VStack(alignment: alignment, spacing: 6) {
+        return VStack(alignment: alignment, spacing: 4) {
             if message.role == .assistant, let modelName {
                 Text(modelName)
                     .font(Typography.captionBold)
@@ -310,7 +310,6 @@ struct MacMessageView: View {
             actionControls(for: message.role)
                 .offset(y: -26)
         }
-        .padding(.top, 30) // Extra space for action controls above bubble
         .contentShape(Rectangle()) // Make entire area including controls hoverable
         .animation(Motion.easeStandard, value: isHovered)
     }

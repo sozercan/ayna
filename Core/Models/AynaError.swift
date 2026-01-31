@@ -44,6 +44,9 @@ enum AynaError: LocalizedError, Sendable {
     /// OAuth authentication failed
     case authenticationFailed(reason: String)
 
+    /// Invalid endpoint URL
+    case invalidEndpoint(String)
+
     // MARK: - Model & Provider
 
     /// No model is selected or available
@@ -135,6 +138,8 @@ enum AynaError: LocalizedError, Sendable {
             return "Missing configuration: \(detail)"
         case let .authenticationFailed(reason):
             return "Authentication failed: \(reason)"
+        case let .invalidEndpoint(detail):
+            return "Invalid endpoint: \(detail)"
         // Model
         case .noModelSelected:
             return "No model selected"
@@ -215,6 +220,8 @@ enum AynaError: LocalizedError, Sendable {
             return "Check Settings to complete configuration"
         case .authenticationFailed:
             return "Try signing in again"
+        case .invalidEndpoint:
+            return "Check the endpoint URL in Settings → Models"
         // Model
         case .noModelSelected:
             return "Select a model in Settings → Models"
@@ -342,6 +349,8 @@ extension AynaError: Equatable {
         case let (.missingAPIKey(lhs), .missingAPIKey(rhs)):
             lhs == rhs
         case let (.invalidAPIKey(lhs), .invalidAPIKey(rhs)):
+            lhs == rhs
+        case let (.invalidEndpoint(lhs), .invalidEndpoint(rhs)):
             lhs == rhs
         case let (.modelNotFound(lhs), .modelNotFound(rhs)):
             lhs == rhs

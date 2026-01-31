@@ -948,8 +948,10 @@ struct APISettingsView: View {
                 // Scrollable configuration area
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
-                        // API Endpoint Type Selection (not applicable for Apple Intelligence or GitHub Models)
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels {
+                        // API Endpoint Type Selection (not applicable for Apple Intelligence, GitHub Models, or Anthropic)
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels,
+                           openAIService.provider != .anthropic
+                        {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Label("API Endpoint", systemImage: "arrow.left.arrow.right")
                                     .font(Typography.headline)
@@ -1321,10 +1323,23 @@ struct APISettingsView: View {
                                 validationStatus: $validationStatus
                             )
                             .padding(.horizontal)
+                        } else if openAIService.provider == .anthropic {
+                            // Anthropic Configuration
+                            AnthropicConfigurationView(
+                                tempModelName: $tempModelName,
+                                tempAPIKey: $tempAPIKey,
+                                tempEndpoint: $tempEndpoint,
+                                showAPIKey: $showAPIKey,
+                                selectedModelName: $selectedModelName,
+                                validationStatus: $validationStatus
+                            )
+                            .padding(.horizontal)
                         }
 
                         // Status Section
-                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels {
+                        if openAIService.provider != .appleIntelligence, openAIService.provider != .githubModels,
+                           openAIService.provider != .anthropic
+                        {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Label("Validation Status", systemImage: "checkmark.seal.fill")
                                     .font(Typography.headline)
@@ -1405,15 +1420,15 @@ struct APISettingsView: View {
             } else {
                 tempAPIKey = openAIService.apiKey
                 tempEndpoint = "https://api.openai.com/"
-                // Default to "new model" state for GitHub Models
-                if openAIService.provider == .githubModels {
+                // Default to "new model" state for GitHub Models and Anthropic
+                if openAIService.provider == .githubModels || openAIService.provider == .anthropic {
                     createNewModel()
                 }
             }
         }
         .onChange(of: openAIService.provider) { _, newProvider in
-            // Reset to "new model" state when switching to GitHub Models
-            if newProvider == .githubModels {
+            // Reset to "new model" state when switching to GitHub Models or Anthropic
+            if newProvider == .githubModels || newProvider == .anthropic {
                 createNewModel()
             }
         }
@@ -1424,7 +1439,9 @@ struct APISettingsView: View {
         selectedModelName = nil
         tempModelName = ""
         tempAPIKey = ""
-        tempEndpoint = "https://api.openai.com/"
+        // For Anthropic, use empty endpoint (defaults to api.anthropic.com)
+        // For others, use OpenAI endpoint
+        tempEndpoint = openAIService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
         validationStatus = .notChecked
     }
@@ -1546,9 +1563,15 @@ struct APISettingsView: View {
         tempAPIKey = openAIService.modelAPIKeys[model] ?? openAIService.apiKey
         tempEndpointType = openAIService.modelEndpointTypes[model] ?? .chatCompletions
 
-        if openAIService.provider == .openai {
-            // Load custom endpoint if available, otherwise use default
+        // Load endpoint based on provider
+        switch openAIService.provider {
+        case .openai:
             tempEndpoint = openAIService.modelEndpoints[model] ?? "https://api.openai.com"
+        case .anthropic:
+            // For Anthropic, empty string means use default (api.anthropic.com)
+            tempEndpoint = openAIService.modelEndpoints[model] ?? ""
+        default:
+            tempEndpoint = openAIService.modelEndpoints[model] ?? ""
         }
     }
 
@@ -2078,6 +2101,320 @@ struct GitHubModelsConfigurationView: View {
         openAIService.modelAPIKeys.removeValue(forKey: modelName)
         openAIService.modelUsesGitHubOAuth[modelName] = true
 
+        validationStatus = .notChecked
+    }
+}
+
+// MARK: - Anthropic Configuration View
+
+struct AnthropicConfigurationView: View {
+    @ObservedObject private var openAIService = OpenAIService.shared
+    @Binding var tempModelName: String
+    @Binding var tempAPIKey: String
+    @Binding var tempEndpoint: String
+    @Binding var showAPIKey: Bool
+    @Binding var selectedModelName: String?
+    @Binding var validationStatus: APISettingsView.ValidationStatus
+
+    @State private var isValidating = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Label("Anthropic Configuration", systemImage: "cpu")
+                .font(Typography.headline)
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                // Model Name
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack {
+                        Text("Model Name")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("Required")
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                    }
+                    TextField("claude-sonnet-4-20250514", text: $tempModelName)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: tempModelName) { _, _ in
+                            validationStatus = .notChecked
+                        }
+                    Text("Claude model identifier (e.g., claude-sonnet-4-20250514, claude-opus-4-20250514)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                // API Key
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack {
+                        Text("API Key")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("Required")
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                    }
+                    HStack {
+                        if showAPIKey {
+                            TextField("sk-ant-...", text: $tempAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField("sk-ant-...", text: $tempAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        Button {
+                            showAPIKey.toggle()
+                        } label: {
+                            Image(systemName: showAPIKey ? "eye.slash" : "eye")
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .onChange(of: tempAPIKey) { _, _ in
+                        validationStatus = .notChecked
+                    }
+                    Text("Your Anthropic API key (stored securely)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Custom Endpoint (Optional)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack {
+                        Text("Custom Endpoint")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("Optional")
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                    }
+                    TextField("https://api.anthropic.com", text: $tempEndpoint)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: tempEndpoint) { _, _ in
+                            validationStatus = .notChecked
+                        }
+                    Text("Leave empty for the default Anthropic API. Enter a custom URL for proxies or Azure.")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Validation Status
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack(spacing: Spacing.md) {
+                        switch validationStatus {
+                        case .notChecked:
+                            Image(systemName: "circle.dotted")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Theme.textSecondary)
+                            Text("Not Validated")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        case .checking:
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Validating...")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        case .valid:
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Theme.statusConnected)
+                            Text("Configuration Valid")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.statusConnected)
+                        case let .invalid(message):
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Theme.statusError)
+                            Text(message)
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.statusError)
+                        }
+                        Spacer()
+                    }
+                }
+
+                // Action Buttons
+                HStack(spacing: Spacing.md) {
+                    Button {
+                        Task {
+                            await validateAnthropicConfiguration()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle")
+                            Text("Validate")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty || isValidating)
+                    .controlSize(.large)
+
+                    if let selectedName = selectedModelName,
+                       openAIService.customModels.contains(selectedName)
+                    {
+                        // Update existing model
+                        Button {
+                            saveAnthropicModel()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise.circle.fill")
+                                Text("Update Model")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    } else {
+                        // Add new model
+                        Button {
+                            saveAnthropicModel()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus.circle.fill")
+                                Text("Add Model")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    }
+                }
+            }
+        }
+    }
+
+    private func validateAnthropicConfiguration() async {
+        isValidating = true
+        validationStatus = .checking
+
+        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !modelName.isEmpty else {
+            validationStatus = .invalid("Model name is required")
+            isValidating = false
+            return
+        }
+
+        guard !apiKey.isEmpty else {
+            validationStatus = .invalid("API key is required")
+            isValidating = false
+            return
+        }
+
+        // Validate endpoint URL if provided
+        if !endpoint.isEmpty {
+            do {
+                _ = try AnthropicEndpointResolver.messagesURL(customEndpoint: endpoint)
+            } catch {
+                validationStatus = .invalid("Invalid endpoint: \(error.localizedDescription)")
+                isValidating = false
+                return
+            }
+        }
+
+        // Test the API with a minimal request
+        do {
+            let url = try AnthropicEndpointResolver.messagesURL(
+                customEndpoint: endpoint.isEmpty ? nil : endpoint
+            )
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+            let body: [String: Any] = [
+                "model": modelName,
+                "max_tokens": 1,
+                "messages": [["role": "user", "content": "Hi"]]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.timeoutInterval = 30
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                validationStatus = .invalid("Invalid response")
+                isValidating = false
+                return
+            }
+
+            if httpResponse.statusCode == 200 {
+                validationStatus = .valid
+            } else if httpResponse.statusCode == 401 {
+                validationStatus = .invalid("Invalid API key")
+            } else if httpResponse.statusCode == 404 {
+                validationStatus = .invalid("Model not found: \(modelName)")
+            } else {
+                // Try to parse error message
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let error = json["error"] as? [String: Any],
+                   let message = error["message"] as? String
+                {
+                    validationStatus = .invalid(message)
+                } else {
+                    validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
+                }
+            }
+        } catch {
+            validationStatus = .invalid("Connection failed: \(error.localizedDescription)")
+        }
+
+        isValidating = false
+    }
+
+    private func saveAnthropicModel() {
+        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !modelName.isEmpty, !apiKey.isEmpty else { return }
+
+        // Remove old model if updating
+        if let oldName = selectedModelName, oldName != modelName {
+            openAIService.customModels.removeAll { $0 == oldName }
+            openAIService.modelProviders.removeValue(forKey: oldName)
+            openAIService.modelAPIKeys.removeValue(forKey: oldName)
+            openAIService.modelEndpoints.removeValue(forKey: oldName)
+        }
+
+        // Add or update model
+        if !openAIService.customModels.contains(modelName) {
+            openAIService.customModels.append(modelName)
+        }
+
+        openAIService.modelProviders[modelName] = .anthropic
+        openAIService.modelAPIKeys[modelName] = apiKey
+
+        if !endpoint.isEmpty {
+            openAIService.modelEndpoints[modelName] = endpoint
+        } else {
+            openAIService.modelEndpoints.removeValue(forKey: modelName)
+        }
+
+        selectedModelName = modelName
         validationStatus = .notChecked
     }
 }

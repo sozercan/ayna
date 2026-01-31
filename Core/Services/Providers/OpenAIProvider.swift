@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 /// Provider implementation for OpenAI and Azure OpenAI APIs
 ///
@@ -259,7 +260,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
                     request: request,
-                    callbacks: callbacks
+                    callbacks: callbacks,
+                    circuitKey: circuitKey
                 )
             }
         }
@@ -446,12 +448,13 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int,
         hasReceivedData: Bool,
         request: URLRequest,
-        callbacks: AIProviderStreamCallbacks
+        callbacks: AIProviderStreamCallbacks,
+        circuitKey: String
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
             await delay(for: attempt)
             await MainActor.run {
-                streamResponse(request: request, callbacks: callbacks, attempt: attempt + 1)
+                streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
             }
         } else {
             await MainActor.run {

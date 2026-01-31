@@ -325,22 +325,22 @@ private struct SidebarBackgroundStyle: ViewModifier {
 private struct IMessageSearchBarStyle: ViewModifier {
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
+            if #available(macOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                content
+                    .background {
+                        Capsule()
+                            .fill(.regularMaterial)
+                    }
+            }
+        #else
             content
                 .background {
                     Capsule()
                         .fill(.regularMaterial)
                 }
-        }
-        #else
-        content
-            .background {
-                Capsule()
-                    .fill(.regularMaterial)
-            }
         #endif
     }
 }

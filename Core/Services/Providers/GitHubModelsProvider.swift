@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 /// Provider implementation for GitHub Models API
 ///

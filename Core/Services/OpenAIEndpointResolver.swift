@@ -50,6 +50,8 @@ enum OpenAIEndpointResolver {
             githubModelsChatURL
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
+        case .anthropic:
+            "" // Anthropic uses its own endpoint resolver
         }
     }
 
@@ -62,6 +64,8 @@ enum OpenAIEndpointResolver {
             "" // GitHub Models doesn't support the Responses API
         case .appleIntelligence:
             "" // Not used for Apple Intelligence
+        case .anthropic:
+            "" // Anthropic uses its own endpoint resolver
         }
     }
 

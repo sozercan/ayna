@@ -11,6 +11,7 @@ import os.log
 enum DiagnosticsCategory: String, CaseIterable, Codable {
     case app = "App"
     case openAIService = "OpenAIService"
+    case anthropicService = "AnthropicService"
     case mcpServerManager = "MCPServerManager"
     case mcpService = "MCPService"
     case appleIntelligence = "AppleIntelligenceService"
