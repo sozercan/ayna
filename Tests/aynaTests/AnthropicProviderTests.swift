@@ -436,8 +436,8 @@ struct AnthropicProviderTests {
                 )
             )
 
-            // Allow time for retries
-            try? await Task.sleep(for: .seconds(2))
+            // Short wait for async callbacks since circuit breaker may retry
+            try? await Task.sleep(for: .milliseconds(500))
         }
 
         #expect(receivedError != nil)
@@ -646,6 +646,217 @@ struct AnthropicProviderTests {
         #expect(request?.value(forHTTPHeaderField: "x-api-key") == "test-api-key")
         #expect(request?.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
         #expect(request?.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    }
+
+    // MARK: - Streaming Response Tests
+
+    @Test("Streaming response delivers text chunks", .timeLimit(.minutes(1)))
+    func streamingResponseDeliversTextChunks() async {
+        let provider = makeProvider()
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Hello")]
+
+        // Build SSE response with multiple chunks
+        let sseResponse = """
+        event: message_start
+        data: {"type": "message_start", "message": {"id": "msg_123", "type": "message", "role": "assistant"}}
+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": " there"}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "!"}}
+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 0}
+
+        event: message_delta
+        data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}
+
+        event: message_stop
+        data: {"type": "message_stop"}
+
+        """
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, Data(sseResponse.utf8))
+        }
+
+        let receivedChunks = ChunkCollector()
+
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { chunk in receivedChunks.append(chunk) },
+                    onComplete: { completed() },
+                    onError: { error in Issue.record("Unexpected error: \(error)") }
+                )
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let fullText = receivedChunks.joined()
+        #expect(fullText.contains("Hello"))
+        #expect(fullText.contains("there"))
+    }
+
+    @Test("Streaming response handles interleaved thinking", .timeLimit(.minutes(1)))
+    func streamingResponseHandlesInterleavedThinking() async {
+        let provider = makeProvider()
+        let config = makeConfig(thinkingBudget: 2048)
+        let messages = [Message(role: .user, content: "Think about this")]
+
+        // SSE response with interleaved thinking and text
+        let sseResponse = """
+        event: message_start
+        data: {"type": "message_start", "message": {"id": "msg_456", "type": "message", "role": "assistant"}}
+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me think..."}}
+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 0}
+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Here's my answer."}}
+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 1}
+
+        event: message_delta
+        data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}
+
+        event: message_stop
+        data: {"type": "message_stop"}
+
+        """
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, Data(sseResponse.utf8))
+        }
+
+        let receivedChunks = ChunkCollector()
+        let receivedReasoning = ChunkCollector()
+
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { chunk in receivedChunks.append(chunk) },
+                    onComplete: { completed() },
+                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onReasoning: { reasoning in receivedReasoning.append(reasoning) }
+                )
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let fullText = receivedChunks.joined()
+        let fullReasoning = receivedReasoning.joined()
+
+        #expect(fullText.contains("answer"))
+        #expect(fullReasoning.contains("think"))
+    }
+
+    @Test("Streaming response handles tool use", .timeLimit(.minutes(1)))
+    func streamingResponseHandlesToolUse() async {
+        let provider = makeProvider()
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Search for Swift")]
+
+        // SSE response with tool use
+        let sseResponse = """
+        event: message_start
+        data: {"type": "message_start", "message": {"id": "msg_789", "type": "message", "role": "assistant"}}
+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_abc", "name": "web_search"}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\\"query\\": \\"Swift\\"}"}}
+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 0}
+
+        event: message_delta
+        data: {"type": "message_delta", "delta": {"stop_reason": "tool_use"}}
+
+        event: message_stop
+        data: {"type": "message_stop"}
+
+        """
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, Data(sseResponse.utf8))
+        }
+
+        var toolCallReceived = false
+        var receivedToolId = ""
+        var receivedToolName = ""
+
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed() },
+                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onToolCallRequested: { id, name, _ in
+                        toolCallReceived = true
+                        receivedToolId = id
+                        receivedToolName = name
+                    }
+                )
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        #expect(toolCallReceived)
+        #expect(receivedToolId == "toolu_abc")
+        #expect(receivedToolName == "web_search")
     }
 
     @Test("Thinking budget adds beta header for Claude 4 models", .timeLimit(.minutes(1)))

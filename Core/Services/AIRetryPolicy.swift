@@ -306,7 +306,12 @@ enum AIRetryPolicy {
             return isRetryableURLError(urlError)
         }
 
-        // Check for retryable API errors
+        // Check for retryable API errors (AynaError)
+        if let aynaError = error as? AynaError {
+            return isRetryableAynaError(aynaError)
+        }
+
+        // Legacy support for AIService.AIError
         if let openAIError = error as? AIService.AIError {
             return isRetryableAPIError(openAIError)
         }
@@ -385,6 +390,23 @@ enum AIRetryPolicy {
             // Retry on rate limits and server errors
             let retryableStatusCodes = ["429", "500", "502", "503", "504"]
             return retryableStatusCodes.contains { message.contains($0) }
+        default:
+            return false
+        }
+    }
+
+    private static func isRetryableAynaError(_ error: AynaError) -> Bool {
+        switch error {
+        case let .apiError(message):
+            // Retry on rate limits and server errors
+            let retryableStatusCodes = ["429", "500", "502", "503", "504"]
+            return retryableStatusCodes.contains { message.contains($0) }
+        case .rateLimited:
+            return true
+        case let .httpError(statusCode, _):
+            return statusCode >= 500 || statusCode == 429
+        case .timeout:
+            return true
         default:
             return false
         }

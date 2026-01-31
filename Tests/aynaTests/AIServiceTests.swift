@@ -52,7 +52,7 @@ struct AIServiceTests {
                     Issue.record("Completion should not fire when API key is missing")
                 },
                 onError: { error in
-                    guard case AIService.AIError.missingAPIKey = error else {
+                    guard case AynaError.missingAPIKey = error else {
                         Issue.record("Unexpected error: \(error)")
                         return
                     }
@@ -255,6 +255,232 @@ struct AIServiceTests {
         oauth.clearRetryAfter(forAccessToken: "token-A")
         #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
     }
+
+    // MARK: - Anthropic Integration Tests
+
+    private func makeAnthropicService() -> AIService {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let service = AIService(urlSession: session)
+        service.customModels = ["claude-sonnet-4-20250514"]
+        service.selectedModel = "claude-sonnet-4-20250514"
+        service.modelProviders["claude-sonnet-4-20250514"] = .anthropic
+        return service
+    }
+
+    @Test("Anthropic model routes to Anthropic provider", .timeLimit(.minutes(1)))
+    func anthropicModelRoutesToAnthropicProvider() async {
+        let service = makeAnthropicService()
+        service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-test-key"
+
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Hello from Claude!"}],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        var capturedRequest: URLRequest?
+
+        MockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let receivedChunk = ResultHolder()
+
+        await confirmation("Anthropic response received") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hello")],
+                model: "claude-sonnet-4-20250514",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { chunk in
+                    receivedChunk.value += chunk
+                },
+                onComplete: {
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        // Verify request went to Anthropic endpoint
+        if let request = capturedRequest {
+            #expect(request.url?.host == "api.anthropic.com")
+            #expect(request.url?.path == "/v1/messages")
+            #expect(request.value(forHTTPHeaderField: "x-api-key") == "sk-ant-test-key")
+            #expect(request.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
+        }
+
+        #expect(receivedChunk.value == "Hello from Claude!")
+    }
+
+    @Test("Anthropic model without API key returns missing key error", .timeLimit(.minutes(1)))
+    func anthropicModelWithoutAPIKeyReturnsMissingKeyError() async {
+        let service = makeAnthropicService()
+        service.modelAPIKeys["claude-sonnet-4-20250514"] = ""
+
+        await confirmation("onError called") { errorReceived in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hello")],
+                model: "claude-sonnet-4-20250514",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { _ in
+                    Issue.record("Did not expect chunks when API key is missing")
+                },
+                onComplete: {
+                    Issue.record("Completion should not fire when API key is missing")
+                },
+                onError: { error in
+                    guard case AynaError.missingAPIKey = error else {
+                        Issue.record("Unexpected error: \(error)")
+                        return
+                    }
+                    errorReceived()
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    @Test("Anthropic HTTP 401 error returns API key error", .timeLimit(.minutes(1)))
+    func anthropicHTTP401ErrorReturnsAPIKeyError() async {
+        let service = makeAnthropicService()
+        service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-invalid-key"
+
+        let errorBody = """
+        {"type": "error", "error": {"type": "authentication_error", "message": "Invalid API key"}}
+        """
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(errorBody.utf8))
+        }
+
+        let receivedErrorHolder = ErrorHolder()
+
+        await confirmation("Error received") { errorReceived in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hello")],
+                model: "claude-sonnet-4-20250514",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { _ in },
+                onComplete: {
+                    Issue.record("Should not complete on 401 error")
+                },
+                onError: { error in
+                    receivedErrorHolder.error = error
+                    errorReceived()
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        #expect(receivedErrorHolder.error != nil)
+        let errorMessage = (receivedErrorHolder.error as? AynaError)?.errorDescription ?? receivedErrorHolder.error?.localizedDescription ?? ""
+        #expect(errorMessage.lowercased().contains("anthropic") || errorMessage.lowercased().contains("key"))
+    }
+
+    @Test("Anthropic response with thinking content delivers to reasoning callback", .timeLimit(.minutes(1)))
+    func anthropicResponseWithThinkingContentDeliversToReasoningCallback() async {
+        let service = makeAnthropicService()
+        service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-test-key"
+
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "Let me think about this..."},
+                {"type": "text", "text": "Here is my answer."}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let receivedChunks = ResultHolder()
+        let receivedReasoning = ResultHolder()
+
+        await confirmation("Response completes") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Think about this")],
+                model: "claude-sonnet-4-20250514",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { chunk in
+                    receivedChunks.value += chunk
+                },
+                onComplete: {
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: { reasoning in
+                    receivedReasoning.value += reasoning
+                }
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        #expect(receivedChunks.value == "Here is my answer.")
+        #expect(receivedReasoning.value == "Let me think about this...")
+    }
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
@@ -296,4 +522,8 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
 final class ResultHolder: @unchecked Sendable {
     var value = ""
+}
+
+final class ErrorHolder: @unchecked Sendable {
+    var error: Error?
 }

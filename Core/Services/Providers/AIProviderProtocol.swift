@@ -111,10 +111,10 @@ protocol AIProviderProtocol: AnyObject, Sendable {
 extension AIProviderProtocol {
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error? {
         if requiresAPIKey, config.apiKey.isEmpty {
-            return AIService.AIError.missingAPIKey
+            return AynaError.missingAPIKey(provider: String(describing: providerType))
         }
         if config.model.isEmpty {
-            return AIService.AIError.missingModel
+            return AynaError.noModelSelected
         }
         return nil
     }

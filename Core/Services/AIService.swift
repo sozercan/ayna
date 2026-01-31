@@ -610,7 +610,7 @@ class AIService: ObservableObject {
         guard providerRequiresAPIKey(provider) else { return }
 
         if !isAPIKeyConfigured(for: provider, model: model) {
-            throw AIError.missingAPIKey
+            throw AynaError.missingAPIKey(provider: "API")
         }
     }
 
@@ -2013,7 +2013,7 @@ class AIService: ObservableObject {
 
         // Validate API key
         guard !modelAPIKey.isEmpty else {
-            onError(AIError.missingAPIKey)
+            onError(AynaError.missingAPIKey(provider: "API"))
             return
         }
 
@@ -2025,14 +2025,6 @@ class AIService: ObservableObject {
             maxTokens: nil, // Use provider default
             temperature: nil, // Use provider default
             thinkingBudget: nil // TODO: Add UI for thinking budget
-        )
-
-        let callbacks = AIProviderStreamCallbacks(
-            onChunk: onChunk,
-            onComplete: onComplete,
-            onError: onError,
-            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
-            onReasoning: onReasoning
         )
 
         // Inject memory context into messages
@@ -2049,7 +2041,7 @@ class AIService: ObservableObject {
 
         // Get provider and send request
         // Store provider to prevent deallocation during streaming
-        let provider = AnthropicProvider(urlSession: URLSession.shared)
+        let provider = AnthropicProvider(urlSession: urlSession)
         currentAnthropicProvider = provider
 
         // Wrap callbacks to clear provider reference on completion
