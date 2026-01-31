@@ -1998,19 +1998,6 @@ class AIService: ObservableObject {
         let modelAPIKey = getAPIKey(for: model)
         let endpointInfo = customEndpoint(for: model)
 
-        // Log API key info for debugging (prefix only for security)
-        let keyPrefix = String(modelAPIKey.prefix(8))
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .debug,
-            message: "🔑 Anthropic request API key",
-            metadata: [
-                "model": model,
-                "keyPrefix": keyPrefix,
-                "endpoint": endpointInfo?.endpoint ?? "default"
-            ]
-        )
-
         // Validate API key
         guard !modelAPIKey.isEmpty else {
             onError(AynaError.missingAPIKey(provider: "API"))

@@ -113,20 +113,6 @@ enum AnthropicRequestBuilder {
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
 
-        let authHeader = "x-api-key"
-
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "📋 Anthropic request headers configured",
-            metadata: [
-                "isAzure": "\(config.isAzureEndpoint)",
-                "authHeader": authHeader,
-                "anthropicVersion": apiVersion,
-                "keyLength": "\(config.apiKey.count)"
-            ]
-        )
-
         // Add beta headers if any (only for non-Azure endpoints)
         if !config.betaHeaders.isEmpty, !config.isAzureEndpoint {
             let betaValue = config.betaHeaders.joined(separator: ",")

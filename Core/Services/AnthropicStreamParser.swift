@@ -172,14 +172,6 @@ final class AnthropicStreamParser {
         guard let data = dataString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            DiagnosticsLogger.logThrottled(
-                .aiService,
-                level: .debug,
-                throttleKey: "anthropic.parser.unparseable",
-                interval: 2.0,
-                message: "Could not parse data line",
-                metadata: ["preview": String(dataString.prefix(100))]
-            )
             return .empty
         }
 
@@ -219,14 +211,6 @@ final class AnthropicStreamParser {
             return handleError(json)
 
         default:
-            DiagnosticsLogger.logThrottled(
-                .aiService,
-                level: .debug,
-                throttleKey: "anthropic.parser.unknownType",
-                interval: 5.0,
-                message: "Unknown event type",
-                metadata: ["type": type]
-            )
             return .empty
         }
     }

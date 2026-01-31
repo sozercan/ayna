@@ -155,13 +155,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             guard let self else { return }
             var hasReceivedData = false
 
-            DiagnosticsLogger.log(
-                .aiService,
-                level: .debug,
-                message: "🚀 Starting stream task",
-                metadata: ["url": request.url?.absoluteString ?? "(nil)"]
-            )
-
             do {
                 try await withTaskCancellationHandler {
                     hasReceivedData = try await processStreamRequest(
@@ -207,7 +200,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks,
         circuitKey: String
     ) async throws -> Bool {
-        DiagnosticsLogger.log(.aiService, level: .debug, message: "📡 Awaiting stream response...")
         let (bytes, response) = try await urlSession.bytes(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -260,23 +252,17 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         var contentBuffer = ""
         var reasoningBuffer = ""
         var lastUpdateTime = CFAbsoluteTimeGetCurrent()
-        var lineCount = 0
         var hasReceivedData = false
 
         for try await byte in bytes {
             try Task.checkCancellation()
-            if !hasReceivedData {
-                DiagnosticsLogger.log(.aiService, level: .debug, message: "📥 First byte received in stream")
-            }
             hasReceivedData = true
             buffer.append(byte)
 
             if byte == 0x0A {
-                lineCount += 1
                 if let line = String(data: buffer, encoding: .utf8) {
                     let completed = await processSSELine(
                         line: line,
-                        lineCount: lineCount,
                         parser: parser,
                         contentBuffer: &contentBuffer,
                         reasoningBuffer: &reasoningBuffer,
@@ -299,22 +285,12 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
     private func processSSELine(
         line: String,
-        lineCount: Int,
         parser: AnthropicStreamParser,
         contentBuffer: inout String,
         reasoningBuffer: inout String,
         lastUpdateTime: inout CFAbsoluteTime,
         callbacks: AIProviderStreamCallbacks
     ) async -> Bool {
-        if lineCount <= 5 || lineCount % 50 == 0 {
-            DiagnosticsLogger.log(
-                .aiService,
-                level: .debug,
-                message: "📜 Processing SSE line",
-                metadata: ["lineNumber": "\(lineCount)", "preview": String(line.prefix(80))]
-            )
-        }
-
         let result = parser.processLine(line)
         if let content = result.content { contentBuffer += content }
         if let reasoning = result.reasoning { reasoningBuffer += reasoning }
@@ -452,16 +428,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     private func parseNonStreamResponse(data: Data, callbacks: AIProviderStreamCallbacks) {
         do {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            DiagnosticsLogger.log(
-                .aiService,
-                level: .debug,
-                message: "📦 Anthropic response parsed",
-                metadata: [
-                    "type": json?["type"] as? String ?? "(nil)",
-                    "hasContent": "\(json?["content"] != nil)",
-                    "keys": json?.keys.joined(separator: ", ") ?? "(nil)"
-                ]
-            )
 
             if let errorType = json?["type"] as? String, errorType == "error" {
                 let errorObj = json?["error"] as? [String: Any]
@@ -472,11 +438,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
             if let content = json?["content"] as? [[String: Any]] {
                 parseContentBlocks(content, callbacks: callbacks)
-            } else {
-                DiagnosticsLogger.log(.aiService, level: .error, message: "⚠️ No content array in response")
             }
 
-            DiagnosticsLogger.log(.aiService, level: .debug, message: "✅ Non-stream response complete")
             callbacks.onComplete()
         } catch {
             callbacks.onError(error)
@@ -484,25 +447,12 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     private func parseContentBlocks(_ content: [[String: Any]], callbacks: AIProviderStreamCallbacks) {
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .debug,
-            message: "📄 Parsing content blocks",
-            metadata: ["blockCount": "\(content.count)"]
-        )
-
         for block in content {
             guard let blockType = block["type"] as? String else { continue }
 
             switch blockType {
             case "text":
                 if let text = block["text"] as? String {
-                    DiagnosticsLogger.log(
-                        .aiService,
-                        level: .debug,
-                        message: "📝 Text block received",
-                        metadata: ["length": "\(text.count)"]
-                    )
                     callbacks.onChunk(text)
                 }
             case "thinking":
@@ -517,12 +467,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                     callbacks.onToolCallRequested?(toolId, toolName, toolInput)
                 }
             default:
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .debug,
-                    message: "⚠️ Unknown block type",
-                    metadata: ["type": blockType]
-                )
+                break
             }
         }
     }
