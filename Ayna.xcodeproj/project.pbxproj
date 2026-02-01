@@ -18,6 +18,7 @@
 		157143E9FAAE18E83354686D /* AnthropicRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9685DF7D3BE0D20042838DC6 /* AnthropicRequestBuilder.swift */; };
 		17E9CD4FFFBACD56F8D45E59 /* MemorySettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C23B6D44B9BD48FC2C34EA2 /* MemorySettingsSection.swift */; };
 		1959A38BA4D24F80F3E17C21 /* AnthropicStreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2301BAF35D7E0265F2C36E4 /* AnthropicStreamParser.swift */; };
+		1C831F61E878AE6C9C15641E /* WebFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55968481049B1AC2A6E38F51 /* WebFetchTests.swift */; };
 		1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E15F436B8A64DED94529830 /* TavilyModels.swift */; };
 		23AA26A583E49F756243619F /* IOSMemorySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F540020BCC285D46EBDDC758 /* IOSMemorySettingsView.swift */; };
 		260F283846905C00945D62F7 /* GlobalHotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */; };
@@ -347,6 +348,7 @@
 		3C23B6D44B9BD48FC2C34EA2 /* MemorySettingsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Views/macOS/Settings/MemorySettingsSection.swift; sourceTree = SOURCE_ROOT; };
 		41E7085EF815CAF9950FAE89 /* AnthropicStreamParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnthropicStreamParserTests.swift; sourceTree = "<group>"; };
 		5041140C587A1567CE78F530 /* QuickInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickInputView.swift; sourceTree = "<group>"; };
+		55968481049B1AC2A6E38F51 /* WebFetchTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WebFetchTests.swift; sourceTree = "<group>"; };
 		5626D47A01BEAA317A4C571D /* AIProviderProtocol.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AIProviderProtocol.swift; sourceTree = "<group>"; };
 		59B31AB1FA0516C7F4D52DEE /* AynaError.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AynaError.swift; sourceTree = "<group>"; };
 		5EB7A400D037C175556BE0E2 /* AppContentServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentServiceTests.swift; sourceTree = "<group>"; };
@@ -936,6 +938,7 @@
 				E36C6CDA665DD995E18C5673 /* PathValidatorTests.swift */,
 				C648343E43A43457FA04367B /* PermissionServiceTests.swift */,
 				BB3EDB78D63CE1E591F16216 /* ShellSandboxTests.swift */,
+				55968481049B1AC2A6E38F51 /* WebFetchTests.swift */,
 			);
 			path = aynaTests;
 			sourceTree = "<group>";
@@ -1588,6 +1591,7 @@
 				BE0DFCF0E73D7E61F99EDD93 /* PathValidatorTests.swift in Sources */,
 				F9B1FEE33B12D7EC620657E6 /* PermissionServiceTests.swift in Sources */,
 				6C79D304B8F52B971C440A32 /* ShellSandboxTests.swift in Sources */,
+				1C831F61E878AE6C9C15641E /* WebFetchTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

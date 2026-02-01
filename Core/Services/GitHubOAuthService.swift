@@ -343,6 +343,10 @@ class GitHubOAuthService: NSObject, ObservableObject {
     }
 
     func signOut() {
+        // Cancel any in-flight token refresh to prevent it from saving a new token after sign-out
+        refreshTask?.cancel()
+        refreshTask = nil
+
         try? Self.keychain.removeValue(for: keychainTokenInfoKey)
         try? Self.keychain.removeValue(for: keychainKey)
         try? Self.keychain.removeValue(for: keychainUserKey)

@@ -174,18 +174,17 @@ final class PermissionService {
             conversationId: conversationId
         )
 
-        pendingApprovals.append(approval)
-        log(.info, "Approval requested", metadata: [
-            "tool": toolName,
-            "id": approval.id.uuidString
-        ])
-
-        // Start timeout task
-        startTimeoutTask(for: approval.id)
-
-        // Wait for approval
+        // Wait for approval - store continuation BEFORE adding to pending list
+        // and starting timeout to prevent race conditions where deny() could be
+        // called before the continuation is stored
         return await withCheckedContinuation { continuation in
             approvalContinuations[approval.id] = continuation
+            pendingApprovals.append(approval)
+            log(.info, "Approval requested", metadata: [
+                "tool": toolName,
+                "id": approval.id.uuidString
+            ])
+            startTimeoutTask(for: approval.id)
         }
     }
 
@@ -345,7 +344,7 @@ extension PermissionService {
     /// Returns the default permission level for a tool.
     static func defaultPermissionLevel(for tool: String) -> PermissionLevel {
         switch tool {
-        case "read_file", "list_directory", "search_files":
+        case "read_file", "list_directory", "search_files", "web_fetch":
             .automatic
         case "write_file", "edit_file":
             .askOnce

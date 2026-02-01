@@ -49,6 +49,7 @@ struct AgentSettings: Codable, Sendable {
             "read_file": .automatic,
             "list_directory": .automatic,
             "search_files": .automatic,
+            "web_fetch": .automatic,
             "write_file": .askOnce,
             "edit_file": .askOnce,
             "run_command": .askAlways
