@@ -179,6 +179,7 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             static let listDirectory = "list_directory"
             static let searchFiles = "search_files"
             static let runCommand = "run_command"
+            static let webFetch = "web_fetch"
         }
 
         // MARK: - Initialization
@@ -721,6 +722,151 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return result
         }
 
+        // MARK: - Web Fetch
+
+        /// Fetches content from a URL and returns it as text.
+        ///
+        /// - Parameters:
+        ///   - url: The URL to fetch
+        ///   - conversationId: The conversation requesting this operation
+        /// - Returns: The page content as plain text
+        func webFetch(url: String, conversationId _: UUID) async throws -> String {
+            guard isEnabled else {
+                throw ToolExecutionError.serviceDisabled
+            }
+
+            log(.info, "web_fetch requested", metadata: ["url": url])
+
+            // Validate URL
+            guard let parsedURL = URL(string: url),
+                  let host = parsedURL.host,
+                  parsedURL.scheme == "https" || parsedURL.scheme == "http"
+            else {
+                throw ToolExecutionError.invalidPath(path: url, reason: "Invalid URL format")
+            }
+
+            // SSRF protection: Block internal/private IPs
+            if isPrivateHost(host) {
+                throw ToolExecutionError.invalidPath(path: url, reason: "Access to internal addresses is not allowed")
+            }
+
+            // Fetch with timeout
+            var request = URLRequest(url: parsedURL)
+            request.httpMethod = "GET"
+            request.timeoutInterval = TimeInterval(commandTimeoutSeconds)
+            request.setValue("Ayna/1.0", forHTTPHeaderField: "User-Agent")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ToolExecutionError.commandFailed(command: "web_fetch", exitCode: -1, stderr: "Invalid response")
+            }
+
+            guard (200 ... 299).contains(httpResponse.statusCode) else {
+                throw ToolExecutionError.commandFailed(
+                    command: "web_fetch",
+                    exitCode: Int32(httpResponse.statusCode),
+                    stderr: "HTTP \(httpResponse.statusCode)"
+                )
+            }
+
+            // Check content size (10 MB limit)
+            guard data.count <= maxReadSize else {
+                throw ToolExecutionError.resourceLimitExceeded(
+                    resource: "response size",
+                    limit: "\(maxReadSize / 1024 / 1024) MB"
+                )
+            }
+
+            guard let content = String(data: data, encoding: .utf8) else {
+                throw ToolExecutionError.binaryFileUnsupported(path: url)
+            }
+
+            // Convert HTML to plain text if content appears to be HTML
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+            let result = if contentType.contains("text/html") || content.contains("<html") {
+                htmlToPlainText(content)
+            } else {
+                content
+            }
+
+            log(.info, "web_fetch completed", metadata: ["url": url, "size": "\(result.count)"])
+            return result
+        }
+
+        /// Checks if a host is a private/internal address (SSRF protection)
+        func isPrivateHost(_ host: String) -> Bool {
+            let lowercased = host.lowercased()
+
+            // Localhost variants
+            if lowercased == "localhost" || lowercased == "127.0.0.1" || lowercased == "::1" {
+                return true
+            }
+
+            // Check for IP addresses in private ranges
+            let parts = lowercased.split(separator: ".")
+            if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+                // 10.x.x.x
+                if first == 10 { return true }
+                // 172.16.x.x - 172.31.x.x
+                if first == 172, (16 ... 31).contains(second) { return true }
+                // 192.168.x.x
+                if first == 192, second == 168 { return true }
+                // 169.254.x.x (link-local)
+                if first == 169, second == 254 { return true }
+            }
+
+            return false
+        }
+
+        /// Converts HTML to plain text by stripping tags
+        func htmlToPlainText(_ html: String) -> String {
+            var text = html
+
+            // Remove script and style content
+            text = text.replacingOccurrences(
+                of: "<script[^>]*>.*?</script>",
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            text = text.replacingOccurrences(
+                of: "<style[^>]*>.*?</style>",
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+
+            // Replace block elements with newlines
+            text = text.replacingOccurrences(
+                of: "<(br|p|div|h[1-6]|li|tr)[^>]*>",
+                with: "\n",
+                options: [.regularExpression, .caseInsensitive]
+            )
+
+            // Remove all remaining tags
+            text = text.replacingOccurrences(
+                of: "<[^>]+>",
+                with: "",
+                options: .regularExpression
+            )
+
+            // Decode HTML entities
+            text = text.replacingOccurrences(of: "&nbsp;", with: " ")
+            text = text.replacingOccurrences(of: "&amp;", with: "&")
+            text = text.replacingOccurrences(of: "&lt;", with: "<")
+            text = text.replacingOccurrences(of: "&gt;", with: ">")
+            text = text.replacingOccurrences(of: "&quot;", with: "\"")
+            text = text.replacingOccurrences(of: "&#39;", with: "'")
+
+            // Collapse multiple newlines
+            text = text.replacingOccurrences(
+                of: "\n{3,}",
+                with: "\n\n",
+                options: .regularExpression
+            )
+
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         // MARK: - Tool Definitions
 
         /// Returns all tool definitions in OpenAI function format.
@@ -733,7 +879,8 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 editFileDefinition(),
                 listDirectoryDefinition(),
                 searchFilesDefinition(),
-                runCommandDefinition()
+                runCommandDefinition(),
+                webFetchDefinition()
             ]
         }
 
@@ -754,12 +901,14 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             - **list_directory**: List files and subdirectories in a directory
             - **search_files**: Search for text patterns in files (like grep)
             - **run_command**: Execute shell commands
+            - **web_fetch**: Fetch content from a URL as plain text
 
             When to use these tools:
             - When the user asks what's in a file or directory, use list_directory or read_file
             - When the user asks to find something, use search_files
             - When the user asks to create or modify files, use write_file or edit_file
             - When the user asks to run commands or scripts, use run_command
+            - When the user asks to fetch a web page or API response, use web_fetch
 
             """
 
@@ -773,7 +922,8 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
         /// Tool name constant for use in tool call routing
         static let toolNames: Set<String> = [
             "read_file", "write_file", "edit_file",
-            "list_directory", "search_files", "run_command"
+            "list_directory", "search_files", "run_command",
+            "web_fetch"
         ]
 
         /// Checks if a tool name is a builtin tool
@@ -921,6 +1071,26 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             ]
         }
 
+        private func webFetchDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.webFetch,
+                    "description": "Fetch content from a URL and return it as plain text. Use for reading web pages, documentation, or API responses. Only HTTP/HTTPS URLs are supported.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "url": [
+                                "type": "string",
+                                "description": "The URL to fetch (must be http:// or https://)"
+                            ]
+                        ] as [String: Any],
+                        "required": ["url"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
         // MARK: - Tool Call Execution
 
         /// Executes a tool call and returns the result as a string.
@@ -994,6 +1164,12 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                         conversationId: conversationId
                     )
                     return formatCommandResult(result)
+
+                case ToolName.webFetch:
+                    guard let url = arguments["url"] as? String else {
+                        return "ERROR: Missing required parameter 'url'"
+                    }
+                    return try await webFetch(url: url, conversationId: conversationId)
 
                 default:
                     return "ERROR: Unknown tool '\(toolName)'"

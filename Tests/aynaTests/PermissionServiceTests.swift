@@ -33,6 +33,7 @@ struct PermissionServiceTests {
         #expect(PermissionService.defaultPermissionLevel(for: "read_file") == .automatic)
         #expect(PermissionService.defaultPermissionLevel(for: "list_directory") == .automatic)
         #expect(PermissionService.defaultPermissionLevel(for: "search_files") == .automatic)
+        #expect(PermissionService.defaultPermissionLevel(for: "web_fetch") == .automatic)
         #expect(PermissionService.defaultPermissionLevel(for: "write_file") == .askOnce)
         #expect(PermissionService.defaultPermissionLevel(for: "edit_file") == .askOnce)
         #expect(PermissionService.defaultPermissionLevel(for: "run_command") == .askAlways)

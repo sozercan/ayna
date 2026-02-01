@@ -316,4 +316,81 @@ struct ShellSandboxTests {
         let result = sut.validate("echo \"test && test\"")
         #expect(result == .allowed)
     }
+
+    // MARK: - Command Substitution Blocking
+
+    @Test("Blocks backtick command substitution")
+    func blocksBacktickSubstitution() {
+        let result = sut.validate("echo `whoami`")
+        if case let .blocked(reason) = result {
+            #expect(reason.contains("backtick"))
+        } else {
+            Issue.record("Expected blocked for backtick substitution")
+        }
+    }
+
+    @Test("Blocks dollar-paren command substitution")
+    func blocksDollarParenSubstitution() {
+        let result = sut.validate("echo $(whoami)")
+        if case let .blocked(reason) = result {
+            #expect(reason.contains("$()"))
+        } else {
+            Issue.record("Expected blocked for $() substitution")
+        }
+    }
+
+    @Test("Blocks nested command substitution")
+    func blocksNestedSubstitution() {
+        let result = sut.validate("ls $(cat /etc/passwd)")
+        if case .blocked = result {
+            // Expected
+        } else {
+            Issue.record("Expected blocked for nested command substitution")
+        }
+    }
+
+    @Test("Blocks backtick in middle of command")
+    func blocksBacktickInMiddle() {
+        let result = sut.validate("cat `find . -name '*.txt'`")
+        if case .blocked = result {
+            // Expected
+        } else {
+            Issue.record("Expected blocked for backtick in command")
+        }
+    }
+
+    @Test("Allows backticks inside single quotes")
+    func allowsBacktickInSingleQuotes() {
+        // Single quotes prevent substitution in shells
+        let result = sut.validate("echo 'Price: `100`'")
+        #expect(result == .allowed)
+    }
+
+    @Test("Allows $() inside single quotes")
+    func allowsDollarParenInSingleQuotes() {
+        // Single quotes prevent substitution in shells
+        let result = sut.validate("echo 'Value is $(10)'")
+        #expect(result == .allowed)
+    }
+
+    @Test("Blocks backtick even with double quotes")
+    func blocksBacktickInDoubleQuotes() {
+        // Double quotes allow substitution, so this should be blocked
+        let result = sut.validate("echo \"result: `id`\"")
+        if case .blocked = result {
+            // Expected
+        } else {
+            Issue.record("Expected blocked for backtick in double quotes")
+        }
+    }
+
+    @Test("Blocks dangerous command in substitution")
+    func blocksDangerousSubstitution() {
+        let result = sut.validate("echo `sudo cat /etc/shadow`")
+        if case .blocked = result {
+            // Expected - blocked by either substitution or sudo pattern
+        } else {
+            Issue.record("Expected blocked for dangerous substitution")
+        }
+    }
 }

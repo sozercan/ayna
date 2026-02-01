@@ -1524,6 +1524,9 @@ class AIService: ObservableObject {
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
                     var totalBytesReceived = 0
 
+                    // Maximum line length to prevent OOM from malformed streams without newlines
+                    let maxLineLength = 65_536 // 64KB
+
                     for try await byte in bytes {
                         // Check for cancellation at each byte
                         try Task.checkCancellation()
@@ -1531,6 +1534,11 @@ class AIService: ObservableObject {
                         hasReceivedData = true
                         totalBytesReceived += 1
                         buffer.append(byte)
+
+                        // Prevent unbounded buffer growth from malformed streams
+                        if buffer.count > maxLineLength {
+                            throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
+                        }
 
                         // Log first byte received
                         if totalBytesReceived == 1 {

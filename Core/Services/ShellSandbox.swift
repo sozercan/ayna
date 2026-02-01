@@ -129,6 +129,12 @@ struct ShellSandbox {
             return .blocked(reason: "Empty command")
         }
 
+        // Block command substitution syntax (security critical)
+        // These are interpreted by shells and can execute arbitrary commands
+        if let substitutionReason = checkCommandSubstitution(trimmed) {
+            return .blocked(reason: substitutionReason)
+        }
+
         // Check for blocked patterns first (entire command string)
         if let blockedReason = checkBlockedPatterns(trimmed) {
             return .blocked(reason: blockedReason)
@@ -217,6 +223,51 @@ struct ShellSandbox {
                     }
                 }
             }
+        }
+
+        return nil
+    }
+
+    /// Checks for command substitution syntax that could execute arbitrary commands.
+    ///
+    /// Since commands are executed via `/bin/zsh -c`, backticks and $() are interpreted
+    /// by the shell and can execute arbitrary nested commands, bypassing validation.
+    ///
+    /// - Parameter command: The command string to check
+    /// - Returns: A reason string if command substitution is detected, nil otherwise
+    private func checkCommandSubstitution(_ command: String) -> String? {
+        // Track quote state to avoid false positives in single-quoted strings
+        // (single quotes prevent substitution in shells)
+        var inSingleQuote = false
+        var index = command.startIndex
+
+        while index < command.endIndex {
+            let char = command[index]
+
+            // Toggle single quote state
+            if char == "'" {
+                inSingleQuote.toggle()
+                index = command.index(after: index)
+                continue
+            }
+
+            // Only check for substitution outside single quotes
+            if !inSingleQuote {
+                // Check for backtick command substitution
+                if char == "`" {
+                    return "Command substitution (backticks) not allowed"
+                }
+
+                // Check for $() command substitution
+                if char == "$", command.index(after: index) < command.endIndex {
+                    let nextChar = command[command.index(after: index)]
+                    if nextChar == "(" {
+                        return "Command substitution $() not allowed"
+                    }
+                }
+            }
+
+            index = command.index(after: index)
         }
 
         return nil
