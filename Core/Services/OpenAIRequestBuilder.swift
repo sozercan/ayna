@@ -248,6 +248,8 @@ enum OpenAIRequestBuilder {
     /// - Content types are `input_text`/`output_text` instead of just `text`
     /// - Images use `input_image` type
     /// - System messages are skipped
+    /// - Tool results use `function_call_output` type (not "tool" role)
+    /// - Assistant tool calls use `function_call` type in output
     ///
     /// - Parameter messages: Messages to convert
     /// - Returns: Array of input items for the Responses API
@@ -259,6 +261,63 @@ enum OpenAIRequestBuilder {
             if message.role == .system {
                 continue
             }
+
+            #if !os(watchOS)
+                // Handle tool result messages - convert to function_call_output
+                if message.role == .tool {
+                    if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+                        let outputItem: [String: Any] = [
+                            "type": "function_call_output",
+                            "call_id": firstToolCall.id,
+                            "output": message.content
+                        ]
+                        inputArray.append(outputItem)
+                    }
+                    continue
+                }
+
+                // Handle assistant messages with tool calls
+                if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    // First add any text content as a message
+                    if !message.content.isEmpty {
+                        let messageItem: [String: Any] = [
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                ["type": "output_text", "text": message.content]
+                            ]
+                        ]
+                        inputArray.append(messageItem)
+                    }
+
+                    // Then add each tool call as a function_call item
+                    for toolCall in toolCalls {
+                        // Convert AnyCodable arguments to JSON string
+                        var argumentsDict: [String: Any] = [:]
+                        for (key, anyCodable) in toolCall.arguments {
+                            argumentsDict[key] = anyCodable.value
+                        }
+
+                        let argumentsString: String
+                        if let argsData = try? JSONSerialization.data(withJSONObject: argumentsDict),
+                           let argsStr = String(data: argsData, encoding: .utf8)
+                        {
+                            argumentsString = argsStr
+                        } else {
+                            argumentsString = "{}"
+                        }
+
+                        let functionCallItem: [String: Any] = [
+                            "type": "function_call",
+                            "call_id": toolCall.id,
+                            "name": toolCall.toolName,
+                            "arguments": argumentsString
+                        ]
+                        inputArray.append(functionCallItem)
+                    }
+                    continue
+                }
+            #endif
 
             var messageItem: [String: Any] = [
                 "type": "message",
@@ -295,21 +354,94 @@ enum OpenAIRequestBuilder {
         return inputArray
     }
 
+    /// Convert tools from Chat Completions format to Responses API format.
+    ///
+    /// Chat Completions: `{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}`
+    /// Responses API: `{"type": "function", "name": "...", "description": "...", "parameters": {...}}`
+    ///
+    /// - Parameter tools: Tools in Chat Completions format
+    /// - Returns: Tools in Responses API format
+    static func convertToolsToResponsesFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
+        tools.compactMap { tool -> [String: Any]? in
+            // Check if it's already in Responses format (has top-level "name")
+            if tool["name"] != nil {
+                return tool
+            }
+
+            // Convert from Chat Completions format
+            guard let functionDict = tool["function"] as? [String: Any],
+                  let name = functionDict["name"] as? String
+            else {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "❌ Invalid tool format - missing function.name",
+                    metadata: ["tool": "\(tool)"]
+                )
+                return nil
+            }
+
+            var responsesTool: [String: Any] = [
+                "type": "function",
+                "name": name
+            ]
+
+            if let description = functionDict["description"] as? String {
+                responsesTool["description"] = description
+            }
+
+            if let parameters = functionDict["parameters"] {
+                responsesTool["parameters"] = parameters
+            }
+
+            return responsesTool
+        }
+    }
+
     /// Build the Responses API request body.
     ///
     /// - Parameters:
     ///   - model: Model identifier
     ///   - messages: Messages to include
+    ///   - tools: Optional tool definitions (OpenAI Chat Completions format - will be converted)
     /// - Returns: Dictionary suitable for JSON serialization
-    static func buildResponsesBody(model: String, messages: [Message]) -> [String: Any] {
+    static func buildResponsesBody(
+        model: String,
+        messages: [Message],
+        tools: [[String: Any]]? = nil
+    ) -> [String: Any] {
         let inputArray = buildResponsesInput(from: messages)
 
-        return [
+        var body: [String: Any] = [
             "model": model,
             "input": inputArray,
             "reasoning": ["summary": "auto"],
             "text": ["verbosity": "medium"]
         ]
+
+        // Add tools if provided (convert from Chat Completions format to Responses format)
+        if let tools, !tools.isEmpty {
+            let responsesTools = convertToolsToResponsesFormat(tools)
+            if !responsesTools.isEmpty {
+                body["tools"] = responsesTools
+                body["tool_choice"] = "auto"
+
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .debug,
+                    message: "🔧 Converted tools to Responses API format",
+                    metadata: ["count": "\(responsesTools.count)"]
+                )
+            }
+        }
+
+        return body
+    }
+
+    /// Result from parsing Responses API output
+    struct ResponsesOutputResult {
+        let hasToolCalls: Bool
+        let toolCalls: [(id: String, name: String, arguments: [String: Any])]
     }
 
     /// Deliver output from the Responses API to callbacks.
@@ -317,16 +449,22 @@ enum OpenAIRequestBuilder {
     /// Parses the output array and calls appropriate callbacks for:
     /// - Reasoning summaries (delivered to `onReasoning`)
     /// - Message content (delivered to `onChunk`)
+    /// - Tool calls (delivered to `onToolCallRequested`)
     ///
     /// - Parameters:
     ///   - outputArray: The output array from the API response
     ///   - onChunk: Callback for content chunks
     ///   - onReasoning: Optional callback for reasoning summaries
+    ///   - onToolCallRequested: Optional callback when a tool call is requested
+    /// - Returns: Result indicating if tool calls were found
     static func deliverResponsesOutput(
         _ outputArray: [[String: Any]],
         onChunk: @escaping (String) -> Void,
-        onReasoning: ((String) -> Void)?
-    ) {
+        onReasoning: ((String) -> Void)?,
+        onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil
+    ) -> ResponsesOutputResult {
+        var toolCalls: [(id: String, name: String, arguments: [String: Any])] = []
+
         for outputItem in outputArray {
             let itemType = outputItem["type"] as? String
 
@@ -354,8 +492,44 @@ enum OpenAIRequestBuilder {
                         onChunk(text)
                     }
                 }
+            } else if itemType == "function_call" {
+                // Handle tool/function calls from Responses API
+                guard let callId = outputItem["call_id"] as? String ?? outputItem["id"] as? String,
+                      let name = outputItem["name"] as? String
+                else {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "❌ Responses API function_call missing id or name",
+                        metadata: ["outputItem": "\(outputItem)"]
+                    )
+                    continue
+                }
+
+                // Parse arguments - can be string or dict
+                var arguments: [String: Any] = [:]
+                if let argsString = outputItem["arguments"] as? String,
+                   let argsData = argsString.data(using: .utf8),
+                   let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
+                {
+                    arguments = argsDict
+                } else if let argsDict = outputItem["arguments"] as? [String: Any] {
+                    arguments = argsDict
+                }
+
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Responses API: Tool call requested",
+                    metadata: ["tool": name, "callId": callId]
+                )
+
+                toolCalls.append((id: callId, name: name, arguments: arguments))
+                onToolCallRequested?(callId, name, arguments)
             }
         }
+
+        return ResponsesOutputResult(hasToolCalls: !toolCalls.isEmpty, toolCalls: toolCalls)
     }
 
     // MARK: - Request Configuration
@@ -436,6 +610,7 @@ enum OpenAIRequestBuilder {
     ///   - url: The API endpoint URL
     ///   - messages: Messages to include
     ///   - model: Model identifier
+    ///   - tools: Optional tool definitions
     ///   - apiKey: API key for authentication
     ///   - isAzure: Whether this is an Azure endpoint
     /// - Returns: Configured URLRequest, or nil if body encoding fails
@@ -443,13 +618,14 @@ enum OpenAIRequestBuilder {
         url: URL,
         messages: [Message],
         model: String,
+        tools: [[String: Any]]? = nil,
         apiKey: String,
         isAzure: Bool
     ) -> URLRequest? {
         var request = URLRequest(url: url)
         configureRequest(&request, apiKey: apiKey, isAzure: isAzure)
 
-        let body = buildResponsesBody(model: model, messages: messages)
+        let body = buildResponsesBody(model: model, messages: messages, tools: tools)
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             DiagnosticsLogger.log(

@@ -862,6 +862,7 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
+                onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
             return
@@ -1195,6 +1196,7 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
     ) {
@@ -1218,6 +1220,18 @@ class AIService: ObservableObject {
             return
         }
 
+        // Get available tools for the Responses API
+        let tools = getAllAvailableTools()
+
+        if let tools, !tools.isEmpty {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🔧 Responses API: Sending tools",
+                metadata: ["count": "\(tools.count)"]
+            )
+        }
+
         // Inject memory context into messages
         let systemPrompt = messages.first { $0.role == .system }?.content
         let conversationHistory = messages.filter { $0.role != .system }
@@ -1235,6 +1249,7 @@ class AIService: ObservableObject {
                 url: url,
                 messages: messagesWithMemory,
                 model: model,
+                tools: tools,
                 apiKey: modelAPIKey,
                 isAzure: usesAzureEndpoint
             )
@@ -1274,6 +1289,7 @@ class AIService: ObservableObject {
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
+                                onToolCallRequested: onToolCallRequested,
                                 onReasoning: onReasoning,
                                 attempt: attempt + 1
                             )
@@ -1301,11 +1317,21 @@ class AIService: ObservableObject {
                     }
 
                     if let outputArray = json?["output"] as? [[String: Any]] {
-                        OpenAIRequestBuilder.deliverResponsesOutput(
+                        let result = OpenAIRequestBuilder.deliverResponsesOutput(
                             outputArray,
                             onChunk: onChunk,
-                            onReasoning: onReasoning
+                            onReasoning: onReasoning,
+                            onToolCallRequested: onToolCallRequested
                         )
+
+                        if result.hasToolCalls {
+                            DiagnosticsLogger.log(
+                                .aiService,
+                                level: .info,
+                                message: "🔧 Responses API: Tool calls detected",
+                                metadata: ["count": "\(result.toolCalls.count)"]
+                            )
+                        }
                     }
 
                     onComplete()
