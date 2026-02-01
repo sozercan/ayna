@@ -86,6 +86,12 @@ class AIService: ObservableObject {
         private let imageService: OpenAIImageService
     #endif
 
+    // Native agentic tools (macOS only)
+    #if os(macOS)
+        private(set) var builtinToolService: BuiltinToolService?
+        private(set) var permissionService: PermissionService?
+    #endif
+
     @Published var customModels: [String] {
         didSet {
             #if !os(watchOS)
@@ -319,7 +325,30 @@ class AIService: ObservableObject {
 
         // iCloud sync disabled for free developer account
         // setupiCloudSync()
+
+        // Initialize native agentic tools (macOS only)
+        #if os(macOS)
+            let permService = PermissionService()
+            self.permissionService = permService
+            self.builtinToolService = BuiltinToolService(
+                permissionService: permService,
+                projectRoot: nil // Will be set via configureProjectRoot()
+            )
+            // Trigger AgentSettingsStore initialization to apply saved settings
+            _ = AgentSettingsStore.shared
+        #endif
     }
+
+    // Configures the project root for agentic tools (macOS only)
+    #if os(macOS)
+        func configureProjectRoot(_ url: URL?) {
+            guard let permService = permissionService else { return }
+            builtinToolService = BuiltinToolService(
+                permissionService: permService,
+                projectRoot: url
+            )
+        }
+    #endif
 
     private func persistModelAPIKeys() {
         do {
@@ -337,22 +366,26 @@ class AIService: ObservableObject {
     private static func loadModelAPIKeys() -> [String: String] {
         do {
             if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
-                do {
-                    return try JSONDecoder().decode([String: String].self, from: data)
-                } catch {
-                    DiagnosticsLogger.log(
-                        .aiService,
-                        level: .error,
-                        message: "Failed to decode model API keys from Keychain",
-                        metadata: ["error": error.localizedDescription]
-                    )
-                }
+                let keys = try JSONDecoder().decode([String: String].self, from: data)
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "Loaded model API keys from Keychain",
+                    metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
+                )
+                return keys
+            } else {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "No model API keys found in Keychain (first launch or code signature changed)"
+                )
             }
         } catch {
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,
-                message: "Unable to read model API keys from Keychain",
+                message: "Failed to read model API keys from Keychain",
                 metadata: ["error": error.localizedDescription]
             )
         }
@@ -361,12 +394,23 @@ class AIService: ObservableObject {
 
     private static func storeModelAPIKeys(_ dictionary: [String: String]) throws {
         if dictionary.isEmpty {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "Removing model API keys from Keychain (dictionary is empty)"
+            )
             try keychain.removeValue(for: KeychainKeys.modelAPIKeys)
             return
         }
 
         let data = try JSONEncoder().encode(dictionary)
         try keychain.setData(data, for: KeychainKeys.modelAPIKeys)
+        DiagnosticsLogger.log(
+            .aiService,
+            level: .info,
+            message: "Stored model API keys to Keychain",
+            metadata: ["modelCount": "\(dictionary.count)", "models": dictionary.keys.joined(separator: ", ")]
+        )
     }
 
     private func normalizedModelName(_ name: String?) -> String? {
@@ -700,7 +744,8 @@ class AIService: ObservableObject {
                 "model": requestModel,
                 "messagesCount": "\(messages.count)",
                 "stream": "\(stream)",
-                "hasTools": "\(tools != nil)"
+                "hasTools": "\(tools != nil)",
+                "toolCount": "\(tools?.count ?? 0)"
             ]
         )
 
@@ -774,10 +819,12 @@ class AIService: ObservableObject {
                 messages: messages,
                 model: requestModel,
                 stream: stream,
+                tools: tools,
                 conversationId: conversationId,
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
+                onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
             return
@@ -2024,10 +2071,12 @@ class AIService: ObservableObject {
         messages: [Message],
         model: String,
         stream: Bool,
+        tools: [[String: Any]]?,
         conversationId: UUID?,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil
     ) {
         let modelAPIKey = getAPIKey(for: model)
@@ -2081,7 +2130,7 @@ class AIService: ObservableObject {
                 }
                 onError(error)
             },
-            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
+            onToolCallRequested: onToolCallRequested,
             onReasoning: onReasoning
         )
 
@@ -2089,7 +2138,7 @@ class AIService: ObservableObject {
             messages: messagesWithMemory,
             config: config,
             stream: stream,
-            tools: nil, // TODO: Add MCP tool support for Anthropic
+            tools: tools,
             callbacks: wrappedCallbacks
         )
     }
@@ -2332,6 +2381,16 @@ extension AIService {
 // MARK: - Tool Management
 
 extension AIService {
+    /// Returns system prompt context for agentic capabilities.
+    /// This should be appended to the user's system prompt when tools are available.
+    func getAgenticSystemPromptContext() -> String? {
+        #if os(macOS)
+            return builtinToolService?.systemPromptContext()
+        #else
+            return nil
+        #endif
+    }
+
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
     /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
     func getAllAvailableTools() -> [[String: Any]]? {
@@ -2346,6 +2405,34 @@ extension AIService {
         #else
             if TavilyService.shared.isAvailable {
                 tools.append(TavilyService.shared.toolDefinition())
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added Tavily tool"
+                )
+            }
+        #endif
+
+        // Add native agentic tools (macOS only)
+        #if os(macOS)
+            if let builtinService = builtinToolService {
+                let builtinTools = builtinService.allToolDefinitions()
+                tools.append(contentsOf: builtinTools)
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added builtin tools",
+                    metadata: [
+                        "count": "\(builtinTools.count)",
+                        "isEnabled": "\(builtinService.isEnabled)"
+                    ]
+                )
+            } else {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "⚠️ builtinToolService is nil"
+                )
             }
         #endif
 
@@ -2353,7 +2440,22 @@ extension AIService {
         #if os(macOS)
             let mcpTools = MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
             tools.append(contentsOf: mcpTools)
+            if !mcpTools.isEmpty {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added MCP tools",
+                    metadata: ["count": "\(mcpTools.count)"]
+                )
+            }
         #endif
+
+        DiagnosticsLogger.log(
+            .aiService,
+            level: .info,
+            message: "🔧 getAllAvailableTools returning",
+            metadata: ["totalTools": "\(tools.count)", "isNil": "\(tools.isEmpty)"]
+        )
 
         return tools.isEmpty ? nil : tools
     }
@@ -2364,6 +2466,8 @@ extension AIService {
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
             return toolName == "web_search"
+        #elseif os(macOS)
+            return toolName == TavilyService.toolName || BuiltinToolService.isBuiltinTool(toolName)
         #else
             return toolName == TavilyService.toolName
         #endif
@@ -2373,12 +2477,36 @@ extension AIService {
     /// - Parameters:
     ///   - toolName: The name of the tool to execute
     ///   - arguments: The arguments passed to the tool
+    ///   - conversationId: The conversation ID for permission tracking (macOS only)
     /// - Returns: The tool execution result as a string
-    func executeBuiltInTool(name toolName: String, arguments: [String: Any]) async -> String {
+    func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
         #if os(watchOS)
             switch toolName {
             case "web_search":
                 return await executeWatchTavilySearch(arguments: arguments)
+            default:
+                return "Error: Unknown built-in tool '\(toolName)'"
+            }
+        #elseif os(macOS)
+            // Check for native agentic tools first
+            if BuiltinToolService.isBuiltinTool(toolName) {
+                guard let service = builtinToolService else {
+                    return "Error: Agentic tools not configured"
+                }
+                guard let convId = conversationId else {
+                    return "Error: Conversation ID required for agentic tools"
+                }
+                return await service.executeToolCall(
+                    toolName: toolName,
+                    arguments: arguments,
+                    conversationId: convId
+                )
+            }
+
+            // Fall back to Tavily
+            switch toolName {
+            case TavilyService.toolName:
+                return await TavilyService.shared.executeToolCall(arguments: arguments)
             default:
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
@@ -2396,15 +2524,31 @@ extension AIService {
     /// - Parameters:
     ///   - toolName: The name of the tool to execute
     ///   - arguments: The arguments passed to the tool
+    ///   - conversationId: The conversation ID for permission tracking (macOS only)
     /// - Returns: Tuple of (result string, optional citations for inline display)
     func executeBuiltInToolWithCitations(
         name toolName: String,
-        arguments: [String: Any]
+        arguments: [String: Any],
+        conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
         #if os(watchOS)
             /// watchOS doesn't support citations yet
             let result = await executeBuiltInTool(name: toolName, arguments: arguments)
             return (result, nil)
+        #elseif os(macOS)
+            // Native agentic tools don't have citations
+            if BuiltinToolService.isBuiltinTool(toolName) {
+                let result = await executeBuiltInTool(name: toolName, arguments: arguments, conversationId: conversationId)
+                return (result, nil)
+            }
+
+            switch toolName {
+            case TavilyService.toolName:
+                let (result, citations) = await TavilyService.shared.executeToolCallWithCitations(arguments: arguments)
+                return (result, citations.isEmpty ? nil : citations)
+            default:
+                return ("Error: Unknown built-in tool '\(toolName)'", nil)
+            }
         #else
             switch toolName {
             case TavilyService.toolName:

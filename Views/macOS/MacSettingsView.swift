@@ -36,6 +36,12 @@ struct MacSettingsView: View {
                 }
                 .tag(SettingsTab.mcp)
 
+            AgentsSettingsSection()
+                .tabItem {
+                    Label("Agents", systemImage: "cpu.fill")
+                }
+                .tag(SettingsTab.agents)
+
             MemorySettingsSection()
                 .tabItem {
                     Label("Memory", systemImage: "brain")
@@ -323,6 +329,7 @@ struct AttachFromAppSettingsSection: View {
 struct ToolsSettingsView: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @StateObject private var mcpManager = MCPServerManager.shared
+    @Bindable private var agentSettings = AgentSettingsStore.shared
 
     var body: some View {
         HSplitView {
@@ -335,7 +342,9 @@ struct ToolsSettingsView: View {
                             .font(Typography.title2)
                             .fontWeight(.semibold)
 
-                        let toolCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0) + mcpManager.availableTools.count
+                        let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
+                        let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
+                        let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
                         Text("\(toolCount) tools available")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -367,6 +376,32 @@ struct ToolsSettingsView: View {
                                 .foregroundStyle(Theme.textSecondary)
 
                             WebSearchToolRow()
+                        }
+                        .padding(.horizontal)
+
+                        Divider()
+                            .padding(.horizontal)
+
+                        // Agentic Tools Section
+                        VStack(alignment: .leading, spacing: Spacing.md) {
+                            HStack {
+                                Text("Agentic Tools")
+                                    .font(Typography.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(Theme.textSecondary)
+
+                                Spacer()
+
+                                Button {
+                                    SettingsRouter.shared.route(to: .agents)
+                                } label: {
+                                    Text("Configure")
+                                        .font(Typography.caption)
+                                }
+                                .buttonStyle(.link)
+                            }
+
+                            AgenticToolsRow()
                         }
                         .padding(.horizontal)
 
@@ -462,6 +497,60 @@ struct WebSearchToolRow: View {
         } else {
             "API key required"
         }
+    }
+}
+
+/// Row displaying Agentic Tools status
+struct AgenticToolsRow: View {
+    @Bindable private var agentSettings = AgentSettingsStore.shared
+
+    private let toolNames = [
+        "read_file", "write_file", "edit_file",
+        "list_directory", "search_files", "run_command"
+    ]
+
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                Text("Agentic Tools")
+                    .font(Typography.headline)
+
+                HStack(spacing: Spacing.xxs) {
+                    Text(statusDescription)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    if agentSettings.settings.isEnabled {
+                        Text("•")
+                            .foregroundStyle(Theme.textSecondary)
+                        Text("6 tools")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $agentSettings.settings.isEnabled)
+                .labelsHidden()
+                .accessibilityIdentifier("settings.tools.agentic.toggle")
+        }
+        .padding()
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+    }
+
+    private var statusColor: Color {
+        agentSettings.settings.isEnabled ? Theme.statusConnected : Theme.statusDisconnected
+    }
+
+    private var statusDescription: String {
+        agentSettings.settings.isEnabled ? "Enabled" : "Disabled"
     }
 }
 
@@ -958,27 +1047,18 @@ struct APISettingsView: View {
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
-                                Picker("", selection: Binding(
-                                    get: {
-                                        if let modelName = selectedModelName {
-                                            aiService.modelEndpointTypes[modelName] ?? .chatCompletions
-                                        } else {
-                                            tempEndpointType
-                                        }
-                                    },
-                                    set: { newValue in
-                                        if let modelName = selectedModelName {
-                                            aiService.modelEndpointTypes[modelName] = newValue
-                                        } else {
-                                            tempEndpointType = newValue
-                                        }
-                                    }
-                                )) {
+                                Picker("", selection: $tempEndpointType) {
                                     ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
                                         Text(endpointType.displayName).tag(endpointType)
                                     }
                                 }
                                 .pickerStyle(.segmented)
+                                .onChange(of: tempEndpointType) { _, newValue in
+                                    if let modelName = selectedModelName {
+                                        aiService.modelEndpointTypes[modelName] = newValue
+                                    }
+                                }
+                                .id(selectedModelName)
 
                                 Text("Choose which API endpoint to use for this model")
                                     .font(Typography.caption)
@@ -1127,6 +1207,25 @@ struct APISettingsView: View {
                                             let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
                                             if !modelName.isEmpty {
+                                                // Remove old model data if name changed
+                                                if selectedName != modelName {
+                                                    aiService.customModels.removeAll { $0 == selectedName }
+                                                    aiService.modelProviders.removeValue(forKey: selectedName)
+                                                    aiService.modelAPIKeys.removeValue(forKey: selectedName)
+                                                    aiService.modelEndpoints.removeValue(forKey: selectedName)
+                                                    aiService.modelEndpointTypes.removeValue(forKey: selectedName)
+
+                                                    // Add new model name if not already present
+                                                    if !aiService.customModels.contains(modelName) {
+                                                        aiService.customModels.append(modelName)
+                                                    }
+
+                                                    // Update selected model if it was the renamed one
+                                                    if aiService.selectedModel == selectedName {
+                                                        aiService.selectedModel = modelName
+                                                    }
+                                                }
+
                                                 // Update provider and endpoint type
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
@@ -1145,6 +1244,7 @@ struct APISettingsView: View {
                                                     aiService.modelEndpoints.removeValue(forKey: modelName)
                                                 }
 
+                                                selectedModelName = modelName
                                                 validationStatus = .notChecked
                                             }
                                         } label: {
@@ -1629,9 +1729,8 @@ struct APISettingsView: View {
         if let apiKey = aiService.modelAPIKeys[model] {
             aiService.modelAPIKeys[newName] = apiKey
         }
-        if let endpointType = aiService.modelEndpointTypes[model] {
-            aiService.modelEndpointTypes[newName] = endpointType
-        }
+        // Always copy endpoint type, defaulting to chatCompletions if not set
+        aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
         if let usesOAuth = aiService.modelUsesGitHubOAuth[model] {
             aiService.modelUsesGitHubOAuth[newName] = usesOAuth
         }
@@ -2097,12 +2196,31 @@ struct GitHubModelsConfigurationView: View {
 
         guard !modelName.isEmpty else { return }
 
+        // Remove old model data if name changed
+        if let oldName = selectedModelName, oldName != modelName {
+            aiService.customModels.removeAll { $0 == oldName }
+            aiService.modelProviders.removeValue(forKey: oldName)
+            aiService.modelAPIKeys.removeValue(forKey: oldName)
+            aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
+
+            // Add new model name if not already present
+            if !aiService.customModels.contains(modelName) {
+                aiService.customModels.append(modelName)
+            }
+
+            // Update selected model if it was the renamed one
+            if aiService.selectedModel == oldName {
+                aiService.selectedModel = modelName
+            }
+        }
+
         aiService.modelProviders[modelName] = .githubModels
 
         // Using OAuth, remove any stored PAT
         aiService.modelAPIKeys.removeValue(forKey: modelName)
         aiService.modelUsesGitHubOAuth[modelName] = true
 
+        selectedModelName = modelName
         validationStatus = .notChecked
     }
 }

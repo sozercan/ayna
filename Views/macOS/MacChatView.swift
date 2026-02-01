@@ -864,7 +864,7 @@ struct MacChatView: View {
 
         // Build messages for API using the same pattern as sendMessage
         var messagesToSend = currentConversation.messages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: currentConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1362,7 +1362,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1774,7 +1774,7 @@ struct MacChatView: View {
 
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2152,10 +2152,11 @@ struct MacChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService.executeBuiltInToolWithCitations(
                                     name: toolName,
-                                    arguments: argumentsWrapper.value
+                                    arguments: argumentsWrapper.value,
+                                    conversationId: conversation.id
                                 )
                                 result = toolResult
                                 citations = toolCitations
@@ -2256,7 +2257,7 @@ struct MacChatView: View {
                                 }
 
                                 // Prepend system prompt for continued conversation
-                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
+                                if let sysPrompt = buildFullSystemPrompt(for: convWithAssistant) {
                                     let sysMessage = Message(role: .system, content: sysPrompt)
                                     continuationMessages.insert(sysMessage, at: 0)
                                 }
@@ -2404,7 +2405,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2455,7 +2456,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2477,6 +2478,25 @@ struct MacChatView: View {
             tools: tools,
             isInitialRequest: true
         )
+    }
+
+    // MARK: - System Prompt Helpers
+
+    /// Builds the full system prompt including agentic capabilities context.
+    private func buildFullSystemPrompt(for conversation: Conversation) -> String? {
+        var components: [String] = []
+
+        // Add user's configured system prompt
+        if let userPrompt = conversationManager.effectiveSystemPrompt(for: conversation), !userPrompt.isEmpty {
+            components.append(userPrompt)
+        }
+
+        // Add agentic tools context if available
+        if let agenticContext = aiService.getAgenticSystemPromptContext() {
+            components.append(agenticContext)
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: "\n\n")
     }
 }
 

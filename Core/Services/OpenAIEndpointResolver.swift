@@ -190,7 +190,8 @@ enum OpenAIEndpointResolver {
         apiVersion: String
     ) -> String {
         let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
-        return "\(cleanBase)/openai/v1/responses?api-version=\(apiVersion)"
+        // Azure OpenAI Responses API doesn't use the /v1/ prefix
+        return "\(cleanBase)/openai/responses?api-version=\(apiVersion)"
     }
 
     private static func azureImagesURL(
