@@ -75,6 +75,9 @@ final class BuiltinToolService {
     // Shell execution
     func runCommand(command: String, workingDirectory: String?) async throws -> CommandResult
 
+    // Web fetch (with SSRF protection)
+    func webFetch(url: String) async throws -> String
+
     // Tool definitions for AI (OpenAI function format)
     func allToolDefinitions() -> [[String: Any]]
 }
@@ -274,6 +277,7 @@ Tools registered following the same pattern as TavilyService:
 | `list_directory` | List files in directory | automatic |
 | `search_files` | Grep-like search | automatic |
 | `run_command` | Execute shell command | requiresApproval |
+| `web_fetch` | Fetch URL content as plain text | automatic |
 
 #### `edit_file` Semantics (per review feedback)
 
@@ -293,6 +297,30 @@ Tools registered following the same pattern as TavilyService:
 /// - Empty `newText`: Valid (deletes the matched text)
 /// - `oldText == newText`: No-op, returns success
 func editFile(path: String, oldText: String, newText: String) async throws -> ToolResult
+```
+
+#### `web_fetch` Semantics
+
+```swift
+/// Fetches content from a URL and returns it as plain text.
+/// - Parameters:
+///   - url: The URL to fetch (must be http:// or https://)
+/// - Returns: The page content as plain text (HTML converted automatically)
+/// - Throws: ToolExecutionError
+///
+/// Security:
+/// - SSRF Protection: Blocks requests to localhost, 127.0.0.1, ::1, and private IP ranges
+///   (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x)
+/// - Only HTTP/HTTPS URLs allowed (file://, ftp:// rejected)
+/// - Response size limit: 10 MB (same as file reads)
+/// - Timeout: Uses commandTimeoutSeconds setting (default 30s)
+/// - User-Agent: Identifies as "Ayna/1.0"
+///
+/// Content handling:
+/// - HTML responses: Automatically converted to plain text (strips scripts, styles, tags)
+/// - JSON/text responses: Returned as-is
+/// - Binary responses: Rejected with error
+func webFetch(url: String) async throws -> String
 ```
 
 ### 7. Error Taxonomy
@@ -440,6 +468,7 @@ Default permission levels for each tool type:
 | `read_file` | Automatic | Yes |
 | `list_directory` | Automatic | Yes |
 | `search_files` | Automatic | Yes |
+| `web_fetch` | Automatic | Yes |
 | `write_file` | Ask Once | Yes |
 | `edit_file` | Ask Once | Yes |
 | `run_command` | Ask Always | Yes |
@@ -574,7 +603,7 @@ struct AgentSettings: Codable {
 
 | Deliverable | Exit Criteria |
 |-------------|---------------|
-| `BuiltinToolService.swift` | All 6 tools implemented (read, write, edit, list, search, run) |
+| `BuiltinToolService.swift` | All 7 tools implemented (read, write, edit, list, search, run, web_fetch) |
 | `PermissionService.swift` | Permission check and approval queue working |
 | `ShellSandbox.swift` | Blocks `sudo`, `rm -rf /`, allows `git`, `ls` (**moved from Phase 2**) |
 | `PathValidator.swift` | Path canonicalization with symlink resolution |
@@ -601,6 +630,9 @@ xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17'
 - [ ] Send "run sudo ls" → blocked, error returned to model
 - [ ] Send "run rm -rf /" → blocked, error returned to model
 - [ ] Attempt symlink attack → blocked by path validation
+- [ ] Send "fetch https://example.com" → returns page text (no approval needed)
+- [ ] Send "fetch http://localhost:8080" → blocked, SSRF error returned
+- [ ] Send "fetch http://192.168.1.1" → blocked, SSRF error returned
 
 ---
 
@@ -753,6 +785,7 @@ The review suggests using `sandbox-exec` for true sandboxing.
 | `Tests/aynaTests/BuiltinToolServiceTests.swift` | Unit tests for tools |
 | `Tests/aynaTests/PermissionServiceTests.swift` | Unit tests for permissions |
 | `Tests/aynaTests/ShellSandboxTests.swift` | Unit tests for sandboxing |
+| `Tests/aynaTests/WebFetchTests.swift` | Unit tests for web_fetch tool |
 
 ## Files to Modify
 
@@ -805,13 +838,20 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
    - [ ] Attempt `sudo` command (should be blocked)
    - [ ] Attempt `rm -rf /` (should be blocked)
 
-3. **Permission Flow**
+3. **Web Fetch**
+   - [ ] Fetch https://example.com (should work, returns plain text)
+   - [ ] Fetch https://api.github.com/users/octocat (should work, returns JSON)
+   - [ ] Fetch http://localhost:8080 (should be blocked - SSRF protection)
+   - [ ] Fetch http://192.168.1.1 (should be blocked - private IP)
+   - [ ] Fetch not-a-url (should return invalid URL error)
+
+4. **Permission Flow**
    - [ ] Approve a write operation
    - [ ] Deny a write operation
    - [ ] Verify "approve once" persists for session
    - [ ] Verify per-conversation overrides work
 
-4. **Agents Settings**
+5. **Agents Settings**
    - [ ] Toggle "Enable agentic tools" disables all tool execution
    - [ ] Change permission level for `run_command` to "Ask Always"
    - [ ] Add custom command to allowed list
@@ -820,7 +860,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
    - [ ] Clear session approvals works
    - [ ] Tool chain depth change takes effect
 
-5. **Platform Builds**
+6. **Platform Builds**
    ```bash
    # macOS (should include all tools)
    xcodebuild -scheme Ayna -destination 'platform=macOS' build
