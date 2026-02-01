@@ -679,6 +679,13 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
+                // to prevent race condition with onComplete checking if tool call is pending.
+                // The callback is called from MainActor.run in the stream parser, so we can
+                // safely assume main actor isolation.
+                MainActor.assumeIsolated {
+                    self?.currentToolName = toolName
+                }
                 let selfRef = self
                 let argumentsWrapper = UncheckedSendable(arguments)
                 Task { @MainActor in
@@ -696,8 +703,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         self.currentToolName = nil
                         return
                     }
-
-                    self.currentToolName = toolName
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .info,

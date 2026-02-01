@@ -1371,6 +1371,9 @@ struct MacNewChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
+                // to prevent race condition with onComplete checking if tool call is pending.
+                currentToolName = toolName
                 Task { @MainActor in
                     let arguments = argumentsWrapper.value
                     guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
@@ -1378,10 +1381,9 @@ struct MacNewChatView: View {
                             "⚠️ Tool call requested but conversation \(conversationId) no longer exists",
                             level: .error
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
-
-                    currentToolName = toolName
                     logNewChat(
                         "🔧 Tool call requested: \(toolName)",
                         level: .info,

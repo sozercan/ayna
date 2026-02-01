@@ -2064,6 +2064,12 @@ struct MacChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
+                // to prevent race condition with onComplete checking if tool call is pending.
+                // The stream may send [DONE] immediately after finish_reason: "tool_calls",
+                // and if currentToolName isn't set yet, onComplete will incorrectly
+                // set isGenerating = false.
+                currentToolName = toolName
                 Task { @MainActor in
                     let arguments = argumentsWrapper.value
                     // Validate conversation still exists
@@ -2072,6 +2078,7 @@ struct MacChatView: View {
                             "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
                             level: .default
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
 
@@ -2081,15 +2088,6 @@ struct MacChatView: View {
                         level: .info,
                         metadata: ["toolName": toolName]
                     )
-
-                    // Only update UI state if we're currently viewing this conversation
-                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversation.id
-                    }),
-                        currentIndex == conversationIndex
-                    {
-                        currentToolName = toolName
-                    }
 
                     // Check depth limit
                     guard toolCallDepth < maxToolCallDepth else {

@@ -303,6 +303,13 @@
                 },
                 onToolCall: nil,
                 onToolCallRequested: { [weak self] _, toolName, arguments in
+                    // IMPORTANT: Set currentToolName synchronously BEFORE the Task
+                    // to prevent race condition with onComplete checking if tool call is pending.
+                    // The callback is called from MainActor.run in the stream parser, so we can
+                    // safely assume main actor isolation.
+                    MainActor.assumeIsolated {
+                        self?.currentToolName = toolName
+                    }
                     Task { @MainActor in
                         guard let self else { return }
 
@@ -321,7 +328,6 @@
                         }
 
                         self.toolCallDepth += 1
-                        self.currentToolName = toolName
 
                         // Play haptic for tool execution
                         self.playHaptic(.click)
