@@ -331,14 +331,23 @@ class AIService: ObservableObject {
     private static func loadModelAPIKeys() -> [String: String] {
         do {
             if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
-                let keys = try JSONDecoder().decode([String: String].self, from: data)
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .info,
-                    message: "Loaded model API keys from Keychain",
-                    metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
-                )
-                return keys
+                do {
+                    let keys = try JSONDecoder().decode([String: String].self, from: data)
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "Loaded model API keys from Keychain",
+                        metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
+                    )
+                    return keys
+                } catch {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "Failed to decode model API keys from Keychain",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
             } else {
                 DiagnosticsLogger.log(
                     .aiService,
