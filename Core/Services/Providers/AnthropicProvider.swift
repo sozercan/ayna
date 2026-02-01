@@ -162,7 +162,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                         callbacks: callbacks,
                         circuitKey: circuitKey
                     )
-                } onCancel: { }
+                } onCancel: {}
             } catch is CancellationError {
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {

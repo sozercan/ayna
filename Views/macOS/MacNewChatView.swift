@@ -1433,11 +1433,12 @@ struct MacNewChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService
                                     .executeBuiltInToolWithCitations(
                                         name: toolName,
-                                        arguments: argumentsWrapper.value
+                                        arguments: argumentsWrapper.value,
+                                        conversationId: conversation.id
                                     )
                                 result = toolResult
                                 citations = toolCitations
