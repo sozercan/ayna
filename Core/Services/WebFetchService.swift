@@ -24,19 +24,19 @@ enum WebFetchError: Error, LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case let .invalidURL(url):
-            return "Invalid URL: \(url)"
+            "Invalid URL: \(url)"
         case let .ssrfBlocked(url):
-            return "Access to internal addresses is not allowed: \(url)"
+            "Access to internal addresses is not allowed: \(url)"
         case let .httpError(statusCode):
-            return "HTTP error: \(statusCode)"
+            "HTTP error: \(statusCode)"
         case let .responseToLarge(size, limit):
-            return "Response too large: \(size) bytes (limit: \(limit) bytes)"
+            "Response too large: \(size) bytes (limit: \(limit) bytes)"
         case .binaryContent:
-            return "Binary content not supported"
+            "Binary content not supported"
         case let .networkError(underlying):
-            return "Network error: \(underlying)"
+            "Network error: \(underlying)"
         case .serviceDisabled:
-            return "Web fetch is disabled"
+            "Web fetch is disabled"
         }
     }
 
@@ -44,19 +44,19 @@ enum WebFetchError: Error, LocalizedError, Sendable {
     var modelFacingDescription: String {
         switch self {
         case let .invalidURL(url):
-            return "ERROR: Invalid URL format '\(url)'. URL must be http:// or https://."
+            "ERROR: Invalid URL format '\(url)'. URL must be http:// or https://."
         case let .ssrfBlocked(url):
-            return "ERROR: Access to internal/private addresses is not allowed: '\(url)'"
+            "ERROR: Access to internal/private addresses is not allowed: '\(url)'"
         case let .httpError(statusCode):
-            return "ERROR: HTTP request failed with status code \(statusCode)"
+            "ERROR: HTTP request failed with status code \(statusCode)"
         case let .responseToLarge(size, limit):
-            return "ERROR: Response too large (\(size / 1024 / 1024) MB). Limit is \(limit / 1024 / 1024) MB."
+            "ERROR: Response too large (\(size / 1024 / 1024) MB). Limit is \(limit / 1024 / 1024) MB."
         case .binaryContent:
-            return "ERROR: The URL returned binary content. Only text/HTML content is supported."
+            "ERROR: The URL returned binary content. Only text/HTML content is supported."
         case let .networkError(underlying):
-            return "ERROR: Network request failed: \(underlying)"
+            "ERROR: Network request failed: \(underlying)"
         case .serviceDisabled:
-            return "ERROR: Web fetch is currently disabled. Ask the user to enable it in Settings."
+            "ERROR: Web fetch is currently disabled. Ask the user to enable it in Settings."
         }
     }
 }
