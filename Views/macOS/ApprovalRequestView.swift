@@ -264,25 +264,19 @@ struct DiffPreviewView: View {
 // MARK: - Pending Approvals List View
 
 /// View for displaying all pending approval requests.
-/// Uses a timer to poll for changes since the Observation framework doesn't
-/// automatically bridge with Combine's @ObservedObject used by parent views.
+/// Uses NotificationCenter to listen for changes instead of timer-based polling.
 struct PendingApprovalsView: View {
     var permissionService: PermissionService
     let conversationId: UUID
 
-    // Timer-based refresh to detect pending approval changes
-    // This is needed because @Observable changes don't propagate through @ObservedObject parents
+    // Refresh trigger updated via NotificationCenter instead of timer polling
     @State private var refreshTrigger = false
-    private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
         let allApprovals = permissionService.pendingApprovals
         let approvals = allApprovals.filter {
             $0.conversationId == conversationId
         }
-
-        // Debug logging
-        let _ = print("🔍 PendingApprovalsView: total=\(allApprovals.count), filtered=\(approvals.count), conversationId=\(conversationId)")
 
         Group {
             if !approvals.isEmpty {
@@ -307,11 +301,18 @@ struct PendingApprovalsView: View {
                 ))
             }
         }
-        // Use refreshTrigger to force re-evaluation when timer fires
+        // Use refreshTrigger to force re-evaluation when approvals change
         .id(refreshTrigger)
-        .onReceive(timer) { _ in
-            // Toggle to trigger view refresh
-            refreshTrigger.toggle()
+        .onReceive(NotificationCenter.default.publisher(for: .pendingApprovalsChanged)) { notification in
+            // Only refresh if the notification is for this conversation or unspecified
+            if let notificationConversationId = notification.userInfo?["conversationId"] as? UUID {
+                if notificationConversationId == conversationId {
+                    refreshTrigger.toggle()
+                }
+            } else {
+                // No conversation specified, refresh anyway
+                refreshTrigger.toggle()
+            }
         }
     }
 }
