@@ -88,6 +88,7 @@
 		BC614F40F02A2000CEABC5A0 /* ChatExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1A7B4903494662BF828788 /* ChatExporter.swift */; };
 		BCBB241B825D469EB8C73ED8 /* IOSMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2474F93F7DAB4AAB8A18CC40 /* IOSMessageComposer.swift */; };
 		BD4B90921479117B7514BE28 /* BuiltinToolService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF89AE680204B6ADA75D0B84 /* BuiltinToolService.swift */; };
+		BTMODELS1479117B7514BE29 /* BuiltinToolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BTMODELS0204B6ADA75D0B85 /* BuiltinToolModels.swift */; };
 		BE0DFCF0E73D7E61F99EDD93 /* PathValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36C6CDA665DD995E18C5673 /* PathValidatorTests.swift */; };
 		BF65DE7844D1F51671D21D67 /* GlobalHotkeyServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2915B243E4E84EB9ED8F7FC7 /* GlobalHotkeyServiceTests.swift */; };
 		BF8498C967537054EFCA290C /* DeepLinkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC516CB2074836E3E9F1B7E0 /* DeepLinkManager.swift */; };
@@ -381,6 +382,7 @@
 		AF7CFB8FBA4B848BF47B1E32 /* MacNewChatView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacNewChatView.swift; sourceTree = "<group>"; };
 		AF836EC2382489D0FB8038FA /* PermissionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PermissionService.swift; sourceTree = "<group>"; };
 		AF89AE680204B6ADA75D0B84 /* BuiltinToolService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BuiltinToolService.swift; sourceTree = "<group>"; };
+		BTMODELS0204B6ADA75D0B85 /* BuiltinToolModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BuiltinToolModels.swift; sourceTree = "<group>"; };
 		B0F01CAC13064F88B81B4CA1 /* ConversationPersistenceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPersistenceCoordinator.swift; sourceTree = "<group>"; };
 		BB3EDB78D63CE1E591F16216 /* ShellSandboxTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellSandboxTests.swift; sourceTree = "<group>"; };
 		C2301BAF35D7E0265F2C36E4 /* AnthropicStreamParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnthropicStreamParser.swift; sourceTree = "<group>"; };
@@ -775,6 +777,7 @@
 				9685DF7D3BE0D20042838DC6 /* AnthropicRequestBuilder.swift */,
 				C2301BAF35D7E0265F2C36E4 /* AnthropicStreamParser.swift */,
 				AF89AE680204B6ADA75D0B84 /* BuiltinToolService.swift */,
+				BTMODELS0204B6ADA75D0B85 /* BuiltinToolModels.swift */,
 				AF836EC2382489D0FB8038FA /* PermissionService.swift */,
 				7FA002CE3D234E990F3182D5 /* ShellSandbox.swift */,
 				7E14378523F89009FE122DB9 /* PathValidator.swift */,
@@ -1387,6 +1390,7 @@
 				5DA0EAECE68C52F29602E9FC /* AgentSettings.swift in Sources */,
 				C004D8CB9EF4B954C6699A3F /* ConversationTask.swift in Sources */,
 				BD4B90921479117B7514BE28 /* BuiltinToolService.swift in Sources */,
+				BTMODELS1479117B7514BE29 /* BuiltinToolModels.swift in Sources */,
 				88FCDB5E8297A9F333E1733E /* PermissionService.swift in Sources */,
 				C2D9AF061534CD92BCF8D68F /* ShellSandbox.swift in Sources */,
 				B1F8612EE28732BA9FA36375 /* PathValidator.swift in Sources */,

@@ -525,7 +525,7 @@ extension PermissionService {
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
             didReceive response: UNNotificationResponse,
-            withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+            withCompletionHandler completionHandler: @escaping () -> Void
         ) {
             let userInfo = response.notification.request.content.userInfo
             let actionIdentifier = response.actionIdentifier
@@ -537,6 +537,7 @@ extension PermissionService {
                 return
             }
 
+            // Process the action asynchronously
             Task { @MainActor [weak self] in
                 switch actionIdentifier {
                 case ApprovalNotificationConstants.approveActionIdentifier:
@@ -566,16 +567,17 @@ extension PermissionService {
                 default:
                     break
                 }
-
-                completionHandler()
             }
+
+            // Call completion handler immediately - the async work happens independently
+            completionHandler()
         }
 
         /// Called when notification is about to be presented while app is in foreground
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
             willPresent _: UNNotification,
-            withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
         ) {
             // Show notification even when app is in foreground
             completionHandler([.banner, .sound, .badge])

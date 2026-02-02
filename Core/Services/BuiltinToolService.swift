@@ -70,6 +70,166 @@ import os.log
             self.shellSandbox = shellSandbox ?? ShellSandbox(projectRoot: projectRoot)
         }
 
+        // MARK: - Static Helpers
+
+        /// Checks if a tool name is a builtin tool
+        static func isBuiltinTool(_ name: String) -> Bool {
+            switch name {
+            case ToolName.readFile, ToolName.writeFile, ToolName.editFile,
+                 ToolName.listDirectory, ToolName.searchFiles, ToolName.runCommand:
+                return true
+            default:
+                return false
+            }
+        }
+
+        // MARK: - Tool Definitions
+
+        /// Returns all tool definitions in OpenAI function format
+        func allToolDefinitions() -> [[String: Any]] {
+            [
+                readFileDefinition(),
+                writeFileDefinition(),
+                editFileDefinition(),
+                listDirectoryDefinition(),
+                searchFilesDefinition(),
+                runCommandDefinition()
+            ]
+        }
+
+        /// Returns context to inject into the system prompt
+        func systemPromptContext() -> String? {
+            guard isEnabled else { return nil }
+
+            return """
+            # Native Agentic Tools
+
+            You have access to native tools for file operations and shell commands:
+
+            - **read_file**: Read file contents
+            - **write_file**: Create or overwrite a file
+            - **edit_file**: Search and replace text in a file
+            - **list_directory**: List files in a directory
+            - **search_files**: Search for patterns in files (grep-like)
+            - **run_command**: Execute shell commands
+
+            Guidelines:
+            - Always use absolute paths or paths relative to the project root
+            - For edit_file, the search text must match exactly (including whitespace)
+            - Shell commands run with limited permissions and may require user approval
+            - File operations outside the project directory may require user approval
+            """
+        }
+
+        // MARK: - Tool Definition Helpers
+
+        private func readFileDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.readFile,
+                    "description": "Read the contents of a file",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "path": ["type": "string", "description": "The file path to read"]
+                        ] as [String: Any],
+                        "required": ["path"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        private func writeFileDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.writeFile,
+                    "description": "Create or overwrite a file with the given content",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "path": ["type": "string", "description": "The file path to write"],
+                            "content": ["type": "string", "description": "The content to write"]
+                        ] as [String: Any],
+                        "required": ["path", "content"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        private func editFileDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.editFile,
+                    "description": "Edit a file by replacing text. The old_text must match exactly.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "path": ["type": "string", "description": "The file path to edit"],
+                            "old_text": ["type": "string", "description": "The exact text to find and replace"],
+                            "new_text": ["type": "string", "description": "The replacement text"]
+                        ] as [String: Any],
+                        "required": ["path", "old_text", "new_text"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        private func listDirectoryDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.listDirectory,
+                    "description": "List files and directories in the specified path",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "path": ["type": "string", "description": "The directory path to list"]
+                        ] as [String: Any],
+                        "required": ["path"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        private func searchFilesDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.searchFiles,
+                    "description": "Search for a pattern in files (like grep)",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "pattern": ["type": "string", "description": "The regex pattern to search for"],
+                            "path": ["type": "string", "description": "The directory to search in"]
+                        ] as [String: Any],
+                        "required": ["pattern", "path"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
+        private func runCommandDefinition() -> [String: Any] {
+            [
+                "type": "function",
+                "function": [
+                    "name": ToolName.runCommand,
+                    "description": "Execute a shell command",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "command": ["type": "string", "description": "The shell command to execute"],
+                            "working_directory": ["type": "string", "description": "Optional working directory"]
+                        ] as [String: Any],
+                        "required": ["command"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+
         // MARK: - File Operations
 
         /// Reads a file and returns its contents.
@@ -645,6 +805,32 @@ import os.log
             }
 
             return result
+        }
+
+        // MARK: - Web Fetch
+
+        /// Fetches content from a URL.
+        ///
+        /// - Parameters:
+        ///   - url: The URL to fetch
+        ///   - conversationId: The conversation requesting this operation
+        /// - Returns: The fetched content as a string
+        func webFetch(url: String, conversationId _: UUID) async throws -> String {
+            guard isEnabled else {
+                throw ToolExecutionError.serviceDisabled
+            }
+
+            log(.info, "web_fetch requested", metadata: ["url": url])
+
+            do {
+                let content = try await WebFetchService.shared.fetch(url: url)
+                log(.info, "web_fetch completed", metadata: ["url": url, "size": "\(content.count)"])
+                return content
+            } catch let error as WebFetchError {
+                throw ToolExecutionError.invalidPath(path: url, reason: error.localizedDescription ?? "Unknown error")
+            } catch {
+                throw ToolExecutionError.invalidPath(path: url, reason: error.localizedDescription)
+            }
         }
 
         // MARK: - Tool Call Execution
