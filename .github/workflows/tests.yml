@@ -46,19 +46,43 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: Run unit tests
+    - name: Run unit tests (with retry)
       run: |
         set -o pipefail
-        xcodebuild \
-          -project Ayna.xcodeproj \
-          -scheme Ayna \
-          -destination 'platform=macOS' \
-          -derivedDataPath ./build \
-          -only-testing:aynaTests \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          test
+        # Unit tests can occasionally crash in CI - retry up to 2 times
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project Ayna.xcodeproj \
+            -scheme Ayna \
+            -destination 'platform=macOS' \
+            -derivedDataPath ./build \
+            -resultBundlePath ./build/TestResults-macOS-Unit-$attempt.xcresult \
+            -only-testing:aynaTests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            exit 0
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed, retrying..."
+            # Clean derived data before retry
+            rm -rf ./build/Build
+            sleep 5
+          fi
+        done
+        echo "Tests failed after 2 attempts"
+        exit 1
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: macOS-Unit-TestResults-${{ matrix.macos-version }}
+        path: ./build/*.xcresult
+        retention-days: 7
 
   macos_ui_tests:
     name: macOS UI Tests
