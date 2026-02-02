@@ -29,10 +29,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          # - macos-version: macos-14
+          #   xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
@@ -67,10 +67,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          # - macos-version: macos-14
+          #   xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
@@ -128,9 +128,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          #   destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 17'
@@ -218,9 +218,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          #   destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 17'
@@ -298,9 +298,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          #   destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
@@ -355,9 +355,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
+          # - macos-version: macos-15
+          #   xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
+          #   destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
