@@ -122,6 +122,8 @@ struct TaskRowView: View {
             }
             .buttonStyle(.plain)
             .help("Click to change status")
+            .accessibilityLabel("Task status: \(task.status.displayName)")
+            .accessibilityHint("Double-tap to cycle to next status")
 
             // Task content
             VStack(alignment: .leading, spacing: 2) {

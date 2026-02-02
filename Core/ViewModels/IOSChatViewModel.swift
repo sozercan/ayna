@@ -51,6 +51,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
+
+    /// Maximum tool chain depth for iOS.
+    /// Lower than macOS (25) due to mobile resource constraints and typical mobile use cases.
+    /// This prevents runaway tool chains while still allowing reasonable agentic workflows.
     private let maxToolCallDepth = 10
 
     /// Stores the pending user message text for retry on failure
@@ -634,6 +638,21 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
+
+                    // Handle cancellation silently - don't show error UI for user-initiated cancels
+                    if error is CancellationError {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "Request cancelled",
+                            metadata: ["assistantMessageId": assistantMessageId.uuidString]
+                        )
+                        self.isGenerating = false
+                        self.currentToolName = nil
+                        self.toolCallDepth = 0
+                        self.pendingUserMessage = nil
+                        return
+                    }
 
                     DiagnosticsLogger.log(
                         .chatView,

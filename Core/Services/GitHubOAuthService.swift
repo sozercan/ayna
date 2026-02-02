@@ -70,7 +70,7 @@ struct GitHubRateLimitInfo {
     static func parse(from headers: [AnyHashable: Any]?) -> GitHubRateLimitInfo? {
         guard let headers else { return nil }
 
-        // Helper for case-insensitive lookup
+        /// Helper for case-insensitive lookup
         func header(_ key: String) -> String? {
             let lowercased = key.lowercased()
             for (headerKey, headerValue) in headers {

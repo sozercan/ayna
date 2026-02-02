@@ -38,13 +38,13 @@ struct MacSettingsView: View {
 
             AgentsSettingsSection()
                 .tabItem {
-                    Label("Agents", systemImage: "cpu.fill")
+                    Label("Agents", systemImage: "brain")
                 }
                 .tag(SettingsTab.agents)
 
             MemorySettingsSection()
                 .tabItem {
-                    Label("Memory", systemImage: "brain")
+                    Label("Memory", systemImage: "memorychip")
                 }
                 .tag(SettingsTab.memory)
         }
@@ -332,151 +332,218 @@ struct ToolsSettingsView: View {
     @Bindable private var agentSettings = AgentSettingsStore.shared
 
     var body: some View {
-        HSplitView {
-            // Left panel - Tool Configuration
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text("Tools")
-                            .font(Typography.title2)
-                            .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Tools")
+                        .font(Typography.title2)
+                        .fontWeight(.semibold)
 
-                        let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
-                        let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
-                        let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
-                        Text("\(toolCount) tools available")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Button(action: {
-                        Task {
-                            await mcpManager.discoverAllTools()
-                        }
-                    }) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(mcpManager.isDiscovering)
+                    let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
+                    let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
+                    let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
+                    Text("\(toolCount) tools available")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
-                .padding()
 
-                Divider()
+                Spacer()
 
-                // Tools list
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        // Built-in Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Built-in Tools")
+                Button(action: {
+                    Task {
+                        await mcpManager.discoverAllTools()
+                    }
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(mcpManager.isDiscovering)
+            }
+            .padding()
+
+            Divider()
+
+            // Tools list
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    // Built-in Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Built-in Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        WebSearchToolRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // Agentic Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Agentic Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        AgenticToolsRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // MCP Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            Text("MCP Servers")
                                 .font(Typography.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(Theme.textSecondary)
 
-                            WebSearchToolRow()
+                            Spacer()
+
+                            Text("\(mcpManager.getConnectedServerCount()) connected")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
-                        .padding(.horizontal)
 
-                        Divider()
-                            .padding(.horizontal)
-
-                        // Agentic Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            HStack {
-                                Text("Agentic Tools")
-                                    .font(Typography.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Spacer()
-
-                                Button {
-                                    SettingsRouter.shared.route(to: .agents)
-                                } label: {
-                                    Text("Configure")
-                                        .font(Typography.caption)
-                                }
-                                .buttonStyle(.link)
-                            }
-
-                            AgenticToolsRow()
-                        }
-                        .padding(.horizontal)
-
-                        Divider()
-                            .padding(.horizontal)
-
-                        // MCP Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            HStack {
-                                Text("MCP Servers")
-                                    .font(Typography.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Spacer()
-
-                                Text("\(mcpManager.getConnectedServerCount()) connected")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            MCPServersList()
-                        }
-                        .padding(.horizontal)
+                        MCPServersList()
                     }
-                    .padding(.vertical)
+                    .padding(.horizontal)
                 }
+                .padding(.vertical)
             }
-            .frame(minWidth: 300)
-
-            // Right panel - Details/Configuration
-            ToolConfigurationPanel()
         }
         .accessibilityIdentifier("settings.tools.view")
     }
 }
 
-/// Row displaying Web Search tool status
+/// Row displaying Web Search tool status with inline configuration
 struct WebSearchToolRow: View {
     @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var isExpanded = false
+    @State private var showAPIKey = false
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+        VStack(spacing: 0) {
+            HStack {
+                Toggle("", isOn: $tavilyService.isEnabled)
+                    .labelsHidden()
+                    .accessibilityIdentifier("settings.tools.webSearch.toggle")
 
-            VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                Text("Web Search")
-                    .font(Typography.headline)
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
 
-                HStack(spacing: Spacing.xxs) {
-                    Text(statusDescription)
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Web Search")
+                        .font(Typography.headline)
 
-                    if tavilyService.isEnabled, tavilyService.isConfigured {
-                        Text("•")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("1 tool")
+                    HStack(spacing: Spacing.xxs) {
+                        Text(statusDescription)
                             .font(Typography.caption)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        if tavilyService.isEnabled, tavilyService.isConfigured {
+                            Text("•")
+                                .foregroundStyle(Theme.textSecondary)
+                            Text("1 tool")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
                 }
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Label(isExpanded ? "Hide Settings" : "Configure", systemImage: "gear")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
             }
+            .padding()
 
-            Spacer()
+            // Expandable configuration section
+            if isExpanded && tavilyService.isEnabled {
+                Divider()
+                    .padding(.horizontal)
 
-            Toggle("", isOn: $tavilyService.isEnabled)
-                .labelsHidden()
-                .accessibilityIdentifier("settings.tools.webSearch.toggle")
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        Text("Tavily API Key")
+                            .font(Typography.subheadline)
+                        Spacer()
+                        if tavilyService.isConfigured {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.statusConnected)
+                                .font(Typography.caption)
+                        } else {
+                            Text("Required")
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.statusConnecting)
+                                .padding(.horizontal, Spacing.xs)
+                                .padding(.vertical, Spacing.xxxs)
+                                .background(Color.orange.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                        }
+                    }
+
+                    HStack(spacing: Spacing.sm) {
+                        if showAPIKey {
+                            TextField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
+                        } else {
+                            SecureField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
+                        }
+
+                        Button(action: { showAPIKey.toggle() }) {
+                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: Typography.Size.sm))
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
+                        .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
+                    }
+
+                    HStack(spacing: Spacing.xxs) {
+                        Text("Get your API key at")
+                            .font(Typography.caption)
+                            .foregroundStyle(.tertiary)
+                        Link("tavily.com", destination: URL(string: "https://tavily.com")!)
+                            .font(Typography.caption)
+                    }
+                }
+                .padding()
+            }
         }
-        .padding()
         .background(Theme.backgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+        .onChange(of: tavilyService.isEnabled) { _, newValue in
+            // Auto-expand when enabled and not configured
+            if newValue && !tavilyService.isConfigured {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded = true
+                }
+            }
+        }
     }
 
     private var statusColor: Color {
@@ -506,11 +573,15 @@ struct AgenticToolsRow: View {
 
     private let toolNames = [
         "read_file", "write_file", "edit_file",
-        "list_directory", "search_files", "run_command"
+        "list_directory", "search_files", "run_command", "web_fetch"
     ]
 
     var body: some View {
         HStack {
+            Toggle("", isOn: $agentSettings.settings.isEnabled)
+                .labelsHidden()
+                .accessibilityIdentifier("settings.tools.agentic.toggle")
+
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -536,9 +607,17 @@ struct AgenticToolsRow: View {
 
             Spacer()
 
-            Toggle("", isOn: $agentSettings.settings.isEnabled)
-                .labelsHidden()
-                .accessibilityIdentifier("settings.tools.agentic.toggle")
+            Menu {
+                Button {
+                    SettingsRouter.shared.route(to: .agents)
+                } label: {
+                    Label("Configure", systemImage: "gear")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .menuStyle(.borderlessButton)
         }
         .padding()
         .background(Theme.backgroundSecondary)
@@ -669,6 +748,12 @@ struct MCPServerRow: View {
 
     var body: some View {
         HStack {
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .onChange(of: isEnabled) { _, _ in
+                    onToggle()
+                }
+
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -693,12 +778,6 @@ struct MCPServerRow: View {
             }
 
             Spacer()
-
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .onChange(of: isEnabled) { _, _ in
-                    onToggle()
-                }
 
             Menu {
                 Button("Edit") { onEdit() }
@@ -745,114 +824,6 @@ struct MCPServerRow: View {
         case .connected, .connecting, .reconnecting, .disabled: return false
         default: return true
         }
-    }
-}
-
-/// Right panel for tool configuration
-struct ToolConfigurationPanel: View {
-    @ObservedObject private var tavilyService = TavilyService.shared
-    @State private var showAPIKey = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Text("Configuration")
-                    .font(Typography.title2)
-                    .fontWeight(.semibold)
-                Spacer()
-            }
-            .padding()
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    // Web Search Configuration
-                    if tavilyService.isEnabled {
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Web Search")
-                                .font(Typography.headline)
-
-                            VStack(alignment: .leading, spacing: Spacing.sm) {
-                                HStack {
-                                    Text("Tavily API Key")
-                                        .font(Typography.subheadline)
-                                    Spacer()
-                                    if tavilyService.isConfigured {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Theme.statusConnected)
-                                            .font(Typography.caption)
-                                    } else {
-                                        Text("Required")
-                                            .font(Typography.micro)
-                                            .foregroundStyle(Theme.statusConnecting)
-                                            .padding(.horizontal, Spacing.xs)
-                                            .padding(.vertical, Spacing.xxxs)
-                                            .background(Color.orange.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                                    }
-                                }
-
-                                HStack(spacing: Spacing.sm) {
-                                    if showAPIKey {
-                                        TextField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
-                                    } else {
-                                        SecureField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
-                                    }
-
-                                    Button(action: { showAPIKey.toggle() }) {
-                                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                            .font(.system(size: Typography.Size.sm))
-                                            .foregroundStyle(Theme.textSecondary)
-                                            .frame(width: 32, height: 32)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                                    .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
-                                }
-
-                                HStack(spacing: Spacing.xxs) {
-                                    Text("Get your API key at")
-                                        .font(Typography.caption)
-                                        .foregroundStyle(.tertiary)
-                                    Link("tavily.com", destination: URL(string: "https://tavily.com")!)
-                                        .font(Typography.caption)
-                                }
-                            }
-                            .padding()
-                            .background(Theme.backgroundSecondary)
-                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                        }
-                    }
-
-                    // Info text
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("About Tools")
-                            .font(Typography.headline)
-
-                        Text("Tools extend the capabilities of AI models by allowing them to access external data and services. When enabled, models can automatically use these tools to provide more accurate and up-to-date responses.")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-
-                        Text("• **Web Search**: Search the web for current information\n• **MCP Servers**: Connect to external services via the Model Context Protocol")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .padding()
-                    .background(Theme.backgroundSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                }
-                .padding()
-            }
-        }
-        .frame(minWidth: 280)
     }
 }
 

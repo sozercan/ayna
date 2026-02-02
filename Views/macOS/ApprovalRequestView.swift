@@ -108,6 +108,8 @@ struct ApprovalRequestView: View {
             }
             .buttonStyle(.bordered)
             .tint(.red)
+            .accessibilityLabel("Deny \(approval.toolName.replacingOccurrences(of: "_", with: " ")) operation")
+            .accessibilityHint("Denies this tool operation and returns an error to the AI")
 
             Spacer()
 
@@ -122,6 +124,8 @@ struct ApprovalRequestView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .help("Approve all pending file operations")
+                .accessibilityLabel("More approval options")
+                .accessibilityHint("Opens menu with batch approval options")
             }
 
             // Approve button
@@ -130,6 +134,8 @@ struct ApprovalRequestView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
+            .accessibilityLabel("Allow \(approval.toolName.replacingOccurrences(of: "_", with: " ")) operation")
+            .accessibilityHint("Allows this single operation")
 
             // Remember option
             Button(action: { onApprove(true) }) {
@@ -137,6 +143,8 @@ struct ApprovalRequestView: View {
             }
             .buttonStyle(.bordered)
             .help("Allow and remember this approval for the session")
+            .accessibilityLabel("Allow and remember for session")
+            .accessibilityHint("Allows this operation and remembers approval for similar operations in this session")
         }
     }
 
@@ -255,36 +263,55 @@ struct DiffPreviewView: View {
 
 // MARK: - Pending Approvals List View
 
-/// View for displaying all pending approval requests
+/// View for displaying all pending approval requests.
+/// Uses a timer to poll for changes since the Observation framework doesn't
+/// automatically bridge with Combine's @ObservedObject used by parent views.
 struct PendingApprovalsView: View {
-    @Bindable var permissionService: PermissionService
+    var permissionService: PermissionService
     let conversationId: UUID
 
+    // Timer-based refresh to detect pending approval changes
+    // This is needed because @Observable changes don't propagate through @ObservedObject parents
+    @State private var refreshTrigger = false
+    private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+
     var body: some View {
-        let approvals = permissionService.pendingApprovals.filter {
+        let allApprovals = permissionService.pendingApprovals
+        let approvals = allApprovals.filter {
             $0.conversationId == conversationId
         }
 
-        if !approvals.isEmpty {
-            VStack(spacing: 12) {
-                ForEach(approvals) { approval in
-                    ApprovalRequestView(
-                        approval: approval,
-                        onApprove: { rememberForSession in
-                            permissionService.approve(approval.id, rememberForSession: rememberForSession)
-                        },
-                        onDeny: {
-                            permissionService.deny(approval.id)
-                        },
-                        pendingCount: approvals.count
-                    )
+        // Debug logging
+        let _ = print("🔍 PendingApprovalsView: total=\(allApprovals.count), filtered=\(approvals.count), conversationId=\(conversationId)")
+
+        Group {
+            if !approvals.isEmpty {
+                VStack(spacing: 12) {
+                    ForEach(approvals) { approval in
+                        ApprovalRequestView(
+                            approval: approval,
+                            onApprove: { rememberForSession in
+                                permissionService.approve(approval.id, rememberForSession: rememberForSession)
+                            },
+                            onDeny: {
+                                permissionService.deny(approval.id)
+                            },
+                            pendingCount: approvals.count
+                        )
+                    }
                 }
+                .padding(.horizontal)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
-            .padding(.horizontal)
-            .transition(.asymmetric(
-                insertion: .move(edge: .bottom).combined(with: .opacity),
-                removal: .opacity
-            ))
+        }
+        // Use refreshTrigger to force re-evaluation when timer fires
+        .id(refreshTrigger)
+        .onReceive(timer) { _ in
+            // Toggle to trigger view refresh
+            refreshTrigger.toggle()
         }
     }
 }

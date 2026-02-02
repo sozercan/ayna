@@ -34,6 +34,7 @@ struct AgentsSettingsSection: View {
                 permissionPicker(for: "list_directory", label: "List Directories")
                 permissionPicker(for: "search_files", label: "Search Files")
                 permissionPicker(for: "run_command", label: "Run Commands")
+                permissionPicker(for: "web_fetch", label: "Web Fetch")
             }
 
             // Safety Settings
@@ -95,10 +96,15 @@ struct AgentsSettingsSection: View {
                     Button("Choose...") {
                         chooseProjectRoot()
                     }
+                    .accessibilityLabel("Choose project root directory")
+                    .accessibilityHint("Opens a file picker to select the project root folder")
+
                     if settingsStore.settings.projectRootPath != nil {
                         Button("Clear") {
                             settingsStore.settings.projectRootPath = nil
                         }
+                        .accessibilityLabel("Clear project root")
+                        .accessibilityHint("Removes the custom project root and returns to auto-detection")
                     }
                 }
             }
@@ -158,6 +164,8 @@ struct AgentsSettingsSection: View {
             "Permission level for searching file contents"
         case "run_command":
             "Permission level for executing shell commands"
+        case "web_fetch":
+            "Permission level for fetching content from URLs"
         default:
             "Permission level for this tool"
         }
