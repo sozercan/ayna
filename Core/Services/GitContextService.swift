@@ -313,10 +313,24 @@ import os.log
                     let stderrPipe = Pipe()
 
                     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                    process.arguments = arguments
+
+                    // Security: Prepend config options to disable hooks and credential helpers
+                    // This prevents malicious repositories from executing code via git hooks
+                    let secureArgs = [
+                        "-c", "core.hooksPath=/dev/null", // Disable all hooks
+                        "-c", "credential.helper=", // Disable credential helpers
+                    ] + arguments
+
+                    process.arguments = secureArgs
                     process.currentDirectoryURL = directory
                     process.standardOutput = stdoutPipe
                     process.standardError = stderrPipe
+
+                    // Security: Set environment to ignore system and global git config
+                    var environment = ProcessInfo.processInfo.environment
+                    environment["GIT_CONFIG_NOSYSTEM"] = "1" // Ignore system-wide config
+                    environment["GIT_TERMINAL_PROMPT"] = "0" // Disable terminal prompts
+                    process.environment = environment
 
                     do {
                         try process.run()

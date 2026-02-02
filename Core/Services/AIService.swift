@@ -2364,11 +2364,21 @@ extension AIService {
     /// Returns system prompt context for agentic capabilities.
     /// This should be appended to the user's system prompt when tools are available.
     func getAgenticSystemPromptContext() -> String? {
+        var contexts: [String] = []
+
+        // Add web_fetch context on all platforms
+        if let webFetchContext = WebFetchService.shared.systemPromptContext() {
+            contexts.append(webFetchContext)
+        }
+
+        // Add macOS-specific tool context
         #if os(macOS)
-            return builtinToolService?.systemPromptContext()
-        #else
-            return nil
+            if let builtinContext = builtinToolService?.systemPromptContext() {
+                contexts.append(builtinContext)
+            }
         #endif
+
+        return contexts.isEmpty ? nil : contexts.joined(separator: "\n\n")
     }
 
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
@@ -2393,10 +2403,26 @@ extension AIService {
             }
         #endif
 
-        // Add native agentic tools (macOS only)
+        // Add web_fetch tool (available on all platforms)
+        if WebFetchService.shared.isEnabled {
+            tools.append(WebFetchService.shared.toolDefinition())
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🔧 Added web_fetch tool"
+            )
+        }
+
+        // Add native agentic tools (macOS only, excludes web_fetch which is cross-platform)
         #if os(macOS)
             if let builtinService = builtinToolService {
-                let builtinTools = builtinService.allToolDefinitions()
+                // Get all tool definitions except web_fetch (already added above)
+                let builtinTools = builtinService.allToolDefinitions().filter { tool in
+                    guard let function = tool["function"] as? [String: Any],
+                          let name = function["name"] as? String
+                    else { return true }
+                    return name != WebFetchService.toolName
+                }
                 tools.append(contentsOf: builtinTools)
                 DiagnosticsLogger.log(
                     .aiService,
@@ -2445,11 +2471,11 @@ extension AIService {
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
-            return toolName == "web_search"
+            return toolName == "web_search" || WebFetchService.isWebFetchTool(toolName)
         #elseif os(macOS)
-            return toolName == TavilyService.toolName || BuiltinToolService.isBuiltinTool(toolName)
+            return toolName == TavilyService.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
         #else
-            return toolName == TavilyService.toolName
+            return toolName == TavilyService.toolName || WebFetchService.isWebFetchTool(toolName)
         #endif
     }
 
@@ -2460,6 +2486,11 @@ extension AIService {
     ///   - conversationId: The conversation ID for permission tracking (macOS only)
     /// - Returns: The tool execution result as a string
     func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
+        // Handle web_fetch on all platforms
+        if WebFetchService.isWebFetchTool(toolName) {
+            return await WebFetchService.shared.executeToolCall(arguments: arguments)
+        }
+
         #if os(watchOS)
             switch toolName {
             case "web_search":
@@ -2468,7 +2499,7 @@ extension AIService {
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
         #elseif os(macOS)
-            // Check for native agentic tools first
+            // Check for native agentic tools first (excluding web_fetch which is handled above)
             if BuiltinToolService.isBuiltinTool(toolName) {
                 guard let service = builtinToolService else {
                     return "Error: Agentic tools not configured"
@@ -2493,9 +2524,9 @@ extension AIService {
         #else
             switch toolName {
             case TavilyService.toolName:
-                await TavilyService.shared.executeToolCall(arguments: arguments)
+                return await TavilyService.shared.executeToolCall(arguments: arguments)
             default:
-                "Error: Unknown built-in tool '\(toolName)'"
+                return "Error: Unknown built-in tool '\(toolName)'"
             }
         #endif
     }
@@ -2511,12 +2542,18 @@ extension AIService {
         arguments: [String: Any],
         conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
+        // Handle web_fetch on all platforms (no citations)
+        if WebFetchService.isWebFetchTool(toolName) {
+            let result = await WebFetchService.shared.executeToolCall(arguments: arguments)
+            return (result, nil)
+        }
+
         #if os(watchOS)
             // watchOS doesn't support citations yet
             let result = await executeBuiltInTool(name: toolName, arguments: arguments)
             return (result, nil)
         #elseif os(macOS)
-            // Native agentic tools don't have citations
+            // Native agentic tools don't have citations (excluding web_fetch which is handled above)
             if BuiltinToolService.isBuiltinTool(toolName) {
                 let result = await executeBuiltInTool(name: toolName, arguments: arguments, conversationId: conversationId)
                 return (result, nil)

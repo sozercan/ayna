@@ -28,6 +28,7 @@ private enum WatchContextKeys {
     static let githubAccessToken = "githubAccessToken"
     static let tavilyAPIKey = "tavilyAPIKey"
     static let tavilyEnabled = "tavilyEnabled"
+    static let webFetchEnabled = "webFetchEnabled"
     static let memoryEnabled = "memoryEnabled"
     static let memoryFacts = "memoryFacts"
     static let lastSyncDate = "lastSyncDate"
@@ -177,6 +178,9 @@ private enum WatchMessageKeys {
                     context[WatchContextKeys.tavilyAPIKey] = tavilyAPIKey
                 }
                 context[WatchContextKeys.tavilyEnabled] = tavilyEnabled
+
+                // Web fetch settings (always enabled on iOS, sync to watch)
+                context[WatchContextKeys.webFetchEnabled] = WebFetchService.shared.isEnabled
 
                 // Memory settings (sync facts if enabled)
                 let memoryEnabled = MemoryContextProvider.shared.isMemoryEnabled
@@ -677,6 +681,7 @@ private enum WatchMessageKeys {
             processModelSettingsFromContext(context)
             processAPIKeysFromContext(context)
             processTavilySettingsFromContext(context)
+            processWebFetchSettingsFromContext(context)
             processMemoryFromContext(context)
 
             if let syncTimestamp = context[WatchContextKeys.lastSyncDate] as? TimeInterval {
@@ -843,6 +848,19 @@ private enum WatchMessageKeys {
                     level: .info,
                     message: "⌚ Updated Tavily enabled state from iPhone",
                     metadata: ["enabled": "\(tavilyEnabled)"]
+                )
+            }
+        }
+
+        /// Process web fetch settings from iPhone context
+        private func processWebFetchSettingsFromContext(_ context: [String: Any]) {
+            if let webFetchEnabled = context[WatchContextKeys.webFetchEnabled] as? Bool {
+                WebFetchService.shared.isEnabled = webFetchEnabled
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .info,
+                    message: "⌚ Updated web fetch enabled state from iPhone",
+                    metadata: ["enabled": "\(webFetchEnabled)"]
                 )
             }
         }

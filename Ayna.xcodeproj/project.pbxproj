@@ -28,6 +28,7 @@
 		2DA86046DCB0F7148DE5B322 /* MacNewChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7CFB8FBA4B848BF47B1E32 /* MacNewChatView.swift */; };
 		2EA8B5077C43DB9B53B98197 /* ConversationSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5999BEDF9CF02A8BF59C012 /* ConversationSummaryService.swift */; };
 		348246282A314913BC20394F /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
+		WEBFETCH1MACOS01234567890 /* WebFetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WEBFETCH01234567890ABCDEF /* WebFetchService.swift */; };
 		3E614CD76B71E4911B03D93B /* AppContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33489971934EE44DC46D121 /* AppContent.swift */; };
 		4071FB8B11CB880E9D847632 /* AnthropicEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFD36708EC95E87607B81F2 /* AnthropicEndpointResolver.swift */; };
 		47508759943A584AA47E8CC4 /* AynaError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59B31AB1FA0516C7F4D52DEE /* AynaError.swift */; };
@@ -54,6 +55,8 @@
 		77693EFF8FBE4BD29449C069 /* UserMemoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FF6017374A429DC741DE5B6 /* UserMemoryService.swift */; };
 		7A29D764D1D6BFB83FC8F842 /* AIProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5626D47A01BEAA317A4C571D /* AIProviderProtocol.swift */; };
 		7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0725D9936B654575806A8555 /* TavilyService.swift */; };
+		WEBFETCH2IOS0001234567890 /* WebFetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WEBFETCH01234567890ABCDEF /* WebFetchService.swift */; };
+		WEBFETCH3WATCH01234567890 /* WebFetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WEBFETCH01234567890ABCDEF /* WebFetchService.swift */; };
 		7CBEFB80B73322AF04E7385A /* EncryptedMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0190A53E691987F81D6875F2 /* EncryptedMemoryStore.swift */; };
 		7F38CD598966A6C637C30B17 /* AccessibilityServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F007AD97FB2A82E9E1B03F1E /* AccessibilityServiceTests.swift */; };
 		848BB0513A8BFA741C6D7A83 /* OpenAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC6E73E1A44C13C68D1D1E5 /* OpenAIProvider.swift */; };
@@ -334,6 +337,7 @@
 		0190A53E691987F81D6875F2 /* EncryptedMemoryStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Core/Services/EncryptedMemoryStore.swift; sourceTree = SOURCE_ROOT; };
 		03000001 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0725D9936B654575806A8555 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
+		WEBFETCH01234567890ABCDEF /* WebFetchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebFetchService.swift; sourceTree = "<group>"; };
 		0C391A4791CEF3DB6944CCFC /* AnthropicRequestBuilderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnthropicRequestBuilderTests.swift; sourceTree = "<group>"; };
 		111CD8162CAB3A89531236C3 /* AppContentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppContentTests.swift; sourceTree = "<group>"; };
 		1FF6017374A429DC741DE5B6 /* UserMemoryService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Core/Services/UserMemoryService.swift; sourceTree = SOURCE_ROOT; };
@@ -841,6 +845,7 @@
 				C81393C02ED3DEB800F5E7F9 /* AIService.swift */,
 				D0A1B2C613064F88B81B4CA5 /* OpenAIStreamParser.swift */,
 				0725D9936B654575806A8555 /* TavilyService.swift */,
+				WEBFETCH01234567890ABCDEF /* WebFetchService.swift */,
 				C8UPDATER12EFDF87B00404D1 /* UpdaterService.swift */,
 				9674186935874CD2E9D32BD3 /* AccessibilityService.swift */,
 				63EC2960469ADC6AAAF59A57 /* GlobalHotkeyService.swift */,
@@ -1432,6 +1437,7 @@
 				A1B2C3D813064F88B81B4CA2 /* MultiModelResponseView.swift in Sources */,
 				C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */,
 				7B692A2608914B43ADF3D790 /* TavilyService.swift in Sources */,
+				WEBFETCH1MACOS01234567890 /* WebFetchService.swift in Sources */,
 				1F476CAD0EBF4408908F9D4B /* TavilyModels.swift in Sources */,
 				WATCHDATA0MODELS13064F89 /* WatchDataModels.swift in Sources */,
 				F3B8F75FC82952E00497BC41 /* AccessibilityService.swift in Sources */,
@@ -1506,6 +1512,7 @@
 				C855BF482EE143310073EB99 /* TestIdentifiers.swift in Sources */,
 				C82E6B9C2EDBD7BF0055158F /* AIRetryPolicy.swift in Sources */,
 				C82E6B9D2EDBD7BF0055158F /* AIService.swift in Sources */,
+				WEBFETCH3WATCH01234567890 /* WebFetchService.swift in Sources */,
 				C82E6B9E2EDBD7BF0055158F /* OpenAIStreamParser.swift in Sources */,
 				C82E6B9F2EDBD7BF0055158F /* OpenAIRequestBuilder.swift in Sources */,
 				C82E6BA02EDBD7BF0055158F /* OpenAIEndpointResolver.swift in Sources */,
@@ -1644,6 +1651,7 @@
 				C82E6B8B2EDBD7510055158F /* WatchConnectivityService.swift in Sources */,
 				C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */,
 				348246282A314913BC20394F /* TavilyService.swift in Sources */,
+				WEBFETCH2IOS0001234567890 /* WebFetchService.swift in Sources */,
 				880BF279C8364CAB826A1BB7 /* TavilyModels.swift in Sources */,
 				WATCHDATA0MODELS13064F8A /* WatchDataModels.swift in Sources */,
 				F35DE632FC73D10CD32A6D5D /* AppContent.swift in Sources */,

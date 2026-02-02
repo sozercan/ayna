@@ -87,12 +87,19 @@ struct ShellSandbox {
         // Package managers with dangerous flags
         "brew install --cask",
         "pip install --user",
-        "npm install -g",
+        "npm install -g"
+    ]
 
-        // Shell execution of arbitrary code
-        "eval ",
-        "source ",
-        "exec "
+    /// Commands that are always blocked regardless of arguments.
+    /// These are checked using extracted command name to prevent whitespace/quoting bypasses.
+    static let alwaysBlockedCommands: Set<String> = [
+        "eval", // Shell builtin that executes arbitrary code
+        "source", // Shell builtin that executes scripts
+        "exec", // Replaces shell process with command
+        "sudo", // Privilege escalation
+        "doas", // Privilege escalation (OpenBSD sudo alternative)
+        "pkexec", // Privilege escalation (PolicyKit)
+        "su" // Switch user
     ]
 
     // MARK: - Initialization
@@ -132,6 +139,12 @@ struct ShellSandbox {
 
         guard !trimmed.isEmpty else {
             return .blocked(reason: "Empty command")
+        }
+
+        // Block embedded newlines - they act as command separators in shells
+        // and could be used to bypass per-command validation
+        if trimmed.contains("\n") || trimmed.contains("\r") {
+            return .blocked(reason: "Embedded newlines not allowed in commands")
         }
 
         // Block command substitution syntax (security critical)
@@ -383,6 +396,12 @@ struct ShellSandbox {
         // Extract command name
         guard let commandName = extractCommandName(component) else {
             return .blocked(reason: "Cannot determine command")
+        }
+
+        // Check against always-blocked commands using extracted name
+        // This prevents bypasses via whitespace variants (tabs) or quoting
+        if Self.alwaysBlockedCommands.contains(commandName.lowercased()) {
+            return .blocked(reason: "Command always blocked: \(commandName)")
         }
 
         // Check if in allowed list
