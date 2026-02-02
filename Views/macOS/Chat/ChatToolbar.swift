@@ -109,57 +109,5 @@ struct ToolExecutionIndicator: View {
     }
 }
 
-/// Error banner with retry and dismiss actions
-struct ErrorBannerView: View {
-    let message: String
-    var recoverySuggestion: String?
-    var onRetry: (() -> Void)?
-    var onDismiss: (() -> Void)?
-    var identifierPrefix: String = "error"
-
-    var body: some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Theme.statusError)
-
-            VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                Text(message)
-                    .font(Typography.caption)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(2)
-
-                if let suggestion = recoverySuggestion {
-                    Text(suggestion)
-                        .font(Typography.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-
-            Spacer()
-
-            if let onRetry {
-                Button("Retry") {
-                    onRetry()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityIdentifier("\(identifierPrefix).retryButton")
-            }
-
-            if let onDismiss {
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("\(identifierPrefix).dismissButton")
-            }
-        }
-        .padding(Spacing.sm)
-        .background(Color.red.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
-        .accessibilityIdentifier("\(identifierPrefix).banner")
-    }
-}
+// Note: ErrorBannerView is defined in Core/Design/ErrorBannerView.swift
+// Do not add a duplicate here - use the cross-platform version from Core

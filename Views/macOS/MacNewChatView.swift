@@ -86,75 +86,14 @@ struct MacNewChatView: View {
 
     // MARK: - Multi-Model Display
 
-    /// Represents either a single message or a group of parallel responses
-    private enum DisplayableItem: Identifiable {
-        case message(Message)
-        case responseGroup(groupId: UUID, responses: [Message])
-
-        var id: String {
-            switch self {
-            case let .message(msg):
-                msg.id.uuidString
-            case let .responseGroup(groupId, _):
-                "group-\(groupId.uuidString)"
-            }
-        }
-    }
-
-    /// Get visible messages (filtering out system and tool messages)
-    private var visibleMessages: [Message] {
-        guard let conversation = currentConversation else { return [] }
-        return conversation.messages.filter { message in
-            if message.role == .system {
-                return false
-            }
-
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                return message.id == conversation.messages.last?.id && isGenerating
-            }
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
-        }
-    }
-
-    /// Converts visible messages into displayable items, grouping multi-model responses together
+    /// Get displayable items using the shared builder
     private var displayableItems: [DisplayableItem] {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        return items
+        guard let conversation = currentConversation else { return [] }
+        return DisplayableItemsBuilder.buildDisplayableItems(
+            from: conversation.messages,
+            conversation: conversation,
+            isGenerating: isGenerating
+        )
     }
 
     private var needsModelSetup: Bool {
@@ -277,24 +216,7 @@ struct MacNewChatView: View {
                         )
                     }
 
-                    if let toolName = currentToolName {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .controlSize(.small)
-                            Text(
-                                toolName.hasPrefix("Analyzing")
-                                    ? "🔄 \(toolName)..."
-                                    : "🔧 Using tool: \(toolName)..."
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.1))
-                    }
+                    ToolExecutionIndicator(toolName: currentToolName)
 
                     if let errorMessage {
                         ErrorBannerView(

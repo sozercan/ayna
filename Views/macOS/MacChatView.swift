@@ -96,7 +96,6 @@ struct MacChatView: View {
     @State private var showScrollToBottom = false
     @State private var pendingChunks: [String] = []
     @State private var batchUpdateTask: Task<Void, Never>?
-    @State private var visibleMessages: [Message] = []
     @State private var cachedConversationIndex: Int?
     @State private var cachedDisplayableItems: [DisplayableItem] = []
 
@@ -142,90 +141,13 @@ struct MacChatView: View {
         DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
     }
 
-    /// Helper to filter visible messages
-    private func updateVisibleMessages() {
-        visibleMessages = currentConversation.messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-            // Always show tool messages when they have content (tool replies are the "first" assistant response)
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            // Always show assistant messages that have citations (from web search)
-            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                return true
-            }
-
-            // Show if: has content, has image data, or is generating image
-            // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == currentConversation.messages.last?.id && isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
-        }
-
-        // Update displayable items after visible messages change
-        updateDisplayableItems()
-    }
-
-    // MARK: - Multi-Model Display
-
-    /// Represents either a single message or a group of parallel responses
-    private enum DisplayableItem: Identifiable {
-        case message(Message)
-        case responseGroup(groupId: UUID, responses: [Message])
-
-        var id: String {
-            switch self {
-            case let .message(msg):
-                msg.id.uuidString
-            case let .responseGroup(groupId, _):
-                "group-\(groupId.uuidString)"
-            }
-        }
-    }
-
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
+    /// Updates cached displayable items using the shared builder.
     private func updateDisplayableItems() {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        cachedDisplayableItems = items
+        cachedDisplayableItems = DisplayableItemsBuilder.buildDisplayableItems(
+            from: currentConversation.messages,
+            conversation: currentConversation,
+            isGenerating: isGenerating
+        )
     }
 
     private var normalizedSelectedModel: String {
@@ -415,22 +337,7 @@ struct MacChatView: View {
                 }
 
                 // Tool execution status indicator
-                if let toolName = currentToolName {
-                    HStack(spacing: Spacing.sm) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .controlSize(.small)
-                        Text(
-                            toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)..."
-                        )
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, Spacing.sm)
-                    .background(Theme.accent.opacity(0.1))
-                }
+                ToolExecutionIndicator(toolName: currentToolName)
 
                 // Pending tool approval requests - reads directly from @Observable PermissionService
                 PendingApprovalsSectionView(
@@ -1072,30 +979,6 @@ struct MacChatView: View {
         attachedFiles.removeAll { $0 == fileURL }
     }
 
-    private func getMimeType(for url: URL) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        switch pathExtension {
-        case "jpg", "jpeg":
-            return "image/jpeg"
-        case "png":
-            return "image/png"
-        case "gif":
-            return "image/gif"
-        case "webp":
-            return "image/webp"
-        case "pdf":
-            return "application/pdf"
-        case "txt":
-            return "text/plain"
-        case "json":
-            return "application/json"
-        case "xml":
-            return "application/xml"
-        default:
-            return "application/octet-stream"
-        }
-    }
-
     /// Auto-select response if we are continuing from a multi-model state without selection
     private func autoSelectResponseIfNeeded() {
         guard let lastMessage = currentConversation.messages.last,
@@ -1215,7 +1098,7 @@ struct MacChatView: View {
         var attachments: [Message.FileAttachment] = []
         for fileURL in attachedFiles {
             if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = getMimeType(for: fileURL)
+                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
 
                 // Save to AttachmentStorage
                 let pathExtension = fileURL.pathExtension
