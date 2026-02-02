@@ -475,7 +475,7 @@ struct WebSearchToolRow: View {
             .padding()
 
             // Expandable configuration section
-            if isExpanded && tavilyService.isEnabled {
+            if isExpanded, tavilyService.isEnabled {
                 Divider()
                     .padding(.horizontal)
 
@@ -538,7 +538,7 @@ struct WebSearchToolRow: View {
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         .onChange(of: tavilyService.isEnabled) { _, newValue in
             // Auto-expand when enabled and not configured
-            if newValue && !tavilyService.isConfigured {
+            if newValue, !tavilyService.isConfigured {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isExpanded = true
                 }

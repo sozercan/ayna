@@ -2499,7 +2499,7 @@ private struct PendingApprovalsSectionView: View {
     let conversationId: UUID
     let permissionService: PermissionService?
 
-    // Read approvals directly in body to establish Observation tracking
+    /// Read approvals directly in body to establish Observation tracking
     private var approvals: [PendingApproval] {
         permissionService?.pendingApprovals.filter { $0.conversationId == conversationId } ?? []
     }

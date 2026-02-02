@@ -269,7 +269,7 @@ struct PendingApprovalsView: View {
     var permissionService: PermissionService
     let conversationId: UUID
 
-    // Refresh trigger updated via NotificationCenter instead of timer polling
+    /// Refresh trigger updated via NotificationCenter instead of timer polling
     @State private var refreshTrigger = false
 
     var body: some View {
