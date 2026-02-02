@@ -136,6 +136,10 @@ struct AgentSettings: Codable, Sendable {
             builtinService.commandTimeoutSeconds = settings.commandTimeoutSeconds
             permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
             permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
+
+            // Also control WebFetchService based on agent settings
+            WebFetchService.shared.isEnabled = settings.isEnabled
+            WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
         }
 
         /// Resets to default settings

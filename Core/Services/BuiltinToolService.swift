@@ -324,9 +324,29 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 permissionService.recordSessionApproval(tool: ToolName.writeFile, details: path)
             }
 
-            // Resolve path
+            // Resolve path with symlink resolution to prevent TOCTOU attacks
+            // Re-resolve at operation time to ensure symlink hasn't changed since validation
             let expandedPath = (path as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expandedPath)
+            let expandedURL = URL(fileURLWithPath: expandedPath)
+            let url: URL
+            do {
+                // For new files, resolve the parent directory's symlinks
+                if FileManager.default.fileExists(atPath: expandedURL.path) {
+                    url = try expandedURL.resolvingSymlinksInPath()
+                } else {
+                    // File doesn't exist yet - resolve parent and append filename
+                    let parent = try expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                    url = parent.appendingPathComponent(expandedURL.lastPathComponent)
+                }
+            } catch {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
+            }
+
+            // Re-validate the resolved path to catch symlink changes
+            let revalidation = pathValidator.validate(url.path, operation: .write)
+            if case let .denied(reason) = revalidation {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+            }
 
             // Create parent directories if needed
             let parentDir = url.deletingLastPathComponent()
@@ -423,10 +443,23 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 permissionService.recordSessionApproval(tool: ToolName.editFile, details: path)
             }
 
-            // Write updated content
+            // Resolve path with symlink resolution to prevent TOCTOU attacks
             let expandedPath = (path as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expandedPath)
+            let expandedURL = URL(fileURLWithPath: expandedPath)
+            let url: URL
+            do {
+                url = try expandedURL.resolvingSymlinksInPath()
+            } catch {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
+            }
 
+            // Re-validate the resolved path to catch symlink changes
+            let revalidation = pathValidator.validate(url.path, operation: .write)
+            if case let .denied(reason) = revalidation {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+            }
+
+            // Write updated content
             do {
                 try newContent.write(to: url, atomically: true, encoding: .utf8)
                 log(.info, "edit_file completed", metadata: ["path": path])
@@ -650,61 +683,76 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             let timeoutSeconds = commandTimeoutSeconds
             let workingDir = workingDirectory.map { URL(fileURLWithPath: $0) } ?? projectRoot
 
-            let result: CommandResult = try await withCheckedThrowingContinuation { continuation in
-                Task.detached {
-                    let process = Process()
-                    let stdoutPipe = Pipe()
-                    let stderrPipe = Pipe()
+            // Use a class to share process reference with cancellation handler
+            final class ProcessHolder: @unchecked Sendable {
+                var process: Process?
+            }
+            let processHolder = ProcessHolder()
 
-                    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                    process.arguments = ["-c", command]
-                    process.standardOutput = stdoutPipe
-                    process.standardError = stderrPipe
+            let result: CommandResult = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    Task.detached {
+                        let process = Process()
+                        processHolder.process = process
 
-                    if let workingDir {
-                        process.currentDirectoryURL = workingDir
-                    }
+                        let stdoutPipe = Pipe()
+                        let stderrPipe = Pipe()
 
-                    // Set up timeout task
-                    let timeoutTask = Task {
-                        do {
-                            try await Task.sleep(for: .seconds(timeoutSeconds))
-                            if process.isRunning {
-                                process.terminate()
+                        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                        process.arguments = ["-c", command]
+                        process.standardOutput = stdoutPipe
+                        process.standardError = stderrPipe
+
+                        if let workingDir {
+                            process.currentDirectoryURL = workingDir
+                        }
+
+                        // Set up timeout task
+                        let timeoutTask = Task {
+                            do {
+                                try await Task.sleep(for: .seconds(timeoutSeconds))
+                                if process.isRunning {
+                                    process.terminate()
+                                }
+                            } catch {
+                                // Cancelled - expected when process completes normally
                             }
+                        }
+
+                        do {
+                            try process.run()
+                            process.waitUntilExit()
+                            timeoutTask.cancel()
+
+                            let duration = Date().timeIntervalSince(startTime)
+
+                            let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
+                            let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
+
+                            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+                            let commandResult = CommandResult(
+                                exitCode: process.terminationStatus,
+                                stdout: stdout,
+                                stderr: stderr,
+                                duration: duration
+                            )
+
+                            continuation.resume(returning: commandResult)
                         } catch {
-                            // Cancelled - expected when process completes normally
+                            continuation.resume(throwing: ToolExecutionError.commandFailed(
+                                command: command,
+                                exitCode: -1,
+                                stderr: error.localizedDescription
+                            ))
                         }
                     }
-
-                    do {
-                        try process.run()
-                        process.waitUntilExit()
-                        timeoutTask.cancel()
-
-                        let duration = Date().timeIntervalSince(startTime)
-
-                        let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
-                        let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
-
-                        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-                        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-
-                        let commandResult = CommandResult(
-                            exitCode: process.terminationStatus,
-                            stdout: stdout,
-                            stderr: stderr,
-                            duration: duration
-                        )
-
-                        continuation.resume(returning: commandResult)
-                    } catch {
-                        continuation.resume(throwing: ToolExecutionError.commandFailed(
-                            command: command,
-                            exitCode: -1,
-                            stderr: error.localizedDescription
-                        ))
-                    }
+                }
+            } onCancel: {
+                // Terminate the process if the task is cancelled (e.g., user cancels stream)
+                if let process = processHolder.process, process.isRunning {
+                    process.terminate()
                 }
             }
 
@@ -749,7 +797,8 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             }
 
             // SSRF protection: Block internal/private IPs
-            if isPrivateHost(host) {
+            // Also resolves DNS to prevent DNS rebinding attacks
+            if await resolveAndCheckHost(host) {
                 throw ToolExecutionError.invalidPath(path: url, reason: "Access to internal addresses is not allowed")
             }
 
@@ -811,6 +860,18 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 return true
             }
 
+            // Check if it's an IP address in private ranges
+            if isPrivateIPAddress(lowercased) {
+                return true
+            }
+
+            return false
+        }
+
+        /// Checks if an IP address string is in private/internal ranges
+        private func isPrivateIPAddress(_ address: String) -> Bool {
+            let lowercased = address.lowercased()
+
             // IPv6 private/local ranges
             // fd00::/8 - Unique local addresses
             if lowercased.hasPrefix("fd") {
@@ -824,10 +885,16 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             if lowercased.hasPrefix("fc") {
                 return true
             }
+            // ::1 - IPv6 loopback
+            if lowercased == "::1" {
+                return true
+            }
 
-            // Check for IP addresses in private ranges
+            // Check for IPv4 addresses in private ranges
             let parts = lowercased.split(separator: ".")
             if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+                // 127.x.x.x - Loopback
+                if first == 127 { return true }
                 // 10.x.x.x
                 if first == 10 { return true }
                 // 172.16.x.x - 172.31.x.x
@@ -838,6 +905,59 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 if first == 169, second == 254 { return true }
                 // 0.x.x.x - "This" network
                 if first == 0 { return true }
+            }
+
+            return false
+        }
+
+        /// Resolves a hostname to IP addresses and checks if any are private (DNS rebinding protection)
+        private func resolveAndCheckHost(_ host: String) async -> Bool {
+            // First check the hostname string itself
+            if isPrivateHost(host) {
+                return true
+            }
+
+            // Resolve DNS and check all returned IP addresses
+            // This prevents DNS rebinding attacks where a hostname initially resolves
+            // to a public IP but later resolves to a private IP
+            let hostRef = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
+            var resolved = DarwinBoolean(false)
+
+            CFHostStartInfoResolution(hostRef, .addresses, nil)
+            guard let addresses = CFHostGetAddressing(hostRef, &resolved)?.takeUnretainedValue() as? [Data],
+                  resolved.boolValue
+            else {
+                // If DNS resolution fails, allow the request to proceed
+                // URLSession will handle the error appropriately
+                return false
+            }
+
+            for addressData in addresses {
+                let ipString = addressData.withUnsafeBytes { pointer -> String? in
+                    guard let sockaddr = pointer.baseAddress?.assumingMemoryBound(to: sockaddr.self) else {
+                        return nil
+                    }
+
+                    if sockaddr.pointee.sa_family == UInt8(AF_INET) {
+                        // IPv4
+                        var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                        inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
+                        return String(cString: buffer)
+                    } else if sockaddr.pointee.sa_family == UInt8(AF_INET6) {
+                        // IPv6
+                        var addr = sockaddr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                        var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                        inet_ntop(AF_INET6, &addr.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN))
+                        return String(cString: buffer)
+                    }
+                    return nil
+                }
+
+                if let ip = ipString, isPrivateIPAddress(ip) {
+                    log(.default, "DNS rebinding protection: \(host) resolved to private IP \(ip)")
+                    return true
+                }
             }
 
             return false
