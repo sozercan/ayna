@@ -98,7 +98,6 @@
 		C807F7302F2DEC81004DA5DE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C807F72F2F2DEC81004DA5DE /* SwiftUI.framework */; };
 		C807F73D2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C807F72B2F2DEC81004DA5DE /* Ayna ComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C81393AA2ED3DE9900F5E7F9 /* aynaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A52ED3DE9900F5E7F9 /* aynaApp.swift */; };
-		C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C81393A62ED3DE9900F5E7F9 /* Info.plist */; };
 		C81393AD2ED3DE9900F5E7F9 /* AynaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393A12ED3DE9900F5E7F9 /* AynaIOSApp.swift */; };
 		C81393DB2ED3DEB800F5E7F9 /* Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393B42ED3DEB800F5E7F9 /* Conversation.swift */; };
 		C81393DC2ED3DEB800F5E7F9 /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81393C62ED3DEB800F5E7F9 /* MarkdownRenderer.swift */; };
@@ -1322,7 +1321,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				C86FBCEC2EFE5CAA0023BAE5 /* ayna.icon in Resources */,
-				C81393AC2ED3DE9900F5E7F9 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -558,6 +558,9 @@ class AIService: ObservableObject {
             )
         }
         multiModelStreamTasks.removeAll()
+        // Cancel Anthropic provider and clear reference to prevent memory leak
+        currentAnthropicProvider?.cancelRequest()
+        currentAnthropicProvider = nil
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -789,17 +792,20 @@ class AIService: ObservableObject {
 
         // Handle Anthropic provider separately
         if effectiveProvider == .anthropic {
+            let anthropicCallbacks = AIProviderStreamCallbacks(
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onToolCallRequested: onToolCallRequested,
+                onReasoning: onReasoning
+            )
             handleAnthropicRequest(
                 messages: messages,
                 model: requestModel,
                 stream: stream,
                 tools: tools,
                 conversationId: conversationId,
-                onChunk: onChunk,
-                onComplete: onComplete,
-                onError: onError,
-                onToolCallRequested: onToolCallRequested,
-                onReasoning: onReasoning
+                callbacks: anthropicCallbacks
             )
             return
         }
@@ -1534,7 +1540,7 @@ class AIService: ObservableObject {
                     var totalBytesReceived = 0
 
                     // Maximum line length to prevent OOM from malformed streams without newlines
-                    let maxLineLength = 65_536 // 64KB
+                    let maxLineLength = 65536 // 64KB
 
                     for try await byte in bytes {
                         // Check for cancellation at each byte
@@ -2081,18 +2087,14 @@ class AIService: ObservableObject {
         stream: Bool,
         tools: [[String: Any]]?,
         conversationId: UUID?,
-        onChunk: @escaping @Sendable (String) -> Void,
-        onComplete: @escaping @Sendable () -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: (@Sendable (String) -> Void)? = nil
+        callbacks: AIProviderStreamCallbacks
     ) {
         let modelAPIKey = getAPIKey(for: model)
         let endpointInfo = customEndpoint(for: model)
 
         // Validate API key
         guard !modelAPIKey.isEmpty else {
-            onError(AynaError.missingAPIKey(provider: "API"))
+            callbacks.onError(AynaError.missingAPIKey(provider: "API"))
             return
         }
 
@@ -2125,21 +2127,21 @@ class AIService: ObservableObject {
 
         // Wrap callbacks to clear provider reference on completion
         let wrappedCallbacks = AIProviderStreamCallbacks(
-            onChunk: onChunk,
+            onChunk: callbacks.onChunk,
             onComplete: { [weak self] in
                 Task { @MainActor in
                     self?.currentAnthropicProvider = nil
                 }
-                onComplete()
+                callbacks.onComplete()
             },
             onError: { [weak self] error in
                 Task { @MainActor in
                     self?.currentAnthropicProvider = nil
                 }
-                onError(error)
+                callbacks.onError(error)
             },
-            onToolCallRequested: onToolCallRequested,
-            onReasoning: onReasoning
+            onToolCallRequested: callbacks.onToolCallRequested,
+            onReasoning: callbacks.onReasoning
         )
 
         provider.sendMessage(
@@ -2510,7 +2512,7 @@ extension AIService {
         conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
         #if os(watchOS)
-            /// watchOS doesn't support citations yet
+            // watchOS doesn't support citations yet
             let result = await executeBuiltInTool(name: toolName, arguments: arguments)
             return (result, nil)
         #elseif os(macOS)

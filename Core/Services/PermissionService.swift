@@ -7,6 +7,26 @@
 
 import Foundation
 import os.log
+import UserNotifications
+
+#if os(macOS)
+import AppKit
+#endif
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when pending approvals change (added or removed)
+    static let pendingApprovalsChanged = Notification.Name("pendingApprovalsChanged")
+}
+
+// MARK: - System Notification Constants
+
+private enum ApprovalNotificationConstants {
+    static let categoryIdentifier = "TOOL_APPROVAL"
+    static let approveActionIdentifier = "APPROVE_ACTION"
+    static let denyActionIdentifier = "DENY_ACTION"
+}
 
 // MARK: - Permission Level
 
@@ -45,7 +65,7 @@ enum PermissionLevel: String, Codable, CaseIterable, Sendable {
 // MARK: - Pending Approval
 
 /// Represents a pending approval request
-struct PendingApproval: Identifiable, Sendable {
+struct PendingApproval: Identifiable, Sendable, Equatable {
     let id: UUID
     let toolName: String
     let description: String
@@ -56,6 +76,10 @@ struct PendingApproval: Identifiable, Sendable {
 
     // Callbacks are not Sendable, so we use a different approach
     // The PermissionService will handle the callbacks internally
+
+    static func == (lhs: PendingApproval, rhs: PendingApproval) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 // MARK: - Permission Service
@@ -89,6 +113,108 @@ final class PermissionService {
 
     /// Timeout tasks for auto-deny
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
+
+    #if os(macOS)
+    /// Notification delegate for handling system notification responses
+    private let notificationDelegate = ApprovalNotificationDelegate()
+
+    /// Whether system notifications are enabled
+    private var systemNotificationsEnabled: Bool = false
+    #endif
+
+    // MARK: - Initialization
+
+    init() {
+        setupNotifications()
+    }
+
+    // MARK: - System Notification Setup
+
+    private func setupNotifications() {
+        #if os(macOS)
+        let center = UNUserNotificationCenter.current()
+
+        // Set delegate to handle notification actions
+        notificationDelegate.permissionService = self
+
+        // Request notification permissions
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
+            Task { @MainActor in
+                if granted {
+                    self?.systemNotificationsEnabled = true
+                    self?.log(.info, "System notifications enabled")
+                } else if let error {
+                    self?.log(.error, "Notification permission denied", metadata: ["error": error.localizedDescription])
+                } else {
+                    self?.log(.info, "Notification permission denied by user")
+                }
+            }
+        }
+
+        // Configure notification actions
+        let approveAction = UNNotificationAction(
+            identifier: ApprovalNotificationConstants.approveActionIdentifier,
+            title: "Approve",
+            options: [.foreground]
+        )
+        let denyAction = UNNotificationAction(
+            identifier: ApprovalNotificationConstants.denyActionIdentifier,
+            title: "Deny",
+            options: [.destructive, .foreground]
+        )
+
+        let category = UNNotificationCategory(
+            identifier: ApprovalNotificationConstants.categoryIdentifier,
+            actions: [approveAction, denyAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([category])
+        center.delegate = notificationDelegate
+        #endif
+    }
+
+    /// Shows a system notification for an approval request
+    private func showSystemNotification(for approval: PendingApproval) {
+        #if os(macOS)
+        guard systemNotificationsEnabled else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Tool Approval Required"
+        content.subtitle = approval.toolName
+        content.body = "\(approval.description)\n\(approval.details)"
+        content.sound = .default
+        content.categoryIdentifier = ApprovalNotificationConstants.categoryIdentifier
+        content.userInfo = ["approvalId": approval.id.uuidString]
+
+        let request = UNNotificationRequest(
+            identifier: approval.id.uuidString,
+            content: content,
+            trigger: nil // Deliver immediately
+        )
+
+        UNUserNotificationCenter.current().add(request) { [weak self] error in
+            if let error {
+                Task { @MainActor in
+                    self?.log(.error, "Failed to show notification", metadata: ["error": error.localizedDescription])
+                }
+            } else {
+                Task { @MainActor in
+                    self?.log(.info, "System notification shown", metadata: ["approvalId": approval.id.uuidString])
+                }
+            }
+        }
+        #endif
+    }
+
+    /// Removes a system notification for an approval
+    private func removeSystemNotification(for approvalId: UUID) {
+        #if os(macOS)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [approvalId.uuidString])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [approvalId.uuidString])
+        #endif
+    }
 
     // MARK: - Permission Checking
 
@@ -184,6 +310,16 @@ final class PermissionService {
                 "tool": toolName,
                 "id": approval.id.uuidString
             ])
+
+            // Post notification for UI updates
+            NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
+                "conversationId": conversationId,
+                "count": pendingApprovals.count
+            ])
+
+            // Show system notification for user attention
+            showSystemNotification(for: approval)
+
             startTimeoutTask(for: approval.id)
         }
     }
@@ -212,6 +348,9 @@ final class PermissionService {
         timeoutTasks[approvalId]?.cancel()
         timeoutTasks.removeValue(forKey: approvalId)
 
+        // Remove system notification
+        removeSystemNotification(for: approvalId)
+
         // Resume continuation
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: true)
@@ -220,6 +359,12 @@ final class PermissionService {
         log(.info, "Approval granted", metadata: [
             "tool": approval.toolName,
             "id": approvalId.uuidString
+        ])
+
+        // Post notification for UI updates
+        NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
+            "conversationId": approval.conversationId,
+            "count": pendingApprovals.count
         ])
     }
 
@@ -240,6 +385,9 @@ final class PermissionService {
         timeoutTasks[approvalId]?.cancel()
         timeoutTasks.removeValue(forKey: approvalId)
 
+        // Remove system notification
+        removeSystemNotification(for: approvalId)
+
         // Resume continuation
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: false)
@@ -248,6 +396,12 @@ final class PermissionService {
         log(.info, "Approval denied", metadata: [
             "tool": approval.toolName,
             "id": approvalId.uuidString
+        ])
+
+        // Post notification for UI updates
+        NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
+            "conversationId": approval.conversationId,
+            "count": pendingApprovals.count
         ])
     }
 
@@ -355,3 +509,73 @@ extension PermissionService {
         }
     }
 }
+
+// MARK: - Notification Delegate
+
+/// Handles system notification responses for approval requests
+#if os(macOS)
+@MainActor
+private final class ApprovalNotificationDelegate: NSObject, @preconcurrency UNUserNotificationCenterDelegate {
+    weak var permissionService: PermissionService?
+
+    /// Called when user interacts with a notification action (Approve/Deny buttons)
+    nonisolated func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        let actionIdentifier = response.actionIdentifier
+
+        guard let approvalIdString = userInfo["approvalId"] as? String,
+              let approvalId = UUID(uuidString: approvalIdString)
+        else {
+            completionHandler()
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            switch actionIdentifier {
+            case ApprovalNotificationConstants.approveActionIdentifier:
+                self?.permissionService?.approve(approvalId, rememberForSession: false)
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔐 Permission: Approved via system notification",
+                    metadata: ["approvalId": approvalIdString]
+                )
+
+            case ApprovalNotificationConstants.denyActionIdentifier,
+                 UNNotificationDismissActionIdentifier:
+                self?.permissionService?.deny(approvalId)
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔐 Permission: Denied via system notification",
+                    metadata: ["approvalId": approvalIdString]
+                )
+
+            case UNNotificationDefaultActionIdentifier:
+                // User clicked the notification itself - bring app to front
+                // The in-app UI can handle the approval
+                NSApp.activate(ignoringOtherApps: true)
+
+            default:
+                break
+            }
+
+            completionHandler()
+        }
+    }
+
+    /// Called when notification is about to be presented while app is in foreground
+    nonisolated func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound, .badge])
+    }
+}
+#endif

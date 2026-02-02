@@ -38,13 +38,13 @@ struct MacSettingsView: View {
 
             AgentsSettingsSection()
                 .tabItem {
-                    Label("Agents", systemImage: "cpu.fill")
+                    Label("Agents", systemImage: "brain")
                 }
                 .tag(SettingsTab.agents)
 
             MemorySettingsSection()
                 .tabItem {
-                    Label("Memory", systemImage: "brain")
+                    Label("Memory", systemImage: "memorychip")
                 }
                 .tag(SettingsTab.memory)
         }
@@ -332,151 +332,218 @@ struct ToolsSettingsView: View {
     @Bindable private var agentSettings = AgentSettingsStore.shared
 
     var body: some View {
-        HSplitView {
-            // Left panel - Tool Configuration
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text("Tools")
-                            .font(Typography.title2)
-                            .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Tools")
+                        .font(Typography.title2)
+                        .fontWeight(.semibold)
 
-                        let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
-                        let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
-                        let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
-                        Text("\(toolCount) tools available")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Button(action: {
-                        Task {
-                            await mcpManager.discoverAllTools()
-                        }
-                    }) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(mcpManager.isDiscovering)
+                    let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
+                    let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
+                    let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
+                    Text("\(toolCount) tools available")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
-                .padding()
 
-                Divider()
+                Spacer()
 
-                // Tools list
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        // Built-in Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Built-in Tools")
+                Button(action: {
+                    Task {
+                        await mcpManager.discoverAllTools()
+                    }
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(mcpManager.isDiscovering)
+            }
+            .padding()
+
+            Divider()
+
+            // Tools list
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    // Built-in Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Built-in Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        WebSearchToolRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // Agentic Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Agentic Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        AgenticToolsRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // MCP Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            Text("MCP Servers")
                                 .font(Typography.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(Theme.textSecondary)
 
-                            WebSearchToolRow()
+                            Spacer()
+
+                            Text("\(mcpManager.getConnectedServerCount()) connected")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
-                        .padding(.horizontal)
 
-                        Divider()
-                            .padding(.horizontal)
-
-                        // Agentic Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            HStack {
-                                Text("Agentic Tools")
-                                    .font(Typography.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Spacer()
-
-                                Button {
-                                    SettingsRouter.shared.route(to: .agents)
-                                } label: {
-                                    Text("Configure")
-                                        .font(Typography.caption)
-                                }
-                                .buttonStyle(.link)
-                            }
-
-                            AgenticToolsRow()
-                        }
-                        .padding(.horizontal)
-
-                        Divider()
-                            .padding(.horizontal)
-
-                        // MCP Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            HStack {
-                                Text("MCP Servers")
-                                    .font(Typography.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Spacer()
-
-                                Text("\(mcpManager.getConnectedServerCount()) connected")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            MCPServersList()
-                        }
-                        .padding(.horizontal)
+                        MCPServersList()
                     }
-                    .padding(.vertical)
+                    .padding(.horizontal)
                 }
+                .padding(.vertical)
             }
-            .frame(minWidth: 300)
-
-            // Right panel - Details/Configuration
-            ToolConfigurationPanel()
         }
         .accessibilityIdentifier("settings.tools.view")
     }
 }
 
-/// Row displaying Web Search tool status
+/// Row displaying Web Search tool status with inline configuration
 struct WebSearchToolRow: View {
     @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var isExpanded = false
+    @State private var showAPIKey = false
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+        VStack(spacing: 0) {
+            HStack {
+                Toggle("", isOn: $tavilyService.isEnabled)
+                    .labelsHidden()
+                    .accessibilityIdentifier("settings.tools.webSearch.toggle")
 
-            VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                Text("Web Search")
-                    .font(Typography.headline)
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
 
-                HStack(spacing: Spacing.xxs) {
-                    Text(statusDescription)
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Web Search")
+                        .font(Typography.headline)
 
-                    if tavilyService.isEnabled, tavilyService.isConfigured {
-                        Text("•")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("1 tool")
+                    HStack(spacing: Spacing.xxs) {
+                        Text(statusDescription)
                             .font(Typography.caption)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        if tavilyService.isEnabled, tavilyService.isConfigured {
+                            Text("•")
+                                .foregroundStyle(Theme.textSecondary)
+                            Text("1 tool")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
                 }
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Label(isExpanded ? "Hide Settings" : "Configure", systemImage: "gear")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
             }
+            .padding()
 
-            Spacer()
+            // Expandable configuration section
+            if isExpanded && tavilyService.isEnabled {
+                Divider()
+                    .padding(.horizontal)
 
-            Toggle("", isOn: $tavilyService.isEnabled)
-                .labelsHidden()
-                .accessibilityIdentifier("settings.tools.webSearch.toggle")
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        Text("Tavily API Key")
+                            .font(Typography.subheadline)
+                        Spacer()
+                        if tavilyService.isConfigured {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.statusConnected)
+                                .font(Typography.caption)
+                        } else {
+                            Text("Required")
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.statusConnecting)
+                                .padding(.horizontal, Spacing.xs)
+                                .padding(.vertical, Spacing.xxxs)
+                                .background(Color.orange.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                        }
+                    }
+
+                    HStack(spacing: Spacing.sm) {
+                        if showAPIKey {
+                            TextField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
+                        } else {
+                            SecureField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
+                        }
+
+                        Button(action: { showAPIKey.toggle() }) {
+                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: Typography.Size.sm))
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
+                        .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
+                    }
+
+                    HStack(spacing: Spacing.xxs) {
+                        Text("Get your API key at")
+                            .font(Typography.caption)
+                            .foregroundStyle(.tertiary)
+                        Link("tavily.com", destination: URL(string: "https://tavily.com")!)
+                            .font(Typography.caption)
+                    }
+                }
+                .padding()
+            }
         }
-        .padding()
         .background(Theme.backgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+        .onChange(of: tavilyService.isEnabled) { _, newValue in
+            // Auto-expand when enabled and not configured
+            if newValue && !tavilyService.isConfigured {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded = true
+                }
+            }
+        }
     }
 
     private var statusColor: Color {
@@ -506,11 +573,15 @@ struct AgenticToolsRow: View {
 
     private let toolNames = [
         "read_file", "write_file", "edit_file",
-        "list_directory", "search_files", "run_command"
+        "list_directory", "search_files", "run_command", "web_fetch"
     ]
 
     var body: some View {
         HStack {
+            Toggle("", isOn: $agentSettings.settings.isEnabled)
+                .labelsHidden()
+                .accessibilityIdentifier("settings.tools.agentic.toggle")
+
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -536,9 +607,17 @@ struct AgenticToolsRow: View {
 
             Spacer()
 
-            Toggle("", isOn: $agentSettings.settings.isEnabled)
-                .labelsHidden()
-                .accessibilityIdentifier("settings.tools.agentic.toggle")
+            Menu {
+                Button {
+                    SettingsRouter.shared.route(to: .agents)
+                } label: {
+                    Label("Configure", systemImage: "gear")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .menuStyle(.borderlessButton)
         }
         .padding()
         .background(Theme.backgroundSecondary)
@@ -669,6 +748,12 @@ struct MCPServerRow: View {
 
     var body: some View {
         HStack {
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .onChange(of: isEnabled) { _, _ in
+                    onToggle()
+                }
+
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -693,12 +778,6 @@ struct MCPServerRow: View {
             }
 
             Spacer()
-
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .onChange(of: isEnabled) { _, _ in
-                    onToggle()
-                }
 
             Menu {
                 Button("Edit") { onEdit() }
@@ -745,114 +824,6 @@ struct MCPServerRow: View {
         case .connected, .connecting, .reconnecting, .disabled: return false
         default: return true
         }
-    }
-}
-
-/// Right panel for tool configuration
-struct ToolConfigurationPanel: View {
-    @ObservedObject private var tavilyService = TavilyService.shared
-    @State private var showAPIKey = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Text("Configuration")
-                    .font(Typography.title2)
-                    .fontWeight(.semibold)
-                Spacer()
-            }
-            .padding()
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    // Web Search Configuration
-                    if tavilyService.isEnabled {
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Web Search")
-                                .font(Typography.headline)
-
-                            VStack(alignment: .leading, spacing: Spacing.sm) {
-                                HStack {
-                                    Text("Tavily API Key")
-                                        .font(Typography.subheadline)
-                                    Spacer()
-                                    if tavilyService.isConfigured {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Theme.statusConnected)
-                                            .font(Typography.caption)
-                                    } else {
-                                        Text("Required")
-                                            .font(Typography.micro)
-                                            .foregroundStyle(Theme.statusConnecting)
-                                            .padding(.horizontal, Spacing.xs)
-                                            .padding(.vertical, Spacing.xxxs)
-                                            .background(Color.orange.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                                    }
-                                }
-
-                                HStack(spacing: Spacing.sm) {
-                                    if showAPIKey {
-                                        TextField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
-                                    } else {
-                                        SecureField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
-                                    }
-
-                                    Button(action: { showAPIKey.toggle() }) {
-                                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                            .font(.system(size: Typography.Size.sm))
-                                            .foregroundStyle(Theme.textSecondary)
-                                            .frame(width: 32, height: 32)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                                    .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
-                                }
-
-                                HStack(spacing: Spacing.xxs) {
-                                    Text("Get your API key at")
-                                        .font(Typography.caption)
-                                        .foregroundStyle(.tertiary)
-                                    Link("tavily.com", destination: URL(string: "https://tavily.com")!)
-                                        .font(Typography.caption)
-                                }
-                            }
-                            .padding()
-                            .background(Theme.backgroundSecondary)
-                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                        }
-                    }
-
-                    // Info text
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("About Tools")
-                            .font(Typography.headline)
-
-                        Text("Tools extend the capabilities of AI models by allowing them to access external data and services. When enabled, models can automatically use these tools to provide more accurate and up-to-date responses.")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-
-                        Text("• **Web Search**: Search the web for current information\n• **MCP Servers**: Connect to external services via the Model Context Protocol")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .padding()
-                    .background(Theme.backgroundSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                }
-                .padding()
-            }
-        }
-        .frame(minWidth: 280)
     }
 }
 
@@ -2219,361 +2190,6 @@ struct GitHubModelsConfigurationView: View {
         // Using OAuth, remove any stored PAT
         aiService.modelAPIKeys.removeValue(forKey: modelName)
         aiService.modelUsesGitHubOAuth[modelName] = true
-
-        selectedModelName = modelName
-        validationStatus = .notChecked
-    }
-}
-
-// MARK: - Anthropic Configuration View
-
-struct AnthropicConfigurationView: View {
-    @ObservedObject private var aiService = AIService.shared
-    @Binding var tempModelName: String
-    @Binding var tempAPIKey: String
-    @Binding var tempEndpoint: String
-    @Binding var showAPIKey: Bool
-    @Binding var selectedModelName: String?
-    @Binding var validationStatus: APISettingsView.ValidationStatus
-
-    @State private var isValidating = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("Anthropic Configuration")
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-
-            // Fields card (matching OpenAI style)
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                // Model Name
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack {
-                        Text("Model Name")
-                            .font(Typography.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("Required")
-                            .font(Typography.micro)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxxs)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                    }
-                    TextField("claude-sonnet-4-20250514", text: $tempModelName)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: tempModelName) { _, _ in
-                            validationStatus = .notChecked
-                        }
-                    Text("Claude model identifier (e.g., claude-sonnet-4-20250514, claude-opus-4-20250514)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                // Custom Endpoint (Optional)
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack {
-                        Text("Endpoint URL")
-                            .font(Typography.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("Optional")
-                            .font(Typography.micro)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxxs)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                    }
-                    TextField("https://api.anthropic.com", text: $tempEndpoint)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: tempEndpoint) { _, _ in
-                            validationStatus = .notChecked
-                        }
-                    Text("Leave empty for the default Anthropic API. Enter a custom URL for proxies or Azure.")
-                        .font(Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                // API Key
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack {
-                        Text("API Key")
-                            .font(Typography.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("Required")
-                            .font(Typography.micro)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxxs)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                    }
-                    HStack(spacing: Spacing.sm) {
-                        if showAPIKey {
-                            TextField("sk-ant-...", text: $tempAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("sk-ant-...", text: $tempAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        Button(action: {
-                            showAPIKey.toggle()
-                        }) {
-                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                .font(.system(size: Typography.Size.sm))
-                                .foregroundStyle(Theme.textSecondary)
-                                .frame(width: 32, height: 32)
-                                .background(Color.secondary.opacity(0.1))
-                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                    }
-                    .onChange(of: tempAPIKey) { _, _ in
-                        validationStatus = .notChecked
-                    }
-                    Text("Your Anthropic API key (stored securely)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(Spacing.lg)
-            .background(Theme.backgroundSecondary)
-            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
-
-            // Action Buttons (outside the card, matching OpenAI)
-            HStack(spacing: Spacing.md) {
-                Button {
-                    Task {
-                        await validateAnthropicConfiguration()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle")
-                        Text("Validate")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty || isValidating)
-                .controlSize(.large)
-
-                if let selectedName = selectedModelName,
-                   aiService.customModels.contains(selectedName)
-                {
-                    // Update existing model
-                    Button {
-                        saveAnthropicModel()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise.circle.fill")
-                            Text("Update Model")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                } else {
-                    // Add new model
-                    Button {
-                        saveAnthropicModel()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Add Model")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempModelName.isEmpty || tempAPIKey.isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                }
-            }
-
-            // Validation Status Section (matching OpenAI style)
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                Text("Validation Status")
-                    .font(Typography.headline)
-                    .foregroundStyle(.primary)
-
-                HStack(spacing: Spacing.md) {
-                    switch validationStatus {
-                    case .notChecked:
-                        Image(systemName: "circle.dotted")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Theme.textSecondary)
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Not Validated")
-                                .font(Typography.subheadline)
-                                .fontWeight(.medium)
-                            Text("Click 'Validate' to test your configuration")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    case .checking:
-                        ProgressView()
-                            .scaleEffect(1.2)
-                            .frame(width: 24, height: 24)
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Validating...")
-                                .font(Typography.subheadline)
-                                .fontWeight(.medium)
-                            Text("Testing connection to API")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    case .valid:
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Theme.statusConnected)
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Configuration Valid")
-                                .font(Typography.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Theme.statusConnected)
-                            Text("Ready to add model")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    case let .invalid(message):
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Theme.statusError)
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Configuration Invalid")
-                                .font(Typography.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Theme.statusError)
-                            Text(message)
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    Spacer()
-                }
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.backgroundSecondary)
-                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
-            }
-        }
-    }
-
-    private func validateAnthropicConfiguration() async {
-        isValidating = true
-        validationStatus = .checking
-
-        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !modelName.isEmpty else {
-            validationStatus = .invalid("Model name is required")
-            isValidating = false
-            return
-        }
-
-        guard !apiKey.isEmpty else {
-            validationStatus = .invalid("API key is required")
-            isValidating = false
-            return
-        }
-
-        // Validate endpoint URL if provided
-        if !endpoint.isEmpty {
-            do {
-                _ = try AnthropicEndpointResolver.messagesURL(customEndpoint: endpoint)
-            } catch {
-                validationStatus = .invalid("Invalid endpoint: \(error.localizedDescription)")
-                isValidating = false
-                return
-            }
-        }
-
-        // Test the API with a minimal request
-        do {
-            let url = try AnthropicEndpointResolver.messagesURL(
-                customEndpoint: endpoint.isEmpty ? nil : endpoint
-            )
-
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-
-            let body: [String: Any] = [
-                "model": modelName,
-                "max_tokens": 1,
-                "messages": [["role": "user", "content": "Hi"]]
-            ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            request.timeoutInterval = 30
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                validationStatus = .invalid("Invalid response")
-                isValidating = false
-                return
-            }
-
-            if httpResponse.statusCode == 200 {
-                validationStatus = .valid
-            } else if httpResponse.statusCode == 401 {
-                validationStatus = .invalid("Invalid API key")
-            } else if httpResponse.statusCode == 404 {
-                validationStatus = .invalid("Model not found: \(modelName)")
-            } else {
-                // Try to parse error message
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let error = json["error"] as? [String: Any],
-                   let message = error["message"] as? String
-                {
-                    validationStatus = .invalid(message)
-                } else {
-                    validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
-                }
-            }
-        } catch {
-            validationStatus = .invalid("Connection failed: \(error.localizedDescription)")
-        }
-
-        isValidating = false
-    }
-
-    private func saveAnthropicModel() {
-        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !modelName.isEmpty, !apiKey.isEmpty else { return }
-
-        // Remove old model if updating
-        if let oldName = selectedModelName, oldName != modelName {
-            aiService.customModels.removeAll { $0 == oldName }
-            aiService.modelProviders.removeValue(forKey: oldName)
-            aiService.modelAPIKeys.removeValue(forKey: oldName)
-            aiService.modelEndpoints.removeValue(forKey: oldName)
-        }
-
-        // Add or update model
-        if !aiService.customModels.contains(modelName) {
-            aiService.customModels.append(modelName)
-        }
-
-        aiService.modelProviders[modelName] = .anthropic
-        aiService.modelAPIKeys[modelName] = apiKey
-
-        if !endpoint.isEmpty {
-            aiService.modelEndpoints[modelName] = endpoint
-        } else {
-            aiService.modelEndpoints.removeValue(forKey: modelName)
-        }
 
         selectedModelName = modelName
         validationStatus = .notChecked

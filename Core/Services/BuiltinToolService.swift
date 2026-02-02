@@ -309,6 +309,9 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
 
             if permissionLevel != .automatic {
                 let description = requiresApprovalReason.map { "Write file: \($0)" } ?? "Create/overwrite file"
+                print("🔧 BuiltinToolService.writeFile: Requesting approval")
+                print("   Path: \(path)")
+                print("   ConversationId: \(conversationId)")
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.writeFile,
                     description: description,
@@ -803,6 +806,25 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 return true
             }
 
+            // Block 0.0.0.0 (binds to all interfaces)
+            if lowercased == "0.0.0.0" {
+                return true
+            }
+
+            // IPv6 private/local ranges
+            // fd00::/8 - Unique local addresses
+            if lowercased.hasPrefix("fd") {
+                return true
+            }
+            // fe80::/10 - Link-local addresses
+            if lowercased.hasPrefix("fe80:") {
+                return true
+            }
+            // fc00::/7 - Unique local addresses (includes fd00::/8)
+            if lowercased.hasPrefix("fc") {
+                return true
+            }
+
             // Check for IP addresses in private ranges
             let parts = lowercased.split(separator: ".")
             if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
@@ -812,8 +834,10 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 if first == 172, (16 ... 31).contains(second) { return true }
                 // 192.168.x.x
                 if first == 192, second == 168 { return true }
-                // 169.254.x.x (link-local)
+                // 169.254.x.x (link-local, includes cloud metadata 169.254.169.254)
                 if first == 169, second == 254 { return true }
+                // 0.x.x.x - "This" network
+                if first == 0 { return true }
             }
 
             return false
@@ -1180,16 +1204,18 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
                 return "ERROR: \(error.localizedDescription)"
             }
         }
+    }
 
-        // MARK: - Private Helpers
+    // MARK: - Private Helpers (Extension)
 
-        private func isBinaryData(_ data: Data) -> Bool {
+    private extension BuiltinToolService {
+        func isBinaryData(_ data: Data) -> Bool {
             // Check for null bytes in first 8KB (common binary indicator)
             let checkLength = min(data.count, 8192)
             return data.prefix(checkLength).contains(0)
         }
 
-        private func generateDiffPreview(oldText: String, newText: String) -> String {
+        func generateDiffPreview(oldText: String, newText: String) -> String {
             var diff = ""
             diff += "--- old\n"
             diff += "+++ new\n"
@@ -1207,7 +1233,7 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return diff
         }
 
-        private func formatDirectoryListing(_ entries: [FileEntry]) -> String {
+        func formatDirectoryListing(_ entries: [FileEntry]) -> String {
             var output = "Directory listing (\(entries.count) items):\n\n"
 
             for entry in entries {
@@ -1223,7 +1249,7 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return output
         }
 
-        private func formatSearchResults(_ results: [SearchResult]) -> String {
+        func formatSearchResults(_ results: [SearchResult]) -> String {
             if results.isEmpty {
                 return "No matches found."
             }
@@ -1237,7 +1263,7 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return output
         }
 
-        private func formatCommandResult(_ result: CommandResult) -> String {
+        func formatCommandResult(_ result: CommandResult) -> String {
             var output = ""
 
             if !result.stdout.isEmpty {
@@ -1256,14 +1282,14 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return output
         }
 
-        private func formatFileSize(_ bytes: Int64) -> String {
+        func formatFileSize(_ bytes: Int64) -> String {
             let formatter = ByteCountFormatter()
             formatter.allowedUnits = [.useKB, .useMB, .useGB]
             formatter.countStyle = .file
             return formatter.string(fromByteCount: bytes)
         }
 
-        private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
+        func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
             DiagnosticsLogger.log(.aiService, level: level, message: "🔧 Tool: \(message)", metadata: metadata)
         }
     }

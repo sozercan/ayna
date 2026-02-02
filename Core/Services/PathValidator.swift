@@ -138,8 +138,7 @@ struct PathValidator {
         // Step 6: For write/execute operations, check project boundary
         if operation == .write || operation == .execute {
             if requireApprovalOutsideProject, let projectRoot {
-                let projectPath = projectRoot.standardized.path
-                if !canonicalPath.hasPrefix(projectPath) {
+                if !isPathWithinDirectory(canonicalURL, directory: projectRoot) {
                     return .requiresApproval(reason: "Path outside project directory")
                 }
             }
@@ -172,8 +171,27 @@ struct PathValidator {
         guard let projectRoot else { return false }
         guard let canonical = canonicalize(path) else { return false }
 
-        let projectPath = projectRoot.standardized.path
-        return canonical.path.hasPrefix(projectPath)
+        return isPathWithinDirectory(canonical, directory: projectRoot)
+    }
+
+    /// Checks if a URL is within a directory using path component comparison.
+    /// This is safer than string prefix matching (e.g., "/project-evil" won't match "/project").
+    ///
+    /// - Parameters:
+    ///   - path: The path URL to check
+    ///   - directory: The directory URL to check against
+    /// - Returns: true if path is within directory
+    private func isPathWithinDirectory(_ path: URL, directory: URL) -> Bool {
+        let pathComponents = path.standardized.pathComponents
+        let directoryComponents = directory.standardized.pathComponents
+
+        // Path must have at least as many components as directory
+        guard pathComponents.count >= directoryComponents.count else {
+            return false
+        }
+
+        // Check that all directory components match the start of path components
+        return pathComponents.starts(with: directoryComponents)
     }
 
     // MARK: - Private Helpers
@@ -186,36 +204,42 @@ struct PathValidator {
             expanded = NSString(string: expanded).expandingTildeInPath
         }
 
-        // Expand environment variables like $HOME
-        expanded = expanded.replacingOccurrences(
-            of: "\\$([A-Za-z_][A-Za-z0-9_]*)",
-            with: "",
-            options: .regularExpression
-        )
+        // Expand environment variables like $HOME, $USER, etc.
+        // Uses regex to find all $VAR patterns and replaces with actual values
+        guard let regex = try? NSRegularExpression(
+            pattern: "\\$([A-Za-z_][A-Za-z0-9_]*)",
+            options: []
+        ) else {
+            return expanded
+        }
 
-        // Actually expand environment variables
-        if expanded.contains("$") {
-            let components = expanded.components(separatedBy: "/")
-            let expandedComponents = components.map { component -> String in
-                if component.hasPrefix("$") {
-                    let varName = String(component.dropFirst())
-                    return ProcessInfo.processInfo.environment[varName] ?? component
-                }
-                return component
+        let range = NSRange(expanded.startIndex..., in: expanded)
+        let matches = regex.matches(in: expanded, options: [], range: range)
+
+        // Process matches in reverse order to preserve indices
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range, in: expanded),
+                  let varNameRange = Range(match.range(at: 1), in: expanded)
+            else {
+                continue
             }
-            expanded = expandedComponents.joined(separator: "/")
+
+            let varName = String(expanded[varNameRange])
+            let replacement = ProcessInfo.processInfo.environment[varName] ?? ""
+            expanded.replaceSubrange(fullRange, with: replacement)
         }
 
         return expanded
     }
 
     private func checkProtectedPaths(_ canonicalPath: String) -> String? {
+        let pathURL = URL(fileURLWithPath: canonicalPath)
+
         for protectedPath in protectedPaths {
             let expandedProtected = expandPath(protectedPath)
             let protectedURL = URL(fileURLWithPath: expandedProtected).standardized
-            let protectedCanonical = protectedURL.path
 
-            if canonicalPath.hasPrefix(protectedCanonical) {
+            if isPathWithinDirectory(pathURL, directory: protectedURL) {
                 return "Protected path: \(protectedPath)"
             }
         }

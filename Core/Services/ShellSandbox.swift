@@ -87,7 +87,12 @@ struct ShellSandbox {
         // Package managers with dangerous flags
         "brew install --cask",
         "pip install --user",
-        "npm install -g"
+        "npm install -g",
+
+        // Shell execution of arbitrary code
+        "eval ",
+        "source ",
+        "exec "
     ]
 
     // MARK: - Initialization
@@ -171,10 +176,16 @@ struct ShellSandbox {
             return true
         }
 
-        let url = URL(fileURLWithPath: path).standardized
-        let projectPath = projectRoot.standardized.path
+        let pathComponents = URL(fileURLWithPath: path).standardized.pathComponents
+        let projectComponents = projectRoot.standardized.pathComponents
 
-        return url.path.hasPrefix(projectPath)
+        // Path must have at least as many components as project root
+        guard pathComponents.count >= projectComponents.count else {
+            return false
+        }
+
+        // Check that all project components match the start of path components
+        return pathComponents.starts(with: projectComponents)
     }
 
     /// Extracts the base command name from a command string.
@@ -228,13 +239,13 @@ struct ShellSandbox {
         return nil
     }
 
-    /// Checks for command substitution syntax that could execute arbitrary commands.
+    /// Checks for command substitution and process substitution syntax that could execute arbitrary commands.
     ///
-    /// Since commands are executed via `/bin/zsh -c`, backticks and $() are interpreted
+    /// Since commands are executed via `/bin/zsh -c`, backticks, $(), <(), and >() are interpreted
     /// by the shell and can execute arbitrary nested commands, bypassing validation.
     ///
     /// - Parameter command: The command string to check
-    /// - Returns: A reason string if command substitution is detected, nil otherwise
+    /// - Returns: A reason string if dangerous substitution is detected, nil otherwise
     private func checkCommandSubstitution(_ command: String) -> String? {
         // Track quote state to avoid false positives in single-quoted strings
         // (single quotes prevent substitution in shells)
@@ -265,6 +276,14 @@ struct ShellSandbox {
                         return "Command substitution $() not allowed"
                     }
                 }
+
+                // Check for process substitution <() and >()
+                if char == "<" || char == ">", command.index(after: index) < command.endIndex {
+                    let nextChar = command[command.index(after: index)]
+                    if nextChar == "(" {
+                        return "Process substitution \(char)() not allowed"
+                    }
+                }
             }
 
             index = command.index(after: index)
@@ -275,17 +294,33 @@ struct ShellSandbox {
 
     private func splitCommand(_ command: String) -> [String] {
         // Split on command separators: ; && || |
-        // This is a simplified split that doesn't handle quoted strings perfectly
-        // but is good enough for security validation
+        // Properly handles escape sequences within quoted strings
 
         var components: [String] = []
         var current = ""
         var inSingleQuote = false
         var inDoubleQuote = false
+        var isEscaped = false
         var index = command.startIndex
 
         while index < command.endIndex {
             let char = command[index]
+
+            // Handle escape sequences (backslash)
+            if isEscaped {
+                current.append(char)
+                isEscaped = false
+                index = command.index(after: index)
+                continue
+            }
+
+            // Check for backslash escape (only meaningful in double quotes or unquoted)
+            if char == "\\", !inSingleQuote {
+                isEscaped = true
+                current.append(char)
+                index = command.index(after: index)
+                continue
+            }
 
             // Track quote state
             if char == "'", !inDoubleQuote {

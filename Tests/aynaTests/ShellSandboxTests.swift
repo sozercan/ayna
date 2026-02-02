@@ -393,4 +393,74 @@ struct ShellSandboxTests {
             Issue.record("Expected blocked for dangerous substitution")
         }
     }
+
+    // MARK: - Process Substitution Blocking
+
+    @Test("Blocks input process substitution <()")
+    func blocksInputProcessSubstitution() {
+        let result = sut.validate("diff <(cat file1) <(cat file2)")
+        if case let .blocked(reason) = result {
+            #expect(reason.contains("Process substitution"))
+        } else {
+            Issue.record("Expected blocked for <() process substitution")
+        }
+    }
+
+    @Test("Blocks output process substitution >()")
+    func blocksOutputProcessSubstitution() {
+        let result = sut.validate("tee >(cat > file.txt)")
+        if case let .blocked(reason) = result {
+            #expect(reason.contains("Process substitution"))
+        } else {
+            Issue.record("Expected blocked for >() process substitution")
+        }
+    }
+
+    @Test("Blocks process substitution to read sensitive files")
+    func blocksProcessSubstitutionAttack() {
+        let result = sut.validate("echo <(cat /etc/passwd)")
+        if case .blocked = result {
+            // Expected
+        } else {
+            Issue.record("Expected blocked for process substitution attack")
+        }
+    }
+
+    @Test("Allows <() inside single quotes")
+    func allowsProcessSubstitutionInSingleQuotes() {
+        // Single quotes prevent substitution
+        let result = sut.validate("echo 'use <(cmd) for process substitution'")
+        #expect(result == .allowed)
+    }
+
+    @Test("Blocks <() in double quotes")
+    func blocksProcessSubstitutionInDoubleQuotes() {
+        // Double quotes don't prevent process substitution
+        let result = sut.validate("echo \"<(whoami)\"")
+        if case .blocked = result {
+            // Expected
+        } else {
+            Issue.record("Expected blocked for <() in double quotes")
+        }
+    }
+
+    // MARK: - Escape Sequence Handling
+
+    @Test("Handles escaped quotes in double-quoted strings")
+    func handlesEscapedQuotes() {
+        // Command with escaped quote should still validate properly
+        let result = sut.validate("echo \"hello \\\"world\\\"\"")
+        #expect(result == .allowed)
+    }
+
+    @Test("Blocks command substitution after escaped quote")
+    func blocksSubstitutionAfterEscapedQuote() {
+        // Ensure escaped quotes don't break detection
+        let result = sut.validate("echo \"test\\\"\" $(whoami)")
+        if case .blocked = result {
+            // Expected - $() should still be detected
+        } else {
+            Issue.record("Expected blocked for $() after escaped quote")
+        }
+    }
 }

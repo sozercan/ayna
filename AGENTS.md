@@ -42,6 +42,36 @@ docs/       → Detailed documentation for AI agents
 4. **Review related tests**: Find existing tests for similar functionality
 5. **Check for prior art**: Search codebase for similar patterns
 
+## Ask vs. Proceed
+
+**Ask the user when:**
+- The request is ambiguous and multiple interpretations lead to significantly different implementations
+- You're about to make a destructive or irreversible change
+- The task requires choosing between architectural approaches with real trade-offs
+- You're unsure if a dependency/library addition is acceptable
+- The scope seems larger than what was requested
+
+**Proceed without asking when:**
+- The task is clear and you have high confidence in the approach
+- You're following established patterns already in the codebase
+- The decision is easily reversible (can be changed in review)
+- You're fixing an obvious bug with a straightforward solution
+- The user explicitly said "just do it" or similar
+
+**Never ask:**
+- "Is this plan okay?" — just present the plan and start working
+- "Should I proceed?" — if you have a plan, execute it
+- "Do you want me to X?" when X is clearly part of the task
+- For permission to read files or explore the codebase
+
+**Instead of asking, state your assumption:**
+```
+❌ "Should I use async/await or completion handlers?"
+✅ "I'll use async/await since that's the pattern in this codebase. Starting implementation."
+```
+
+The bias should be toward **action with stated assumptions** rather than **questions that block progress**.
+
 ## Task Planning: Phases with Exit Criteria
 
 For any non-trivial task, **plan in phases with testable exit criteria** before writing code. This ensures incremental progress and early detection of issues.
@@ -133,6 +163,18 @@ After each phase, briefly report:
 
 This keeps the human informed and provides natural points to course-correct.
 
+### When Plans Go Sideways
+
+If implementation deviates significantly from the plan — **STOP and re-plan immediately**. Don't push through hoping it will work out.
+
+Signs you need to re-plan:
+- Discovered the approach won't work mid-implementation
+- Found unexpected dependencies or constraints
+- The scope has grown beyond the original estimate
+- Tests are failing in ways that suggest a design flaw
+
+Re-planning is not failure — it's course correction. A revised plan beats a broken implementation.
+
 ## Debugging: Five Whys Technique
 
 Before implementing a fix, ask "Why?" five times to find the root cause:
@@ -144,7 +186,7 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 4. Why no pagination? → Original spec assumed small conversations
 5. Why that assumption? → Requirements didn't consider power users
 
-**Root Cause**: Missing pagination in `EncryptedConversationStore`  
+**Root Cause**: Missing pagination in `EncryptedConversationStore`
 **Solution**: Add lazy loading + paginate large conversations
 
 **Best Practices:**
@@ -153,6 +195,44 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 - Document the analysis in commit messages
 - Verify the fix addresses the root cause, not just the symptom
 
+## Bug Fix Workflow: Test First, Then Fix
+
+When a bug is reported, **do not start by trying to fix it**. Follow this workflow instead:
+
+### Phase 1: Reproduce with a Test
+1. Understand the bug report and identify the expected vs actual behavior
+2. Write a failing test that reproduces the bug
+3. Verify the test fails for the right reason (not a test error)
+
+### Phase 2: Fix with Subagents
+1. Use subagents to attempt the fix in isolation
+2. Each subagent should:
+   - Propose a fix
+   - Verify the fix by running the failing test
+   - Confirm the test now passes
+3. Review the subagent's fix before integrating
+
+### Why This Workflow?
+- **Proves the bug exists** — A failing test is unambiguous evidence
+- **Proves the fix works** — A passing test is unambiguous verification
+- **Prevents regressions** — The test remains in the suite forever
+- **Enables parallel attempts** — Multiple subagents can try different approaches
+- **Isolates context** — Subagents don't pollute the main conversation with failed attempts
+
+### Example
+
+```
+# Step 1: Write failing test
+With #runSubagent, write a Swift Testing test in Tests/aynaTests/ that reproduces:
+"Conversation fails to save when title contains emoji"
+The test should fail with the current implementation.
+
+# Step 2: Fix with subagent
+With #runSubagent, fix the bug in Core/Services/ConversationPersistenceCoordinator.swift
+where emoji in titles causes save failures. Run the test from Step 1 to verify the fix.
+Return the diff and test results.
+```
+
 ## Critical Rules (Apply to EVERY task)
 
 > 🚨 **NEVER leak secrets, API keys, or tokens** — Under NO circumstances include real API keys, authentication tokens, or any sensitive credentials in code, comments, logs, documentation, test fixtures, or any output. Always use placeholder values like `"REDACTED"`, `"mock-token"`, or `"test-key"` in examples and tests. This applies to all files including tests and docs.
@@ -160,6 +240,8 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 > ⚠️ **NEVER run `git commit` or `git push`** — Always leave committing and pushing to the human.
 
 > 🤖 **Document Your Prompts** — When completing a task, summarize the key prompt(s) used so the human can include them in the PR. This supports a workflow where prompts are reviewed alongside (or instead of) code.
+
+> 🎯 **Simplicity First** — Make every change as simple as possible. Touch only what's necessary. Find root causes instead of applying temporary fixes. If a fix feels hacky, pause and ask: "Knowing everything I know now, is there a more elegant solution?"
 
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
@@ -201,12 +283,12 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
    @MainActor  // Add if testing @MainActor types
    struct MyServiceTests {
        private var sut: MyService
-       
+
        init() {
            // Setup - runs before each test
            sut = MyService()
        }
-       
+
        @Test("Something works correctly")
        func somethingWorksCorrectly() {
            #expect(sut.value == expectedValue)
@@ -590,11 +672,15 @@ Before requesting human review, verify:
 - [ ] No TODO comments left unaddressed
 - [ ] Error handling is complete (no silent failures)
 - [ ] `DiagnosticsLogger` calls added for debugging
+- [ ] Solution is as simple as possible — no over-engineering
+- [ ] For non-trivial changes: paused to consider if there's a more elegant approach
 
 ### Testing
 - [ ] New code has unit tests in `Tests/aynaTests/`
 - [ ] Edge cases covered (empty states, errors, cancellation)
 - [ ] Existing tests still pass
+- [ ] **Never mark complete without proving it works** — run tests, check logs, demonstrate correctness
+- [ ] For behavioral changes: diff behavior between main branch and your changes
 
 ### Security
 - [ ] Secrets stored in Keychain (never UserDefaults or hardcoded)
@@ -706,6 +792,8 @@ Return a prioritized list of issues with line numbers.
 3. **Use for exploration, not execution** — Subagents are great for research; keep edits in main context
 4. **Combine with file references** — Use `#file:path` to give subagents focused context
 5. **Review before integrating** — Subagent results join main context; verify accuracy first
+6. **One task per subagent** — Keep subagents focused; split complex work into multiple subagents
+7. **Offload to keep context clean** — Use subagents for research, exploration, and parallel analysis to prevent context pollution in the main conversation
 
 ### Anti-Patterns
 
@@ -731,3 +819,12 @@ Return a prioritized list of issues with line numbers.
 - They cause more confusion than they prevent
 - The underlying issue no longer applies
 - They duplicate other documentation
+
+### Self-Improvement Loop
+
+After ANY correction from the user, immediately update this document:
+1. Identify the pattern that led to the mistake
+2. Write a rule that prevents the same mistake
+3. Add it to the appropriate section above
+
+This creates a feedback loop where each correction improves future behavior. The goal is to reduce the same mistake from happening twice.

@@ -29,6 +29,10 @@
         private let aiService: AIService
         private var currentConversationId: UUID?
         private var toolCallDepth = 0
+
+        /// Maximum tool chain depth for watchOS.
+        /// Intentionally low (5) due to watchOS resource constraints (memory, battery, network).
+        /// Sufficient for simple tool operations while preventing resource exhaustion.
         private let maxToolCallDepth = 5
 
         // Streaming throttle for performance
@@ -266,6 +270,22 @@
                 onError: { [weak self] error in
                     Task { @MainActor in
                         guard let self else { return }
+
+                        // Handle cancellation silently - don't show error UI for user-initiated cancels
+                        if error is CancellationError {
+                            DiagnosticsLogger.log(
+                                .chatView,
+                                level: .info,
+                                message: "⌚ Request cancelled"
+                            )
+                            self.isLoading = false
+                            self.isStreaming = false
+                            self.currentToolName = nil
+                            self.toolCallDepth = 0
+                            self.pendingContent = ""
+                            return
+                        }
+
                         self.isLoading = false
                         self.isStreaming = false
                         self.currentToolName = nil

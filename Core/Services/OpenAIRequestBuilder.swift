@@ -1,6 +1,15 @@
 import Foundation
 import os
 
+/// Represents a tool call from the model.
+/// Note: Uses @unchecked Sendable because arguments are copied on init and
+/// the struct is immutable, making it effectively thread-safe.
+struct ToolCallInfo: @unchecked Sendable {
+    let id: String
+    let name: String
+    let arguments: [String: Any]
+}
+
 /// Builder for constructing OpenAI API requests.
 ///
 /// Handles:
@@ -131,8 +140,8 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
         #if !os(watchOS)
-            /// Build a set of valid tool_call_ids that have matching tool responses
-            /// First, collect all tool messages and their tool_call_ids
+            // Build a set of valid tool_call_ids that have matching tool responses
+            // First, collect all tool messages and their tool_call_ids
             var toolResponseIds = Set<String>()
             for message in messages {
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
@@ -140,10 +149,10 @@ enum OpenAIRequestBuilder {
                 }
             }
 
-            /// Now filter messages:
-            /// 1. Keep all non-tool, non-assistant messages
-            /// 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
-            /// 3. For tool messages, only keep if preceding assistant has the matching tool_call
+            // Now filter messages:
+            // 1. Keep all non-tool, non-assistant messages
+            // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
+            // 3. For tool messages, only keep if preceding assistant has the matching tool_call
             var filteredMessages: [Message] = []
             for (index, message) in messages.enumerated() {
                 if message.role == .tool {
@@ -298,13 +307,12 @@ enum OpenAIRequestBuilder {
                             argumentsDict[key] = anyCodable.value
                         }
 
-                        let argumentsString: String
-                        if let argsData = try? JSONSerialization.data(withJSONObject: argumentsDict),
-                           let argsStr = String(data: argsData, encoding: .utf8)
+                        let argumentsString: String = if let argsData = try? JSONSerialization.data(withJSONObject: argumentsDict),
+                                                         let argsStr = String(data: argsData, encoding: .utf8)
                         {
-                            argumentsString = argsStr
+                            argsStr
                         } else {
-                            argumentsString = "{}"
+                            "{}"
                         }
 
                         let functionCallItem: [String: Any] = [
@@ -441,7 +449,7 @@ enum OpenAIRequestBuilder {
     /// Result from parsing Responses API output
     struct ResponsesOutputResult {
         let hasToolCalls: Bool
-        let toolCalls: [(id: String, name: String, arguments: [String: Any])]
+        let toolCalls: [ToolCallInfo]
     }
 
     /// Deliver output from the Responses API to callbacks.
@@ -463,7 +471,7 @@ enum OpenAIRequestBuilder {
         onReasoning: ((String) -> Void)?,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil
     ) -> ResponsesOutputResult {
-        var toolCalls: [(id: String, name: String, arguments: [String: Any])] = []
+        var toolCalls: [ToolCallInfo] = []
 
         for outputItem in outputArray {
             let itemType = outputItem["type"] as? String
@@ -524,7 +532,7 @@ enum OpenAIRequestBuilder {
                     metadata: ["tool": name, "callId": callId]
                 )
 
-                toolCalls.append((id: callId, name: name, arguments: arguments))
+                toolCalls.append(ToolCallInfo(id: callId, name: name, arguments: arguments))
                 onToolCallRequested?(callId, name, arguments)
             }
         }

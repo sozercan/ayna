@@ -203,7 +203,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
 
                     // Maximum line length to prevent OOM from malformed streams without newlines
-                    let maxLineLength = 65_536 // 64KB
+                    let maxLineLength = 65536 // 64KB
 
                     for try await byte in bytes {
                         try Task.checkCancellation()

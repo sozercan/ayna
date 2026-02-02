@@ -432,6 +432,12 @@ struct MacChatView: View {
                     .background(Theme.accent.opacity(0.1))
                 }
 
+                // Pending tool approval requests - reads directly from @Observable PermissionService
+                PendingApprovalsSectionView(
+                    conversationId: conversation.id,
+                    permissionService: aiService.permissionService
+                )
+
                 // Input Area
                 VStack(spacing: Spacing.sm) {
                     MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
@@ -1889,7 +1895,7 @@ struct MacChatView: View {
         tools: [[String: Any]]?,
         isInitialRequest _: Bool
     ) {
-        let maxToolCallDepth = 10 // Prevent infinite loops
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
 
@@ -2482,6 +2488,47 @@ struct MacChatView: View {
         }
 
         return components.isEmpty ? nil : components.joined(separator: "\n\n")
+    }
+}
+
+// MARK: - Pending Approvals Section View
+
+/// Helper view for pending approvals.
+/// Reads directly from PermissionService (@Observable) so SwiftUI tracks changes automatically.
+private struct PendingApprovalsSectionView: View {
+    let conversationId: UUID
+    let permissionService: PermissionService?
+
+    // Read approvals directly in body to establish Observation tracking
+    private var approvals: [PendingApproval] {
+        permissionService?.pendingApprovals.filter { $0.conversationId == conversationId } ?? []
+    }
+
+    var body: some View {
+        Group {
+            if let permService = permissionService, !approvals.isEmpty {
+                VStack(spacing: 12) {
+                    ForEach(approvals) { approval in
+                        ApprovalRequestView(
+                            approval: approval,
+                            onApprove: { rememberForSession in
+                                permService.approve(approval.id, rememberForSession: rememberForSession)
+                            },
+                            onDeny: {
+                                permService.deny(approval.id)
+                            },
+                            pendingCount: approvals.count
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: approvals.count)
     }
 }
 
