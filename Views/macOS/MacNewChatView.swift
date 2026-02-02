@@ -1358,10 +1358,10 @@ struct MacNewChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
-                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
-                // to prevent race condition with onComplete checking if tool call is pending.
-                currentToolName = toolName
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
                         logNewChat(

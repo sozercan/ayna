@@ -2070,13 +2070,12 @@ struct MacChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
-                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
-                // to prevent race condition with onComplete checking if tool call is pending.
-                // The stream may send [DONE] immediately after finish_reason: "tool_calls",
-                // and if currentToolName isn't set yet, onComplete will incorrectly
-                // set isGenerating = false.
-                currentToolName = toolName
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    // checking if tool call is pending. The stream may send [DONE] immediately
+                    // after finish_reason: "tool_calls".
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     // Validate conversation still exists
                     guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
