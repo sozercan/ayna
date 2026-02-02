@@ -25,6 +25,8 @@ jobs:
   macos_unit_tests:
     name: macOS Unit Tests
     timeout-minutes: 20
+    # Allow macOS 15 job to fail - known Xcode 16.4 crash at app bootstrap
+    continue-on-error: ${{ matrix.macos-version == 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +89,8 @@ jobs:
   macos_ui_tests:
     name: macOS UI Tests
     timeout-minutes: 30
+    # Allow macOS 15 job to fail - known Xcode 16.4 crash at app bootstrap
+    continue-on-error: ${{ matrix.macos-version == 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:
