@@ -339,7 +339,7 @@ jobs:
         set -o pipefail
         xcodebuild \
           -project Ayna.xcodeproj \
-          -scheme 'Ayna-watchOS Watch App' \
+          -scheme 'Ayna-watchOS' \
           -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
@@ -399,7 +399,7 @@ jobs:
           echo "Attempt $attempt of 2"
           if xcodebuild \
             -project Ayna.xcodeproj \
-            -scheme 'Ayna-watchOS Watch App' \
+            -scheme 'Ayna-watchOS' \
             -destination '${{ matrix.destination }}' \
             -derivedDataPath ./build \
             -resultBundlePath ./build/TestResults-watchOS-UI-$attempt.xcresult \
