@@ -513,9 +513,12 @@ extension PermissionService {
 // MARK: - Notification Delegate
 
 /// Handles system notification responses for approval requests
+/// Note: This class is intentionally NOT @MainActor to avoid sendability issues with
+/// UNUserNotificationCenterDelegate on older Xcode versions (16.x). The delegate methods
+/// are nonisolated and hop to @MainActor via Task where needed.
+/// Marked @unchecked Sendable because permissionService is only accessed from MainActor context.
 #if os(macOS)
-@MainActor
-private final class ApprovalNotificationDelegate: NSObject, @preconcurrency UNUserNotificationCenterDelegate {
+private final class ApprovalNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     weak var permissionService: PermissionService?
 
     /// Called when user interacts with a notification action (Approve/Deny buttons)
