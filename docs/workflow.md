@@ -63,6 +63,8 @@ Every task should be broken into phases. Each phase must have:
 
 **Exit gate**: CI-equivalent checks pass locally.
 
+> **CI runs multiple Xcode versions** (16.2, 16.4, 26.0). Code that compiles on newer Xcode may fail on older versions due to stricter Swift concurrency checking. See [patterns.md](patterns.md#delegate-protocol-conformance-from-mainactor-classes) for common pitfalls.
+
 ### Example: Adding a New Service
 
 ```

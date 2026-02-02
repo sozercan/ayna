@@ -217,3 +217,73 @@ func someMainActorFunc() {
     let service = MyService.shared  // OK — same actor isolation
 }
 ```
+
+## Delegate Protocol Conformance from @MainActor Classes
+
+```swift
+// BAD: Completion handler sendability doesn't match protocol requirement
+// This compiles on Xcode 26+ but FAILS on Xcode 16.x
+@MainActor
+class PermissionService: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+
+// GOOD: Mark completion handler as @Sendable to match protocol requirement
+@MainActor
+class PermissionService: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+```
+
+**Why**: Apple's delegate protocols increasingly require `@Sendable` completion handlers for Swift 6 concurrency safety. Older Xcode versions (16.x) enforce this more strictly than newer versions (26+). Always add `@Sendable` to completion handlers in delegate methods to ensure compatibility across all supported Xcode versions.
+
+**Affected protocols** (non-exhaustive):
+- `UNUserNotificationCenterDelegate`
+- `URLSessionDelegate` and variants
+- `WCSessionDelegate`
+
+## Discarding Results: `let _ =` vs `_ =`
+
+```swift
+// BAD: SwiftLint violation (redundant_discardable_let)
+let _ = someFunction()
+
+// GOOD: Simpler syntax for discarding results
+_ = someFunction()
+```
+
+**Why**: `let _ =` is unnecessarily verbose. The `_` wildcard pattern alone is sufficient to discard a result. SwiftLint enforces this in strict mode.
+
+---
+
+## Pre-Push Checklist
+
+Before pushing code, run these locally to avoid CI failures:
+
+```bash
+# 1. Lint check (catches style violations)
+swiftlint --strict
+
+# 2. Format check (ensures consistent style)
+swiftformat . --lint
+
+# 3. Build on macOS (catches compile errors)
+xcodebuild -scheme Ayna -destination 'platform=macOS' build
+
+# 4. Run unit tests (catches regressions)
+xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+```
+
+**Key insight**: CI runs on multiple Xcode versions (16.2, 16.4, 26.0). Code that compiles locally on Xcode 26 may fail on older versions due to stricter sendability checking. When in doubt, add explicit `@Sendable` annotations to closures and completion handlers.
