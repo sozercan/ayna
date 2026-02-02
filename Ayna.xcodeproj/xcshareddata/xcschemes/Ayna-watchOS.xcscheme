@@ -37,6 +37,26 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C855C1052EE15D700073EB99"
+               BuildableName = "Ayna-watchOSTests.xctest"
+               BlueprintName = "Ayna-watchOSTests"
+               ReferencedContainer = "container:Ayna.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C855BF3C2EE13CB50073EB99"
+               BuildableName = "Ayna-watchOSUITests.xctest"
+               BlueprintName = "Ayna-watchOSUITests"
+               ReferencedContainer = "container:Ayna.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
