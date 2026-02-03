@@ -203,8 +203,11 @@ class AIService: ObservableObject {
         }
         
         // Check if running in UI test mode - configure test model early
+        // Multiple checks because different platforms/test runners set flags differently
         let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
-                         ProcessInfo.processInfo.arguments.contains("--ui-testing")
+                         ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+                         ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
+                         UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
         
         // Load custom models first
         var loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
