@@ -166,7 +166,7 @@ jobs:
           -derivedDataPath ./build \
           -resultBundlePath ./build/TestResults-iOS-Unit.xcresult \
           -only-testing:Ayna-iOSTests \
-          -parallel-testing-enabled YES \
+          -parallel-testing-enabled NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
@@ -303,7 +303,7 @@ jobs:
           -destination '${{ matrix.destination }}' \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
-          -parallel-testing-enabled YES \
+          -parallel-testing-enabled NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
