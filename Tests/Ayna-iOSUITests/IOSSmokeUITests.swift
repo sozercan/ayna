@@ -4,35 +4,32 @@ import XCTest
 final class IOSSmokeUITests: IOSUITestCase {
     // MARK: - Conversation Tests
 
-    func testNewConversationCreation() {
+    /// Combined test: verifies conversation creation, response, and sidebar listing
+    func testNewConversationCreationAndSidebarListing() {
+        let messageText = "Hello from iOS UI test"
+
         // Start a new conversation
-        sendNewChatMessage("Hello from iOS UI test")
+        sendNewChatMessage(messageText)
 
         // Verify the chat composer appears (indicating we're now in an active chat)
         // iOS uses TextField, not TextEditor, so use textFields
         let chatComposer = app.textFields["chat.composer.textEditor"]
-        XCTAssertTrue(chatComposer.waitForExistence(timeout: 10), "Chat composer should appear after sending message")
+        XCTAssertTrue(chatComposer.waitForExistence(timeout: UITestTimeout.normal), "Chat composer should appear after sending message")
 
         // Verify response appears (mock response in test environment)
         let responsePredicate = NSPredicate(format: "label CONTAINS %@", "UI Test Response")
         let responseElement = app.staticTexts.containing(responsePredicate).firstMatch
-        XCTAssertTrue(responseElement.waitForExistence(timeout: 15), "Mock response should appear")
-    }
+        XCTAssertTrue(responseElement.waitForExistence(timeout: UITestTimeout.async), "Mock response should appear")
 
-    func testConversationAppearsInSidebar() {
-        let messageText = "Sidebar test message"
-        sendNewChatMessage(messageText)
-
-        // Navigate to sidebar
+        // Navigate to sidebar and verify conversation appears
         ensureSidebarVisible()
 
-        // Verify conversation appears in list
         let conversationList = app.collectionViews["sidebar.conversationList"]
-        XCTAssertTrue(conversationList.waitForExistence(timeout: 5), "Conversation list should exist")
+        XCTAssertTrue(conversationList.waitForExistence(timeout: UITestTimeout.normal), "Conversation list should exist")
 
         // The conversation title should match the message (auto-generated)
         let conversationTitle = app.staticTexts[messageText]
-        XCTAssertTrue(conversationTitle.waitForExistence(timeout: 10), "Conversation should appear in sidebar")
+        XCTAssertTrue(conversationTitle.waitForExistence(timeout: UITestTimeout.async), "Conversation should appear in sidebar")
     }
 
     // MARK: - Sidebar Tests
@@ -41,22 +38,22 @@ final class IOSSmokeUITests: IOSUITestCase {
         // Create first conversation
         sendNewChatMessage("Alpha conversation")
         ensureSidebarVisible()
-        XCTAssertTrue(app.staticTexts["Alpha conversation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Alpha conversation"].waitForExistence(timeout: UITestTimeout.async))
 
         // Create second conversation
         tapNewConversationButton()
         sendNewChatMessage("Beta conversation")
         ensureSidebarVisible()
-        XCTAssertTrue(app.staticTexts["Beta conversation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Beta conversation"].waitForExistence(timeout: UITestTimeout.async))
 
         // Search for Alpha
         let searchField = app.textFields["sidebar.searchField"]
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search field should exist")
+        XCTAssertTrue(searchField.waitForExistence(timeout: UITestTimeout.normal), "Search field should exist")
         searchField.tap()
         searchField.typeText("Alpha")
 
         // Verify filtering
-        XCTAssertTrue(app.staticTexts["Alpha conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Alpha conversation"].waitForExistence(timeout: UITestTimeout.normal))
         XCTAssertFalse(app.staticTexts["Beta conversation"].exists, "Beta should be filtered out")
     }
 
@@ -67,20 +64,20 @@ final class IOSSmokeUITests: IOSUITestCase {
 
         // Wait for conversation to appear
         let conversationCell = app.staticTexts[messageText]
-        XCTAssertTrue(conversationCell.waitForExistence(timeout: 10))
+        XCTAssertTrue(conversationCell.waitForExistence(timeout: UITestTimeout.async))
 
         // Swipe to delete
         conversationCell.swipeLeft()
 
         // Tap delete button
         let deleteButton = app.buttons["Delete"]
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 3), "Delete button should appear on swipe")
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: UITestTimeout.immediate), "Delete button should appear on swipe")
         deleteButton.tap()
 
         // Verify conversation is deleted
         let deletedPredicate = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: deletedPredicate, object: conversationCell)
-        let result = XCTWaiter.wait(for: [expectation], timeout: 5)
+        let result = XCTWaiter.wait(for: [expectation], timeout: UITestTimeout.normal)
         XCTAssertEqual(result, .completed, "Conversation should be deleted")
     }
 
@@ -91,12 +88,12 @@ final class IOSSmokeUITests: IOSUITestCase {
 
         // Tap settings button
         let settingsButton = app.buttons["sidebar.settingsButton"]
-        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5), "Settings button should exist")
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: UITestTimeout.normal), "Settings button should exist")
         settingsButton.tap()
 
         // Verify settings sheet appears
         let autoGenerateToggle = app.switches["settings.autoGenerateTitleToggle"]
-        XCTAssertTrue(autoGenerateToggle.waitForExistence(timeout: 5), "Settings sheet should open with auto-generate toggle")
+        XCTAssertTrue(autoGenerateToggle.waitForExistence(timeout: UITestTimeout.normal), "Settings sheet should open with auto-generate toggle")
     }
 
     // MARK: - Model Selector Tests
@@ -107,12 +104,12 @@ final class IOSSmokeUITests: IOSUITestCase {
 
         // Wait for chat view
         let modelSelector = app.buttons["chat.modelSelector"]
-        XCTAssertTrue(modelSelector.waitForExistence(timeout: 10), "Model selector button should exist")
+        XCTAssertTrue(modelSelector.waitForExistence(timeout: UITestTimeout.async), "Model selector button should exist")
         modelSelector.tap()
 
         // Verify model selector sheet appears
         let doneButton = app.buttons["Done"]
-        XCTAssertTrue(doneButton.waitForExistence(timeout: 5), "Model selector sheet should open")
+        XCTAssertTrue(doneButton.waitForExistence(timeout: UITestTimeout.normal), "Model selector sheet should open")
     }
 
     // MARK: - Empty State Tests
@@ -121,7 +118,7 @@ final class IOSSmokeUITests: IOSUITestCase {
         // On iPhone, we may need to navigate to the detail view first
         // Try to tap the new conversation button if sidebar is showing
         let newButton = app.buttons["sidebar.newConversationButton"]
-        if newButton.waitForExistence(timeout: 3), newButton.isHittable {
+        if newButton.waitForExistence(timeout: UITestTimeout.immediate), newButton.isHittable {
             newButton.tap()
         }
 
@@ -130,7 +127,7 @@ final class IOSSmokeUITests: IOSUITestCase {
         // This may or may not exist depending on whether a new chat composer is shown by default
         // If the app starts with new chat composer, the welcome text might be visible
         let welcomeText = app.staticTexts["How can I help you?"]
-        let hasEmptyState = emptyState.waitForExistence(timeout: 5) || welcomeText.waitForExistence(timeout: 5)
+        let hasEmptyState = emptyState.waitForExistence(timeout: UITestTimeout.normal) || welcomeText.waitForExistence(timeout: UITestTimeout.normal)
         XCTAssertTrue(hasEmptyState, "Empty state or welcome view should be visible on fresh launch")
     }
 }

@@ -1,5 +1,15 @@
 import XCTest
 
+/// Standardized timeout values for UI tests to improve test speed
+enum UITestTimeout {
+    /// For elements that should appear immediately (buttons, labels already on screen)
+    static let immediate: TimeInterval = 2
+    /// For elements that require navigation or state changes
+    static let normal: TimeInterval = 5
+    /// For elements that depend on async operations (mock network responses)
+    static let async: TimeInterval = 8
+}
+
 /// Base class for iOS UI tests with common setup/teardown
 class IOSUITestCase: XCTestCase {
     private(set) var app: XCUIApplication!
@@ -16,7 +26,7 @@ class IOSUITestCase: XCTestCase {
 
         // Wait for the app to be ready
         let mainView = app.otherElements.firstMatch
-        XCTAssertTrue(mainView.waitForExistence(timeout: 10), "App did not launch in time")
+        XCTAssertTrue(mainView.waitForExistence(timeout: UITestTimeout.normal), "App did not launch in time")
     }
 
     override func tearDownWithError() throws {
@@ -39,7 +49,7 @@ class IOSUITestCase: XCTestCase {
     /// Taps the new conversation button in the sidebar
     func tapNewConversationButton() {
         let newButton = app.buttons["sidebar.newConversationButton"]
-        XCTAssertTrue(newButton.waitForExistence(timeout: 5), "New conversation button not found")
+        XCTAssertTrue(newButton.waitForExistence(timeout: UITestTimeout.normal), "New conversation button not found")
         newButton.tap()
     }
 
@@ -50,20 +60,20 @@ class IOSUITestCase: XCTestCase {
         // Check if the new chat composer is visible; if not, tap New Conversation button
         let composer = app.textFields["newchat.composer.textEditor"]
 
-        if !composer.waitForExistence(timeout: 3) {
+        if !composer.waitForExistence(timeout: UITestTimeout.immediate) {
             // Try tapping new conversation button to navigate to new chat
             let newButton = app.buttons["sidebar.newConversationButton"]
-            if newButton.waitForExistence(timeout: 2), newButton.isHittable {
+            if newButton.waitForExistence(timeout: UITestTimeout.immediate), newButton.isHittable {
                 newButton.tap()
             }
         }
 
-        XCTAssertTrue(composer.waitForExistence(timeout: 10), "New chat composer not found")
+        XCTAssertTrue(composer.waitForExistence(timeout: UITestTimeout.normal), "New chat composer not found")
         composer.tap()
         composer.typeText(text)
 
         let sendButton = app.buttons["newchat.composer.sendButton"]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 5), "Send button not found")
+        XCTAssertTrue(sendButton.waitForExistence(timeout: UITestTimeout.immediate), "Send button not found")
         sendButton.tap()
 
         return composer
@@ -73,12 +83,12 @@ class IOSUITestCase: XCTestCase {
     func sendChatMessage(_ text: String) {
         // iOS uses TextField, not TextEditor, so use textFields
         let composer = app.textFields["chat.composer.textEditor"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Chat composer not found")
+        XCTAssertTrue(composer.waitForExistence(timeout: UITestTimeout.normal), "Chat composer not found")
         composer.tap()
         composer.typeText(text)
 
         let sendButton = app.buttons["chat.composer.sendButton"]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 5), "Send button not found")
+        XCTAssertTrue(sendButton.waitForExistence(timeout: UITestTimeout.immediate), "Send button not found")
         sendButton.tap()
     }
 }
