@@ -249,9 +249,12 @@ jobs:
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          # Shutdown first in case it's in a bad state
+          xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+          sleep 2
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
           # Wait for boot to complete
-          sleep 5
+          sleep 10
         fi
 
     - name: Run iOS UI tests (with retry)
@@ -276,8 +279,16 @@ jobs:
             exit 0
           fi
           if [ $attempt -lt 2 ]; then
-            echo "Tests failed, retrying..."
-            sleep 5
+            echo "Tests failed, retrying after simulator reset..."
+            # Reset simulator state before retry
+            DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
+            DEVICE_UDID=$(xcrun simctl list devices | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+            if [ -n "$DEVICE_UDID" ]; then
+              xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+              sleep 5
+              xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+              sleep 10
+            fi
           fi
         done
         echo "Tests failed after 2 attempts"
