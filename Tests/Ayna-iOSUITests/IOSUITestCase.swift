@@ -48,9 +48,17 @@ class IOSUITestCase: XCTestCase {
 
     /// Taps the new conversation button in the sidebar
     func tapNewConversationButton() {
+        // Try the bottom bar button first
         let newButton = app.buttons["sidebar.newConversationButton"]
-        XCTAssertTrue(newButton.waitForExistence(timeout: UITestTimeout.normal), "New conversation button not found")
-        newButton.tap()
+        if newButton.waitForExistence(timeout: UITestTimeout.normal), newButton.isHittable {
+            newButton.tap()
+            return
+        }
+        
+        // Fallback to empty state button if bottom bar button isn't available
+        let emptyStateButton = app.buttons["sidebar.emptyState.newConversationButton"]
+        XCTAssertTrue(emptyStateButton.waitForExistence(timeout: UITestTimeout.normal), "New conversation button not found")
+        emptyStateButton.tap()
     }
 
     /// Types a message and sends it in the new chat composer
@@ -61,10 +69,22 @@ class IOSUITestCase: XCTestCase {
         let composer = app.textFields["newchat.composer.textEditor"]
 
         if !composer.waitForExistence(timeout: UITestTimeout.immediate) {
-            // Try tapping new conversation button to navigate to new chat
+            // Try tapping the bottom bar new conversation button first
             let newButton = app.buttons["sidebar.newConversationButton"]
             if newButton.waitForExistence(timeout: UITestTimeout.immediate), newButton.isHittable {
                 newButton.tap()
+                // Wait for navigation animation to complete
+                _ = composer.waitForExistence(timeout: UITestTimeout.normal)
+            }
+            
+            // If still not visible, try the empty state button (shown when no conversations exist)
+            if !composer.exists {
+                let emptyStateButton = app.buttons["sidebar.emptyState.newConversationButton"]
+                if emptyStateButton.waitForExistence(timeout: UITestTimeout.immediate), emptyStateButton.isHittable {
+                    emptyStateButton.tap()
+                    // Wait for navigation animation to complete
+                    _ = composer.waitForExistence(timeout: UITestTimeout.normal)
+                }
             }
         }
 
