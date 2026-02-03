@@ -204,26 +204,10 @@ class AIService: ObservableObject {
         
         // Check if running in UI test mode - configure test model early
         // Multiple checks because different platforms/test runners set flags differently
-        let envCheck = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1"
-        let argCheck1 = ProcessInfo.processInfo.arguments.contains("--ui-testing")
-        let argCheck2 = ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
-        let udCheck = UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
-        let isUITesting = envCheck || argCheck1 || argCheck2 || udCheck
-        
-        // Debug logging for UI test detection
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "UI Testing detection",
-            metadata: [
-                "env": "\(envCheck)",
-                "arg_uitesting": "\(argCheck1)",
-                "arg_AYNA": "\(argCheck2)",
-                "userdefaults": "\(udCheck)",
-                "isUITesting": "\(isUITesting)",
-                "arguments": "\(ProcessInfo.processInfo.arguments)"
-            ]
-        )
+        let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
+                         ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+                         ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
+                         UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
         
         // Load custom models first
         var loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
@@ -2261,7 +2245,7 @@ extension AIService {
     }
 
     var usableModels: [String] {
-        customModels.filter { model in
+        var models = customModels.filter { model in
             #if os(watchOS)
                 // Apple Intelligence requires on-device processing which isn't available on watchOS
                 // The watch app makes API calls directly, not via iPhone relay
@@ -2271,6 +2255,36 @@ extension AIService {
             #endif
             return true
         }
+        
+        // Check if running in UI test mode
+        let isUITestMode = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
+                          ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+                          ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
+        
+        // Ensure test model is available during UI testing
+        // This is a fallback in case the init-time detection didn't work
+        let testModelName = "ui-test-model"
+        if isUITestMode && !models.contains(testModelName) {
+            models.insert(testModelName, at: 0)
+            // Also ensure the test model is fully configured
+            if modelProviders[testModelName] == nil {
+                modelProviders[testModelName] = .openai
+            }
+            if modelEndpointTypes[testModelName] == nil {
+                modelEndpointTypes[testModelName] = .chatCompletions
+            }
+            if modelAPIKeys[testModelName]?.isEmpty ?? true {
+                modelAPIKeys[testModelName] = "ui-test-api-key"
+            }
+            if !customModels.contains(testModelName) {
+                customModels.insert(testModelName, at: 0)
+            }
+            if selectedModel.isEmpty {
+                selectedModel = testModelName
+            }
+        }
+        
+        return models
     }
 
     /// Models that support text generation (excludes image generation models)
