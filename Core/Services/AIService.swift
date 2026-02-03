@@ -231,7 +231,13 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
             )
         }
-        modelProviders = loadedProviders
+        
+        // Ensure test model has a provider during UI testing
+        var updatedProviders = loadedProviders
+        if isUITesting && updatedProviders[testModelName] == nil {
+            updatedProviders[testModelName] = .openai
+        }
+        modelProviders = updatedProviders
 
         // Load model endpoint types mapping
         let loadedEndpointTypes: [String: APIEndpointType] = if let savedEndpointTypes = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes")
@@ -244,7 +250,13 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
             )
         }
-        modelEndpointTypes = loadedEndpointTypes
+        
+        // Ensure test model has an endpoint type during UI testing
+        var updatedEndpointTypes = loadedEndpointTypes
+        if isUITesting && updatedEndpointTypes[testModelName] == nil {
+            updatedEndpointTypes[testModelName] = .chatCompletions
+        }
+        modelEndpointTypes = updatedEndpointTypes
 
         // Load custom endpoints mapping
         let loadedEndpoints: [String: String] = if let savedEndpoints = AppPreferences.storage.dictionary(forKey: "modelEndpoints")
