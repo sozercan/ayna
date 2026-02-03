@@ -201,11 +201,22 @@ class AIService: ObservableObject {
                 imageService = OpenAIImageService(urlSession: self.urlSession)
             #endif
         }
+        
+        // Check if running in UI test mode - configure test model early
+        let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
+                         ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        
         // Load custom models first
-        let loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
+        var loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
             savedModels
         } else {
             []
+        }
+        
+        // Ensure test model exists during UI testing
+        let testModelName = "ui-test-model"
+        if isUITesting && !loadedCustomModels.contains(testModelName) {
+            loadedCustomModels.insert(testModelName, at: 0)
         }
         customModels = loadedCustomModels
 
@@ -246,7 +257,13 @@ class AIService: ObservableObject {
         modelEndpoints = loadedEndpoints
 
         // Load per-model API keys
-        modelAPIKeys = AIService.loadModelAPIKeys()
+        var loadedAPIKeys = AIService.loadModelAPIKeys()
+        
+        // Ensure test model has an API key during UI testing
+        if isUITesting && (loadedAPIKeys[testModelName]?.isEmpty ?? true) {
+            loadedAPIKeys[testModelName] = "ui-test-api-key"
+        }
+        modelAPIKeys = loadedAPIKeys
 
         // Load GitHub OAuth flags for models
         if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
@@ -257,7 +274,10 @@ class AIService: ObservableObject {
 
         // Load selected model, ensure it exists in custom models
         let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
-        if loadedCustomModels.contains(savedSelectedModel) {
+        if isUITesting {
+            // Always use test model for UI tests
+            selectedModel = testModelName
+        } else if loadedCustomModels.contains(savedSelectedModel) {
             selectedModel = savedSelectedModel
         } else if let firstModel = loadedCustomModels.first {
             selectedModel = firstModel
