@@ -141,21 +141,18 @@ jobs:
         echo "Available iOS devices:"
         xcrun simctl list devices available | grep -i iphone | head -20 || true
 
-    - name: Boot iOS Simulator
+    - name: Prepare iOS Simulator
       run: |
-        # Pre-boot simulator for more reliable tests
+        # Ensure simulator is in a clean shutdown state so xcodebuild can boot it
         DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
-          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
-          # Shutdown first to ensure clean state
+          echo "Preparing simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          # Shutdown any running simulator to let xcodebuild manage booting
           xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
-          sleep 5
-          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus
-          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 15
+          sleep 3
           # Verify simulator state
-          echo "Simulator state:"
+          echo "Simulator state (should be Shutdown):"
           xcrun simctl list devices | grep "$DEVICE_UDID" || true
         fi
 
@@ -215,23 +212,18 @@ jobs:
         echo "Available iOS devices:"
         xcrun simctl list devices available | grep -i iphone | head -20 || true
 
-    - name: Boot iOS Simulator
+    - name: Prepare iOS Simulator
       run: |
-        # Pre-boot simulator for more reliable tests
+        # Ensure simulator is in a clean shutdown state so xcodebuild can boot it
         DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^,]*\).*/\1/p')
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
-          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
-          # Shutdown first to ensure clean state
+          echo "Preparing simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          # Shutdown any running simulator to let xcodebuild manage booting
           xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
-          sleep 5
-          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus
-          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 15
-          # Additional wait for Springboard to be ready for UI tests
-          sleep 20
+          sleep 3
           # Verify simulator state
-          echo "Simulator state:"
+          echo "Simulator state (should be Shutdown):"
           xcrun simctl list devices | grep "$DEVICE_UDID" || true
         fi
 
