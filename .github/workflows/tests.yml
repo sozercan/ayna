@@ -148,12 +148,19 @@ jobs:
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
-          # Shutdown first in case it's in a bad state
+          # Shutdown and erase first to ensure clean state
           xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
           sleep 2
+          xcrun simctl erase "$DEVICE_UDID" 2>/dev/null || true
+          sleep 2
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus instead of fixed sleep
-          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 5
+          # Wait for boot to complete using bootstatus
+          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 10
+          # Additional wait for simulator to be fully ready
+          sleep 10
+          # Verify simulator state
+          echo "Simulator state:"
+          xcrun simctl list devices | grep "$DEVICE_UDID" || true
         fi
 
     - name: Run iOS unit tests
@@ -219,12 +226,19 @@ jobs:
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
-          # Shutdown first in case it's in a bad state
+          # Shutdown and erase first to ensure clean state
           xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
           sleep 2
+          xcrun simctl erase "$DEVICE_UDID" 2>/dev/null || true
+          sleep 2
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus instead of fixed sleep
-          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 5
+          # Wait for boot to complete using bootstatus
+          xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 10
+          # Additional wait for simulator to be fully ready
+          sleep 10
+          # Verify simulator state
+          echo "Simulator state:"
+          xcrun simctl list devices | grep "$DEVICE_UDID" || true
         fi
 
     - name: Run iOS UI tests
