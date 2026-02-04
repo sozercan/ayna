@@ -278,22 +278,7 @@ struct MacNewChatView: View {
                     }
 
                     if let toolName = currentToolName {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .controlSize(.small)
-                            Text(
-                                toolName.hasPrefix("Analyzing")
-                                    ? "🔄 \(toolName)..."
-                                    : "🔧 Using tool: \(toolName)..."
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.1))
+                        ToolExecutionIndicator(toolName: toolName)
                     }
 
                     if let errorMessage {
@@ -894,62 +879,30 @@ struct MacNewChatView: View {
         updatedConversation.multiModelEnabled = selectedModels.count > 1
         conversationManager.updateConversation(updatedConversation)
 
-        // Build file attachments
-        var attachments: [Message.FileAttachment] = []
-        for fileURL in filesToSend {
-            if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
-                let attachment = Message.FileAttachment(
-                    fileName: fileURL.lastPathComponent,
-                    mimeType: mimeType,
-                    data: fileData
-                )
-                attachments.append(attachment)
-            }
-        }
+        // Build user message using ChatMessageBuilder
+        let userMessage = ChatMessageBuilder.createUserMessage(
+            text: textToSend,
+            appContent: attachedAppContent,
+            fileURLs: filesToSend,
+            saveToStorage: false
+        )
 
-        // Build message content, including app context inline if attached
-        let finalMessageContent: String
-        if let appContent = attachedAppContent {
-            // Format app content inline with the user's message
-            let contextHeader = "---\n**Context from \(appContent.appName)**"
-            let windowInfo = appContent.windowTitle.map { " (\($0))" } ?? ""
-            let contentType = " [\(appContent.contentType.displayName)]"
-
-            finalMessageContent = """
-            \(contextHeader)\(windowInfo)\(contentType)
-
-            ```
-            \(appContent.redacted.content)
-            ```
-            ---
-
-            \(textToSend)
-            """
-
+        if attachedAppContent != nil {
             logNewChat(
                 "📎 Including app content in message",
                 level: .info,
                 metadata: [
-                    "appName": appContent.appName,
-                    "contentType": appContent.contentType.displayName,
-                    "contentLength": "\(appContent.content.count)"
+                    "appName": attachedAppContent?.appName ?? "",
+                    "contentType": attachedAppContent?.contentType.displayName ?? "",
+                    "contentLength": "\(attachedAppContent?.content.count ?? 0)"
                 ]
             )
-        } else {
-            finalMessageContent = textToSend
         }
 
-        // Add the user message
-        let userMessage = Message(
-            role: .user,
-            content: finalMessageContent,
-            attachments: attachments.isEmpty ? nil : attachments
-        )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
             logNewChat("💾 Memory command processed: \(memoryResponse)", level: .info)
         }
 
@@ -1393,14 +1346,10 @@ struct MacNewChatView: View {
                        var lastMessage = conversationManager.conversations[index].messages.last,
                        lastMessage.role == .assistant
                     {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-
-                        let toolCall = MCPToolCall(
+                        let toolCall = ToolCallHandler.createToolCall(
                             id: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments
                         )
                         lastMessage.toolCalls = [toolCall]
                         conversationManager.conversations[index].messages[
@@ -1440,28 +1389,17 @@ struct MacNewChatView: View {
                             }
 
                             // For web_search, skip creating a visible tool message
-                            let isWebSearch = toolName == "web_search"
+                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
 
                             await MainActor.run {
-                                let anyCodableArgs = argumentsWrapper.value
-                                    .reduce(into: [String: AnyCodable]()) { result, pair in
-                                        result[pair.key] = AnyCodable(pair.value)
-                                    }
-
                                 if !isWebSearch {
-                                    // For non-web-search tools, create the tool message as before
-                                    var toolMessage = Message(
-                                        role: .tool,
-                                        content: result
+                                    // For non-web-search tools, create the tool message
+                                    let toolMessage = ToolCallHandler.createToolMessage(
+                                        toolCallId: toolCallId,
+                                        toolName: toolName,
+                                        arguments: argumentsWrapper.value,
+                                        result: result
                                     )
-                                    toolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
                                     conversationManager.addMessage(to: conversation, message: toolMessage)
                                 }
 
@@ -1475,14 +1413,10 @@ struct MacNewChatView: View {
                                 }
 
                                 // For web_search, attach citations to the new assistant message
-                                var newAssistantMessage = Message(
-                                    role: .assistant,
-                                    content: "",
-                                    model: model
+                                let newAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                    model: model,
+                                    citations: isWebSearch ? citations : nil
                                 )
-                                if isWebSearch, let citations {
-                                    newAssistantMessage.citations = citations
-                                }
                                 conversationManager.addMessage(
                                     to: updatedConversation,
                                     message: newAssistantMessage
@@ -1509,23 +1443,16 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
-                                // Build messages for API - exclude the continuation assistant message
-                                // The continuation message is just a placeholder for where we'll store the response
-                                var messagesForAPI = Array(convWithAssistant.messages.dropLast())
-                                if isWebSearch {
-                                    // Append a synthetic tool message for the API only (not stored)
-                                    var syntheticToolMessage = Message(role: .tool, content: result)
-                                    syntheticToolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
-                                    // Append the tool message at the end (after the assistant with tool_calls)
-                                    messagesForAPI.append(syntheticToolMessage)
-                                }
+                                // Build messages for API using ToolCallHandler
+                                let messagesForAPI = ToolCallHandler.buildContinuationMessages(
+                                    conversationMessages: convWithAssistant.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
+                                    isWebSearch: isWebSearch,
+                                    systemPrompt: nil // MacNewChatView doesn't add system prompts here
+                                )
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
