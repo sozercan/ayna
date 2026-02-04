@@ -1,6 +1,6 @@
 # Ayna
 
-Native macOS/iOS/watchOS ChatGPT client. Swift 6.0+, macOS 14.0+, iOS 17.0+, watchOS 10.0+.
+Native macOS/iOS/watchOS ChatGPT client. Swift 6.0+, macOS 26.0+, iOS 26.0+, watchOS 26.0+.
 
 ## Project Structure
 
