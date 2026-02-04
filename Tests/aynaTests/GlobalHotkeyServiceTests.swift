@@ -139,7 +139,7 @@
             let error = GlobalHotkeyError.eventHandlerInstallFailed(status: -1)
 
             #expect(error.errorDescription != nil)
-            #expect(try #require(error.errorDescription?.contains("event handler")))
+            #expect(try #require(error.errorDescription?.contains("event handler") as Bool?))
         }
 
         @Test("Registration failed description")
@@ -147,7 +147,7 @@
             let error = GlobalHotkeyError.registrationFailed(status: -1)
 
             #expect(error.errorDescription != nil)
-            #expect(try #require(error.errorDescription?.contains("register")))
+            #expect(try #require(error.errorDescription?.contains("register") as Bool?))
         }
     }
 #endif
