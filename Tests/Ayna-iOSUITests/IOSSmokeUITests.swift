@@ -6,31 +6,39 @@ import XCTest
 /// on compact size classes. This is tracked as a known iOS 26 issue.
 final class IOSSmokeUITests: IOSUITestCase {
     
-    /// Helper to check if navigation from sidebar to detail works
-    /// Throws XCTSkip if navigation fails (iOS 26 NavigationSplitView issue)
-    private func ensureDetailViewNavigation() throws {
-        // Check if we're on the sidebar
-        let noConversationsText = app.staticTexts["No Conversations Yet"]
-        let sidebarEmptyButton = app.buttons["sidebar.emptyState.newConversationButton"]
+    /// Track whether navigation works (checked once in setUp)
+    private static var navigationWorks: Bool?
+    
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         
-        if noConversationsText.exists || sidebarEmptyButton.exists {
-            // Tap the new conversation button
-            if sidebarEmptyButton.exists, sidebarEmptyButton.isHittable {
-                sidebarEmptyButton.tap()
-            } else {
-                let newButton = app.buttons["sidebar.newConversationButton"]
-                if newButton.exists, newButton.isHittable {
-                    newButton.tap()
-                }
-            }
-            
-            Thread.sleep(forTimeInterval: 1.0)
-            
-            // Check if we navigated to detail view
-            let composer = app.waitForTextInput(identifier: "newchat.composer.textEditor", timeout: UITestTimeout.normal)
-            if composer == nil {
-                throw XCTSkip("iOS 26 NavigationSplitView: columnVisibility = .detailOnly doesn't navigate to detail view on compact size class. Skipping tests that require sidebar-to-detail navigation.")
-            }
+        // Check navigation once per test run, cache the result
+        if IOSSmokeUITests.navigationWorks == nil {
+            IOSSmokeUITests.navigationWorks = checkNavigationWorks()
+        }
+    }
+    
+    /// Check if navigation from sidebar to detail works (called once)
+    private func checkNavigationWorks() -> Bool {
+        let sidebarEmptyButton = app.buttons["sidebar.emptyState.newConversationButton"]
+        let newButton = app.buttons["sidebar.newConversationButton"]
+        
+        // Tap whatever button is available
+        if sidebarEmptyButton.waitForExistence(timeout: UITestTimeout.immediate), sidebarEmptyButton.isHittable {
+            sidebarEmptyButton.tap()
+        } else if newButton.waitForExistence(timeout: UITestTimeout.immediate), newButton.isHittable {
+            newButton.tap()
+        }
+        
+        // Check if we navigated to detail view
+        let composer = app.waitForTextInput(identifier: "newchat.composer.textEditor", timeout: UITestTimeout.normal)
+        return composer != nil
+    }
+    
+    /// Skip test if navigation doesn't work
+    private func skipIfNavigationBroken() throws {
+        guard IOSSmokeUITests.navigationWorks == true else {
+            throw XCTSkip("iOS 26 NavigationSplitView: columnVisibility = .detailOnly doesn't navigate to detail view on compact size class.")
         }
     }
     
@@ -38,7 +46,7 @@ final class IOSSmokeUITests: IOSUITestCase {
 
     /// Combined test: verifies conversation creation, response, and sidebar listing
     func testNewConversationCreationAndSidebarListing() throws {
-        try ensureDetailViewNavigation()
+        try skipIfNavigationBroken()
         
         let messageText = "Hello from iOS UI test"
 
@@ -70,7 +78,7 @@ final class IOSSmokeUITests: IOSUITestCase {
     // MARK: - Sidebar Tests
 
     func testSearchConversations() throws {
-        try ensureDetailViewNavigation()
+        try skipIfNavigationBroken()
         
         // Create first conversation
         sendNewChatMessage("Alpha conversation")
@@ -95,7 +103,7 @@ final class IOSSmokeUITests: IOSUITestCase {
     }
 
     func testSwipeToDeleteConversation() throws {
-        try ensureDetailViewNavigation()
+        try skipIfNavigationBroken()
         
         let messageText = "Delete me"
         sendNewChatMessage(messageText)
@@ -138,7 +146,7 @@ final class IOSSmokeUITests: IOSUITestCase {
     // MARK: - Model Selector Tests
 
     func testModelSelectorOpens() throws {
-        try ensureDetailViewNavigation()
+        try skipIfNavigationBroken()
         
         // Send a message to get into a chat
         sendNewChatMessage("Model selector test")
@@ -156,7 +164,7 @@ final class IOSSmokeUITests: IOSUITestCase {
     // MARK: - Empty State Tests
 
     func testEmptyStateShowsWelcome() throws {
-        try ensureDetailViewNavigation()
+        try skipIfNavigationBroken()
         
         // Check if onboarding view is showing (indicates test model setup failed)
         let noModelsText = app.staticTexts["No Models Available"]
