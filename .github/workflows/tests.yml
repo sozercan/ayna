@@ -182,7 +182,6 @@ jobs:
 
   ios_ui_tests:
     name: iOS UI Tests
-    needs: ios_unit_tests
     timeout-minutes: 30
     strategy:
       fail-fast: false
