@@ -13,6 +13,7 @@ struct IOSSettingsView: View {
     @ObservedObject var aiService = AIService.shared
     @ObservedObject var githubOAuth = GitHubOAuthService.shared
     @ObservedObject var tavilyService = TavilyService.shared
+    @State private var webFetchService = WebFetchService.shared
     @EnvironmentObject var conversationManager: ConversationManager
     @AppStorage("autoGenerateTitle") private var autoGenerateTitle = true
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
@@ -21,10 +22,19 @@ struct IOSSettingsView: View {
     @State private var selectedModelForEditing: String?
 
     private var toolsSummary: String {
+        var enabledCount = 0
         if tavilyService.isEnabled, tavilyService.isConfigured {
-            "1 enabled"
+            enabledCount += 1
+        }
+        if webFetchService.isEnabled {
+            enabledCount += 1
+        }
+        if enabledCount == 0 {
+            return "None"
+        } else if enabledCount == 1 {
+            return "1 enabled"
         } else {
-            "None"
+            return "\(enabledCount) enabled"
         }
     }
 
@@ -797,14 +807,49 @@ struct IOSGitHubAccountView: View {
 
 // MARK: - Tools Settings View
 
-/// iOS view for managing tools (Web Search)
+/// iOS view for managing tools (Web Search, Web Fetch)
 struct IOSToolsSettingsView: View {
     @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var webFetchEnabled = WebFetchService.shared.isEnabled
 
     var body: some View {
         Form {
             // Built-in Tools
             Section {
+                // Web Fetch Tool
+                HStack {
+                    Image(systemName: "link")
+                        .font(Typography.title2)
+                        .foregroundStyle(webFetchEnabled ? Theme.accent : Theme.textSecondary)
+                        .frame(width: 32)
+
+                    VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                        Text("Web Fetch")
+                            .font(Typography.headline)
+
+                        if webFetchEnabled {
+                            Text("Fetch content from URLs")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        } else {
+                            Text("Disabled")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $webFetchEnabled)
+                        .labelsHidden()
+                        .accessibilityLabel("Web Fetch")
+                        .accessibilityIdentifier("settings.tools.webFetch.toggle")
+                        .onChange(of: webFetchEnabled) { _, newValue in
+                            WebFetchService.shared.isEnabled = newValue
+                        }
+                }
+
+                // Web Search Tool
                 HStack {
                     Image(systemName: "globe")
                         .font(Typography.title2)

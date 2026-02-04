@@ -86,6 +86,12 @@ class AIService: ObservableObject {
         private let imageService: OpenAIImageService
     #endif
 
+    // Native agentic tools (macOS only)
+    #if os(macOS)
+        private(set) var builtinToolService: BuiltinToolService?
+        private(set) var permissionService: PermissionService?
+    #endif
+
     @Published var customModels: [String] {
         didSet {
             #if !os(watchOS)
@@ -319,7 +325,30 @@ class AIService: ObservableObject {
 
         // iCloud sync disabled for free developer account
         // setupiCloudSync()
+
+        // Initialize native agentic tools (macOS only)
+        #if os(macOS)
+            let permService = PermissionService()
+            self.permissionService = permService
+            self.builtinToolService = BuiltinToolService(
+                permissionService: permService,
+                projectRoot: nil // Will be set via configureProjectRoot()
+            )
+            // Trigger AgentSettingsStore initialization to apply saved settings
+            _ = AgentSettingsStore.shared
+        #endif
     }
+
+    // Configures the project root for agentic tools (macOS only)
+    #if os(macOS)
+        func configureProjectRoot(_ url: URL?) {
+            guard let permService = permissionService else { return }
+            builtinToolService = BuiltinToolService(
+                permissionService: permService,
+                projectRoot: url
+            )
+        }
+    #endif
 
     private func persistModelAPIKeys() {
         do {
@@ -338,7 +367,14 @@ class AIService: ObservableObject {
         do {
             if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
                 do {
-                    return try JSONDecoder().decode([String: String].self, from: data)
+                    let keys = try JSONDecoder().decode([String: String].self, from: data)
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "Loaded model API keys from Keychain",
+                        metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
+                    )
+                    return keys
                 } catch {
                     DiagnosticsLogger.log(
                         .aiService,
@@ -347,12 +383,18 @@ class AIService: ObservableObject {
                         metadata: ["error": error.localizedDescription]
                     )
                 }
+            } else {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "No model API keys found in Keychain (first launch or code signature changed)"
+                )
             }
         } catch {
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,
-                message: "Unable to read model API keys from Keychain",
+                message: "Failed to read model API keys from Keychain",
                 metadata: ["error": error.localizedDescription]
             )
         }
@@ -361,12 +403,23 @@ class AIService: ObservableObject {
 
     private static func storeModelAPIKeys(_ dictionary: [String: String]) throws {
         if dictionary.isEmpty {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "Removing model API keys from Keychain (dictionary is empty)"
+            )
             try keychain.removeValue(for: KeychainKeys.modelAPIKeys)
             return
         }
 
         let data = try JSONEncoder().encode(dictionary)
         try keychain.setData(data, for: KeychainKeys.modelAPIKeys)
+        DiagnosticsLogger.log(
+            .aiService,
+            level: .info,
+            message: "Stored model API keys to Keychain",
+            metadata: ["modelCount": "\(dictionary.count)", "models": dictionary.keys.joined(separator: ", ")]
+        )
     }
 
     private func normalizedModelName(_ name: String?) -> String? {
@@ -540,6 +593,9 @@ class AIService: ObservableObject {
             )
         }
         multiModelStreamTasks.removeAll()
+        // Cancel Anthropic provider and clear reference to prevent memory leak
+        currentAnthropicProvider?.cancelRequest()
+        currentAnthropicProvider = nil
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -700,7 +756,8 @@ class AIService: ObservableObject {
                 "model": requestModel,
                 "messagesCount": "\(messages.count)",
                 "stream": "\(stream)",
-                "hasTools": "\(tools != nil)"
+                "hasTools": "\(tools != nil)",
+                "toolCount": "\(tools?.count ?? 0)"
             ]
         )
 
@@ -770,15 +827,20 @@ class AIService: ObservableObject {
 
         // Handle Anthropic provider separately
         if effectiveProvider == .anthropic {
+            let anthropicCallbacks = AIProviderStreamCallbacks(
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onToolCallRequested: onToolCallRequested,
+                onReasoning: onReasoning
+            )
             handleAnthropicRequest(
                 messages: messages,
                 model: requestModel,
                 stream: stream,
+                tools: tools,
                 conversationId: conversationId,
-                onChunk: onChunk,
-                onComplete: onComplete,
-                onError: onError,
-                onReasoning: onReasoning
+                callbacks: anthropicCallbacks
             )
             return
         }
@@ -815,6 +877,7 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
+                onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
             return
@@ -1148,6 +1211,7 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
     ) {
@@ -1171,6 +1235,18 @@ class AIService: ObservableObject {
             return
         }
 
+        // Get available tools for the Responses API
+        let tools = getAllAvailableTools()
+
+        if let tools, !tools.isEmpty {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🔧 Responses API: Sending tools",
+                metadata: ["count": "\(tools.count)"]
+            )
+        }
+
         // Inject memory context into messages
         let systemPrompt = messages.first { $0.role == .system }?.content
         let conversationHistory = messages.filter { $0.role != .system }
@@ -1188,6 +1264,7 @@ class AIService: ObservableObject {
                 url: url,
                 messages: messagesWithMemory,
                 model: model,
+                tools: tools,
                 apiKey: modelAPIKey,
                 isAzure: usesAzureEndpoint
             )
@@ -1227,6 +1304,7 @@ class AIService: ObservableObject {
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
+                                onToolCallRequested: onToolCallRequested,
                                 onReasoning: onReasoning,
                                 attempt: attempt + 1
                             )
@@ -1254,11 +1332,21 @@ class AIService: ObservableObject {
                     }
 
                     if let outputArray = json?["output"] as? [[String: Any]] {
-                        OpenAIRequestBuilder.deliverResponsesOutput(
+                        let result = OpenAIRequestBuilder.deliverResponsesOutput(
                             outputArray,
                             onChunk: onChunk,
-                            onReasoning: onReasoning
+                            onReasoning: onReasoning,
+                            onToolCallRequested: onToolCallRequested
                         )
+
+                        if result.hasToolCalls {
+                            DiagnosticsLogger.log(
+                                .aiService,
+                                level: .info,
+                                message: "🔧 Responses API: Tool calls detected",
+                                metadata: ["count": "\(result.toolCalls.count)"]
+                            )
+                        }
                     }
 
                     onComplete()
@@ -1486,6 +1574,9 @@ class AIService: ObservableObject {
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
                     var totalBytesReceived = 0
 
+                    // Maximum line length to prevent OOM from malformed streams without newlines
+                    let maxLineLength = 65536 // 64KB
+
                     for try await byte in bytes {
                         // Check for cancellation at each byte
                         try Task.checkCancellation()
@@ -1493,6 +1584,11 @@ class AIService: ObservableObject {
                         hasReceivedData = true
                         totalBytesReceived += 1
                         buffer.append(byte)
+
+                        // Prevent unbounded buffer growth from malformed streams
+                        if buffer.count > maxLineLength {
+                            throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
+                        }
 
                         // Log first byte received
                         if totalBytesReceived == 1 {
@@ -2024,18 +2120,16 @@ class AIService: ObservableObject {
         messages: [Message],
         model: String,
         stream: Bool,
+        tools: [[String: Any]]?,
         conversationId: UUID?,
-        onChunk: @escaping @Sendable (String) -> Void,
-        onComplete: @escaping @Sendable () -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        onReasoning: (@Sendable (String) -> Void)? = nil
+        callbacks: AIProviderStreamCallbacks
     ) {
         let modelAPIKey = getAPIKey(for: model)
         let endpointInfo = customEndpoint(for: model)
 
         // Validate API key
         guard !modelAPIKey.isEmpty else {
-            onError(AynaError.missingAPIKey(provider: "API"))
+            callbacks.onError(AynaError.missingAPIKey(provider: "API"))
             return
         }
 
@@ -2068,28 +2162,28 @@ class AIService: ObservableObject {
 
         // Wrap callbacks to clear provider reference on completion
         let wrappedCallbacks = AIProviderStreamCallbacks(
-            onChunk: onChunk,
+            onChunk: callbacks.onChunk,
             onComplete: { [weak self] in
                 Task { @MainActor in
                     self?.currentAnthropicProvider = nil
                 }
-                onComplete()
+                callbacks.onComplete()
             },
             onError: { [weak self] error in
                 Task { @MainActor in
                     self?.currentAnthropicProvider = nil
                 }
-                onError(error)
+                callbacks.onError(error)
             },
-            onToolCallRequested: nil, // TODO: Add MCP tool support for Anthropic
-            onReasoning: onReasoning
+            onToolCallRequested: callbacks.onToolCallRequested,
+            onReasoning: callbacks.onReasoning
         )
 
         provider.sendMessage(
             messages: messagesWithMemory,
             config: config,
             stream: stream,
-            tools: nil, // TODO: Add MCP tool support for Anthropic
+            tools: tools,
             callbacks: wrappedCallbacks
         )
     }
@@ -2332,6 +2426,26 @@ extension AIService {
 // MARK: - Tool Management
 
 extension AIService {
+    /// Returns system prompt context for agentic capabilities.
+    /// This should be appended to the user's system prompt when tools are available.
+    func getAgenticSystemPromptContext() -> String? {
+        var contexts: [String] = []
+
+        // Add web_fetch context on all platforms
+        if let webFetchContext = WebFetchService.shared.systemPromptContext() {
+            contexts.append(webFetchContext)
+        }
+
+        // Add macOS-specific tool context
+        #if os(macOS)
+            if let builtinContext = builtinToolService?.systemPromptContext() {
+                contexts.append(builtinContext)
+            }
+        #endif
+
+        return contexts.isEmpty ? nil : contexts.joined(separator: "\n\n")
+    }
+
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
     /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
     func getAllAvailableTools() -> [[String: Any]]? {
@@ -2346,6 +2460,50 @@ extension AIService {
         #else
             if TavilyService.shared.isAvailable {
                 tools.append(TavilyService.shared.toolDefinition())
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added Tavily tool"
+                )
+            }
+        #endif
+
+        // Add web_fetch tool (available on all platforms)
+        if WebFetchService.shared.isEnabled {
+            tools.append(WebFetchService.shared.toolDefinition())
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🔧 Added web_fetch tool"
+            )
+        }
+
+        // Add native agentic tools (macOS only, excludes web_fetch which is cross-platform)
+        #if os(macOS)
+            if let builtinService = builtinToolService {
+                // Get all tool definitions except web_fetch (already added above)
+                let builtinTools = builtinService.allToolDefinitions().filter { tool in
+                    guard let function = tool["function"] as? [String: Any],
+                          let name = function["name"] as? String
+                    else { return true }
+                    return name != WebFetchService.toolName
+                }
+                tools.append(contentsOf: builtinTools)
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added builtin tools",
+                    metadata: [
+                        "count": "\(builtinTools.count)",
+                        "isEnabled": "\(builtinService.isEnabled)"
+                    ]
+                )
+            } else {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "⚠️ builtinToolService is nil"
+                )
             }
         #endif
 
@@ -2353,7 +2511,22 @@ extension AIService {
         #if os(macOS)
             let mcpTools = MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
             tools.append(contentsOf: mcpTools)
+            if !mcpTools.isEmpty {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added MCP tools",
+                    metadata: ["count": "\(mcpTools.count)"]
+                )
+            }
         #endif
+
+        DiagnosticsLogger.log(
+            .aiService,
+            level: .info,
+            message: "🔧 getAllAvailableTools returning",
+            metadata: ["totalTools": "\(tools.count)", "isNil": "\(tools.isEmpty)"]
+        )
 
         return tools.isEmpty ? nil : tools
     }
@@ -2363,9 +2536,11 @@ extension AIService {
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
-            return toolName == "web_search"
+            return toolName == "web_search" || WebFetchService.isWebFetchTool(toolName)
+        #elseif os(macOS)
+            return toolName == TavilyService.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
         #else
-            return toolName == TavilyService.toolName
+            return toolName == TavilyService.toolName || WebFetchService.isWebFetchTool(toolName)
         #endif
     }
 
@@ -2373,8 +2548,14 @@ extension AIService {
     /// - Parameters:
     ///   - toolName: The name of the tool to execute
     ///   - arguments: The arguments passed to the tool
+    ///   - conversationId: The conversation ID for permission tracking (macOS only)
     /// - Returns: The tool execution result as a string
-    func executeBuiltInTool(name toolName: String, arguments: [String: Any]) async -> String {
+    func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
+        // Handle web_fetch on all platforms
+        if WebFetchService.isWebFetchTool(toolName) {
+            return await WebFetchService.shared.executeToolCall(arguments: arguments)
+        }
+
         #if os(watchOS)
             switch toolName {
             case "web_search":
@@ -2382,12 +2563,35 @@ extension AIService {
             default:
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
+        #elseif os(macOS)
+            // Check for native agentic tools first (excluding web_fetch which is handled above)
+            if BuiltinToolService.isBuiltinTool(toolName) {
+                guard let service = builtinToolService else {
+                    return "Error: Agentic tools not configured"
+                }
+                guard let convId = conversationId else {
+                    return "Error: Conversation ID required for agentic tools"
+                }
+                return await service.executeToolCall(
+                    toolName: toolName,
+                    arguments: arguments,
+                    conversationId: convId
+                )
+            }
+
+            // Fall back to Tavily
+            switch toolName {
+            case TavilyService.toolName:
+                return await TavilyService.shared.executeToolCall(arguments: arguments)
+            default:
+                return "Error: Unknown built-in tool '\(toolName)'"
+            }
         #else
             switch toolName {
             case TavilyService.toolName:
-                await TavilyService.shared.executeToolCall(arguments: arguments)
+                return await TavilyService.shared.executeToolCall(arguments: arguments)
             default:
-                "Error: Unknown built-in tool '\(toolName)'"
+                return "Error: Unknown built-in tool '\(toolName)'"
             }
         #endif
     }
@@ -2396,15 +2600,37 @@ extension AIService {
     /// - Parameters:
     ///   - toolName: The name of the tool to execute
     ///   - arguments: The arguments passed to the tool
+    ///   - conversationId: The conversation ID for permission tracking (macOS only)
     /// - Returns: Tuple of (result string, optional citations for inline display)
     func executeBuiltInToolWithCitations(
         name toolName: String,
-        arguments: [String: Any]
+        arguments: [String: Any],
+        conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
+        // Handle web_fetch on all platforms (no citations)
+        if WebFetchService.isWebFetchTool(toolName) {
+            let result = await WebFetchService.shared.executeToolCall(arguments: arguments)
+            return (result, nil)
+        }
+
         #if os(watchOS)
-            /// watchOS doesn't support citations yet
+            // watchOS doesn't support citations yet
             let result = await executeBuiltInTool(name: toolName, arguments: arguments)
             return (result, nil)
+        #elseif os(macOS)
+            // Native agentic tools don't have citations (excluding web_fetch which is handled above)
+            if BuiltinToolService.isBuiltinTool(toolName) {
+                let result = await executeBuiltInTool(name: toolName, arguments: arguments, conversationId: conversationId)
+                return (result, nil)
+            }
+
+            switch toolName {
+            case TavilyService.toolName:
+                let (result, citations) = await TavilyService.shared.executeToolCallWithCitations(arguments: arguments)
+                return (result, citations.isEmpty ? nil : citations)
+            default:
+                return ("Error: Unknown built-in tool '\(toolName)'", nil)
+            }
         #else
             switch toolName {
             case TavilyService.toolName:

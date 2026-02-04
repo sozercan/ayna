@@ -181,7 +181,17 @@ enum AnthropicRequestBuilder {
         var anthropicMessages: [[String: Any]] = []
         var imageCount = 0
 
-        for message in messages {
+        #if !os(watchOS)
+            // Build a set of valid tool_call_ids that have matching tool responses
+            var toolResponseIds = Set<String>()
+            for message in messages {
+                if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
+                    toolResponseIds.insert(toolCallId)
+                }
+            }
+        #endif
+
+        for (index, message) in messages.enumerated() {
             // Extract system prompt (don't include in messages array)
             if message.role == .system {
                 if systemPrompt == nil {
@@ -193,10 +203,77 @@ enum AnthropicRequestBuilder {
                 continue
             }
 
-            // Skip tool messages for now (handled separately in tool result flow)
-            if message.role == .tool {
-                continue
-            }
+            #if !os(watchOS)
+                // Handle tool result messages - convert to Anthropic's tool_result format
+                if message.role == .tool {
+                    guard let toolCallId = message.toolCalls?.first?.id else {
+                        // Skip tool messages without tool_call_id
+                        continue
+                    }
+
+                    // Verify the preceding message is an assistant with matching tool_call
+                    if index > 0 {
+                        let prevMessage = messages[index - 1]
+                        guard prevMessage.role == .assistant,
+                              let toolCalls = prevMessage.toolCalls,
+                              toolCalls.contains(where: { $0.id == toolCallId })
+                        else {
+                            // Orphaned tool message - skip it
+                            continue
+                        }
+                    }
+
+                    // Convert to Anthropic tool_result format (user role with tool_result content)
+                    let toolResultBlock = buildToolResultContent(
+                        toolUseId: toolCallId,
+                        content: message.content
+                    )
+                    anthropicMessages.append([
+                        "role": "user",
+                        "content": [toolResultBlock]
+                    ])
+                    continue
+                }
+
+                // For assistant messages with tool_calls, filter to only those with matching tool responses
+                if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
+
+                    if validToolCalls.isEmpty {
+                        // No valid tool calls - add assistant without tool_calls
+                        var modifiedMessage = message
+                        modifiedMessage.toolCalls = nil
+                        let (converted, msgImageCount) = try convertMessage(modifiedMessage)
+                        imageCount += msgImageCount
+                        if imageCount > maxImagesPerRequest {
+                            throw AynaError.apiError(
+                                message: "Too many images: maximum \(maxImagesPerRequest) images per request"
+                            )
+                        }
+                        anthropicMessages.append(converted)
+                        continue
+                    } else if validToolCalls.count < toolCalls.count {
+                        // Some tool calls are orphaned - keep only valid ones
+                        var modifiedMessage = message
+                        modifiedMessage.toolCalls = validToolCalls
+                        let (converted, msgImageCount) = try convertMessage(modifiedMessage)
+                        imageCount += msgImageCount
+                        if imageCount > maxImagesPerRequest {
+                            throw AynaError.apiError(
+                                message: "Too many images: maximum \(maxImagesPerRequest) images per request"
+                            )
+                        }
+                        anthropicMessages.append(converted)
+                        continue
+                    }
+                    // All tool calls have matching responses - fall through to normal conversion
+                }
+            #else
+                // Skip tool messages on watchOS (tools not supported)
+                if message.role == .tool {
+                    continue
+                }
+            #endif
 
             // Convert message
             let (converted, msgImageCount) = try convertMessage(message)

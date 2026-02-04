@@ -432,6 +432,12 @@ struct MacChatView: View {
                     .background(Theme.accent.opacity(0.1))
                 }
 
+                // Pending tool approval requests - reads directly from @Observable PermissionService
+                PendingApprovalsSectionView(
+                    conversationId: conversation.id,
+                    permissionService: aiService.permissionService
+                )
+
                 // Input Area
                 VStack(spacing: Spacing.sm) {
                     MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
@@ -851,7 +857,7 @@ struct MacChatView: View {
 
         // Build messages for API using the same pattern as sendMessage
         var messagesToSend = currentConversation.messages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: currentConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1349,7 +1355,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1761,7 +1767,7 @@ struct MacChatView: View {
 
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1889,7 +1895,7 @@ struct MacChatView: View {
         tools: [[String: Any]]?,
         isInitialRequest _: Bool
     ) {
-        let maxToolCallDepth = 10 // Prevent infinite loops
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
 
@@ -2064,7 +2070,12 @@ struct MacChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    // checking if tool call is pending. The stream may send [DONE] immediately
+                    // after finish_reason: "tool_calls".
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     // Validate conversation still exists
                     guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
@@ -2072,6 +2083,7 @@ struct MacChatView: View {
                             "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
                             level: .default
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
 
@@ -2081,15 +2093,6 @@ struct MacChatView: View {
                         level: .info,
                         metadata: ["toolName": toolName]
                     )
-
-                    // Only update UI state if we're currently viewing this conversation
-                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversation.id
-                    }),
-                        currentIndex == conversationIndex
-                    {
-                        currentToolName = toolName
-                    }
 
                     // Check depth limit
                     guard toolCallDepth < maxToolCallDepth else {
@@ -2139,10 +2142,11 @@ struct MacChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService.executeBuiltInToolWithCitations(
                                     name: toolName,
-                                    arguments: argumentsWrapper.value
+                                    arguments: argumentsWrapper.value,
+                                    conversationId: conversation.id
                                 )
                                 result = toolResult
                                 citations = toolCitations
@@ -2243,7 +2247,7 @@ struct MacChatView: View {
                                 }
 
                                 // Prepend system prompt for continued conversation
-                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
+                                if let sysPrompt = buildFullSystemPrompt(for: convWithAssistant) {
                                     let sysMessage = Message(role: .system, content: sysPrompt)
                                     continuationMessages.insert(sysMessage, at: 0)
                                 }
@@ -2391,7 +2395,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2442,7 +2446,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2464,6 +2468,66 @@ struct MacChatView: View {
             tools: tools,
             isInitialRequest: true
         )
+    }
+
+    // MARK: - System Prompt Helpers
+
+    /// Builds the full system prompt including agentic capabilities context.
+    private func buildFullSystemPrompt(for conversation: Conversation) -> String? {
+        var components: [String] = []
+
+        // Add user's configured system prompt
+        if let userPrompt = conversationManager.effectiveSystemPrompt(for: conversation), !userPrompt.isEmpty {
+            components.append(userPrompt)
+        }
+
+        // Add agentic tools context if available
+        if let agenticContext = aiService.getAgenticSystemPromptContext() {
+            components.append(agenticContext)
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: "\n\n")
+    }
+}
+
+// MARK: - Pending Approvals Section View
+
+/// Helper view for pending approvals.
+/// Reads directly from PermissionService (@Observable) so SwiftUI tracks changes automatically.
+private struct PendingApprovalsSectionView: View {
+    let conversationId: UUID
+    let permissionService: PermissionService?
+
+    /// Read approvals directly in body to establish Observation tracking
+    private var approvals: [PendingApproval] {
+        permissionService?.pendingApprovals.filter { $0.conversationId == conversationId } ?? []
+    }
+
+    var body: some View {
+        Group {
+            if let permService = permissionService, !approvals.isEmpty {
+                VStack(spacing: 12) {
+                    ForEach(approvals) { approval in
+                        ApprovalRequestView(
+                            approval: approval,
+                            onApprove: { rememberForSession in
+                                permService.approve(approval.id, rememberForSession: rememberForSession)
+                            },
+                            onDeny: {
+                                permService.deny(approval.id)
+                            },
+                            pendingCount: approvals.count
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: approvals.count)
     }
 }
 

@@ -280,7 +280,7 @@
             #expect(!result.isSuccess)
             #expect(result.content == nil)
             #expect(result.errorMessage != nil)
-            #expect(try #require(result.errorMessage?.contains("permission")))
+            #expect(try #require(result.errorMessage?.contains("permission") as Bool?))
         }
 
         @Test("Result no focused app")
@@ -308,7 +308,7 @@
             #expect(!result.isSuccess)
             #expect(result.content == nil)
             #expect(result.errorMessage != nil)
-            #expect(try #require(result.errorMessage?.contains("Test failure")))
+            #expect(try #require(result.errorMessage?.contains("Test failure") as Bool?))
         }
     }
 #endif

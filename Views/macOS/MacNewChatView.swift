@@ -535,19 +535,19 @@ struct MacNewChatView: View {
 
                 if selectedModels.count > 1 {
                     Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: Typography.Size.caption))
                         .foregroundStyle(Color.accentColor)
                     Text("\(selectedModels.count) models")
-                        .font(.system(size: 13))
+                        .font(Typography.modelName)
                         .foregroundStyle(Color.accentColor)
                 } else {
                     Text(composerModelLabel)
-                        .font(.system(size: 13))
+                        .font(Typography.modelName)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.Size.xs))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
@@ -565,17 +565,17 @@ struct MacNewChatView: View {
     private var modelSelectorPopover: some View {
         let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text(multiModelEnabled ? "Select models" : "Select model")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Typography.captionBold)
+                .foregroundStyle(Theme.textSecondary)
             if multiModelEnabled {
                 Text("1 model = single response, 2+ = compare")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textTertiary)
             }
             Divider()
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
 
             if aiService.usableModels.isEmpty {
                 SettingsLink {
@@ -599,43 +599,30 @@ struct MacNewChatView: View {
                         HStack {
                             // Show checkbox for multi-model, radio for single-model
                             if multiModelEnabled {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.square.fill" : "square"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                    .font(.system(size: Typography.Size.body))
                             } else {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.circle.fill" : "circle"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                    .font(.system(size: Typography.Size.body))
                             }
                             Text(model)
-                                .font(.system(size: 13))
+                                .font(Typography.modelName)
                             Spacer()
 
                             // Show capability badge for image gen models
                             if modelCapability == .imageGeneration {
                                 Image(systemName: "photo")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.secondary)
+                                    .font(.system(size: Typography.Size.xs))
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
+                        .padding(.vertical, Spacing.xxs)
+                        .padding(.horizontal, Spacing.sm)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(
-                                    isSelected
-                                        ? Color.accentColor.opacity(0.1) : Color.clear
-                                )
+                            RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                                .fill(isSelected ? Theme.selection : Color.clear)
                         )
                     }
                     .buttonStyle(.plain)
@@ -646,7 +633,7 @@ struct MacNewChatView: View {
 
             if multiModelEnabled, selectedModels.count > 1 {
                 Divider()
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 Button(action: {
                     if let first = selectedModels.first {
                         selectedModels = [first]
@@ -658,8 +645,8 @@ struct MacNewChatView: View {
                         Image(systemName: "xmark.circle")
                         Text("Clear multi-selection")
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.red)
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.destructive)
                 }
                 .buttonStyle(.plain)
             }
@@ -1300,7 +1287,7 @@ struct MacNewChatView: View {
         temperature: Double,
         tools: [[String: Any]]?
     ) {
-        let maxToolCallDepth = 10
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let conversationId = conversation.id
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
@@ -1371,17 +1358,19 @@ struct MacNewChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
                         logNewChat(
                             "⚠️ Tool call requested but conversation \(conversationId) no longer exists",
                             level: .error
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
-
-                    currentToolName = toolName
                     logNewChat(
                         "🔧 Tool call requested: \(toolName)",
                         level: .info,
@@ -1433,11 +1422,12 @@ struct MacNewChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService
                                     .executeBuiltInToolWithCitations(
                                         name: toolName,
-                                        arguments: argumentsWrapper.value
+                                        arguments: argumentsWrapper.value,
+                                        conversationId: conversation.id
                                     )
                                 result = toolResult
                                 citations = toolCitations

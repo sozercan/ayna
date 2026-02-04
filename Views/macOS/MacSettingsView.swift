@@ -36,9 +36,15 @@ struct MacSettingsView: View {
                 }
                 .tag(SettingsTab.mcp)
 
+            AgentsSettingsSection()
+                .tabItem {
+                    Label("Agents", systemImage: "brain")
+                }
+                .tag(SettingsTab.agents)
+
             MemorySettingsSection()
                 .tabItem {
-                    Label("Memory", systemImage: "brain")
+                    Label("Memory", systemImage: "memorychip")
                 }
                 .tag(SettingsTab.memory)
         }
@@ -323,125 +329,221 @@ struct AttachFromAppSettingsSection: View {
 struct ToolsSettingsView: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @StateObject private var mcpManager = MCPServerManager.shared
+    @Bindable private var agentSettings = AgentSettingsStore.shared
 
     var body: some View {
-        HSplitView {
-            // Left panel - Tool Configuration
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text("Tools")
-                            .font(Typography.title2)
-                            .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("Tools")
+                        .font(Typography.title2)
+                        .fontWeight(.semibold)
 
-                        let toolCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0) + mcpManager.availableTools.count
-                        Text("\(toolCount) tools available")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Button(action: {
-                        Task {
-                            await mcpManager.discoverAllTools()
-                        }
-                    }) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(mcpManager.isDiscovering)
+                    let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
+                    let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
+                    let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
+                    Text("\(toolCount) tools available")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
-                .padding()
 
-                Divider()
+                Spacer()
 
-                // Tools list
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Spacing.lg) {
-                        // Built-in Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Built-in Tools")
+                Button(action: {
+                    Task {
+                        await mcpManager.discoverAllTools()
+                    }
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(mcpManager.isDiscovering)
+            }
+            .padding()
+
+            Divider()
+
+            // Tools list
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    // Built-in Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Built-in Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        WebSearchToolRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // Agentic Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text("Agentic Tools")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        AgenticToolsRow()
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.horizontal)
+
+                    // MCP Tools Section
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            Text("MCP Servers")
                                 .font(Typography.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(Theme.textSecondary)
 
-                            WebSearchToolRow()
+                            Spacer()
+
+                            Text("\(mcpManager.getConnectedServerCount()) connected")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         }
-                        .padding(.horizontal)
 
-                        Divider()
-                            .padding(.horizontal)
-
-                        // MCP Tools Section
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            HStack {
-                                Text("MCP Servers")
-                                    .font(Typography.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(Theme.textSecondary)
-
-                                Spacer()
-
-                                Text("\(mcpManager.getConnectedServerCount()) connected")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            MCPServersList()
-                        }
-                        .padding(.horizontal)
+                        MCPServersList()
                     }
-                    .padding(.vertical)
+                    .padding(.horizontal)
                 }
+                .padding(.vertical)
             }
-            .frame(minWidth: 300)
-
-            // Right panel - Details/Configuration
-            ToolConfigurationPanel()
         }
         .accessibilityIdentifier("settings.tools.view")
     }
 }
 
-/// Row displaying Web Search tool status
+/// Row displaying Web Search tool status with inline configuration
 struct WebSearchToolRow: View {
     @ObservedObject private var tavilyService = TavilyService.shared
+    @State private var isExpanded = false
+    @State private var showAPIKey = false
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+        VStack(spacing: 0) {
+            HStack {
+                Toggle("", isOn: $tavilyService.isEnabled)
+                    .labelsHidden()
+                    .accessibilityIdentifier("settings.tools.webSearch.toggle")
 
-            VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                Text("Web Search")
-                    .font(Typography.headline)
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
 
-                HStack(spacing: Spacing.xxs) {
-                    Text(statusDescription)
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Web Search")
+                        .font(Typography.headline)
 
-                    if tavilyService.isEnabled, tavilyService.isConfigured {
-                        Text("•")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("1 tool")
+                    HStack(spacing: Spacing.xxs) {
+                        Text(statusDescription)
                             .font(Typography.caption)
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.textSecondary)
+
+                        if tavilyService.isEnabled, tavilyService.isConfigured {
+                            Text("•")
+                                .foregroundStyle(Theme.textSecondary)
+                            Text("1 tool")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
                 }
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Label(isExpanded ? "Hide Settings" : "Configure", systemImage: "gear")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
             }
+            .padding()
 
-            Spacer()
+            // Expandable configuration section
+            if isExpanded, tavilyService.isEnabled {
+                Divider()
+                    .padding(.horizontal)
 
-            Toggle("", isOn: $tavilyService.isEnabled)
-                .labelsHidden()
-                .accessibilityIdentifier("settings.tools.webSearch.toggle")
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        Text("Tavily API Key")
+                            .font(Typography.subheadline)
+                        Spacer()
+                        if tavilyService.isConfigured {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.statusConnected)
+                                .font(Typography.caption)
+                        } else {
+                            Text("Required")
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.statusConnecting)
+                                .padding(.horizontal, Spacing.xs)
+                                .padding(.vertical, Spacing.xxxs)
+                                .background(Color.orange.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                        }
+                    }
+
+                    HStack(spacing: Spacing.sm) {
+                        if showAPIKey {
+                            TextField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
+                        } else {
+                            SecureField("tvly-...", text: $tavilyService.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
+                        }
+
+                        Button(action: { showAPIKey.toggle() }) {
+                            Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: Typography.Size.sm))
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
+                        .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
+                    }
+
+                    HStack(spacing: Spacing.xxs) {
+                        Text("Get your API key at")
+                            .font(Typography.caption)
+                            .foregroundStyle(.tertiary)
+                        Link("tavily.com", destination: URL(string: "https://tavily.com")!)
+                            .font(Typography.caption)
+                    }
+                }
+                .padding()
+            }
         }
-        .padding()
         .background(Theme.backgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+        .onChange(of: tavilyService.isEnabled) { _, newValue in
+            // Auto-expand when enabled and not configured
+            if newValue, !tavilyService.isConfigured {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded = true
+                }
+            }
+        }
     }
 
     private var statusColor: Color {
@@ -462,6 +564,72 @@ struct WebSearchToolRow: View {
         } else {
             "API key required"
         }
+    }
+}
+
+/// Row displaying Agentic Tools status
+struct AgenticToolsRow: View {
+    @Bindable private var agentSettings = AgentSettingsStore.shared
+
+    private let toolNames = [
+        "read_file", "write_file", "edit_file",
+        "list_directory", "search_files", "run_command", "web_fetch"
+    ]
+
+    var body: some View {
+        HStack {
+            Toggle("", isOn: $agentSettings.settings.isEnabled)
+                .labelsHidden()
+                .accessibilityIdentifier("settings.tools.agentic.toggle")
+
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                Text("Agentic Tools")
+                    .font(Typography.headline)
+
+                HStack(spacing: Spacing.xxs) {
+                    Text(statusDescription)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    if agentSettings.settings.isEnabled {
+                        Text("•")
+                            .foregroundStyle(Theme.textSecondary)
+                        Text("6 tools")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Menu {
+                Button {
+                    SettingsRouter.shared.route(to: .agents)
+                } label: {
+                    Label("Configure", systemImage: "gear")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .menuStyle(.borderlessButton)
+        }
+        .padding()
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+    }
+
+    private var statusColor: Color {
+        agentSettings.settings.isEnabled ? Theme.statusConnected : Theme.statusDisconnected
+    }
+
+    private var statusDescription: String {
+        agentSettings.settings.isEnabled ? "Enabled" : "Disabled"
     }
 }
 
@@ -580,6 +748,12 @@ struct MCPServerRow: View {
 
     var body: some View {
         HStack {
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .onChange(of: isEnabled) { _, _ in
+                    onToggle()
+                }
+
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
@@ -604,12 +778,6 @@ struct MCPServerRow: View {
             }
 
             Spacer()
-
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .onChange(of: isEnabled) { _, _ in
-                    onToggle()
-                }
 
             Menu {
                 Button("Edit") { onEdit() }
@@ -656,114 +824,6 @@ struct MCPServerRow: View {
         case .connected, .connecting, .reconnecting, .disabled: return false
         default: return true
         }
-    }
-}
-
-/// Right panel for tool configuration
-struct ToolConfigurationPanel: View {
-    @ObservedObject private var tavilyService = TavilyService.shared
-    @State private var showAPIKey = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Text("Configuration")
-                    .font(Typography.title2)
-                    .fontWeight(.semibold)
-                Spacer()
-            }
-            .padding()
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    // Web Search Configuration
-                    if tavilyService.isEnabled {
-                        VStack(alignment: .leading, spacing: Spacing.md) {
-                            Text("Web Search")
-                                .font(Typography.headline)
-
-                            VStack(alignment: .leading, spacing: Spacing.sm) {
-                                HStack {
-                                    Text("Tavily API Key")
-                                        .font(Typography.subheadline)
-                                    Spacer()
-                                    if tavilyService.isConfigured {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Theme.statusConnected)
-                                            .font(Typography.caption)
-                                    } else {
-                                        Text("Required")
-                                            .font(Typography.micro)
-                                            .foregroundStyle(Theme.statusConnecting)
-                                            .padding(.horizontal, Spacing.xs)
-                                            .padding(.vertical, Spacing.xxxs)
-                                            .background(Color.orange.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                                    }
-                                }
-
-                                HStack(spacing: Spacing.sm) {
-                                    if showAPIKey {
-                                        TextField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.textField")
-                                    } else {
-                                        SecureField("tvly-...", text: $tavilyService.apiKey)
-                                            .textFieldStyle(.roundedBorder)
-                                            .accessibilityIdentifier("settings.tools.webSearch.apiKey.secureField")
-                                    }
-
-                                    Button(action: { showAPIKey.toggle() }) {
-                                        Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
-                                            .font(.system(size: Typography.Size.sm))
-                                            .foregroundStyle(Theme.textSecondary)
-                                            .frame(width: 32, height: 32)
-                                            .background(Color.secondary.opacity(0.1))
-                                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                                    .accessibilityIdentifier("settings.tools.webSearch.apiKey.toggleVisibility")
-                                }
-
-                                HStack(spacing: Spacing.xxs) {
-                                    Text("Get your API key at")
-                                        .font(Typography.caption)
-                                        .foregroundStyle(.tertiary)
-                                    Link("tavily.com", destination: URL(string: "https://tavily.com")!)
-                                        .font(Typography.caption)
-                                }
-                            }
-                            .padding()
-                            .background(Theme.backgroundSecondary)
-                            .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                        }
-                    }
-
-                    // Info text
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("About Tools")
-                            .font(Typography.headline)
-
-                        Text("Tools extend the capabilities of AI models by allowing them to access external data and services. When enabled, models can automatically use these tools to provide more accurate and up-to-date responses.")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-
-                        Text("• **Web Search**: Search the web for current information\n• **MCP Servers**: Connect to external services via the Model Context Protocol")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .padding()
-                    .background(Theme.backgroundSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-                }
-                .padding()
-            }
-        }
-        .frame(minWidth: 280)
     }
 }
 
@@ -958,27 +1018,18 @@ struct APISettingsView: View {
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
-                                Picker("", selection: Binding(
-                                    get: {
-                                        if let modelName = selectedModelName {
-                                            aiService.modelEndpointTypes[modelName] ?? .chatCompletions
-                                        } else {
-                                            tempEndpointType
-                                        }
-                                    },
-                                    set: { newValue in
-                                        if let modelName = selectedModelName {
-                                            aiService.modelEndpointTypes[modelName] = newValue
-                                        } else {
-                                            tempEndpointType = newValue
-                                        }
-                                    }
-                                )) {
+                                Picker("", selection: $tempEndpointType) {
                                     ForEach(APIEndpointType.allCases, id: \.self) { endpointType in
                                         Text(endpointType.displayName).tag(endpointType)
                                     }
                                 }
                                 .pickerStyle(.segmented)
+                                .onChange(of: tempEndpointType) { _, newValue in
+                                    if let modelName = selectedModelName {
+                                        aiService.modelEndpointTypes[modelName] = newValue
+                                    }
+                                }
+                                .id(selectedModelName)
 
                                 Text("Choose which API endpoint to use for this model")
                                     .font(Typography.caption)
@@ -1127,6 +1178,25 @@ struct APISettingsView: View {
                                             let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
                                             if !modelName.isEmpty {
+                                                // Remove old model data if name changed
+                                                if selectedName != modelName {
+                                                    aiService.customModels.removeAll { $0 == selectedName }
+                                                    aiService.modelProviders.removeValue(forKey: selectedName)
+                                                    aiService.modelAPIKeys.removeValue(forKey: selectedName)
+                                                    aiService.modelEndpoints.removeValue(forKey: selectedName)
+                                                    aiService.modelEndpointTypes.removeValue(forKey: selectedName)
+
+                                                    // Add new model name if not already present
+                                                    if !aiService.customModels.contains(modelName) {
+                                                        aiService.customModels.append(modelName)
+                                                    }
+
+                                                    // Update selected model if it was the renamed one
+                                                    if aiService.selectedModel == selectedName {
+                                                        aiService.selectedModel = modelName
+                                                    }
+                                                }
+
                                                 // Update provider and endpoint type
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
@@ -1145,6 +1215,7 @@ struct APISettingsView: View {
                                                     aiService.modelEndpoints.removeValue(forKey: modelName)
                                                 }
 
+                                                selectedModelName = modelName
                                                 validationStatus = .notChecked
                                             }
                                         } label: {
@@ -1629,9 +1700,8 @@ struct APISettingsView: View {
         if let apiKey = aiService.modelAPIKeys[model] {
             aiService.modelAPIKeys[newName] = apiKey
         }
-        if let endpointType = aiService.modelEndpointTypes[model] {
-            aiService.modelEndpointTypes[newName] = endpointType
-        }
+        // Always copy endpoint type, defaulting to chatCompletions if not set
+        aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
         if let usesOAuth = aiService.modelUsesGitHubOAuth[model] {
             aiService.modelUsesGitHubOAuth[newName] = usesOAuth
         }
@@ -2097,12 +2167,31 @@ struct GitHubModelsConfigurationView: View {
 
         guard !modelName.isEmpty else { return }
 
+        // Remove old model data if name changed
+        if let oldName = selectedModelName, oldName != modelName {
+            aiService.customModels.removeAll { $0 == oldName }
+            aiService.modelProviders.removeValue(forKey: oldName)
+            aiService.modelAPIKeys.removeValue(forKey: oldName)
+            aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
+
+            // Add new model name if not already present
+            if !aiService.customModels.contains(modelName) {
+                aiService.customModels.append(modelName)
+            }
+
+            // Update selected model if it was the renamed one
+            if aiService.selectedModel == oldName {
+                aiService.selectedModel = modelName
+            }
+        }
+
         aiService.modelProviders[modelName] = .githubModels
 
         // Using OAuth, remove any stored PAT
         aiService.modelAPIKeys.removeValue(forKey: modelName)
         aiService.modelUsesGitHubOAuth[modelName] = true
 
+        selectedModelName = modelName
         validationStatus = .notChecked
     }
 }

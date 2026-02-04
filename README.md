@@ -40,7 +40,7 @@ brew install --cask ayna
 
 ### Requirements
 
-- macOS 14.0 (Sonoma) or newer, iOS 17.0 or newer, or watchOS 10.0 or newer.
+- macOS 26.0 (Tahoe) or newer, iOS 26.0 or newer, or watchOS 26.0 or newer.
 - An API key for OpenAI, Anthropic, or Azure OpenAI, or a GitHub account for GitHub Models (optional if using local models).
 
 ## User Guide
