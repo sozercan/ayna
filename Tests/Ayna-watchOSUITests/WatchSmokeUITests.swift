@@ -8,8 +8,8 @@ final class WatchSmokeUITests: WatchUITestCase {
     func testAppLaunches() {
         // Verify the app launches and shows the conversation list or empty state
         // Try multiple element types since watchOS may expose elements differently
-        let conversationListExists = app.descendants(matching: .any)["watch.conversationList"].waitForExistence(timeout: 5)
-        let emptyStateExists = app.descendants(matching: .any)["watch.emptyState"].waitForExistence(timeout: 5)
+        let conversationListExists = app.descendants(matching: .any)["watch.conversationList"].waitForExistence(timeout: UITestTimeout.normal)
+        let emptyStateExists = app.descendants(matching: .any)["watch.emptyState"].waitForExistence(timeout: UITestTimeout.normal)
 
         let hasMainView = conversationListExists || emptyStateExists
         XCTAssertTrue(hasMainView, "App should show conversation list or empty state on launch")
@@ -18,7 +18,7 @@ final class WatchSmokeUITests: WatchUITestCase {
     func testEmptyStateShowsNewChatOption() {
         // On fresh launch with no conversations, empty state should offer new chat
         let emptyState = app.otherElements["watch.emptyState"]
-        if emptyState.waitForExistence(timeout: 3) {
+        if emptyState.waitForExistence(timeout: UITestTimeout.immediate) {
             // Verify "New Chat" button or link exists
             let newChatButton = app.buttons["New Chat"]
             XCTAssertTrue(newChatButton.exists || app.buttons["watch.newChatButton"].exists,
@@ -33,7 +33,7 @@ final class WatchSmokeUITests: WatchUITestCase {
 
         // Verify new chat view appears
         let composerField = app.textFields["watch.newChat.composerTextField"]
-        XCTAssertTrue(composerField.waitForExistence(timeout: 5), "New chat composer should appear")
+        XCTAssertTrue(composerField.waitForExistence(timeout: UITestTimeout.normal), "New chat composer should appear")
     }
 
     func testNavigateToModelSelector() {
@@ -41,7 +41,7 @@ final class WatchSmokeUITests: WatchUITestCase {
 
         // Tap model selector button in toolbar - use firstMatch to avoid multiple element issues
         let modelButton = app.buttons["watch.modelSelectorButton"].firstMatch
-        if !modelButton.waitForExistence(timeout: 10) {
+        if !modelButton.waitForExistence(timeout: UITestTimeout.async) {
             // Model button may not exist if toolbar hasn't loaded - skip gracefully
             // This can happen in UI test environment without full WatchConnectivity
             // Test passes since we verified navigation to new chat works
@@ -64,11 +64,11 @@ final class WatchSmokeUITests: WatchUITestCase {
 
         // Type and send a message - use firstMatch and be flexible
         let textField = app.textFields["watch.newChat.composerTextField"].firstMatch
-        if !textField.waitForExistence(timeout: 10) {
+        if !textField.waitForExistence(timeout: UITestTimeout.async) {
             // TextField may not appear in simulator without proper WatchConnectivity
             // Just verify navigation worked by checking for any new chat UI element
             let newChatTitle = app.descendants(matching: .any)["New Chat"].firstMatch
-            if newChatTitle.waitForExistence(timeout: 5) {
+            if newChatTitle.waitForExistence(timeout: UITestTimeout.normal) {
                 // Navigation worked, text field just isn't accessible - pass
                 return
             }
@@ -92,8 +92,8 @@ final class WatchSmokeUITests: WatchUITestCase {
         let textField = app.textFields["watch.newChat.composerTextField"].firstMatch
         let newChatTitle = app.descendants(matching: .any)["New Chat"].firstMatch
 
-        let hasTextField = textField.waitForExistence(timeout: 10)
-        let hasTitle = newChatTitle.waitForExistence(timeout: 5)
+        let hasTextField = textField.waitForExistence(timeout: UITestTimeout.async)
+        let hasTitle = newChatTitle.waitForExistence(timeout: UITestTimeout.normal)
 
         // Pass if we can see either the text field or the title - confirms navigation worked
         XCTAssertTrue(hasTextField || hasTitle, "New chat view should be visible (either composer or title)")

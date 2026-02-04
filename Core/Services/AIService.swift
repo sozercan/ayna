@@ -207,11 +207,25 @@ class AIService: ObservableObject {
                 imageService = OpenAIImageService(urlSession: self.urlSession)
             #endif
         }
+        
+        // Check if running in UI test mode - configure test model early
+        // Multiple checks because different platforms/test runners set flags differently
+        let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
+                         ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+                         ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
+                         UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
+        
         // Load custom models first
-        let loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
+        var loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
             savedModels
         } else {
             []
+        }
+        
+        // Ensure test model exists during UI testing
+        let testModelName = "ui-test-model"
+        if isUITesting && !loadedCustomModels.contains(testModelName) {
+            loadedCustomModels.insert(testModelName, at: 0)
         }
         customModels = loadedCustomModels
 
@@ -226,7 +240,13 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
             )
         }
-        modelProviders = loadedProviders
+        
+        // Ensure test model has a provider during UI testing
+        var updatedProviders = loadedProviders
+        if isUITesting && updatedProviders[testModelName] == nil {
+            updatedProviders[testModelName] = .openai
+        }
+        modelProviders = updatedProviders
 
         // Load model endpoint types mapping
         let loadedEndpointTypes: [String: APIEndpointType] = if let savedEndpointTypes = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes")
@@ -239,7 +259,13 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
             )
         }
-        modelEndpointTypes = loadedEndpointTypes
+        
+        // Ensure test model has an endpoint type during UI testing
+        var updatedEndpointTypes = loadedEndpointTypes
+        if isUITesting && updatedEndpointTypes[testModelName] == nil {
+            updatedEndpointTypes[testModelName] = .chatCompletions
+        }
+        modelEndpointTypes = updatedEndpointTypes
 
         // Load custom endpoints mapping
         let loadedEndpoints: [String: String] = if let savedEndpoints = AppPreferences.storage.dictionary(forKey: "modelEndpoints")
@@ -252,7 +278,13 @@ class AIService: ObservableObject {
         modelEndpoints = loadedEndpoints
 
         // Load per-model API keys
-        modelAPIKeys = AIService.loadModelAPIKeys()
+        var loadedAPIKeys = AIService.loadModelAPIKeys()
+        
+        // Ensure test model has an API key during UI testing
+        if isUITesting && (loadedAPIKeys[testModelName]?.isEmpty ?? true) {
+            loadedAPIKeys[testModelName] = "ui-test-api-key"
+        }
+        modelAPIKeys = loadedAPIKeys
 
         // Load GitHub OAuth flags for models
         if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
@@ -263,7 +295,10 @@ class AIService: ObservableObject {
 
         // Load selected model, ensure it exists in custom models
         let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
-        if loadedCustomModels.contains(savedSelectedModel) {
+        if isUITesting {
+            // Always use test model for UI tests
+            selectedModel = testModelName
+        } else if loadedCustomModels.contains(savedSelectedModel) {
             selectedModel = savedSelectedModel
         } else if let firstModel = loadedCustomModels.first {
             selectedModel = firstModel
@@ -2304,7 +2339,7 @@ extension AIService {
     }
 
     var usableModels: [String] {
-        customModels.filter { model in
+        var models = customModels.filter { model in
             #if os(watchOS)
                 // Apple Intelligence requires on-device processing which isn't available on watchOS
                 // The watch app makes API calls directly, not via iPhone relay
@@ -2314,6 +2349,36 @@ extension AIService {
             #endif
             return true
         }
+        
+        // Check if running in UI test mode
+        let isUITestMode = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
+                          ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+                          ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
+        
+        // Ensure test model is available during UI testing
+        // This is a fallback in case the init-time detection didn't work
+        let testModelName = "ui-test-model"
+        if isUITestMode && !models.contains(testModelName) {
+            models.insert(testModelName, at: 0)
+            // Also ensure the test model is fully configured
+            if modelProviders[testModelName] == nil {
+                modelProviders[testModelName] = .openai
+            }
+            if modelEndpointTypes[testModelName] == nil {
+                modelEndpointTypes[testModelName] = .chatCompletions
+            }
+            if modelAPIKeys[testModelName]?.isEmpty ?? true {
+                modelAPIKeys[testModelName] = "ui-test-api-key"
+            }
+            if !customModels.contains(testModelName) {
+                customModels.insert(testModelName, at: 0)
+            }
+            if selectedModel.isEmpty {
+                selectedModel = testModelName
+            }
+        }
+        
+        return models
     }
 
     /// Models that support text generation (excludes image generation models)
