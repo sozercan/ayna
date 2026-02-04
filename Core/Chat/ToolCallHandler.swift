@@ -10,7 +10,6 @@ import Foundation
 /// Handles tool call execution and response processing
 @MainActor
 final class ToolCallHandler {
-
     /// Maximum tool call depth from settings
     static var maxToolCallDepth: Int {
         AgentSettingsStore.shared.settings.maxToolChainDepth

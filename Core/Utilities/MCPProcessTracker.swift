@@ -23,7 +23,7 @@ final class MCPProcessTracker: Sendable {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         }
         storageURL = supportDir?.appendingPathComponent("mcp-processes.json") ?? URL(fileURLWithPath: "")
-        
+
         // Load initial state
         var initialPIDs: [String: pid_t] = [:]
         if !storageURL.path.isEmpty {
@@ -71,9 +71,9 @@ final class MCPProcessTracker: Sendable {
             trackedPIDs.removeAll()
             return copy
         }
-        
+
         guard !pidsToClean.isEmpty else { return }
-        
+
         DiagnosticsLogger.log(
             .mcpService,
             level: .info,

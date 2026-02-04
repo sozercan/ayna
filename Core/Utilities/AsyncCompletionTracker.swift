@@ -10,7 +10,7 @@ import Foundation
 /// A wrapper to make non-Sendable types Sendable by unchecked conformance.
 /// Use this only when you are sure the value is thread-safe or accessed safely.
 final class UncheckedSendableWrapper<T>: @unchecked Sendable {
-    public let value: T
+    let value: T
 
     init(_ value: T) {
         self.value = value

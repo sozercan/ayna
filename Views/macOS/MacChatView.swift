@@ -1822,7 +1822,7 @@ struct MacChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length cyclomatic_complexity
+    // swiftlint:disable:next function_body_length
     private func sendMessageWithToolSupport(
         messages: [Message],
         model: String,

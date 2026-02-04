@@ -10,18 +10,33 @@ import Foundation
 /// Coordinates image generation, including multi-model parallel generation
 @MainActor
 final class ImageGenerationCoordinator {
-
     /// Callback types for image generation results
     typealias ImageSuccessHandler = @Sendable (Data, UUID) -> Void
     typealias ImageErrorHandler = @Sendable (Error, UUID) -> Void
     typealias CompletionHandler = @Sendable () -> Void
+
+    /// Configuration for multi-model image generation
+    struct MultiModelConfig {
+        let prompt: String
+        let models: [String]
+        let previousImage: Data?
+        let userMessageId: UUID
+        let aiService: AIService
+    }
+
+    /// Result of multi-model image generation setup
+    struct MultiModelResult {
+        let responseGroupId: UUID
+        let messageIds: [String: UUID]
+        let responseGroup: ResponseGroup
+    }
 
     /// Generates a single image using the AI service
     /// - Parameters:
     ///   - prompt: The image generation prompt
     ///   - model: The model to use
     ///   - previousImage: Optional previous image for editing context
-    ///   - conversationId: The conversation ID for the request
+    ///   - aiService: The AI service instance
     ///   - onSuccess: Called with image data and message ID on success
     ///   - onError: Called with error and message ID on failure
     /// - Returns: The message ID of the placeholder message
@@ -83,31 +98,23 @@ final class ImageGenerationCoordinator {
 
     /// Generates images from multiple models in parallel
     /// - Parameters:
-    ///   - prompt: The image generation prompt
-    ///   - models: Array of models to use
-    ///   - previousImage: Optional previous image for editing context
-    ///   - userMessageId: The user message ID that triggered this generation
-    ///   - aiService: The AI service instance
+    ///   - config: Configuration for multi-model generation
     ///   - onImageSuccess: Called for each successful image generation
     ///   - onImageError: Called for each failed image generation
     ///   - onAllComplete: Called when all generations have finished
-    /// - Returns: Tuple of (responseGroupId, messageIds dictionary)
+    /// - Returns: Result containing responseGroupId, messageIds, and responseGroup
     static func generateMultiModelImages(
-        prompt: String,
-        models: [String],
-        previousImage: Data?,
-        userMessageId: UUID,
-        aiService: AIService,
+        config: MultiModelConfig,
         onImageSuccess: @escaping ImageSuccessHandler,
         onImageError: @escaping ImageErrorHandler,
         onAllComplete: @escaping CompletionHandler
-    ) -> (responseGroupId: UUID, messageIds: [String: UUID], responseGroup: ResponseGroup) {
+    ) -> MultiModelResult {
         let responseGroupId = UUID()
         var responseEntries: [ResponseGroup.ResponseEntry] = []
         var messageIds: [String: UUID] = [:]
 
         // Create message IDs and response entries for each model
-        for model in models {
+        for model in config.models {
             let messageId = UUID()
             messageIds[model] = messageId
 
@@ -121,15 +128,15 @@ final class ImageGenerationCoordinator {
         // Create response group
         let responseGroup = ResponseGroup(
             id: responseGroupId,
-            userMessageId: userMessageId,
+            userMessageId: config.userMessageId,
             responses: responseEntries
         )
 
         // Track completion with thread-safe counter
-        let remainingCount = AsyncCounter(total: models.count)
+        let remainingCount = AsyncCounter(total: config.models.count)
 
         // Generate images in parallel
-        for model in models {
+        for model in config.models {
             guard let messageId = messageIds[model] else { continue }
 
             let wrappedOnComplete: @Sendable (Data) -> Void = { imageData in
@@ -150,17 +157,17 @@ final class ImageGenerationCoordinator {
                 }
             }
 
-            if let previousImage {
-                aiService.editImage(
-                    prompt: prompt,
+            if let previousImage = config.previousImage {
+                config.aiService.editImage(
+                    prompt: config.prompt,
                     sourceImage: previousImage,
                     model: model,
                     onComplete: wrappedOnComplete,
                     onError: wrappedOnError
                 )
             } else {
-                aiService.generateImage(
-                    prompt: prompt,
+                config.aiService.generateImage(
+                    prompt: config.prompt,
                     model: model,
                     onComplete: wrappedOnComplete,
                     onError: wrappedOnError
@@ -168,7 +175,11 @@ final class ImageGenerationCoordinator {
             }
         }
 
-        return (responseGroupId, messageIds, responseGroup)
+        return MultiModelResult(
+            responseGroupId: responseGroupId,
+            messageIds: messageIds,
+            responseGroup: responseGroup
+        )
     }
 
     /// Saves image data to storage and returns the path

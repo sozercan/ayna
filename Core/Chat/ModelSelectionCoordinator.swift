@@ -10,7 +10,6 @@ import Foundation
 /// Coordinates model selection state and validation across chat views
 @MainActor
 final class ModelSelectionCoordinator {
-
     // MARK: - Model Resolution
 
     /// Resolves the active model to use for sending a message
@@ -30,7 +29,8 @@ final class ModelSelectionCoordinator {
         }
 
         if let convModel = conversationModel?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !convModel.isEmpty {
+           !convModel.isEmpty
+        {
             return convModel
         }
 
@@ -82,11 +82,10 @@ final class ModelSelectionCoordinator {
         }
 
         // Determine primary model
-        let primaryModel: String?
-        if updatedSelection.count == 1 {
-            primaryModel = updatedSelection.first
+        let primaryModel: String? = if updatedSelection.count == 1 {
+            updatedSelection.first
         } else {
-            primaryModel = nil
+            nil
         }
 
         return (selectedModels: updatedSelection, primaryModel: primaryModel)

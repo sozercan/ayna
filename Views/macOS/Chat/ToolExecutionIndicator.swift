@@ -30,9 +30,9 @@ struct ToolExecutionIndicator: View {
 
     private var displayText: String {
         if toolName.hasPrefix("Analyzing") {
-            return "🔄 \(toolName)..."
+            "🔄 \(toolName)..."
         } else {
-            return "🔧 Using tool: \(toolName)..."
+            "🔧 Using tool: \(toolName)..."
         }
     }
 }

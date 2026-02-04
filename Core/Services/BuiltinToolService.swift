@@ -77,9 +77,9 @@ import os.log
             switch name {
             case ToolName.readFile, ToolName.writeFile, ToolName.editFile,
                  ToolName.listDirectory, ToolName.searchFiles, ToolName.runCommand:
-                return true
+                true
             default:
-                return false
+                false
             }
         }
 

@@ -10,7 +10,6 @@ import Foundation
 /// Builds user messages with optional app content context and file attachments
 @MainActor
 struct ChatMessageBuilder {
-
     // MARK: - App Content Formatting
 
     /// Formats the message content with optional app context prepended
