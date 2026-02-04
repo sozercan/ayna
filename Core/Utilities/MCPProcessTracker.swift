@@ -10,12 +10,11 @@ import Foundation
 import os
 
 /// Tracks spawned MCP server subprocesses so we can clean them up after crashes or force quits.
-final class MCPProcessTracker: @unchecked Sendable {
+final class MCPProcessTracker: Sendable {
     static let shared = MCPProcessTracker()
 
     private let storageURL: URL
-    private var trackedPIDs: [String: pid_t] = [:]
-    private let queue = DispatchQueue(label: "com.ayna.mcp.process-tracker", qos: .utility)
+    private let lock: OSAllocatedUnfairLock<[String: pid_t]>
 
     private init() {
         let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -24,52 +23,68 @@ final class MCPProcessTracker: @unchecked Sendable {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         }
         storageURL = supportDir?.appendingPathComponent("mcp-processes.json") ?? URL(fileURLWithPath: "")
-        loadFromDisk()
+
+        // Load initial state
+        var initialPIDs: [String: pid_t] = [:]
+        if !storageURL.path.isEmpty {
+            do {
+                let data = try Data(contentsOf: storageURL)
+                initialPIDs = try JSONDecoder().decode([String: pid_t].self, from: data)
+            } catch {
+                initialPIDs = [:]
+            }
+        }
+        lock = OSAllocatedUnfairLock(initialState: initialPIDs)
     }
 
     func register(serverName: String, pid: pid_t) {
-        queue.sync {
+        lock.withLock { trackedPIDs in
             trackedPIDs[serverName] = pid
-            persist()
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .info,
-                message: "📦 Tracking MCP server PID",
-                metadata: ["server": serverName, "pid": "\(pid)"]
-            )
         }
+        persist()
+        DiagnosticsLogger.log(
+            .mcpService,
+            level: .info,
+            message: "📦 Tracking MCP server PID",
+            metadata: ["server": serverName, "pid": "\(pid)"]
+        )
     }
 
     func unregister(serverName: String) {
-        queue.sync {
-            guard let pid = trackedPIDs.removeValue(forKey: serverName) else { return }
-            persist()
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .info,
-                message: "🧹 Untracked MCP server PID",
-                metadata: ["server": serverName, "pid": "\(pid)"]
-            )
+        let pid = lock.withLock { trackedPIDs -> pid_t? in
+            trackedPIDs.removeValue(forKey: serverName)
         }
+        guard let pid else { return }
+        persist()
+        DiagnosticsLogger.log(
+            .mcpService,
+            level: .info,
+            message: "🧹 Untracked MCP server PID",
+            metadata: ["server": serverName, "pid": "\(pid)"]
+        )
     }
 
     func cleanupOrphanedProcesses() {
-        queue.sync {
-            guard !trackedPIDs.isEmpty else { return }
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .info,
-                message: "🧼 Cleaning up orphaned MCP processes",
-                metadata: ["count": "\(trackedPIDs.count)"]
-            )
-
-            for (server, pid) in trackedPIDs {
-                terminateProcess(pid: pid, serverName: server)
-            }
-
+        let pidsToClean = lock.withLock { trackedPIDs -> [String: pid_t] in
+            guard !trackedPIDs.isEmpty else { return [:] }
+            let copy = trackedPIDs
             trackedPIDs.removeAll()
-            persist()
+            return copy
         }
+
+        guard !pidsToClean.isEmpty else { return }
+
+        DiagnosticsLogger.log(
+            .mcpService,
+            level: .info,
+            message: "🧼 Cleaning up orphaned MCP processes",
+            metadata: ["count": "\(pidsToClean.count)"]
+        )
+
+        for (server, pid) in pidsToClean {
+            terminateProcess(pid: pid, serverName: server)
+        }
+        persist()
     }
 
     private func terminateProcess(pid: pid_t, serverName: String) {
@@ -116,8 +131,9 @@ final class MCPProcessTracker: @unchecked Sendable {
 
     private func persist() {
         guard !storageURL.path.isEmpty else { return }
+        let currentPIDs = lock.withLock { $0 }
         do {
-            let data = try JSONEncoder().encode(trackedPIDs)
+            let data = try JSONEncoder().encode(currentPIDs)
             try data.write(to: storageURL, options: .atomic)
         } catch {
             DiagnosticsLogger.log(
@@ -126,16 +142,6 @@ final class MCPProcessTracker: @unchecked Sendable {
                 message: "Failed to persist MCP process tracker",
                 metadata: ["error": error.localizedDescription]
             )
-        }
-    }
-
-    private func loadFromDisk() {
-        guard !storageURL.path.isEmpty else { return }
-        do {
-            let data = try Data(contentsOf: storageURL)
-            trackedPIDs = try JSONDecoder().decode([String: pid_t].self, from: data)
-        } catch {
-            trackedPIDs = [:]
         }
     }
 }

@@ -169,10 +169,18 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                     var reasoningBuffer = ""
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
 
+                    // Maximum line length to prevent OOM from malformed streams without newlines
+                    let maxLineLength = 65536 // 64KB
+
                     for try await byte in bytes {
                         try Task.checkCancellation()
                         hasReceivedData = true
                         buffer.append(byte)
+
+                        // Prevent unbounded buffer growth from malformed streams
+                        if buffer.count > maxLineLength {
+                            throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
+                        }
 
                         if byte == 0x0A {
                             if let line = String(data: buffer, encoding: .utf8) {

@@ -162,7 +162,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                         callbacks: callbacks,
                         circuitKey: circuitKey
                     )
-                } onCancel: { }
+                } onCancel: {}
             } catch is CancellationError {
                 await MainActor.run { self.currentStreamTask = nil }
             } catch {
@@ -239,10 +239,18 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         var lastUpdateTime = CFAbsoluteTimeGetCurrent()
         var hasReceivedData = false
 
+        // Maximum line length to prevent OOM from malformed streams without newlines
+        let maxLineLength = 65536 // 64KB
+
         for try await byte in bytes {
             try Task.checkCancellation()
             hasReceivedData = true
             buffer.append(byte)
+
+            // Prevent unbounded buffer growth from malformed streams
+            if buffer.count > maxLineLength {
+                throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
+            }
 
             if byte == 0x0A {
                 if let line = String(data: buffer, encoding: .utf8) {

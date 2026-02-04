@@ -38,7 +38,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private var standardOutput: Pipe?
     private var standardError: Pipe?
 
-    private var healthCheckTimer: DispatchSourceTimer?
+    private var healthCheckTask: Task<Void, Never>?
     private var isDisconnectingManually = false
 
     private var requestId = 0
@@ -676,22 +676,24 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private func startHealthCheckTimer() {
         stopHealthCheckTimer()
 
-        let queue = DispatchQueue(label: "com.ayna.mcp.healthcheck.\(serverConfig.name)")
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 5, repeating: 5)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            if !(process?.isRunning ?? false) {
-                handleProcessTermination(exitCode: process?.terminationStatus)
+        healthCheckTask = Task { [weak self] in
+            // Initial delay before first check
+            try? await Task.sleep(for: .seconds(5))
+
+            while !Task.isCancelled {
+                guard let self else { return }
+                if !(self.process?.isRunning ?? false) {
+                    self.handleProcessTermination(exitCode: self.process?.terminationStatus)
+                    return
+                }
+                try? await Task.sleep(for: .seconds(5))
             }
         }
-        timer.resume()
-        healthCheckTimer = timer
     }
 
     private func stopHealthCheckTimer() {
-        healthCheckTimer?.cancel()
-        healthCheckTimer = nil
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
     }
 
     private func handleProcessTermination(exitCode: Int32?) {

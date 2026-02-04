@@ -35,12 +35,10 @@ final class KeychainStorage: Sendable {
     nonisolated static let shared = KeychainStorage()
 
     private let serviceIdentifier = "com.sertacozercan.ayna"
-    /// Note: Shared keychain access groups require a paid developer account.
-    /// For free accounts, each app uses its own keychain and syncs via WatchConnectivity.
-    /// Uncomment below if using a paid account with App Groups capability:
-    /// #if os(iOS) || os(watchOS)
-    /// private let accessGroup = "group.com.sertacozercan.ayna"
-    /// #endif
+    // Note: Keychain access groups require a paid Apple Developer account.
+    // For free accounts, keychain items are tied to the app's code signature
+    // and won't persist across rebuilds. See AIService for file-based fallback.
+
     private init() {}
 
     private nonisolated func log(
@@ -64,33 +62,38 @@ final class KeychainStorage: Sendable {
     }
 
     nonisolated func setData(_ data: Data, for key: String) throws {
-        var query = baseQuery(for: key)
-        let updateAttributes = [kSecValueData as String: data]
-        let status = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
-
-        if status == errSecItemNotFound {
-            query[kSecValueData as String] = data
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            let addStatus = SecItemAdd(query as CFDictionary, nil)
-            guard addStatus == errSecSuccess else {
-                log(
-                    "Failed to add keychain item",
-                    level: .error,
-                    metadata: ["status": "\(addStatus)", "key": key]
-                )
-                throw KeychainStorageError.unexpectedStatus(addStatus)
-            }
-            return
-        }
-
-        guard status == errSecSuccess else {
+        // First, try to delete any existing item to avoid conflicts from previous app signatures
+        // This is a workaround for free developer accounts where keychain items may be
+        // inaccessible after rebuilding due to code signature changes
+        let deleteStatus = SecItemDelete(baseQuery(for: key) as CFDictionary)
+        if deleteStatus != errSecSuccess, deleteStatus != errSecItemNotFound {
             log(
-                "Failed to update keychain item",
-                level: .error,
-                metadata: ["status": "\(status)", "key": key]
+                "Note: Could not delete existing keychain item (may be from different signature)",
+                level: .info,
+                metadata: ["status": "\(deleteStatus)", "key": key, "statusMessage": statusMessage(deleteStatus)]
             )
-            throw KeychainStorageError.unexpectedStatus(status)
         }
+
+        // Now add the new item
+        var query = baseQuery(for: key)
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+
+        let addStatus = SecItemAdd(query as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            log(
+                "Failed to add keychain item",
+                level: .error,
+                metadata: ["status": "\(addStatus)", "key": key, "statusMessage": statusMessage(addStatus)]
+            )
+            throw KeychainStorageError.unexpectedStatus(addStatus)
+        }
+
+        log(
+            "Successfully stored keychain item",
+            level: .info,
+            metadata: ["key": key, "dataSize": "\(data.count)"]
+        )
     }
 
     nonisolated func data(for key: String) throws -> Data? {
@@ -101,18 +104,46 @@ final class KeychainStorage: Sendable {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
 
-        guard status != errSecItemNotFound else { return nil }
+        if status == errSecItemNotFound {
+            log(
+                "Keychain item not found",
+                level: .info,
+                metadata: ["key": key]
+            )
+            return nil
+        }
+
         guard status == errSecSuccess else {
             log(
                 "Failed to read keychain item",
                 level: .error,
-                metadata: ["status": "\(status)", "key": key]
+                metadata: ["status": "\(status)", "key": key, "statusMessage": statusMessage(status)]
             )
             throw KeychainStorageError.unexpectedStatus(status)
         }
 
-        guard let data = item as? Data else { return nil }
+        guard let data = item as? Data else {
+            log(
+                "Keychain item found but data is nil",
+                level: .error,
+                metadata: ["key": key]
+            )
+            return nil
+        }
+
+        log(
+            "Successfully read keychain item",
+            level: .debug,
+            metadata: ["key": key, "dataSize": "\(data.count)"]
+        )
         return data
+    }
+
+    private nonisolated func statusMessage(_ status: OSStatus) -> String {
+        if let message = SecCopyErrorMessageString(status, nil) as String? {
+            return message
+        }
+        return "Unknown error"
     }
 
     nonisolated func removeValue(for key: String) throws {

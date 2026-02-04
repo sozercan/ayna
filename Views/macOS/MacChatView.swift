@@ -416,21 +416,14 @@ struct MacChatView: View {
 
                 // Tool execution status indicator
                 if let toolName = currentToolName {
-                    HStack(spacing: Spacing.sm) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .controlSize(.small)
-                        Text(
-                            toolName.hasPrefix("Analyzing") ? "🔄 \(toolName)..." : "🔧 Using tool: \(toolName)..."
-                        )
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, Spacing.sm)
-                    .background(Theme.accent.opacity(0.1))
+                    ToolExecutionIndicator(toolName: toolName)
                 }
+
+                // Pending tool approval requests - reads directly from @Observable PermissionService
+                PendingApprovalsSectionView(
+                    conversationId: conversation.id,
+                    permissionService: aiService.permissionService
+                )
 
                 // Input Area
                 VStack(spacing: Spacing.sm) {
@@ -851,7 +844,7 @@ struct MacChatView: View {
 
         // Build messages for API using the same pattern as sendMessage
         var messagesToSend = currentConversation.messages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: currentConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1205,41 +1198,6 @@ struct MacChatView: View {
         // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
-        // Build file attachments
-        var attachments: [Message.FileAttachment] = []
-        for fileURL in attachedFiles {
-            if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = getMimeType(for: fileURL)
-
-                // Save to AttachmentStorage
-                let pathExtension = fileURL.pathExtension
-                var localPath: String?
-                do {
-                    localPath = try AttachmentStorage.shared.save(data: fileData, extension: pathExtension)
-                } catch {
-                    logChat("❌ Failed to save attachment: \(error.localizedDescription)", level: .error)
-                }
-
-                let attachment = Message.FileAttachment(
-                    fileName: fileURL.lastPathComponent,
-                    mimeType: mimeType,
-                    data: nil, // Don't store raw data in JSON
-                    localPath: localPath
-                )
-                attachments.append(attachment)
-                logChat(
-                    "📎 Attached file: \(fileURL.lastPathComponent) (\(mimeType), \(fileData.count) bytes)",
-                    level: .info,
-                    metadata: [
-                        "fileName": fileURL.lastPathComponent,
-                        "mimeType": mimeType,
-                        "fileSize": "\(fileData.count)",
-                        "localPath": localPath ?? "nil"
-                    ]
-                )
-            }
-        }
-
         guard let activeModel = resolveModelForSending() else {
             logChat("❌ Cannot send message: no model selected", level: .error)
             errorMessage = "Select a model in Settings → Model."
@@ -1253,52 +1211,35 @@ struct MacChatView: View {
             metadata: ["model": activeModel]
         )
 
-        // Build message content, including app context inline if attached
-        let finalMessageContent: String
-        if let appContent = attachedAppContent {
-            // Format app content inline with the user's message
-            let contextHeader = "---\n**Context from \(appContent.appName)**"
-            let windowInfo = appContent.windowTitle.map { " (\($0))" } ?? ""
-            let contentType = " [\(appContent.contentType.displayName)]"
+        // Build user message using ChatMessageBuilder
+        let userMessage = ChatMessageBuilder.createUserMessage(
+            text: messageText,
+            appContent: attachedAppContent,
+            fileURLs: attachedFiles,
+            saveToStorage: true
+        )
 
-            finalMessageContent = """
-            \(contextHeader)\(windowInfo)\(contentType)
-
-            ```
-            \(appContent.redacted.content)
-            ```
-            ---
-
-            \(messageText)
-            """
-
+        if attachedAppContent != nil {
             logChat(
                 "📎 Including app content in message",
                 level: .info,
                 metadata: [
-                    "appName": appContent.appName,
-                    "contentType": appContent.contentType.displayName,
-                    "contentLength": "\(appContent.content.count)"
+                    "appName": attachedAppContent?.appName ?? "",
+                    "contentType": attachedAppContent?.contentType.displayName ?? "",
+                    "contentLength": "\(attachedAppContent?.content.count ?? 0)"
                 ]
             )
-        } else {
-            finalMessageContent = messageText
         }
 
-        let userMessage = Message(
-            role: .user,
-            content: finalMessageContent,
-            attachments: attachments.isEmpty ? nil : attachments
-        )
         logChat(
-            "📨 Creating message with \(attachments.count) attachments",
+            "📨 Creating message with \(userMessage.attachments?.count ?? 0) attachments",
             level: .info,
-            metadata: ["attachmentCount": "\(attachments.count)"]
+            metadata: ["attachmentCount": "\(userMessage.attachments?.count ?? 0)"]
         )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
             logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
         }
 
@@ -1349,7 +1290,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1761,7 +1702,7 @@ struct MacChatView: View {
 
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1881,7 +1822,7 @@ struct MacChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length cyclomatic_complexity
+    // swiftlint:disable:next function_body_length
     private func sendMessageWithToolSupport(
         messages: [Message],
         model: String,
@@ -1889,7 +1830,7 @@ struct MacChatView: View {
         tools: [[String: Any]]?,
         isInitialRequest _: Bool
     ) {
-        let maxToolCallDepth = 10 // Prevent infinite loops
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
 
@@ -2064,7 +2005,12 @@ struct MacChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    // checking if tool call is pending. The stream may send [DONE] immediately
+                    // after finish_reason: "tool_calls".
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     // Validate conversation still exists
                     guard conversationManager.conversations.contains(where: { $0.id == conversation.id }) else {
@@ -2072,6 +2018,7 @@ struct MacChatView: View {
                             "⚠️ Tool call requested for conversation \(conversation.id) but conversation no longer exists, ignoring",
                             level: .default
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
 
@@ -2081,15 +2028,6 @@ struct MacChatView: View {
                         level: .info,
                         metadata: ["toolName": toolName]
                     )
-
-                    // Only update UI state if we're currently viewing this conversation
-                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversation.id
-                    }),
-                        currentIndex == conversationIndex
-                    {
-                        currentToolName = toolName
-                    }
 
                     // Check depth limit
                     guard toolCallDepth < maxToolCallDepth else {
@@ -2109,14 +2047,10 @@ struct MacChatView: View {
                         lastMessage.role == .assistant
                     {
                         // Convert arguments to AnyCodable
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-
-                        let toolCall = MCPToolCall(
+                        let toolCall = ToolCallHandler.createToolCall(
                             id: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments
                         )
                         lastMessage.toolCalls = [toolCall]
                         conversationManager.conversations[index].messages[
@@ -2139,10 +2073,11 @@ struct MacChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService.executeBuiltInToolWithCitations(
                                     name: toolName,
-                                    arguments: argumentsWrapper.value
+                                    arguments: argumentsWrapper.value,
+                                    conversationId: conversation.id
                                 )
                                 result = toolResult
                                 citations = toolCitations
@@ -2158,28 +2093,18 @@ struct MacChatView: View {
                             )
 
                             // For web_search, skip creating a visible tool message
-                            let isWebSearch = toolName == "web_search"
+                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
 
                             // Create a tool message with the result
                             await MainActor.run {
-                                let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
-                                    result[pair.key] = AnyCodable(pair.value)
-                                }
-
                                 if !isWebSearch {
-                                    // For non-web-search tools, create the tool message as before
-                                    var toolMessage = Message(
-                                        role: .tool,
-                                        content: result
+                                    // For non-web-search tools, create the tool message
+                                    let toolMessage = ToolCallHandler.createToolMessage(
+                                        toolCallId: toolCallId,
+                                        toolName: toolName,
+                                        arguments: argumentsWrapper.value,
+                                        result: result
                                     )
-                                    toolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
                                     conversationManager.addMessage(to: conversation, message: toolMessage)
                                 }
 
@@ -2206,11 +2131,10 @@ struct MacChatView: View {
 
                                 // Continue conversation with tool result
                                 // Add a new empty assistant message for the model's response
-                                // For web_search, attach citations to the new assistant message
-                                var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
-                                if isWebSearch, let citations {
-                                    continuationAssistantMessage.citations = citations
-                                }
+                                let continuationAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                    model: model,
+                                    citations: isWebSearch ? citations : nil
+                                )
                                 conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
 
                                 // Get the conversation again with the new assistant message
@@ -2222,31 +2146,16 @@ struct MacChatView: View {
                                     return
                                 }
 
-                                // Build messages for API - exclude the continuation assistant message
-                                // The continuation message is just a placeholder in our conversation for where
-                                // we'll store the response; we don't send it to the API
-                                var continuationMessages = Array(convWithAssistant.messages.dropLast())
-
-                                // For web_search, inject a synthetic tool message for the API only (not stored)
-                                if isWebSearch {
-                                    var syntheticToolMessage = Message(role: .tool, content: result)
-                                    syntheticToolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
-                                    // Append the tool message at the end (after the assistant with tool_calls)
-                                    continuationMessages.append(syntheticToolMessage)
-                                }
-
-                                // Prepend system prompt for continued conversation
-                                if let sysPrompt = conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
-                                    let sysMessage = Message(role: .system, content: sysPrompt)
-                                    continuationMessages.insert(sysMessage, at: 0)
-                                }
+                                // Build messages for API using ToolCallHandler
+                                let continuationMessages = ToolCallHandler.buildContinuationMessages(
+                                    conversationMessages: convWithAssistant.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
+                                    isWebSearch: isWebSearch,
+                                    systemPrompt: buildFullSystemPrompt(for: convWithAssistant)
+                                )
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
@@ -2391,7 +2300,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2442,7 +2351,7 @@ struct MacChatView: View {
 
         // Prepend system prompt if configured
         var messagesToSend = currentMessages
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -2464,6 +2373,66 @@ struct MacChatView: View {
             tools: tools,
             isInitialRequest: true
         )
+    }
+
+    // MARK: - System Prompt Helpers
+
+    /// Builds the full system prompt including agentic capabilities context.
+    private func buildFullSystemPrompt(for conversation: Conversation) -> String? {
+        var components: [String] = []
+
+        // Add user's configured system prompt
+        if let userPrompt = conversationManager.effectiveSystemPrompt(for: conversation), !userPrompt.isEmpty {
+            components.append(userPrompt)
+        }
+
+        // Add agentic tools context if available
+        if let agenticContext = aiService.getAgenticSystemPromptContext() {
+            components.append(agenticContext)
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: "\n\n")
+    }
+}
+
+// MARK: - Pending Approvals Section View
+
+/// Helper view for pending approvals.
+/// Reads directly from PermissionService (@Observable) so SwiftUI tracks changes automatically.
+private struct PendingApprovalsSectionView: View {
+    let conversationId: UUID
+    let permissionService: PermissionService?
+
+    /// Read approvals directly in body to establish Observation tracking
+    private var approvals: [PendingApproval] {
+        permissionService?.pendingApprovals.filter { $0.conversationId == conversationId } ?? []
+    }
+
+    var body: some View {
+        Group {
+            if let permService = permissionService, !approvals.isEmpty {
+                VStack(spacing: 12) {
+                    ForEach(approvals) { approval in
+                        ApprovalRequestView(
+                            approval: approval,
+                            onApprove: { rememberForSession in
+                                permService.approve(approval.id, rememberForSession: rememberForSession)
+                            },
+                            onDeny: {
+                                permService.deny(approval.id)
+                            },
+                            pendingCount: approvals.count
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: approvals.count)
     }
 }
 

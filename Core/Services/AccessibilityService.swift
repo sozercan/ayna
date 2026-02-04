@@ -46,7 +46,7 @@
 
             DiagnosticsLogger.log(
                 .attachFromApp,
-                level: .info,
+                level: .debug,
                 message: "Accessibility permission check",
                 metadata: [
                     "trusted": "\(trusted)",
