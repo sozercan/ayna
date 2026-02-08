@@ -278,22 +278,7 @@ struct MacNewChatView: View {
                     }
 
                     if let toolName = currentToolName {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .controlSize(.small)
-                            Text(
-                                toolName.hasPrefix("Analyzing")
-                                    ? "🔄 \(toolName)..."
-                                    : "🔧 Using tool: \(toolName)..."
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.1))
+                        ToolExecutionIndicator(toolName: toolName)
                     }
 
                     if let errorMessage {
@@ -535,19 +520,19 @@ struct MacNewChatView: View {
 
                 if selectedModels.count > 1 {
                     Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: Typography.Size.caption))
                         .foregroundStyle(Color.accentColor)
                     Text("\(selectedModels.count) models")
-                        .font(.system(size: 13))
+                        .font(Typography.modelName)
                         .foregroundStyle(Color.accentColor)
                 } else {
                     Text(composerModelLabel)
-                        .font(.system(size: 13))
+                        .font(Typography.modelName)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.Size.xs))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
@@ -565,17 +550,17 @@ struct MacNewChatView: View {
     private var modelSelectorPopover: some View {
         let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text(multiModelEnabled ? "Select models" : "Select model")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Typography.captionBold)
+                .foregroundStyle(Theme.textSecondary)
             if multiModelEnabled {
                 Text("1 model = single response, 2+ = compare")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.textTertiary)
             }
             Divider()
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.xxs)
 
             if aiService.usableModels.isEmpty {
                 SettingsLink {
@@ -599,43 +584,30 @@ struct MacNewChatView: View {
                         HStack {
                             // Show checkbox for multi-model, radio for single-model
                             if multiModelEnabled {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.square.fill" : "square"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                    .font(.system(size: Typography.Size.body))
                             } else {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.circle.fill" : "circle"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                                    .font(.system(size: Typography.Size.body))
                             }
                             Text(model)
-                                .font(.system(size: 13))
+                                .font(Typography.modelName)
                             Spacer()
 
                             // Show capability badge for image gen models
                             if modelCapability == .imageGeneration {
                                 Image(systemName: "photo")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.secondary)
+                                    .font(.system(size: Typography.Size.xs))
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
+                        .padding(.vertical, Spacing.xxs)
+                        .padding(.horizontal, Spacing.sm)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(
-                                    isSelected
-                                        ? Color.accentColor.opacity(0.1) : Color.clear
-                                )
+                            RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                                .fill(isSelected ? Theme.selection : Color.clear)
                         )
                     }
                     .buttonStyle(.plain)
@@ -646,7 +618,7 @@ struct MacNewChatView: View {
 
             if multiModelEnabled, selectedModels.count > 1 {
                 Divider()
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Spacing.xxs)
                 Button(action: {
                     if let first = selectedModels.first {
                         selectedModels = [first]
@@ -658,8 +630,8 @@ struct MacNewChatView: View {
                         Image(systemName: "xmark.circle")
                         Text("Clear multi-selection")
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.red)
+                    .font(Typography.footnote)
+                    .foregroundStyle(Theme.destructive)
                 }
                 .buttonStyle(.plain)
             }
@@ -907,62 +879,30 @@ struct MacNewChatView: View {
         updatedConversation.multiModelEnabled = selectedModels.count > 1
         conversationManager.updateConversation(updatedConversation)
 
-        // Build file attachments
-        var attachments: [Message.FileAttachment] = []
-        for fileURL in filesToSend {
-            if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
-                let attachment = Message.FileAttachment(
-                    fileName: fileURL.lastPathComponent,
-                    mimeType: mimeType,
-                    data: fileData
-                )
-                attachments.append(attachment)
-            }
-        }
+        // Build user message using ChatMessageBuilder
+        let userMessage = ChatMessageBuilder.createUserMessage(
+            text: textToSend,
+            appContent: attachedAppContent,
+            fileURLs: filesToSend,
+            saveToStorage: false
+        )
 
-        // Build message content, including app context inline if attached
-        let finalMessageContent: String
-        if let appContent = attachedAppContent {
-            // Format app content inline with the user's message
-            let contextHeader = "---\n**Context from \(appContent.appName)**"
-            let windowInfo = appContent.windowTitle.map { " (\($0))" } ?? ""
-            let contentType = " [\(appContent.contentType.displayName)]"
-
-            finalMessageContent = """
-            \(contextHeader)\(windowInfo)\(contentType)
-
-            ```
-            \(appContent.redacted.content)
-            ```
-            ---
-
-            \(textToSend)
-            """
-
+        if attachedAppContent != nil {
             logNewChat(
                 "📎 Including app content in message",
                 level: .info,
                 metadata: [
-                    "appName": appContent.appName,
-                    "contentType": appContent.contentType.displayName,
-                    "contentLength": "\(appContent.content.count)"
+                    "appName": attachedAppContent?.appName ?? "",
+                    "contentType": attachedAppContent?.contentType.displayName ?? "",
+                    "contentLength": "\(attachedAppContent?.content.count ?? 0)"
                 ]
             )
-        } else {
-            finalMessageContent = textToSend
         }
 
-        // Add the user message
-        let userMessage = Message(
-            role: .user,
-            content: finalMessageContent,
-            attachments: attachments.isEmpty ? nil : attachments
-        )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
             logNewChat("💾 Memory command processed: \(memoryResponse)", level: .info)
         }
 
@@ -1300,7 +1240,7 @@ struct MacNewChatView: View {
         temperature: Double,
         tools: [[String: Any]]?
     ) {
-        let maxToolCallDepth = 10
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let conversationId = conversation.id
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendable(tools)
@@ -1371,17 +1311,19 @@ struct MacNewChatView: View {
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendable(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
                         logNewChat(
                             "⚠️ Tool call requested but conversation \(conversationId) no longer exists",
                             level: .error
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
-
-                    currentToolName = toolName
                     logNewChat(
                         "🔧 Tool call requested: \(toolName)",
                         level: .info,
@@ -1404,14 +1346,10 @@ struct MacNewChatView: View {
                        var lastMessage = conversationManager.conversations[index].messages.last,
                        lastMessage.role == .assistant
                     {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-
-                        let toolCall = MCPToolCall(
+                        let toolCall = ToolCallHandler.createToolCall(
                             id: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments
                         )
                         lastMessage.toolCalls = [toolCall]
                         conversationManager.conversations[index].messages[
@@ -1433,11 +1371,12 @@ struct MacNewChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService
                                     .executeBuiltInToolWithCitations(
                                         name: toolName,
-                                        arguments: argumentsWrapper.value
+                                        arguments: argumentsWrapper.value,
+                                        conversationId: conversation.id
                                     )
                                 result = toolResult
                                 citations = toolCitations
@@ -1450,28 +1389,17 @@ struct MacNewChatView: View {
                             }
 
                             // For web_search, skip creating a visible tool message
-                            let isWebSearch = toolName == "web_search"
+                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
 
                             await MainActor.run {
-                                let anyCodableArgs = argumentsWrapper.value
-                                    .reduce(into: [String: AnyCodable]()) { result, pair in
-                                        result[pair.key] = AnyCodable(pair.value)
-                                    }
-
                                 if !isWebSearch {
-                                    // For non-web-search tools, create the tool message as before
-                                    var toolMessage = Message(
-                                        role: .tool,
-                                        content: result
+                                    // For non-web-search tools, create the tool message
+                                    let toolMessage = ToolCallHandler.createToolMessage(
+                                        toolCallId: toolCallId,
+                                        toolName: toolName,
+                                        arguments: argumentsWrapper.value,
+                                        result: result
                                     )
-                                    toolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
                                     conversationManager.addMessage(to: conversation, message: toolMessage)
                                 }
 
@@ -1485,14 +1413,10 @@ struct MacNewChatView: View {
                                 }
 
                                 // For web_search, attach citations to the new assistant message
-                                var newAssistantMessage = Message(
-                                    role: .assistant,
-                                    content: "",
-                                    model: model
+                                let newAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                    model: model,
+                                    citations: isWebSearch ? citations : nil
                                 )
-                                if isWebSearch, let citations {
-                                    newAssistantMessage.citations = citations
-                                }
                                 conversationManager.addMessage(
                                     to: updatedConversation,
                                     message: newAssistantMessage
@@ -1519,23 +1443,16 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
-                                // Build messages for API - exclude the continuation assistant message
-                                // The continuation message is just a placeholder for where we'll store the response
-                                var messagesForAPI = Array(convWithAssistant.messages.dropLast())
-                                if isWebSearch {
-                                    // Append a synthetic tool message for the API only (not stored)
-                                    var syntheticToolMessage = Message(role: .tool, content: result)
-                                    syntheticToolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
-                                    // Append the tool message at the end (after the assistant with tool_calls)
-                                    messagesForAPI.append(syntheticToolMessage)
-                                }
+                                // Build messages for API using ToolCallHandler
+                                let messagesForAPI = ToolCallHandler.buildContinuationMessages(
+                                    conversationMessages: convWithAssistant.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
+                                    isWebSearch: isWebSearch,
+                                    systemPrompt: nil // MacNewChatView doesn't add system prompts here
+                                )
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call

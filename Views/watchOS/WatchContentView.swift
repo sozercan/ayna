@@ -19,8 +19,16 @@
         var body: some View {
             NavigationStack {
                 WatchConversationListView(viewModel: viewModel)
-                    .navigationTitle("Ayna")
-                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            NavigationLink {
+                                WatchNewChatView(viewModel: viewModel)
+                            } label: {
+                                Image(systemName: "square.and.pencil")
+                            }
+                            .accessibilityIdentifier(TestIdentifiers.Watch.newChatButton)
+                        }
+                    }
             }
             .onAppear {
                 // Configure services

@@ -4,7 +4,7 @@ Thank you for helping improve **ayna**! This document captures the practical ste
 
 ## Prerequisites
 
-- macOS 14.0 (Sonoma) or newer
+- macOS 26.0 (Tahoe) or newer
 - Xcode 16.0 or newer (Swift 5.9+ toolchain)
 - iOS Simulator or device for iOS development
 - watchOS Simulator for watchOS development

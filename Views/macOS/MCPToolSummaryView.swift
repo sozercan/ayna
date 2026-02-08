@@ -11,7 +11,12 @@ import SwiftUI
 struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
     @ObservedObject private var tavilyService = TavilyService.shared
+    private var agentSettingsStore = AgentSettingsStore.shared
     @Binding var isExpanded: Bool
+
+    init(isExpanded: Binding<Bool>) {
+        _isExpanded = isExpanded
+    }
 
     @MainActor var body: some View {
         if shouldShowToolSummary {
@@ -48,6 +53,17 @@ struct MCPToolSummaryView: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: Spacing.sm) {
+                                // Agentic Tools chip - always show
+                                Button {
+                                    agentSettingsStore.settings.isEnabled.toggle()
+                                } label: {
+                                    AgenticToolsChip(
+                                        isEnabled: agentSettingsStore.settings.isEnabled,
+                                        toolCount: 6
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
                                 // Web Search chip - always show if configured
                                 if tavilyService.isConfigured {
                                     Button {
@@ -114,7 +130,8 @@ struct MCPToolSummaryView: View {
     }
 
     private var shouldShowToolSummary: Bool {
-        !mcpManager.serverConfigs.isEmpty || tavilyService.isConfigured
+        // Always show since agentic tools are always available
+        true
     }
 
     private var toolStatusChipModels: [ToolStatusChipModel] {
@@ -152,23 +169,38 @@ struct MCPToolSummaryView: View {
             count += 1
         }
 
+        // Add agentic tools if enabled (6 tools)
+        if agentSettingsStore.settings.isEnabled {
+            count += 6
+        }
+
         return count
     }
 
     private var toolSummaryText: String {
         guard shouldShowToolSummary else { return "" }
 
-        // Check if only web search is available (no MCP servers)
+        // Check if no MCP servers configured
         if mcpManager.serverConfigs.isEmpty {
-            if tavilyService.isEnabled, tavilyService.isConfigured {
-                return "Web Search ready • 1 tool"
-            } else if tavilyService.isEnabled {
-                return "Web Search needs API key"
+            // Build list of available tools
+            var sources: [String] = []
+            if agentSettingsStore.settings.isEnabled {
+                sources.append("Agentic")
             }
-            return ""
+            if tavilyService.isEnabled, tavilyService.isConfigured {
+                sources.append("Web Search")
+            } else if tavilyService.isEnabled {
+                return "Web Search needs API key • \(readyToolCount) tool\(readyToolCount == 1 ? "" : "s") ready"
+            }
+
+            if readyToolCount > 0 {
+                return "\(readyToolCount) tool\(readyToolCount == 1 ? "" : "s") ready"
+            }
+            return "All tools are disabled."
         }
 
-        if enabledServerCount == 0, !tavilyService.isEnabled {
+        let allDisabled = enabledServerCount == 0 && !tavilyService.isEnabled && !agentSettingsStore.settings.isEnabled
+        if allDisabled {
             return "All tools are disabled."
         }
 
@@ -285,6 +317,55 @@ struct WebSearchChip: View {
 
                     if isEnabled, isConfigured {
                         Text("1 tool")
+                            .font(.system(size: Typography.Size.xs))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                .stroke(statusColor.opacity(0.25), lineWidth: Spacing.Border.standard)
+        )
+    }
+}
+
+/// Chip for Agentic Tools status
+@MainActor
+struct AgenticToolsChip: View {
+    let isEnabled: Bool
+    let toolCount: Int
+
+    var statusColor: Color {
+        isEnabled ? Theme.statusConnected : Theme.statusDisconnected
+    }
+
+    var statusText: String {
+        isEnabled ? "Ready" : "Disabled"
+    }
+
+    @MainActor var body: some View {
+        HStack(spacing: Spacing.lg) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
+
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                Text("Agentic Tools")
+                    .font(Typography.caption)
+                    .fontWeight(.semibold)
+
+                HStack(spacing: Spacing.xs) {
+                    Text(statusText)
+                        .font(.system(size: Typography.Size.xs))
+                        .foregroundStyle(statusColor)
+
+                    if isEnabled {
+                        Text("\(toolCount) tools")
                             .font(.system(size: Typography.Size.xs))
                             .foregroundStyle(Theme.textSecondary)
                     }

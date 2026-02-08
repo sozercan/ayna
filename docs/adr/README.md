@@ -51,6 +51,7 @@ What trade-offs are we accepting?
 | [0003](0003-cross-platform-core.md) | Cross-Platform Core Module | Accepted |
 | [0004](0004-sparkle-auto-updates.md) | Sparkle Auto-Updates | Accepted |
 | [0005](0005-anthropic-provider.md) | Anthropic Provider Architecture | Accepted |
+| [0006](0006-native-agentic-tools.md) | Native Agentic Tools Architecture | Proposed |
 
 ## When to Create an ADR
 
