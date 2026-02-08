@@ -184,4 +184,94 @@ struct ConversationManagerTests {
         // Clean up pending saves to avoid test cross-talk.
         manager.clearAllConversations()
     }
+
+    // MARK: - Edit Message Tests
+
+    @Test("Edit message updates content and marks as edited")
+    @MainActor
+    func editMessageUpdatesContentAndMarksAsEdited() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+
+        let message = Message(role: .user, content: "Original content")
+        manager.addMessage(to: conversation, message: message)
+
+        let editResult = manager.editMessage(
+            in: conversation,
+            messageId: message.id,
+            newContent: "Edited content"
+        )
+
+        #expect(editResult == true)
+        #expect(manager.conversations.first?.messages.first?.content == "Edited content")
+        #expect(manager.conversations.first?.messages.first?.isEdited == true)
+        #expect(manager.conversations.first?.messages.first?.editedAt != nil)
+    }
+
+    @Test("Edit message fails for assistant messages")
+    @MainActor
+    func editMessageFailsForAssistantMessages() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+
+        let message = Message(role: .assistant, content: "Assistant response")
+        manager.addMessage(to: conversation, message: message)
+
+        let editResult = manager.editMessage(
+            in: conversation,
+            messageId: message.id,
+            newContent: "Should not work"
+        )
+
+        #expect(editResult == false)
+        #expect(manager.conversations.first?.messages.first?.content == "Assistant response")
+        #expect(manager.conversations.first?.messages.first?.isEdited == false)
+    }
+
+    @Test("Edit message with same content does not mark as edited")
+    @MainActor
+    func editMessageWithSameContentDoesNotMarkAsEdited() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+
+        let message = Message(role: .user, content: "Same content")
+        manager.addMessage(to: conversation, message: message)
+
+        let editResult = manager.editMessage(
+            in: conversation,
+            messageId: message.id,
+            newContent: "Same content"
+        )
+
+        #expect(editResult == true)
+        #expect(manager.conversations.first?.messages.first?.content == "Same content")
+        #expect(manager.conversations.first?.messages.first?.isEdited == false)
+    }
+
+    @Test("Edit message fails for non-existent message")
+    @MainActor
+    func editMessageFailsForNonExistentMessage() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+
+        let editResult = manager.editMessage(
+            in: conversation,
+            messageId: UUID(),
+            newContent: "Should not work"
+        )
+
+        #expect(editResult == false)
+    }
 }

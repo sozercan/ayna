@@ -19,9 +19,12 @@ struct MacMessageView: View {
     var modelName: String?
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
+    var onEdit: ((String) -> Void)?
     @State private var isHovered = false
     @State private var showReasoning = false
     @State private var showModelMenu = false
+    @State private var isEditing = false
+    @State private var editText = ""
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
 
@@ -44,12 +47,14 @@ struct MacMessageView: View {
         message: Message,
         modelName: String? = nil,
         onRetry: (() -> Void)? = nil,
-        onSwitchModel: ((String) -> Void)? = nil
+        onSwitchModel: ((String) -> Void)? = nil,
+        onEdit: ((String) -> Void)? = nil
     ) {
         self.message = message
         self.modelName = modelName
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
+        self.onEdit = onEdit
         // Parse content synchronously on init to avoid flash of empty bubbles
         _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
         _lastContentHash = State(initialValue: message.content.hashValue)
@@ -265,17 +270,28 @@ struct MacMessageView: View {
                     Spacer(minLength: Spacing.Component.bubbleMinWidth)
                 }
 
-                bubbleContainer(isCurrentUser: isCurrentUser)
+                if isEditing {
+                    editingBubbleContainer(isCurrentUser: isCurrentUser)
+                } else {
+                    bubbleContainer(isCurrentUser: isCurrentUser)
+                }
 
                 if !isCurrentUser {
                     Spacer(minLength: Spacing.Component.bubbleMinWidth)
                 }
             }
 
-            Text(timestampText)
-                .font(Typography.timestamp)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(isCurrentUser ? .trailing : .leading, Spacing.xs)
+            HStack(spacing: Spacing.xxs) {
+                Text(timestampText)
+                    .font(Typography.timestamp)
+                    .foregroundStyle(Theme.textSecondary)
+                if message.isEdited {
+                    Text("(edited)")
+                        .font(Typography.timestamp)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .padding(isCurrentUser ? .trailing : .leading, Spacing.xs)
         }
     }
 
@@ -312,6 +328,49 @@ struct MacMessageView: View {
         }
         .contentShape(Rectangle()) // Make entire area including controls hoverable
         .animation(Motion.easeStandard, value: isHovered)
+    }
+
+    @MainActor
+    private func editingBubbleContainer(isCurrentUser: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: Spacing.sm) {
+            TextEditor(text: $editText)
+                .font(Typography.body)
+                .frame(maxWidth: Spacing.Component.bubbleMaxWidth, minHeight: 60)
+                .scrollContentBackground(.hidden)
+                .padding(Spacing.sm)
+                .background(Theme.backgroundSecondary)
+                .clipShape(.rect(cornerRadius: Spacing.CornerRadius.lg))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg)
+                        .stroke(Theme.accent, lineWidth: 2)
+                )
+
+            HStack(spacing: Spacing.sm) {
+                Button("Cancel") {
+                    withAnimation(Motion.springSnappy) {
+                        isEditing = false
+                        editText = ""
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textSecondary)
+
+                Button("Save") {
+                    let trimmedText = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedText.isEmpty {
+                        onEdit?(trimmedText)
+                    }
+                    withAnimation(Motion.springSnappy) {
+                        isEditing = false
+                        editText = ""
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Spacing.md)
+        .accessibilityIdentifier("chat.message.edit.\(message.id.uuidString)")
     }
 
     @MainActor @ViewBuilder
@@ -453,6 +512,23 @@ struct MacMessageView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("message.action.copy")
                 .accessibilityLabel("Copy message")
+
+                if role == .user, onEdit != nil {
+                    Button(action: {
+                        editText = message.content
+                        withAnimation(Motion.springSnappy) {
+                            isEditing = true
+                        }
+                    }) {
+                        Image(systemName: "pencil")
+                            .font(Typography.caption)
+                            .padding(Spacing.sm)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("message.action.edit")
+                    .accessibilityLabel("Edit message")
+                }
 
                 if role == .assistant {
                     Menu {

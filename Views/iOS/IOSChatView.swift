@@ -126,6 +126,13 @@ struct IOSChatView: View {
                                             onSwitchModel: message.role == .assistant ? { newModel in
                                                 viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                             } : nil,
+                                            onEdit: message.role == .user ? { newContent in
+                                                conversationManager.editMessage(
+                                                    in: conversation,
+                                                    messageId: message.id,
+                                                    newContent: newContent
+                                                )
+                                            } : nil,
                                             availableModels: aiService.usableModels
                                         )
                                         .id(message.id)

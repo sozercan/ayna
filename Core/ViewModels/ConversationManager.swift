@@ -528,6 +528,49 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    /// Edits the content of a user message and marks it as edited.
+    /// - Parameters:
+    ///   - conversation: The conversation containing the message.
+    ///   - messageId: The ID of the message to edit.
+    ///   - newContent: The new content for the message.
+    /// - Returns: True if the edit was successful, false if the message wasn't found or isn't editable.
+    @discardableResult
+    func editMessage(in conversation: Conversation, messageId: UUID, newContent: String) -> Bool {
+        guard let convIndex = getConversationIndex(for: conversation.id),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId }),
+              conversations[convIndex].messages[msgIndex].role == .user
+        else {
+            logManager(
+                "⚠️ Cannot edit message - not found or not a user message",
+                level: .default,
+                metadata: ["messageId": messageId.uuidString]
+            )
+            return false
+        }
+
+        // Don't edit if content hasn't changed
+        guard conversations[convIndex].messages[msgIndex].content != newContent else {
+            return true
+        }
+
+        conversations[convIndex].messages[msgIndex].content = newContent
+        conversations[convIndex].messages[msgIndex].isEdited = true
+        conversations[convIndex].messages[msgIndex].editedAt = Date()
+        conversations[convIndex].updatedAt = Date()
+        save(conversations[convIndex])
+
+        logManager(
+            "✏️ Message edited",
+            level: .info,
+            metadata: [
+                "conversationId": conversation.id.uuidString,
+                "messageId": messageId.uuidString
+            ]
+        )
+
+        return true
+    }
+
     func updateModel(for conversation: Conversation, model: String) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].model = model
