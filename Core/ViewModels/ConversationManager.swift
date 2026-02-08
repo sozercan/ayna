@@ -966,13 +966,13 @@ final class ConversationManager: ObservableObject {
                     }
             }
         #else
-            /// Use Core Spotlight for high-performance search
+            // Use Core Spotlight for high-performance search
             let escapedQuery = query.replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             let queryString = "textContent == \"*\(escapedQuery)*\"c"
 
             return await withCheckedContinuation { continuation in
-                let searchQuery = CSSearchQuery(queryString: queryString, attributes: [])
+                let searchQuery = CSSearchQuery(queryString: queryString, queryContext: nil)
                 var foundIds: [String] = []
 
                 searchQuery.foundItemsHandler = { items in

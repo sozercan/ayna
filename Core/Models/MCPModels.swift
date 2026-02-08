@@ -164,6 +164,10 @@ struct MCPRequest: Codable, Sendable {
     let method: String
     let params: [String: AnyCodable]?
 
+    private enum CodingKeys: String, CodingKey {
+        case jsonrpc, id, method, params
+    }
+
     init(id: Int, method: String, params: [String: AnyCodable]? = nil) {
         self.id = id
         self.method = method
