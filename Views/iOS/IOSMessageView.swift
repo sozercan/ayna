@@ -19,6 +19,7 @@ struct IOSMessageView: View {
     let message: Message
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
+    var onEdit: ((String) -> Void)?
     var availableModels: [String] = []
 
     @State private var contentBlocks: [ContentBlock]
@@ -27,16 +28,20 @@ struct IOSMessageView: View {
     @State private var parseDebounceTask: Task<Void, Never>?
     @State private var lastParseTime: Date = .distantPast
     @State private var hasAppeared = false
+    @State private var isEditing = false
+    @State private var editText = ""
 
     init(
         message: Message,
         onRetry: (() -> Void)? = nil,
         onSwitchModel: ((String) -> Void)? = nil,
+        onEdit: ((String) -> Void)? = nil,
         availableModels: [String] = []
     ) {
         self.message = message
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
+        self.onEdit = onEdit
         self.availableModels = availableModels
         // Parse content synchronously on init to avoid flash of empty/raw text bubbles
         _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
@@ -158,7 +163,31 @@ struct IOSMessageView: View {
             // Don't render anything for empty assistant messages with pending tool calls
             EmptyView()
         } else {
-            regularMessageContent
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: Spacing.xxs) {
+                regularMessageContent
+
+                // Edited indicator
+                if message.isEdited {
+                    Text("edited")
+                        .font(Typography.micro)
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.horizontal, Spacing.xs)
+                }
+            }
+            .sheet(isPresented: $isEditing) {
+                IOSMessageEditSheet(
+                    originalContent: message.content,
+                    editText: $editText,
+                    onSave: { newContent in
+                        onEdit?(newContent)
+                        isEditing = false
+                    },
+                    onCancel: {
+                        isEditing = false
+                        editText = ""
+                    }
+                )
+            }
         }
     }
 
@@ -259,6 +288,23 @@ struct IOSMessageView: View {
                         )
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
+                    }
+                }
+
+                // Edit button - only for user messages
+                if message.role == .user, let onEdit {
+                    Button {
+                        HapticEngine.impact(.medium)
+                        editText = message.content
+                        isEditing = true
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "✏️ Edit message requested",
+                            metadata: ["messageId": message.id.uuidString]
+                        )
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
                     }
                 }
 
@@ -672,5 +718,61 @@ private struct TypingDot: View {
             .onAppear {
                 isAnimating = true
             }
+    }
+}
+
+/// Sheet view for editing a message on iOS
+struct IOSMessageEditSheet: View {
+    let originalContent: String
+    @Binding var editText: String
+    let onSave: (String) -> Void
+    let onCancel: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: Spacing.md) {
+                TextEditor(text: $editText)
+                    .font(Typography.body)
+                    .focused($isFocused)
+                    .padding(Spacing.sm)
+                    .background(Theme.backgroundSecondary)
+                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+                            .stroke(Theme.border, lineWidth: 1)
+                    )
+                    .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding(.top, Spacing.md)
+            .navigationTitle("Edit Message")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let trimmedText = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedText.isEmpty {
+                            onSave(trimmedText)
+                        }
+                    }
+                    .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            if editText.isEmpty {
+                editText = originalContent
+            }
+            isFocused = true
+        }
+        .presentationDetents([.medium, .large])
     }
 }
