@@ -553,6 +553,7 @@ struct MacChatView: View {
                                 onSubmit: sendMessage,
                                 accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
                             )
+                            .accessibilityLabel("Message input")
                             .frame(height: calculateTextHeight())
                             .font(Typography.body)
                             .scrollContentBackground(.hidden)
@@ -731,6 +732,7 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                         .allowsHitTesting(isGenerating || !messageText.isEmpty)
                         .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
+                        .accessibilityLabel("Send message")
                         .padding(.horizontal, Spacing.md)
                         .frame(height: calculateTextHeight() + Spacing.xxl)
                     }
