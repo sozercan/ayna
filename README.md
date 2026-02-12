@@ -66,10 +66,18 @@ brew install --cask ayna
 2. Add an MCP server to give the AI more capabilities.
 
 ### Keyboard Shortcuts
-- `Cmd+N`: New conversation
-- `Cmd+,`: Open Settings
-- `Enter`: Send message
-- `Shift+Enter`: New line
+
+| Action | Shortcut | Context |
+|--------|----------|---------|
+| New conversation | `⌘N` | macOS |
+| Open Settings | `⌘,` | macOS |
+| Send message | `↵` (Enter) | macOS, iOS, watchOS |
+| New line in message | `⇧↵` (Shift+Enter) | macOS |
+| Dismiss panel | `⎋` (Escape) | macOS (Floating Panel) |
+| Send and open main window | `⌘↵` (Cmd+Enter) | macOS (Floating Panel) |
+| Show floating panel | `⌘⇧Space` | macOS (Global Hotkey)* |
+
+*Requires "Work with Apps" feature enabled in Settings.
 
 ## Privacy
 
