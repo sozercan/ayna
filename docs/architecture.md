@@ -7,22 +7,22 @@ This document provides detailed information about Ayna's architecture, services,
 The codebase follows a "Symmetric Roots" architecture:
 
 ```
-App/ (Entry points) → Core/ (Logic) → Views/ (UI)
+Sources/Ayna/App/ (Entry points) → Sources/Ayna/ (Logic) → Sources/Ayna/Views/ (UI)
 ```
 
-- **App/**: Platform-specific entry points
+- **Sources/Ayna/App/**: Platform-specific entry points
   - `aynaApp.swift` (macOS)
   - `AynaIOSApp.swift` (iOS)
   - `AynaWatchApp.swift` (watchOS)
-- **Core/**: Shared logic (must compile for all platforms)
+- **Sources/Ayna/**: Shared logic (must compile for all platforms)
   - `Models/` — Data types (`Conversation`, `Message`, `ResponseGroup`, `ContentBlock`)
   - `ViewModels/` — State management (`ConversationManager`, `IOSChatViewModel`, `WatchChatViewModel`)
   - `Services/` — Business logic (AI providers, persistence, sync)
   - `Utilities/` — Helpers (`MarkdownRenderer`, `ConversationExporter`)
-- **Views/**: Platform-specific UI
-  - `Views/macOS/` — AppKit/SwiftUI hybrid
-  - `Views/iOS/` — UIKit/SwiftUI
-  - `Views/watchOS/` — WatchKit/SwiftUI
+- **Sources/Ayna/Views/**: Platform-specific UI
+  - `macOS/` — AppKit/SwiftUI hybrid
+  - `iOS/` — UIKit/SwiftUI
+  - `watchOS/` — WatchKit/SwiftUI
 
 ## State Management
 
@@ -141,7 +141,7 @@ Allows sending a single prompt to multiple models simultaneously for comparison.
 
 Handles URL scheme (`ayna://`) for automation and external app integration.
 
-- **File**: `Core/Utilities/DeepLinkManager.swift`
+- **File**: `Sources/Ayna/Utilities/DeepLinkManager.swift`
 - **Platforms**: macOS, iOS (watchOS receives settings via WatchConnectivity sync)
 
 ### Supported Actions
@@ -273,7 +273,7 @@ DiagnosticsLogger.log(.serviceName, level: .info, message: "✅ Action completed
 
 The app uses `AynaError` as the unified error type for consistent error handling:
 
-- **File**: `Core/Models/AynaError.swift`
+- **File**: `Sources/Ayna/Models/AynaError.swift`
 - **Conforms to**: `LocalizedError`, `Sendable`, `Equatable`
 - **Categories**: Network, Authentication, Model/Provider, API Response, Tool Execution, Data/Storage, Conversation
 
@@ -296,7 +296,7 @@ let error = AynaError.fromHTTPResponse(statusCode: 429, data: responseData)
 
 ### ErrorPresenter Utility
 
-- **File**: `Core/Utilities/ErrorPresenter.swift`
+- **File**: `Sources/Ayna/Utilities/ErrorPresenter.swift`
 - Provides user-friendly messages, recovery suggestions, and error categorization
 - Determines if errors are retryable or require user action
 

@@ -9,12 +9,18 @@ on:
     branches: [ main ]
     paths:
       - '**.swift'
+      - 'Package.swift'
+      - 'Sources/**'
+      - 'Tests/**'
       - '.swiftlint.yml'
       - '.github/workflows/lint.yml'
   pull_request:
     branches: [ main ]
     paths:
       - '**.swift'
+      - 'Package.swift'
+      - 'Sources/**'
+      - 'Tests/**'
       - '.swiftlint.yml'
       - '.github/workflows/lint.yml'
 

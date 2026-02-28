@@ -19,7 +19,7 @@ This document covers testing strategies, commands, and best practices for Ayna.
 
 ## Test Tags
 
-Tags enable filtering tests by category. Defined in `Tests/aynaTests/Support/TestTags.swift`:
+Tags enable filtering tests by category. Defined in `Tests/AynaTests/Support/TestTags.swift`:
 
 | Tag | Description | Example Usage |
 |-----|-------------|---------------|
@@ -51,34 +51,31 @@ In Xcode Test Plan, add tag names to "Include Tags" or "Exclude Tags" fields.
 ### Unit Tests (Logic/Backend)
 
 ```bash
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+swift test
 ```
 
 ### UI Tests (Views/Interactions)
 
 ```bash
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
+xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:AynaUITests
 ```
 
 ### Full Suite
 
 ```bash
-xcodebuild -scheme Ayna -destination 'platform=macOS' test
+swift test
 ```
 
 ## Unit Test Requirements
 
-**New code in `Core/` (Services, Models, ViewModels, Utilities) must include unit tests.**
+**New code in `Sources/Ayna/` (Services, Models, ViewModels, Utilities) must include unit tests.**
 
 ### Creating a Test File
 
-1. Create test file in `Tests/aynaTests/` matching the source file name
+1. Create test file in `Tests/AynaTests/` matching the source file name
    - Example: `TavilyService.swift` → `TavilyServiceTests.swift`
-2. Add the test file to `Ayna.xcodeproj/project.pbxproj`:
-   - Add `PBXFileReference` entry
-   - Add `PBXBuildFile` entry
-   - Add to the `aynaTests` group
-3. Run tests to verify: `xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests`
+2. SwiftPM automatically discovers test files — no project file changes needed
+3. Run tests to verify: `swift test`
 
 ### Test File Template (Swift Testing)
 

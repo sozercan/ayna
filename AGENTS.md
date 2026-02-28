@@ -17,11 +17,10 @@ A native **macOS/iOS/watchOS** ChatGPT client built with **Swift** and **SwiftUI
 ## Project Structure
 
 ```
-App/        → Platform entry points (aynaApp.swift, AynaIOSApp.swift, AynaWatchApp.swift)
-Core/       → Shared logic (Models, ViewModels, Services, Utilities) — MUST compile for all platforms
-Views/      → Platform-specific UI (macOS/, iOS/, watchOS/)
-Tests/      → Unit tests (aynaTests/) and UI tests (aynaUITests/)
-docs/       → Detailed documentation for AI agents
+Sources/Ayna/ → App entry points, Models, Services, ViewModels, Utilities, Design, Diagnostics, Views
+Tests/        → Unit tests (AynaTests/) and UI tests (AynaUITests/)
+Scripts/      → Build and signing scripts
+docs/         → Detailed documentation for AI agents
 ```
 
 ## Before You Start: Context Loading
@@ -71,7 +70,7 @@ Every task should be broken into phases. Each phase must have:
 | Plan public API surface | No breaking changes to existing callers (or changes identified) |
 | Identify platform constraints | `#if os()` guards planned where needed |
 
-**Exit gate**: `xcodebuild build` succeeds with stub implementations.
+**Exit gate**: `swift build` succeeds with stub implementations.
 
 #### Phase 3: Core Implementation
 | Deliverable | Exit Criteria |
@@ -80,14 +79,14 @@ Every task should be broken into phases. Each phase must have:
 | Handle error cases | Error paths have test coverage |
 | Add logging | `DiagnosticsLogger` calls in place |
 
-**Exit gate**: `xcodebuild test -only-testing:aynaTests` passes.
+**Exit gate**: `swift test` passes.
 
 #### Phase 4: Platform Integration
 | Deliverable | Exit Criteria |
 |-------------|---------------|
-| macOS build succeeds | `xcodebuild -scheme Ayna -destination 'platform=macOS' build` ✅ |
-| iOS build succeeds | `xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` ✅ |
-| watchOS build succeeds (if applicable) | `xcodebuild -scheme Ayna-watchOS ...` ✅ |
+| macOS build succeeds | `swift build` ✅ |
+| iOS build succeeds | `swift build --triple arm64-apple-ios26.0` ✅ |
+| watchOS build succeeds (if applicable) | `swift build --triple arm64-apple-watchos26.0` ✅ |
 
 **Exit gate**: All platform builds pass.
 
@@ -96,7 +95,7 @@ Every task should be broken into phases. Each phase must have:
 |-------------|---------------|
 | Linting passes | `swiftlint --strict` reports 0 errors |
 | Formatting applied | `swiftformat .` makes no changes |
-| Full test suite passes | `xcodebuild test` succeeds |
+| Full test suite passes | `swift test` succeeds |
 
 **Exit gate**: CI-equivalent checks pass locally.
 
@@ -108,12 +107,12 @@ Phase 1: Research
 
 Phase 2: Interface
 ├── Create NewService.swift with protocol + stub
-├── Exit: `xcodebuild build` passes on macOS
+├── Exit: `swift build` passes on macOS
 
 Phase 3: Implementation
 ├── Implement methods, add error handling
 ├── Create NewServiceTests.swift
-├── Exit: `xcodebuild test -only-testing:aynaTests/NewServiceTests` passes
+├── Exit: `swift test` passes
 
 Phase 4: Integration
 ├── Wire into ConversationManager or relevant ViewModel
@@ -161,12 +160,12 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
 
 > 🤖 **Document Your Prompts** — When completing a task, summarize the key prompt(s) used so the human can include them in the PR. This supports a workflow where prompts are reviewed alongside (or instead of) code.
 
-1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
+1. **Cross-Platform Compilation**: Code in `Sources/Ayna/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Sources/Ayna/` without `#if os()` guards.
 
 2. **Verify Builds**: After modifying shared code, verify both platforms:
    ```bash
-   xcodebuild -scheme Ayna -destination 'platform=macOS' build
-   xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+   swift build
+   swift build --triple arm64-apple-ios26.0
    ```
 
 3. **Linting**: Run after non-trivial changes:
@@ -174,7 +173,7 @@ Before implementing a fix, ask "Why?" five times to find the root cause:
    swiftlint --strict && swiftformat .
    ```
 
-4. **Unit Tests Required**: New code in `Core/` must include tests in `Tests/aynaTests/`.
+4. **Unit Tests Required**: New code in `Sources/Ayna/` must include tests in `Tests/AynaTests/`.
 
 5. **Use Modern SwiftUI APIs**: See [docs/platforms.md](docs/platforms.md#swiftui-api-best-practices) for details.
    - `.foregroundStyle()` not `.foregroundColor()`
@@ -463,13 +462,13 @@ func someMainActorFunc() {
 
 ```bash
 # macOS
-xcodebuild -scheme Ayna -destination 'platform=macOS' build
+swift build
 
 # iOS
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+swift build --triple arm64-apple-ios26.0
 
 # watchOS
-xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' build
+swift build --triple arm64-apple-watchos26.0
 ```
 
 ### Test Commands
@@ -478,13 +477,13 @@ xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,name=Ap
 
 ```bash
 # Unit tests only
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+swift test
 
 # Full suite
-xcodebuild -scheme Ayna -destination 'platform=macOS' test
+swift test
 
 # UI tests (run separately, ask permission first as they launch the app)
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUITests
+xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:AynaUITests
 ```
 
 ### Platform Feature Support
@@ -499,13 +498,13 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaUIT
 
 ## Key Files
 
-- `Core/Services/AIService.swift` — Main AI service coordinator
-- `Core/Services/Providers/AIProviderProtocol.swift` — Provider abstraction protocol
-- `Core/ViewModels/ConversationManager.swift` — App-wide state management
-- `Core/Services/ConversationPersistenceCoordinator.swift` — Save/load orchestration
-- `Core/Models/AynaError.swift` — Unified error types
-- `Core/Utilities/ErrorPresenter.swift` — User-friendly error presentation
-- `Core/Diagnostics/DiagnosticsLogger.swift` — Logging (use this for all logs)
+- `Sources/Ayna/Services/AIService.swift` — Main AI service coordinator
+- `Sources/Ayna/Services/Providers/AIProviderProtocol.swift` — Provider abstraction protocol
+- `Sources/Ayna/ViewModels/ConversationManager.swift` — App-wide state management
+- `Sources/Ayna/Services/ConversationPersistenceCoordinator.swift` — Save/load orchestration
+- `Sources/Ayna/Models/AynaError.swift` — Unified error types
+- `Sources/Ayna/Utilities/ErrorPresenter.swift` — User-friendly error presentation
+- `Sources/Ayna/Diagnostics/DiagnosticsLogger.swift` — Logging (use this for all logs)
 
 ## Performance Checklist
 
@@ -548,7 +547,7 @@ Before completing non-trivial features, verify these patterns are followed:
 
 ### Cross-Platform
 
-- [ ] **Core code avoids platform-specific overhead** — No UIKit/AppKit in Core without guards
+- [ ] **Core code avoids platform-specific overhead** — No UIKit/AppKit in Sources/Ayna without guards
 - [ ] **watchOS is memory-conscious** — Smaller buffers, fewer cached items
 - [ ] **iOS handles backgrounding** — Save state before suspension
 
@@ -592,7 +591,7 @@ Before requesting human review, verify:
 - [ ] `DiagnosticsLogger` calls added for debugging
 
 ### Testing
-- [ ] New code has unit tests in `Tests/aynaTests/`
+- [ ] New code has unit tests in `Tests/AynaTests/`
 - [ ] Edge cases covered (empty states, errors, cancellation)
 - [ ] Existing tests still pass
 
@@ -603,8 +602,8 @@ Before requesting human review, verify:
 
 ### Platform Compatibility
 - [ ] Builds on macOS, iOS, watchOS (as applicable)
-- [ ] `#if os()` guards for platform-specific code in Core/
-- [ ] No AppKit/UIKit imports in Core/ without guards
+- [ ] `#if os()` guards for platform-specific code in Sources/Ayna/
+- [ ] No AppKit/UIKit imports in Sources/Ayna/ without guards
 - [ ] New SDK APIs wrapped in `#if compiler()` for older Xcode compatibility
 
 ### Accessibility
@@ -620,9 +619,9 @@ Before requesting human review, verify:
 ## Common Errors & Solutions
 
 ### "Cannot find X in scope" (cross-platform builds)
-- **Cause**: AppKit/UIKit used in `Core/` without platform guard
+- **Cause**: AppKit/UIKit used in `Sources/Ayna/` without platform guard
 - **Fix**: Add `#if os(macOS)` / `#if os(iOS)` guards
-- **Prevention**: Always verify iOS build after Core changes
+- **Prevention**: Always verify iOS build after shared code changes
 
 ### "Reference to captured var in concurrently-executing code"
 - **Cause**: Mutable state accessed across actor boundaries
@@ -678,7 +677,7 @@ VS Code's `#runSubagent` tool enables context-isolated task execution. Subagents
 
 **Code Pattern Analysis** — Understand existing patterns:
 ```
-With #runSubagent, analyze #file:Core/Services/AIService.swift and identify:
+With #runSubagent, analyze #file:Sources/Ayna/Services/AIService.swift and identify:
 1. How provider requests are constructed
 2. Error handling patterns
 3. How streaming responses are processed
@@ -687,14 +686,14 @@ Return a concise pattern guide for adding a new provider.
 
 **Test Stub Generation** — Generate boilerplate:
 ```
-Using #runSubagent, generate a Swift Testing test struct following the pattern in #file:Tests/aynaTests/
+Using #runSubagent, generate a Swift Testing test struct following the pattern in #file:Tests/AynaTests/
 for testing a new EncryptionService with encrypt/decrypt methods.
 Return only the struct definition with placeholder test methods.
 ```
 
 **Performance Audit** — Isolated deep dive:
 ```
-With #runSubagent, audit #file:Views/macOS/ConversationView.swift for SwiftUI performance issues.
+With #runSubagent, audit #file:Sources/Ayna/Views/macOS/ConversationView.swift for SwiftUI performance issues.
 Check for: await in ForEach, missing LazyVStack, inline image loading, excessive state updates.
 Return a prioritized list of issues with line numbers.
 ```

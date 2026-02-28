@@ -9,9 +9,10 @@ on:
     branches: [ main ]
     paths:
       - '**.swift'
-      - '**.xcodeproj/**'
-      - '**.xcworkspace/**'
-      - 'Assets.xcassets/**'
+      - 'Package.swift'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Scripts/**'
       - '.github/workflows/dev-build.yml'
   workflow_dispatch:
 
@@ -27,27 +28,28 @@ jobs:
     - name: Select Xcode version
       run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
 
-    - name: Show Xcode version
-      run: xcodebuild -version
+    - name: Show Swift version
+      run: swift --version
+
+    - name: Get short SHA
+      id: slug
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Build app
+      env:
+        AYNA_SIGNING: adhoc
+        ARCHES: "arm64 x86_64"
       run: |
-        xcodebuild -project ayna.xcodeproj \
-          -scheme Ayna \
-          -configuration Release \
-          -derivedDataPath ./build \
-          -destination 'platform=macOS' \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO
+        echo "MARKETING_VERSION=0.0.0-dev.${{ steps.slug.outputs.sha_short }}" > version.env
+        echo "BUILD_NUMBER=${{ github.run_number }}" >> version.env
+        Scripts/build-app.sh release
 
     - name: Create DMG
       run: |
-        # Find the built app
-        APP_PATH=$(find ./build/Build/Products/Release -name "*.app" -type d | head -n 1)
+        APP_PATH=".build/app/Ayna.app"
 
-        if [ -z "$APP_PATH" ]; then
-          echo "Error: Could not find built app"
+        if [ ! -d "$APP_PATH" ]; then
+          echo "Error: Could not find built app at $APP_PATH"
           exit 1
         fi
 
@@ -62,10 +64,6 @@ jobs:
           -srcfolder dmg_contents \
           -ov -format UDZO \
           ayna-dev.dmg
-
-    - name: Get short SHA
-      id: slug
-      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Upload DMG
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4

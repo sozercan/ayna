@@ -57,21 +57,21 @@ This document details platform-specific capabilities, limitations, and implement
 ## Build Commands
 
 ```bash
-# macOS
-xcodebuild -scheme Ayna -destination 'platform=macOS' build
+# macOS (default)
+swift build
 
 # iOS
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 16' build
+swift build --triple arm64-apple-ios26.0
 
 # watchOS
-xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' build
+swift build --triple arm64-apple-watchos10.0
 ```
 
 ## Cross-Platform Code Guidelines
 
-### Shared Code (`Core/`)
+### Shared Code (`Sources/Ayna/`)
 
-All code in `Core/` must compile for **all three platforms**.
+All code in `Sources/Ayna/` must compile for **all three platforms**.
 
 **DO:**
 ```swift
@@ -90,7 +90,7 @@ import WatchConnectivity
 
 **DON'T:**
 ```swift
-// ❌ Never import platform frameworks unconditionally in Core/
+// ❌ Never import platform frameworks unconditionally in Sources/Ayna/
 import AppKit  // Breaks iOS/watchOS build
 import UIKit   // Breaks macOS/watchOS build
 ```
@@ -199,7 +199,7 @@ Handles bidirectional sync between iPhone and Apple Watch:
 
 - **iPhone → Watch**: API keys, model selections, Tavily settings
 - **Watch → iPhone**: Conversation updates (if initiated on Watch)
-- **File**: `Core/Services/WatchConnectivityService.swift`
+- **File**: `Sources/Ayna/Services/WatchConnectivityService.swift`
 
 ### WatchChatViewModel
 
@@ -208,7 +208,7 @@ Lightweight ViewModel optimized for Watch constraints:
 - Smaller context windows
 - Simplified error handling
 - No attachment support
-- **File**: `Core/ViewModels/WatchChatViewModel.swift`
+- **File**: `Sources/Ayna/ViewModels/WatchChatViewModel.swift`
 
 ### WatchConversationStore
 
@@ -216,4 +216,4 @@ Local conversation cache for offline access:
 
 - Syncs from iPhone on connection
 - Persists locally for offline viewing
-- **File**: `Core/ViewModels/WatchConversationStore.swift`
+- **File**: `Sources/Ayna/ViewModels/WatchConversationStore.swift`

@@ -121,10 +121,10 @@ The parser is marked `@MainActor` to enforce single-threaded access to mutable s
 
 | File | Purpose |
 |------|---------|
-| [AnthropicProvider.swift](../../Core/Services/Providers/AnthropicProvider.swift) | Main provider implementation |
-| [AnthropicRequestBuilder.swift](../../Core/Services/AnthropicRequestBuilder.swift) | Request payload construction |
-| [AnthropicStreamParser.swift](../../Core/Services/AnthropicStreamParser.swift) | SSE event parsing |
-| [AnthropicEndpointResolver.swift](../../Core/Services/AnthropicEndpointResolver.swift) | URL resolution |
+| [AnthropicProvider.swift](../../Sources/Ayna/Services/Providers/AnthropicProvider.swift) | Main provider implementation |
+| [AnthropicRequestBuilder.swift](../../Sources/Ayna/Services/AnthropicRequestBuilder.swift) | Request payload construction |
+| [AnthropicStreamParser.swift](../../Sources/Ayna/Services/AnthropicStreamParser.swift) | SSE event parsing |
+| [AnthropicEndpointResolver.swift](../../Sources/Ayna/Services/AnthropicEndpointResolver.swift) | URL resolution |
 
 ## Test Coverage
 

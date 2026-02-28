@@ -24,22 +24,24 @@ We needed to:
 
 ### 1. Core Module Structure
 
-All shared logic lives in `Core/`:
+All shared logic lives in `Sources/Ayna/`:
 
 ```
-Core/
+Sources/Ayna/
+├── App/              # Platform entry points
 ├── Models/           # Data types (Conversation, Message, etc.)
 ├── ViewModels/       # @Observable state management
 ├── Services/         # Business logic (AIService, etc.)
 │   └── Providers/    # AI provider implementations
 ├── Utilities/        # Helpers (ErrorPresenter, etc.)
 ├── Design/           # Shared design tokens
-└── Diagnostics/      # Logging
+├── Diagnostics/      # Logging
+└── Views/            # Platform-specific UI (macOS/, iOS/, watchOS/)
 ```
 
 ### 2. Platform Guards
 
-Use `#if os()` for platform-specific code within Core:
+Use `#if os()` for platform-specific code within `Sources/Ayna/`:
 
 ```swift
 #if os(macOS)
@@ -53,10 +55,10 @@ Use `#if os()` for platform-specific code within Core:
 
 ### 3. Platform-Specific Views
 
-Views are separated by platform:
+Views are separated by platform within the package:
 
 ```
-Views/
+Sources/Ayna/Views/
 ├── macOS/    # macOS-specific SwiftUI views
 ├── iOS/      # iOS-specific SwiftUI views
 └── watchOS/  # watchOS-specific SwiftUI views
@@ -64,13 +66,13 @@ Views/
 
 ### 4. Build Verification
 
-Mandatory verification after Core changes:
+Mandatory verification after changes to shared code:
 
 ```bash
 # Must pass all three
-xcodebuild -scheme Ayna -destination 'platform=macOS' build
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,...' build
-xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,...' build
+swift build
+swift build --triple arm64-apple-ios26.0
+swift build --triple arm64-apple-watchos10.0
 ```
 
 ### 5. Feature Availability
@@ -94,16 +96,16 @@ Document platform support in AGENTS.md:
 
 ### Negative
 
-1. **Build time**: Must verify all platforms after Core changes
+1. **Build time**: Must verify all platforms after shared code changes
 2. **Complexity**: `#if os()` guards can be hard to read
 3. **Lowest common denominator**: Some features limited by watchOS
-4. **Import restrictions**: Cannot use UIKit/AppKit freely in Core
+4. **Import restrictions**: Cannot use UIKit/AppKit freely in shared code
 
 ### Neutral
 
 1. **Framework differences**: SwiftUI API variations handled in Views
 2. **Performance tuning**: May need platform-specific optimizations
-3. **Testing strategy**: Unit tests in Core, UI tests per platform
+3. **Testing strategy**: Unit tests in `Tests/AynaTests/`, UI tests per platform
 
 ## Platform-Specific Considerations
 

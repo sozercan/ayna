@@ -35,38 +35,30 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Show Xcode version
-      run: xcodebuild -version
+    - name: Show Swift version
+      run: swift --version
 
     - name: Run unit tests
+      run: swift test -q
+
+    - name: Build app for UI tests
+      env:
+        AYNA_SIGNING: adhoc
+      run: Scripts/build-app.sh debug
+
+    - name: Install app
       run: |
-        set -o pipefail
-        xcodebuild \
-          -project ayna.xcodeproj \
-          -scheme Ayna \
-          -destination 'platform=macOS' \
-          -derivedDataPath ./build \
-          -only-testing:aynaTests \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          test
+        sudo cp -R .build/app/Ayna.app /Applications/Ayna.app
 
     - name: Run UI tests (with retry)
       run: |
         set -o pipefail
-        # UI tests can be flaky - retry up to 2 times
         for attempt in 1 2; do
           echo "Attempt $attempt of 2"
           if xcodebuild \
-            -project ayna.xcodeproj \
-            -scheme Ayna \
+            -project AynaUITests.xcodeproj \
+            -scheme AynaUITests \
             -destination 'platform=macOS' \
-            -derivedDataPath ./build \
-            -only-testing:aynaUITests \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES \
             -retry-tests-on-failure \
             test; then
             echo "Tests passed on attempt $attempt"
@@ -95,21 +87,14 @@ jobs:
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         echo "Using version: $VERSION"
 
-    - name: Build release configuration
+    - name: Build release app
+      env:
+        AYNA_SIGNING: adhoc
+        ARCHES: "arm64 x86_64"
       run: |
-        xcodebuild -project ayna.xcodeproj \
-          -scheme Ayna \
-          -configuration Release \
-          -destination 'platform=macOS' \
-          -derivedDataPath ./build \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          ARCHS="arm64 x86_64" \
-          ONLY_ACTIVE_ARCH=NO \
-          MARKETING_VERSION="${{ steps.version.outputs.version }}" \
-          CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-          build
+        echo "MARKETING_VERSION=${{ steps.version.outputs.version }}" > version.env
+        echo "BUILD_NUMBER=${{ github.run_number }}" >> version.env
+        Scripts/build-app.sh release
 
     - name: Install create-dmg
       run: brew install create-dmg
@@ -117,7 +102,7 @@ jobs:
     - name: Create DMG
       run: |
         APP_NAME="Ayna.app"
-        BUILD_DIR="./build/Build/Products/Release"
+        BUILD_DIR=".build/app"
 
         # debug: show what's in the build folder
         echo "Contents of $BUILD_DIR:"

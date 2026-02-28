@@ -106,6 +106,6 @@ final class ConversationPersistenceCoordinator {
 
 ## References
 
-- [Core/Services/EncryptedConversationStore.swift](../../Core/Services/EncryptedConversationStore.swift)
-- [Core/Services/ConversationPersistenceCoordinator.swift](../../Core/Services/ConversationPersistenceCoordinator.swift)
-- [Core/Services/KeychainStorage.swift](../../Core/Services/KeychainStorage.swift)
+- [Sources/Ayna/Services/EncryptedConversationStore.swift](../../Sources/Ayna/Services/EncryptedConversationStore.swift)
+- [Sources/Ayna/Services/ConversationPersistenceCoordinator.swift](../../Sources/Ayna/Services/ConversationPersistenceCoordinator.swift)
+- [Sources/Ayna/Services/KeychainStorage.swift](../../Sources/Ayna/Services/KeychainStorage.swift)
