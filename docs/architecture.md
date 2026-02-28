@@ -312,3 +312,15 @@ let action = ErrorPresenter.suggestedAction(for: error)  // .retry, .openSetting
 - `AIService.AIError` — Still used internally by OpenAI-related services
 - Display errors in UI with red text styling
 - Always log errors with context before handling
+
+## Performance Patterns
+
+Key performance patterns specific to this codebase:
+
+- **Streaming**: `StreamingChunkBuffer` must clear chunks after processing — never accumulate the full response in memory
+- **Persistence**: Use `ConversationPersistenceCoordinator` for debounced saves — never save on every keystroke. Encryption must happen off the main thread via `Task { }`
+- **Metadata**: Consider lazy loading for conversation lists — decrypting all conversations upfront is expensive at scale
+- **Attachments**: `AttachmentStorage` provides `save`/`load`/`delete` for individual files — note that orphan cleanup on conversation delete is not yet implemented
+- **MCP (macOS only)**: `MCPProcessTracker` monitors subprocess lifecycle. Enforce timeouts on hung tools. Kill processes on app quit
+- **Observation**: Scope `@Observable` to small units, not entire app state
+- **watchOS**: Use smaller buffers and fewer cached items than other platforms
