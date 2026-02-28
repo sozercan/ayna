@@ -67,6 +67,11 @@ class AIService: ObservableObject {
     /// Holds the Anthropic provider during streaming to prevent deallocation
     private var currentAnthropicProvider: AnthropicProvider?
 
+    /// Permission service for agentic tool approvals
+    #if !os(watchOS)
+        var permissionService: PermissionService? = PermissionService()
+    #endif
+
     @Published var provider: AIProvider {
         didSet {
             #if !os(watchOS)
@@ -2365,7 +2370,27 @@ extension AIService {
         #if os(watchOS)
             return toolName == "web_search"
         #else
-            return toolName == TavilyService.toolName
+            if toolName == TavilyService.toolName { return true }
+            guard AgentSettingsStore.shared.settings.isEnabled else { return false }
+            let agenticTools: Set<String> = [
+                "read_file", "write_file", "edit_file", "list_directory",
+                "search_files", "run_command", "web_fetch",
+            ]
+            return agenticTools.contains(toolName)
+        #endif
+    }
+
+    /// Returns system prompt context describing available agentic tools.
+    /// Returns nil if agentic tools are not enabled.
+    func getAgenticSystemPromptContext() -> String? {
+        #if os(watchOS)
+            return nil
+        #else
+            guard AgentSettingsStore.shared.settings.isEnabled else { return nil }
+            return """
+            You have access to agentic tools for file operations and code editing. \
+            Available tools: read_file, write_file, edit_file, list_directory, search_files, run_command.
+            """
         #endif
     }
 
@@ -2399,7 +2424,8 @@ extension AIService {
     /// - Returns: Tuple of (result string, optional citations for inline display)
     func executeBuiltInToolWithCitations(
         name toolName: String,
-        arguments: [String: Any]
+        arguments: [String: Any],
+        conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
         #if os(watchOS)
             /// watchOS doesn't support citations yet
