@@ -57,7 +57,7 @@ swift test
 ### UI Tests (Views/Interactions)
 
 ```bash
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:AynaUITests
+xcodebuild -project AynaUITests.xcodeproj -scheme AynaUITests -destination 'platform=macOS' test
 ```
 
 ### Full Suite

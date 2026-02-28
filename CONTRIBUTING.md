@@ -60,9 +60,9 @@ open Package.swift
   ```bash
   swift test
   ```
-- UI tests live under `Tests/aynaUITests/`. They launch the app with `--ui-testing` plus `AYNA_UI_TESTING=1`, which swaps in-memory storage, deterministic models, and mocked OpenAI responses. You can run only the UI bundle with:
+- UI tests live under `Tests/AynaUITests/`. They launch the app with `--ui-testing` plus `AYNA_UI_TESTING=1`, which swaps in-memory storage, deterministic models, and mocked OpenAI responses. You can run only the UI bundle with:
   ```bash
-  xcodebuild -scheme Ayna -destination 'platform=macOS' -only-testing AynaUITests test
+  xcodebuild -project AynaUITests.xcodeproj -scheme AynaUITests -destination 'platform=macOS' test
   ```
 - Unit tests live in `Tests/AynaTests/` and never touch the real Keychain or network. Use the helpers provided there:
   - `InMemoryKeychainStorage` keeps credentials in-memory during tests.
