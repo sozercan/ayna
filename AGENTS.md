@@ -39,8 +39,6 @@ Read the relevant doc before starting non-trivial tasks:
 
 > 🚨 **NEVER leak secrets, API keys, or tokens** — Use placeholder values like `"REDACTED"`, `"mock-token"`, or `"test-key"` in all code, tests, and docs.
 
-> 🤖 **Document Your Prompts** — When completing a task, summarize the key prompt(s) used so the human can include them in the PR.
-
 1. **Cross-Platform Compilation**: Code in `Core/` must build for macOS, iOS, AND watchOS. Never use `AppKit`/`UIKit` in `Core/` without `#if os()` guards.
 
 2. **Verify Builds**: After modifying shared code, verify all platforms (see Build Commands below).
