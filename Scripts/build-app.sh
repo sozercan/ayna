@@ -212,6 +212,10 @@ if [[ -d "$ICON_SOURCE" ]]; then
   echo "🎨 Copying app icon..."
   cp -R "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/ayna.icon"
 fi
+ICNS_PATH="$ROOT/Sources/Ayna/Resources/ayna.icns"
+if [[ -f "$ICNS_PATH" ]]; then
+  cp "$ICNS_PATH" "$APP_BUNDLE/Contents/Resources/ayna.icns"
+fi
 
 # Compile asset catalog if actool is available
 XCASSETS_PATH="$ROOT/Sources/Ayna/App/Assets.xcassets"

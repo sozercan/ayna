@@ -26,6 +26,9 @@ let package = Package(
                 ),
             ],
             path: "Sources/Ayna",
+            exclude: [
+                "Resources/ayna.icon",
+            ],
             resources: [
                 .process("Resources"),
             ],
