@@ -279,6 +279,17 @@ struct MacChatView: View {
                                         onSwitchModel: message.role == .assistant
                                             ? { newModel in
                                                 switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                            } : nil,
+                                        onEdit: message.role == .user
+                                            ? { newContent in
+                                                let edited = conversationManager.editMessage(
+                                                    in: currentConversation,
+                                                    messageId: message.id,
+                                                    newContent: newContent
+                                                )
+                                                if edited {
+                                                    resendMessage(message)
+                                                }
                                             } : nil
                                     )
                                     .id(message.id)

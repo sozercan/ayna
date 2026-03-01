@@ -33,6 +33,7 @@ struct ChatMessageList: View {
     let onRetryMessage: (Message) -> Void
     let onSwitchModelAndRetry: (Message, String) -> Void
     let onSelectResponse: (UUID, UUID) -> Void
+    let onEditMessage: (Message, String) -> Void
 
     @EnvironmentObject var conversationManager: ConversationManager
 
@@ -49,6 +50,9 @@ struct ChatMessageList: View {
                                 onRetry: message.role == .assistant ? { onRetryMessage(message) } : nil,
                                 onSwitchModel: message.role == .assistant
                                     ? { newModel in onSwitchModelAndRetry(message, newModel) }
+                                    : nil,
+                                onEdit: message.role == .user
+                                    ? { newContent in onEditMessage(message, newContent) }
                                     : nil
                             )
                             .id(message.id)
