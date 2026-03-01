@@ -825,9 +825,19 @@ import os.log
                             process.waitUntilExit()
                             timeoutTask.cancel()
 
-                            // Clear handlers after exit to ensure final data is flushed
+                            // Clear handlers after exit
                             stdoutPipe.fileHandleForReading.readabilityHandler = nil
                             stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+                            // Drain any remaining buffered data not captured by handlers
+                            let remainingStdout = stdoutPipe.fileHandleForReading.availableData
+                            let remainingStderr = stderrPipe.fileHandleForReading.availableData
+                            if !remainingStdout.isEmpty {
+                                stdoutAccumulator.append(remainingStdout)
+                            }
+                            if !remainingStderr.isEmpty {
+                                stderrAccumulator.append(remainingStderr)
+                            }
 
                             let duration = Date().timeIntervalSince(startTime)
 
