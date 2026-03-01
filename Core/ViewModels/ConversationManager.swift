@@ -553,6 +553,12 @@ final class ConversationManager: ObservableObject {
             return true
         }
 
+        // Remove all messages after the edited message to avoid stale responses
+        let nextIndex = conversations[convIndex].messages.index(after: msgIndex)
+        if nextIndex < conversations[convIndex].messages.endIndex {
+            conversations[convIndex].messages.removeSubrange(nextIndex...)
+        }
+
         conversations[convIndex].messages[msgIndex].content = newContent
         conversations[convIndex].messages[msgIndex].isEdited = true
         conversations[convIndex].messages[msgIndex].editedAt = Date()

@@ -211,6 +211,34 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.editedAt != nil)
     }
 
+    @Test("Edit message removes subsequent messages")
+    @MainActor
+    func editMessageRemovesSubsequentMessages() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+
+        let userMessage = Message(role: .user, content: "What is 2+2?")
+        manager.addMessage(to: conversation, message: userMessage)
+        let assistantMessage = Message(role: .assistant, content: "2+2 = 4")
+        manager.addMessage(to: conversation, message: assistantMessage)
+
+        #expect(manager.conversations.first?.messages.count == 2)
+
+        let editResult = manager.editMessage(
+            in: conversation,
+            messageId: userMessage.id,
+            newContent: "What is 3+3?"
+        )
+
+        #expect(editResult == true)
+        #expect(manager.conversations.first?.messages.count == 1)
+        #expect(manager.conversations.first?.messages.first?.content == "What is 3+3?")
+        #expect(manager.conversations.first?.messages.first?.isEdited == true)
+    }
+
     @Test("Edit message fails for assistant messages")
     @MainActor
     func editMessageFailsForAssistantMessages() throws {
