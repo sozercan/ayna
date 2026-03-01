@@ -499,85 +499,83 @@ struct MacMessageView: View {
 
     @MainActor @ViewBuilder
     private func actionControls(for role: Message.Role) -> some View {
-        if isHovered || UITestEnvironment.isEnabled {
-            HStack(spacing: Spacing.xxs) {
+        HStack(spacing: Spacing.xxs) {
+            Button(action: {
+                copyToClipboard(message.content)
+            }) {
+                Image(systemName: "doc.on.doc")
+                    .font(Typography.caption)
+                    .padding(Spacing.sm)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("message.action.copy")
+            .accessibilityLabel("Copy message")
+
+            if role == .user, onEdit != nil {
                 Button(action: {
-                    copyToClipboard(message.content)
+                    editText = message.content
+                    withAnimation(Motion.springSnappy) {
+                        isEditing = true
+                    }
                 }) {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: "pencil")
                         .font(Typography.caption)
                         .padding(Spacing.sm)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("message.action.copy")
-                .accessibilityLabel("Copy message")
+                .accessibilityIdentifier("message.action.edit")
+                .accessibilityLabel("Edit message")
+            }
 
-                if role == .user, onEdit != nil {
-                    Button(action: {
-                        editText = message.content
-                        withAnimation(Motion.springSnappy) {
-                            isEditing = true
-                        }
-                    }) {
-                        Image(systemName: "pencil")
+            if role == .assistant {
+                Menu {
+                    Section {
+                        Text("Used \(modelName ?? message.model ?? "Unknown Model")")
                             .font(Typography.caption)
-                            .padding(Spacing.sm)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("message.action.edit")
-                    .accessibilityLabel("Edit message")
-                }
 
-                if role == .assistant {
+                    Divider()
+
+                    if let onRetry {
+                        Button(action: onRetry) {
+                            Label("Try Again", systemImage: "arrow.clockwise")
+                        }
+                    }
+
                     Menu {
-                        Section {
-                            Text("Used \(modelName ?? message.model ?? "Unknown Model")")
-                                .font(Typography.caption)
-                        }
-
-                        Divider()
-
-                        if let onRetry {
-                            Button(action: onRetry) {
-                                Label("Try Again", systemImage: "arrow.clockwise")
-                            }
-                        }
-
-                        Menu {
-                            ForEach(aiService.usableModels, id: \.self) { model in
-                                Button(action: {
-                                    onSwitchModel?(model)
-                                }) {
-                                    HStack {
-                                        Text(model)
-                                        if model == modelName || model == message.model {
-                                            Image(systemName: "checkmark")
-                                        }
+                        ForEach(aiService.usableModels, id: \.self) { model in
+                            Button(action: {
+                                onSwitchModel?(model)
+                            }) {
+                                HStack {
+                                    Text(model)
+                                    if model == modelName || model == message.model {
+                                        Image(systemName: "checkmark")
                                     }
                                 }
                             }
-                        } label: {
-                            Label("Switch Model", systemImage: "arrow.left.arrow.right")
                         }
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .font(Typography.caption)
-                            .padding(Spacing.sm)
-                            .contentShape(Rectangle())
+                        Label("Switch Model", systemImage: "arrow.left.arrow.right")
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .accessibilityLabel("More options")
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(Typography.caption)
+                        .padding(Spacing.sm)
+                        .contentShape(Rectangle())
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("More options")
             }
-            .foregroundStyle(Theme.userBubbleText)
-            .background(.ultraThinMaterial, in: Capsule())
-            .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
-            .transition(Motion.scaleTransition)
         }
+        .foregroundStyle(Theme.userBubbleText)
+        .background(.ultraThinMaterial, in: Capsule())
+        .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
+        .opacity(isHovered || UITestEnvironment.isEnabled ? 1 : 0)
     }
 
     @MainActor
