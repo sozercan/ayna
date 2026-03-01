@@ -62,27 +62,101 @@ final class KeychainStorage: Sendable {
     }
 
     nonisolated func setData(_ data: Data, for key: String) throws {
-        // First, try to delete any existing item to avoid conflicts from previous app signatures
-        // This is a workaround for free developer accounts where keychain items may be
-        // inaccessible after rebuilding due to code signature changes
-        let deleteStatus = SecItemDelete(baseQuery(for: key) as CFDictionary)
+        let query = baseQuery(for: key)
+        let updateAttributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+
+        // Try to update existing item first to avoid creating duplicates
+        let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
+
+        if updateStatus == errSecSuccess {
+            log(
+                "Successfully updated keychain item",
+                level: .info,
+                metadata: ["key": key, "dataSize": "\(data.count)"]
+            )
+            return
+        }
+
+        if updateStatus == errSecItemNotFound {
+            // Item doesn't exist yet, add it
+            var addQuery = query
+            addQuery[kSecValueData as String] = data
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+
+            if addStatus == errSecDuplicateItem {
+                // Another thread added it first — update instead
+                let retryStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
+                guard retryStatus == errSecSuccess else {
+                    log(
+                        "Failed to update keychain item after duplicate",
+                        level: .error,
+                        metadata: ["status": "\(retryStatus)", "key": key, "statusMessage": statusMessage(retryStatus)]
+                    )
+                    throw KeychainStorageError.unexpectedStatus(retryStatus)
+                }
+                log(
+                    "Successfully updated keychain item (after race)",
+                    level: .info,
+                    metadata: ["key": key, "dataSize": "\(data.count)"]
+                )
+                return
+            }
+
+            guard addStatus == errSecSuccess else {
+                log(
+                    "Failed to add keychain item",
+                    level: .error,
+                    metadata: ["status": "\(addStatus)", "key": key, "statusMessage": statusMessage(addStatus)]
+                )
+                throw KeychainStorageError.unexpectedStatus(addStatus)
+            }
+
+            log(
+                "Successfully stored keychain item",
+                level: .info,
+                metadata: ["key": key, "dataSize": "\(data.count)"]
+            )
+            return
+        }
+
+        // Update failed (e.g., code signature changed) — delete and re-add
+        log(
+            "Update failed, attempting delete and re-add",
+            level: .info,
+            metadata: ["status": "\(updateStatus)", "key": key, "statusMessage": statusMessage(updateStatus)]
+        )
+        let deleteStatus = SecItemDelete(query as CFDictionary)
         if deleteStatus != errSecSuccess, deleteStatus != errSecItemNotFound {
             log(
-                "Note: Could not delete existing keychain item (may be from different signature)",
+                "Could not delete existing keychain item",
                 level: .info,
                 metadata: ["status": "\(deleteStatus)", "key": key, "statusMessage": statusMessage(deleteStatus)]
             )
         }
 
-        // Now add the new item
-        var query = baseQuery(for: key)
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
 
-        let addStatus = SecItemAdd(query as CFDictionary, nil)
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+
+        if addStatus == errSecDuplicateItem {
+            // Race condition — update instead
+            let retryStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
+            guard retryStatus == errSecSuccess else {
+                throw KeychainStorageError.unexpectedStatus(retryStatus)
+            }
+            return
+        }
+
         guard addStatus == errSecSuccess else {
             log(
-                "Failed to add keychain item",
+                "Failed to add keychain item after delete",
                 level: .error,
                 metadata: ["status": "\(addStatus)", "key": key, "statusMessage": statusMessage(addStatus)]
             )
@@ -90,7 +164,7 @@ final class KeychainStorage: Sendable {
         }
 
         log(
-            "Successfully stored keychain item",
+            "Successfully stored keychain item (after re-add)",
             level: .info,
             metadata: ["key": key, "dataSize": "\(data.count)"]
         )
