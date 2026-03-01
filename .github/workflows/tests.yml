@@ -58,7 +58,7 @@ jobs:
       run: swift --version
 
     - name: Compile for iOS
-      run: swift build --triple arm64-apple-ios26.0
+      run: swift build --triple arm64-apple-ios26.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
 
   watchos_build_check:
     name: watchOS Build Check
@@ -75,7 +75,7 @@ jobs:
       run: swift --version
 
     - name: Compile for watchOS
-      run: swift build --triple arm64-apple-watchos26.0
+      run: swift build --triple arm64-apple-watchos26.0 --sdk "$(xcrun --sdk watchos --show-sdk-path)"
 
   macos_ui_tests:
     name: macOS UI Tests

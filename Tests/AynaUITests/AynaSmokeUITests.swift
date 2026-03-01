@@ -1,4 +1,3 @@
-@testable import Ayna
 import XCTest
 
 @MainActor
