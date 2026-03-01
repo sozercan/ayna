@@ -146,7 +146,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 17'
+            destination: 'platform=iOS Simulator,name=iPhone 17,OS=latest'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -233,7 +233,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 17'
+            destination: 'platform=iOS Simulator,name=iPhone 17,OS=latest'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -310,7 +310,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=latest'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -364,7 +364,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
+            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=latest'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
