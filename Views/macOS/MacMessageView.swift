@@ -20,9 +20,7 @@ struct MacMessageView: View {
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
     var onEdit: ((String) -> Void)?
-    @State private var isHovered = false
     @State private var showReasoning = false
-    @State private var showModelMenu = false
     @State private var isEditing = false
     @State private var editText = ""
     @EnvironmentObject var conversationManager: ConversationManager
@@ -188,9 +186,7 @@ struct MacMessageView: View {
             .padding(.horizontal, Spacing.contentPadding)
             .padding(.vertical, Spacing.xs)
             .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovered = hovering
-            }
+            .contextMenu { messageContextMenu(for: message.role) }
             .onAppear {
                 updateCachedBlocks()
                 updateCachedReasoningBlocks()
@@ -299,8 +295,7 @@ struct MacMessageView: View {
     private func bubbleContainer(isCurrentUser: Bool) -> some View {
         let bubbleStyle = isCurrentUser ? userBubbleGradient : recipientBubbleGradient
 
-        return ZStack(alignment: isCurrentUser ? .topLeading : .topTrailing) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
+        return VStack(alignment: .leading, spacing: Spacing.md) {
                 bubbleContent
             }
             .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
@@ -322,12 +317,6 @@ struct MacMessageView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: accessibilityText))
             .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
-
-            actionControls(for: message.role)
-                .offset(y: -26)
-        }
-        .contentShape(Rectangle()) // Make entire area including controls hoverable
-        .animation(Motion.easeStandard, value: isHovered)
     }
 
     @MainActor
@@ -498,84 +487,54 @@ struct MacMessageView: View {
     }
 
     @MainActor @ViewBuilder
-    private func actionControls(for role: Message.Role) -> some View {
-        HStack(spacing: Spacing.xxs) {
+    private func messageContextMenu(for role: Message.Role) -> some View {
+        Button(action: {
+            copyToClipboard(message.content)
+        }) {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+
+        if role == .user, onEdit != nil {
             Button(action: {
-                copyToClipboard(message.content)
+                editText = message.content
+                withAnimation(Motion.springSnappy) {
+                    isEditing = true
+                }
             }) {
-                Image(systemName: "doc.on.doc")
-                    .font(Typography.caption)
-                    .padding(Spacing.sm)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("message.action.copy")
-            .accessibilityLabel("Copy message")
-
-            if role == .user, onEdit != nil {
-                Button(action: {
-                    editText = message.content
-                    withAnimation(Motion.springSnappy) {
-                        isEditing = true
-                    }
-                }) {
-                    Image(systemName: "pencil")
-                        .font(Typography.caption)
-                        .padding(Spacing.sm)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("message.action.edit")
-                .accessibilityLabel("Edit message")
-            }
-
-            if role == .assistant {
-                Menu {
-                    Section {
-                        Text("Used \(modelName ?? message.model ?? "Unknown Model")")
-                            .font(Typography.caption)
-                    }
-
-                    Divider()
-
-                    if let onRetry {
-                        Button(action: onRetry) {
-                            Label("Try Again", systemImage: "arrow.clockwise")
-                        }
-                    }
-
-                    Menu {
-                        ForEach(aiService.usableModels, id: \.self) { model in
-                            Button(action: {
-                                onSwitchModel?(model)
-                            }) {
-                                HStack {
-                                    Text(model)
-                                    if model == modelName || model == message.model {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Switch Model", systemImage: "arrow.left.arrow.right")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(Typography.caption)
-                        .padding(Spacing.sm)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .accessibilityLabel("More options")
+                Label("Edit", systemImage: "pencil")
             }
         }
-        .foregroundStyle(Theme.userBubbleText)
-        .background(.ultraThinMaterial, in: Capsule())
-        .shadow(color: Theme.shadowElevated, radius: Spacing.Shadow.radiusSubtle, x: 0, y: 3)
-        .opacity(isHovered || UITestEnvironment.isEnabled ? 1 : 0)
+
+        if role == .assistant {
+            Divider()
+
+            if let onRetry {
+                Button(action: onRetry) {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                }
+            }
+
+            Menu {
+                ForEach(aiService.usableModels, id: \.self) { model in
+                    Button(action: {
+                        onSwitchModel?(model)
+                    }) {
+                        HStack {
+                            Text(model)
+                            if model == modelName || model == message.model {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Switch Model", systemImage: "arrow.left.arrow.right")
+            }
+
+            Divider()
+
+            Text("Used \(modelName ?? message.model ?? "Unknown Model")")
+        }
     }
 
     @MainActor
@@ -586,35 +545,30 @@ struct MacMessageView: View {
                 .foregroundStyle(Theme.textSecondary)
 
             HStack(alignment: .bottom) {
-                ZStack(alignment: .topTrailing) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ToolCallResultCard(
-                            toolName: toolDisplayName,
-                            arguments: formattedToolArguments,
-                            contentBlocks: cachedContentBlocks,
-                            fallbackText: message.content
-                        )
-                    }
-                    .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
-                    .foregroundStyle(Theme.userBubbleText)
-                    .padding(.leading, Spacing.contentPadding)
-                    .padding(.trailing, Spacing.bubblePaddingH)
-                    .padding(.vertical, Spacing.bubblePaddingV)
-                    .background(
-                        MessageBubbleShape(isFromCurrentUser: false)
-                            .fill(toolBubbleColor)
+                VStack(alignment: .leading, spacing: 12) {
+                    ToolCallResultCard(
+                        toolName: toolDisplayName,
+                        arguments: formattedToolArguments,
+                        contentBlocks: cachedContentBlocks,
+                        fallbackText: message.content
                     )
-                    .overlay(
-                        MessageBubbleShape(isFromCurrentUser: false)
-                            .stroke(Theme.border, lineWidth: Spacing.Border.standard)
-                    )
-                    .shadow(color: Theme.toolBubble.opacity(0.3), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
-                    .environment(\.colorScheme, .dark)
-                    .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
-
-                    actionControls(for: message.role)
-                        .offset(y: -26)
                 }
+                .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
+                .foregroundStyle(Theme.userBubbleText)
+                .padding(.leading, Spacing.contentPadding)
+                .padding(.trailing, Spacing.bubblePaddingH)
+                .padding(.vertical, Spacing.bubblePaddingV)
+                .background(
+                    MessageBubbleShape(isFromCurrentUser: false)
+                        .fill(toolBubbleColor)
+                )
+                .overlay(
+                    MessageBubbleShape(isFromCurrentUser: false)
+                        .stroke(Theme.border, lineWidth: Spacing.Border.standard)
+                )
+                .shadow(color: Theme.toolBubble.opacity(0.3), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
+                .environment(\.colorScheme, .dark)
+                .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
 
                 Spacer(minLength: 40)
             }
