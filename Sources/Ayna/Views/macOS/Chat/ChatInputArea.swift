@@ -22,12 +22,15 @@ struct ChatInputArea: View {
 
     let isGenerating: Bool
     let composerModelLabel: String
+    var textEditorIdentifier: String = TestIdentifiers.ChatComposer.textEditor
+    var sendButtonIdentifier: String = TestIdentifiers.ChatComposer.sendButton
     let onSendMessage: () -> Void
     let onAttachFile: () -> Void
     let onShowAppContentPicker: () -> Void
     let onToggleModelSelection: (String) -> Void
     let onClearMultiSelection: () -> Void
     let onRemoveFile: (URL) -> Void
+    var onRemoveAppContent: (() -> Void)?
 
     @ObservedObject private var aiService = AIService.shared
 
@@ -55,6 +58,7 @@ struct ChatInputArea: View {
             .overlay(
                 RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill + Spacing.CornerRadius.sm)
                     .stroke(Theme.border, lineWidth: Spacing.Border.hairline)
+                    .allowsHitTesting(false)
             )
             .shadow(color: Theme.shadow.opacity(0.35), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetY)
             .padding(.horizontal, Spacing.contentPadding)
@@ -122,7 +126,11 @@ struct ChatInputArea: View {
 
             // Remove button
             Button {
-                // Clear via binding handled by parent
+                if let onRemove = onRemoveAppContent {
+                    onRemove()
+                } else {
+                    attachedAppContent = nil
+                }
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: Typography.IconSize.md))
@@ -144,7 +152,7 @@ struct ChatInputArea: View {
                 text: $messageText,
                 isFirstResponder: $isComposerFocused,
                 onSubmit: onSendMessage,
-                accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
+                accessibilityIdentifier: textEditorIdentifier
             )
             .frame(height: calculateTextHeight())
             .font(Typography.body)
@@ -220,59 +228,12 @@ struct ChatInputArea: View {
     }
 
     private var modelSelectorPopover: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Select models")
-                .font(Typography.captionBold)
-                .foregroundStyle(Theme.textSecondary)
-            Text("1 model = single response, 2+ = compare")
-                .font(Typography.footnote)
-                .foregroundStyle(Theme.textTertiary)
-            Divider()
-                .padding(.vertical, Spacing.xxs)
-
-            if aiService.usableModels.isEmpty {
-                SettingsLink {
-                    Label("Add Model in Settings", systemImage: "slider.horizontal.3")
-                }
-                .routeSettings(to: .models)
-            } else {
-                ForEach(aiService.usableModels, id: \.self) { model in
-                    Button(action: { onToggleModelSelection(model) }) {
-                        HStack {
-                            Image(systemName: selectedModels.contains(model) ? "checkmark.square.fill" : "square")
-                                .foregroundStyle(selectedModels.contains(model) ? Theme.accent : Theme.textSecondary)
-                                .font(.system(size: Typography.Size.body))
-                            Text(model)
-                                .font(Typography.modelName)
-                            Spacer()
-                        }
-                        .padding(.vertical, Spacing.xxs)
-                        .padding(.horizontal, Spacing.sm)
-                        .background(
-                            RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
-                                .fill(selectedModels.contains(model) ? Theme.selection : Color.clear)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            if selectedModels.count > 1 {
-                Divider()
-                    .padding(.vertical, Spacing.xxs)
-                Button(action: onClearMultiSelection) {
-                    HStack {
-                        Image(systemName: "xmark.circle")
-                        Text("Clear multi-selection")
-                    }
-                    .font(Typography.footnote)
-                    .foregroundStyle(Theme.destructive)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding()
-        .frame(minWidth: 220)
+        ModelSelectorPopover(
+            selectedModels: $selectedModels,
+            selectedModel: $selectedModel,
+            onToggleModel: onToggleModelSelection,
+            onClearMultiSelection: onClearMultiSelection
+        )
     }
 
     // MARK: - Send Button
@@ -294,7 +255,7 @@ struct ChatInputArea: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(isGenerating || !messageText.isEmpty)
-        .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
+        .accessibilityIdentifier(sendButtonIdentifier)
         .padding(.horizontal, Spacing.md)
         .frame(height: calculateTextHeight() + Spacing.xxl)
     }

@@ -5,39 +5,9 @@
 //
 //  New chat view for macOS - handles initial conversation creation and message sending.
 //
-// swiftlint:disable file_length
-
 import Combine
 import OSLog
 import SwiftUI
-
-/// A wrapper to make non-Sendable types Sendable by unchecked conformance.
-/// Use this only when you are sure the value is thread-safe or accessed safely.
-private final class UncheckedSendable<T>: @unchecked Sendable {
-    let value: T
-    init(_ value: T) {
-        self.value = value
-    }
-}
-
-/// Thread-safe counter for tracking async completion
-@MainActor
-private final class CompletionCounter {
-    private var completed: Int = 0
-    private let total: Int
-
-    init(total: Int) {
-        self.total = total
-    }
-
-    func increment() {
-        completed += 1
-    }
-
-    var isComplete: Bool {
-        completed >= total
-    }
-}
 
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
@@ -63,15 +33,6 @@ struct MacNewChatView: View {
     // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
-
-    /// Cached font for text height calculation (computed property to avoid lazy initialization issues)
-    private var textFont: NSFont {
-        NSFont.systemFont(ofSize: 15)
-    }
-
-    private var textAttributes: [NSAttributedString.Key: Any] {
-        [.font: textFont]
-    }
 
     /// Get the current conversation being created
     private var currentConversation: Conversation? {
@@ -198,10 +159,6 @@ struct MacNewChatView: View {
         return label.isEmpty ? "Add Model" : label
     }
 
-    private func isModelCurrentlySelected(_ model: String) -> Bool {
-        selectedModels.contains(model)
-    }
-
     var body: some View {
         ZStack {
             // Chat background with subtle gradient
@@ -230,7 +187,20 @@ struct MacNewChatView: View {
                                             message: message,
                                             modelName: message.model,
                                             onRetry: nil,
-                                            onSwitchModel: nil
+                                            onSwitchModel: nil,
+                                            onEdit: message.role == .user && currentConversation != nil
+                                                ? { newContent in
+                                                    if let conversation = currentConversation {
+                                                        let edited = conversationManager.editMessage(
+                                                            in: conversation,
+                                                            messageId: message.id,
+                                                            newContent: newContent
+                                                        )
+                                                        if edited {
+                                                            sendMessageForConversation(conversation, model: conversation.model)
+                                                        }
+                                                    }
+                                                } : nil
                                         )
                                         .id(message.id)
                                     case let .responseGroup(groupId, responses):
@@ -279,22 +249,7 @@ struct MacNewChatView: View {
                     }
 
                     if let toolName = currentToolName {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .controlSize(.small)
-                            Text(
-                                toolName.hasPrefix("Analyzing")
-                                    ? "🔄 \(toolName)..."
-                                    : "🔧 Using tool: \(toolName)..."
-                            )
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.1))
+                        ToolExecutionIndicator(toolName: toolName)
                     }
 
                     if let errorMessage {
@@ -341,380 +296,33 @@ struct MacNewChatView: View {
     // MARK: - Input Area
 
     private var inputArea: some View {
-        VStack(spacing: 8) {
-            MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
-
-            // Attached files preview
-            if !attachedFiles.isEmpty {
-                attachedFilesPreview
-            }
-
-            // Attached app content preview
-            if let appContent = attachedAppContent {
-                attachedAppContentPreview(appContent)
-            }
-
-            // Composer row
-            composerRow
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 20)
-        .background(.ultraThinMaterial)
-    }
-
-    private var attachedFilesPreview: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(attachedFiles, id: \.self) { fileURL in
-                    HStack(spacing: 8) {
-                        if let image = NSImage(contentsOf: fileURL) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 48, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        } else {
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 48, height: 48)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(fileURL.lastPathComponent)
-                                .font(.caption)
-                                .lineLimit(1)
-                            if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
-                                .fileSize
-                            {
-                                Text(
-                                    ByteCountFormatter.string(
-                                        fromByteCount: Int64(fileSize), countStyle: .file
-                                    )
-                                )
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        Button(action: { removeFile(fileURL) }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove attachment")
-                    }
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                }
-            }
-            .padding(.horizontal, 24)
-        }
-    }
-
-    private func attachedAppContentPreview(_ appContent: AppContent) -> some View {
-        HStack(spacing: 8) {
-            // App icon
-            if let icon = appContent.appIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 20, height: 20)
-            } else {
-                Image(systemName: "app.fill")
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(.secondary)
-            }
-
-            // App name and window title
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appContent.appName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                if let windowTitle = appContent.windowTitle, !windowTitle.isEmpty {
-                    Text(windowTitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            // Content type badge
-            Text(appContent.contentType.displayName)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-
-            // Remove button
-            Button {
-                attachedAppContent = nil
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove app content")
-        }
-        .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 24)
-    }
-
-    private var composerRow: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .bottomLeading) {
-                DynamicTextEditor(
-                    text: $messageText,
-                    isFirstResponder: $isComposerFocused,
-                    onSubmit: sendMessage,
-                    accessibilityIdentifier: TestIdentifiers.NewChatComposer.textEditor
-                )
-                .frame(height: calculateTextHeight())
-                .font(.system(size: 15))
-                .scrollContentBackground(.hidden)
-                .padding(.leading, 48)
-                .padding(.trailing, 12)
-                .padding(.vertical, 12)
-                .background(.clear)
-
-                // Attach menu button inside the text box (left side)
-                Menu {
-                    Button {
-                        attachFile()
-                    } label: {
-                        Label("Attach Files...", systemImage: "doc")
-                    }
-
-                    Button {
-                        showAppContentPicker = true
-                    } label: {
-                        Label("Attach from App...", systemImage: "macwindow")
-                    }
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(Color.secondary.opacity(0.7))
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .accessibilityLabel("Attach")
-                .frame(width: 32, height: 32)
-                .padding(.leading, 8)
-                .padding(.bottom, 7)
-            }
-
-            // Model selector
-            modelSelectorButton
-
-            // Send button
-            sendButton
-        }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+        ChatInputArea(
+            messageText: $messageText,
+            isComposerFocused: $isComposerFocused,
+            attachedFiles: $attachedFiles,
+            attachedAppContent: $attachedAppContent,
+            selectedModels: $selectedModels,
+            selectedModel: $selectedModel,
+            showModelSelector: $showModelSelector,
+            isToolSectionExpanded: $isToolSectionExpanded,
+            isGenerating: isGenerating,
+            composerModelLabel: composerModelLabel,
+            textEditorIdentifier: TestIdentifiers.NewChatComposer.textEditor,
+            sendButtonIdentifier: TestIdentifiers.NewChatComposer.sendButton,
+            onSendMessage: sendMessage,
+            onAttachFile: attachFile,
+            onShowAppContentPicker: { showAppContentPicker = true },
+            onToggleModelSelection: toggleModelSelection,
+            onClearMultiSelection: {
+                selectedModels.removeAll()
+                selectedModel = aiService.selectedModel
+            },
+            onRemoveFile: removeFile,
+            onRemoveAppContent: { attachedAppContent = nil }
         )
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-        .padding(.horizontal, 24)
-    }
-
-    private var modelSelectorButton: some View {
-        Button(action: { showModelSelector.toggle() }) {
-            HStack(spacing: 4) {
-                Divider()
-                    .frame(height: 24)
-                    .padding(.leading, 8)
-
-                if selectedModels.count > 1 {
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.accentColor)
-                    Text("\(selectedModels.count) models")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.accentColor)
-                } else {
-                    Text(composerModelLabel)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .frame(height: calculateTextHeight() + 24)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .popover(isPresented: $showModelSelector) {
-            modelSelectorPopover
-        }
-    }
-
-    @ViewBuilder
-    private var modelSelectorPopover: some View {
-        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
-
-        VStack(alignment: .leading, spacing: 8) {
-            Text(multiModelEnabled ? "Select models" : "Select model")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-            if multiModelEnabled {
-                Text("1 model = single response, 2+ = compare")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            }
-            Divider()
-                .padding(.vertical, 4)
-
-            if aiService.usableModels.isEmpty {
-                SettingsLink {
-                    Label("Add Model in Settings", systemImage: "slider.horizontal.3")
-                }
-                .routeSettings(to: .models)
-            } else {
-                ForEach(aiService.usableModels, id: \.self) { model in
-                    let isSelected = selectedModels.contains(model)
-                    let modelCapability = aiService.getModelCapability(model)
-                    let isCapabilityMismatch: Bool = {
-                        guard let selectedType = selectedCapabilityType else { return false }
-                        return modelCapability != selectedType
-                    }()
-                    // Only check capability mismatch in multi-model mode
-                    let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
-
-                    Button(action: {
-                        toggleModelSelection(model)
-                    }) {
-                        HStack {
-                            // Show checkbox for multi-model, radio for single-model
-                            if multiModelEnabled {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.square.fill" : "square"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
-                            } else {
-                                Image(
-                                    systemName: isSelected
-                                        ? "checkmark.circle.fill" : "circle"
-                                )
-                                .foregroundStyle(
-                                    isSelected ? Color.accentColor : Color.secondary
-                                )
-                                .font(.system(size: 14))
-                            }
-                            Text(model)
-                                .font(.system(size: 13))
-                            Spacer()
-
-                            // Show capability badge for image gen models
-                            if modelCapability == .imageGeneration {
-                                Image(systemName: "photo")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.secondary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(
-                                    isSelected
-                                        ? Color.accentColor.opacity(0.1) : Color.clear
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDisabled)
-                    .opacity(isDisabled ? 0.5 : 1.0)
-                }
-            }
-
-            if multiModelEnabled, selectedModels.count > 1 {
-                Divider()
-                    .padding(.vertical, 4)
-                Button(action: {
-                    if let first = selectedModels.first {
-                        selectedModels = [first]
-                        selectedModel = first
-                        aiService.selectedModel = first
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "xmark.circle")
-                        Text("Clear multi-selection")
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.red)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding()
-        .frame(minWidth: 220)
-    }
-
-    private var sendButton: some View {
-        Button(action: sendMessage) {
-            ZStack {
-                if isGenerating {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(Color.accentColor)
-                        .symbolEffect(.pulse, value: isGenerating)
-                } else {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            messageText.isEmpty ? Color.secondary.opacity(0.5) : Color.accentColor
-                        )
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .allowsHitTesting(isGenerating || !messageText.isEmpty)
-        .accessibilityIdentifier(TestIdentifiers.NewChatComposer.sendButton)
-        .padding(.horizontal, 12)
-        .frame(height: calculateTextHeight() + 24)
     }
 
     // MARK: - Helper Methods
-
-    private func calculateTextHeight() -> CGFloat {
-        let baseHeight: CGFloat = 22
-        let maxHeight: CGFloat = 220
-
-        if messageText.isEmpty {
-            return baseHeight
-        }
-
-        let availableWidth: CGFloat = 600
-
-        // Use cached font and attributes for better performance
-        let boundingRect = (messageText as NSString).boundingRect(
-            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttributes
-        )
-
-        let calculatedHeight = ceil(boundingRect.height) + 4
-        return min(max(calculatedHeight, baseHeight), maxHeight)
-    }
 
     private func resolveModelForSending() -> String? {
         let trimmedSelection = normalizedSelectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -908,62 +516,30 @@ struct MacNewChatView: View {
         updatedConversation.multiModelEnabled = selectedModels.count > 1
         conversationManager.updateConversation(updatedConversation)
 
-        // Build file attachments
-        var attachments: [Message.FileAttachment] = []
-        for fileURL in filesToSend {
-            if let fileData = try? Data(contentsOf: fileURL) {
-                let mimeType = MIMETypeHelper.getMimeType(for: fileURL)
-                let attachment = Message.FileAttachment(
-                    fileName: fileURL.lastPathComponent,
-                    mimeType: mimeType,
-                    data: fileData
-                )
-                attachments.append(attachment)
-            }
-        }
+        // Build user message using ChatMessageBuilder
+        let userMessage = ChatMessageBuilder.createUserMessage(
+            text: textToSend,
+            appContent: attachedAppContent,
+            fileURLs: filesToSend,
+            saveToStorage: false
+        )
 
-        // Build message content, including app context inline if attached
-        let finalMessageContent: String
-        if let appContent = attachedAppContent {
-            // Format app content inline with the user's message
-            let contextHeader = "---\n**Context from \(appContent.appName)**"
-            let windowInfo = appContent.windowTitle.map { " (\($0))" } ?? ""
-            let contentType = " [\(appContent.contentType.displayName)]"
-
-            finalMessageContent = """
-            \(contextHeader)\(windowInfo)\(contentType)
-
-            ```
-            \(appContent.redacted.content)
-            ```
-            ---
-
-            \(textToSend)
-            """
-
+        if attachedAppContent != nil {
             logNewChat(
                 "📎 Including app content in message",
                 level: .info,
                 metadata: [
-                    "appName": appContent.appName,
-                    "contentType": appContent.contentType.displayName,
-                    "contentLength": "\(appContent.content.count)"
+                    "appName": attachedAppContent?.appName ?? "",
+                    "contentType": attachedAppContent?.contentType.displayName ?? "",
+                    "contentLength": "\(attachedAppContent?.content.count ?? 0)"
                 ]
             )
-        } else {
-            finalMessageContent = textToSend
         }
 
-        // Add the user message
-        let userMessage = Message(
-            role: .user,
-            content: finalMessageContent,
-            attachments: attachments.isEmpty ? nil : attachments
-        )
         conversationManager.addMessage(to: conversation, message: userMessage)
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: finalMessageContent) {
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
             logNewChat("💾 Memory command processed: \(memoryResponse)", level: .info)
         }
 
@@ -1137,7 +713,7 @@ struct MacNewChatView: View {
         }
 
         // Track completion state with actor-isolated counter
-        let counter = CompletionCounter(total: models.count)
+        let counter = MainActorCompletionCounter(total: models.count)
 
         // Generate images in parallel
         for model in models {
@@ -1301,10 +877,10 @@ struct MacNewChatView: View {
         temperature: Double,
         tools: [[String: Any]]?
     ) {
-        let maxToolCallDepth = 10
+        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let conversationId = conversation.id
         let mcpManager = MCPServerManager.shared
-        let toolsWrapper = UncheckedSendable(tools)
+        let toolsWrapper = UncheckedSendableWrapper(tools)
 
         aiService.sendMessage(
             messages: messages,
@@ -1371,18 +947,20 @@ struct MacNewChatView: View {
                 }
             },
             onToolCallRequested: { toolCallId, toolName, arguments in
-                let argumentsWrapper = UncheckedSendable(arguments)
+                let argumentsWrapper = UncheckedSendableWrapper(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
                     guard conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
                         logNewChat(
                             "⚠️ Tool call requested but conversation \(conversationId) no longer exists",
                             level: .error
                         )
+                        currentToolName = nil // Clear since we're not processing
                         return
                     }
-
-                    currentToolName = toolName
                     logNewChat(
                         "🔧 Tool call requested: \(toolName)",
                         level: .info,
@@ -1405,14 +983,10 @@ struct MacNewChatView: View {
                        var lastMessage = conversationManager.conversations[index].messages.last,
                        lastMessage.role == .assistant
                     {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-
-                        let toolCall = MCPToolCall(
+                        let toolCall = ToolCallHandler.createToolCall(
                             id: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments
                         )
                         lastMessage.toolCalls = [toolCall]
                         conversationManager.conversations[index].messages[
@@ -1434,11 +1008,12 @@ struct MacNewChatView: View {
                             var citations: [CitationReference]?
 
                             if aiService.isBuiltInTool(toolName) {
-                                // Built-in tool (e.g., web_search via Tavily) - get citations
+                                // Built-in tool (e.g., web_search, agentic tools) - get citations
                                 let (toolResult, toolCitations) = await aiService
                                     .executeBuiltInToolWithCitations(
                                         name: toolName,
-                                        arguments: argumentsWrapper.value
+                                        arguments: argumentsWrapper.value,
+                                        conversationId: conversation.id
                                     )
                                 result = toolResult
                                 citations = toolCitations
@@ -1451,28 +1026,17 @@ struct MacNewChatView: View {
                             }
 
                             // For web_search, skip creating a visible tool message
-                            let isWebSearch = toolName == "web_search"
+                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
 
                             await MainActor.run {
-                                let anyCodableArgs = argumentsWrapper.value
-                                    .reduce(into: [String: AnyCodable]()) { result, pair in
-                                        result[pair.key] = AnyCodable(pair.value)
-                                    }
-
                                 if !isWebSearch {
-                                    // For non-web-search tools, create the tool message as before
-                                    var toolMessage = Message(
-                                        role: .tool,
-                                        content: result
+                                    // For non-web-search tools, create the tool message
+                                    let toolMessage = ToolCallHandler.createToolMessage(
+                                        toolCallId: toolCallId,
+                                        toolName: toolName,
+                                        arguments: argumentsWrapper.value,
+                                        result: result
                                     )
-                                    toolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
                                     conversationManager.addMessage(to: conversation, message: toolMessage)
                                 }
 
@@ -1486,14 +1050,10 @@ struct MacNewChatView: View {
                                 }
 
                                 // For web_search, attach citations to the new assistant message
-                                var newAssistantMessage = Message(
-                                    role: .assistant,
-                                    content: "",
-                                    model: model
+                                let newAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                    model: model,
+                                    citations: isWebSearch ? citations : nil
                                 )
-                                if isWebSearch, let citations {
-                                    newAssistantMessage.citations = citations
-                                }
                                 conversationManager.addMessage(
                                     to: updatedConversation,
                                     message: newAssistantMessage
@@ -1520,23 +1080,16 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
-                                // Build messages for API - exclude the continuation assistant message
-                                // The continuation message is just a placeholder for where we'll store the response
-                                var messagesForAPI = Array(convWithAssistant.messages.dropLast())
-                                if isWebSearch {
-                                    // Append a synthetic tool message for the API only (not stored)
-                                    var syntheticToolMessage = Message(role: .tool, content: result)
-                                    syntheticToolMessage.toolCalls = [
-                                        MCPToolCall(
-                                            id: toolCallId,
-                                            toolName: toolName,
-                                            arguments: anyCodableArgs,
-                                            result: result
-                                        )
-                                    ]
-                                    // Append the tool message at the end (after the assistant with tool_calls)
-                                    messagesForAPI.append(syntheticToolMessage)
-                                }
+                                // Build messages for API using ToolCallHandler
+                                let messagesForAPI = ToolCallHandler.buildContinuationMessages(
+                                    conversationMessages: convWithAssistant.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
+                                    isWebSearch: isWebSearch,
+                                    systemPrompt: nil // MacNewChatView doesn't add system prompts here
+                                )
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call

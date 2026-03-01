@@ -28,14 +28,21 @@ struct ChatMessageList: View {
     let displayableItems: [DisplayableItem]
     let conversation: Conversation
     let isGenerating: Bool
-    @Binding var isNearBottom: Bool
-    @Binding var showScrollToBottom: Bool
+    @Binding var isToolSectionExpanded: Bool
 
     let onRetryMessage: (Message) -> Void
     let onSwitchModelAndRetry: (Message, String) -> Void
-    let onSelectResponse: (UUID, UUID) -> Void
+    let onSelectResponse: (_ groupId: UUID, _ messageId: UUID) -> Void
+    let onEditMessage: (Message, String) -> Void
+    let onAppearAction: () -> Void
+    let onConversationChange: () -> Void
+    let onMessagesChange: () -> Void
+    let onModelChange: () -> Void
+    let onGeneratingChange: () -> Void
 
-    @EnvironmentObject var conversationManager: ConversationManager
+    @State private var isNearBottom = true
+    @State private var showScrollToBottom = false
+    @State private var scrollDebounceTask: Task<Void, Never>?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -50,6 +57,9 @@ struct ChatMessageList: View {
                                 onRetry: message.role == .assistant ? { onRetryMessage(message) } : nil,
                                 onSwitchModel: message.role == .assistant
                                     ? { newModel in onSwitchModelAndRetry(message, newModel) }
+                                    : nil,
+                                onEdit: message.role == .user
+                                    ? { newContent in onEditMessage(message, newContent) }
                                     : nil
                             )
                             .id(message.id)
@@ -74,27 +84,76 @@ struct ChatMessageList: View {
                     Color.clear
                         .frame(height: 1)
                         .id("bottom")
-                        .onAppear {
-                            isNearBottom = true
-                            showScrollToBottom = false
-                        }
-                        .onDisappear {
-                            isNearBottom = false
-                            showScrollToBottom = true
-                        }
+                        .onAppear { isNearBottom = true; showScrollToBottom = false }
+                        .onDisappear { isNearBottom = false; showScrollToBottom = true }
                 }
                 .padding(.horizontal, Spacing.contentPadding)
                 .padding(.vertical, Spacing.contentPadding)
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: conversation.messages.count) { _, _ in
-                scrollToBottomIfNeeded(proxy: proxy)
-            }
-            .onChange(of: conversation.messages.last?.content) { _, _ in
-                if isGenerating, isNearBottom {
-                    scrollToLastMessage(proxy: proxy)
+                scrollDebounceTask?.cancel()
+                scrollDebounceTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
+                    guard !Task.isCancelled, isNearBottom else { return }
+                    if let lastMessage = conversation.messages.last {
+                        if isGenerating {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        } else {
+                            withAnimation {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
             }
+            .onAppear {
+                onAppearAction()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if let lastMessage = conversation.messages.last {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: conversation.id) { _, _ in
+                onConversationChange()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if let lastMessage = conversation.messages.last {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: conversation.messages) { _, _ in
+                onMessagesChange()
+            }
+            .onChange(of: conversation.messages.last?.content) { _, _ in
+                if isGenerating {
+                    Task { @MainActor in
+                        guard isNearBottom else { return }
+                        if let lastMessage = conversation.messages.last {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            .onChange(of: conversation.model) { _, _ in
+                onModelChange()
+            }
+            .onChange(of: isGenerating) { _, _ in
+                onGeneratingChange()
+            }
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    if isToolSectionExpanded {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isToolSectionExpanded = false
+                        }
+                    }
+                }
+            )
+            // Overlay scroll-to-bottom button inside ScrollViewReader so we can use proxy
             .overlay(alignment: .bottom) {
                 MacScrollToBottomButton(
                     isVisible: showScrollToBottom && !isGenerating,
@@ -107,91 +166,6 @@ struct ChatMessageList: View {
                 .padding(.bottom, Spacing.md)
             }
         }
-    }
-
-    private func scrollToBottomIfNeeded(proxy: ScrollViewProxy) {
-        guard isNearBottom else { return }
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(isGenerating ? 150 : 0))
-            if let lastMessage = conversation.messages.last {
-                if isGenerating {
-                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                } else {
-                    withAnimation {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
-                }
-            }
-        }
-    }
-
-    private func scrollToLastMessage(proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            if let lastMessage = conversation.messages.last {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-            }
-        }
-    }
-}
-
-/// Helper to update displayable items from visible messages
-enum DisplayableItemsBuilder {
-    /// Updates cached displayable items from visible messages
-    static func buildDisplayableItems(
-        from messages: [Message],
-        conversation _: Conversation,
-        isGenerating: Bool
-    ) -> [DisplayableItem] {
-        let visibleMessages = messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-            // Always show tool messages when they have content
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            // Always show assistant messages that have citations (from web search)
-            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                return true
-            }
-
-            // Show if: has content, has image data, or is generating image
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == messages.last?.id && isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
-        }
-
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            if let groupId = message.responseGroupId {
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                items.append(.message(message))
-            }
-        }
-
-        return items
     }
 }
 #endif

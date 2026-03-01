@@ -53,6 +53,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
+
+    /// Maximum tool chain depth for iOS.
+    /// Lower than macOS (25) due to mobile resource constraints and typical mobile use cases.
+    /// This prevents runaway tool chains while still allowing reasonable agentic workflows.
     private let maxToolCallDepth = 10
 
     /// Stores the pending user message text for retry on failure
@@ -637,6 +641,21 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 Task { @MainActor in
                     guard let self = selfRef else { return }
 
+                    // Handle cancellation silently - don't show error UI for user-initiated cancels
+                    if error is CancellationError {
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "Request cancelled",
+                            metadata: ["assistantMessageId": assistantMessageId.uuidString]
+                        )
+                        self.isGenerating = false
+                        self.currentToolName = nil
+                        self.toolCallDepth = 0
+                        self.pendingUserMessage = nil
+                        return
+                    }
+
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
@@ -681,6 +700,13 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
+                // to prevent race condition with onComplete checking if tool call is pending.
+                // The callback is called from MainActor.run in the stream parser, so we can
+                // safely assume main actor isolation.
+                MainActor.assumeIsolated {
+                    self?.currentToolName = toolName
+                }
                 let selfRef = self
                 let argumentsWrapper = UncheckedSendable(arguments)
                 Task { @MainActor in
@@ -698,8 +724,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         self.currentToolName = nil
                         return
                     }
-
-                    self.currentToolName = toolName
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .info,
@@ -924,6 +948,42 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         sendMessageWithToolSupport(
             messages: messagesToSend,
             model: updatedConversation.model,
+            conversationId: targetConversationId,
+            assistantMessageId: assistantMessage.id,
+            tools: tools
+        )
+    }
+
+    /// Re-send the last user message to get a new AI response after editing.
+    func resendAfterEdit() {
+        guard let conversation else { return }
+        let targetConversationId = conversation.id
+
+        guard let updatedConversation = self.conversation else { return }
+
+        isGenerating = true
+        errorMessage = nil
+
+        // Add empty assistant message placeholder
+        let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        // Build messages to send (everything except the new empty assistant message)
+        guard let refreshed = self.conversation else { return }
+        var messagesToSend = Array(refreshed.messages.dropLast())
+
+        // Prepend system prompt if configured
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        let tools = aiService.getAllAvailableTools()
+        toolCallDepth = 0
+
+        sendMessageWithToolSupport(
+            messages: messagesToSend,
+            model: refreshed.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
             tools: tools

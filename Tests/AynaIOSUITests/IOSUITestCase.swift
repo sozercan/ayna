@@ -21,12 +21,12 @@ extension XCUIApplication {
         // Prefer textField if it exists, otherwise use textView
         return textField.exists ? textField : textView
     }
-    
+
     /// Waits for a text input element to exist, checking both textFields and textViews.
     func waitForTextInput(identifier: String, timeout: TimeInterval) -> XCUIElement? {
         let textField = textFields[identifier]
         let textView = textViews[identifier]
-        
+
         // Try textField first
         if textField.waitForExistence(timeout: timeout / 2) {
             return textField
@@ -83,7 +83,7 @@ class IOSUITestCase: XCTestCase {
             newButton.tap()
             return
         }
-        
+
         // Fallback to empty state button if bottom bar button isn't available
         let emptyStateButton = app.buttons["sidebar.emptyState.newConversationButton"]
         XCTAssertTrue(emptyStateButton.waitForExistence(timeout: UITestTimeout.normal), "New conversation button not found")
@@ -106,7 +106,7 @@ class IOSUITestCase: XCTestCase {
                 // Wait for navigation animation to complete
                 composer = app.waitForTextInput(identifier: "newchat.composer.textEditor", timeout: UITestTimeout.normal)
             }
-            
+
             // If still not visible, try the empty state button (shown when no conversations exist)
             if composer == nil {
                 let emptyStateButton = app.buttons["sidebar.emptyState.newConversationButton"]
@@ -134,7 +134,7 @@ class IOSUITestCase: XCTestCase {
     /// Types a message and sends it in the active chat composer
     func sendChatMessage(_ text: String) {
         // In iOS 26+, TextField with axis: .vertical may be exposed as textView
-        let composer = app.waitForTextInput(identifier: "chat.composer.textEditor", timeout: UITestTimeout.normal) 
+        let composer = app.waitForTextInput(identifier: "chat.composer.textEditor", timeout: UITestTimeout.normal)
             ?? app.textInput(identifier: "chat.composer.textEditor")
         XCTAssertTrue(composer.waitForExistence(timeout: UITestTimeout.normal), "Chat composer not found")
         composer.tap()

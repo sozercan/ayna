@@ -204,21 +204,20 @@ final class AynaSmokeUITests: AynaUITestCase {
     func testMessageCopy() {
         composeInitialMessageAndSend("Text to copy")
 
-        // Wait for response to appear (which also has a copy button)
+        // Wait for response to appear
         let responseText = "UI Test Response: Text to copy"
         let responsePredicate = NSPredicate(format: "label CONTAINS %@", responseText)
 
-        // Find the message container (Other element) that contains this text
-        // This is more reliable for hovering than the text itself
+        // Find the message container that contains this text
         let messageBubble = app.otherElements.containing(responsePredicate).firstMatch
         XCTAssertTrue(messageBubble.waitForExistence(timeout: 10))
 
-        // Hover to reveal buttons
-        messageBubble.hover()
+        // Right-click to open context menu
+        messageBubble.rightClick()
 
-        // Wait a moment for animation/state update
-        let copyButton = app.buttons["message.action.copy"].firstMatch
-        XCTAssertTrue(copyButton.waitForExistence(timeout: 2))
+        // Verify Copy menu item exists in context menu
+        let copyMenuItem = app.menuItems["Copy"]
+        XCTAssertTrue(copyMenuItem.waitForExistence(timeout: 2))
     }
 
     func testChatPromptAutoFocusOnLaunchAndAfterSend() {

@@ -25,16 +25,6 @@
                     conversationList
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        WatchNewChatView(viewModel: viewModel)
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityIdentifier(TestIdentifiers.Watch.newChatButton)
-                }
-            }
         }
 
         private var emptyStateView: some View {

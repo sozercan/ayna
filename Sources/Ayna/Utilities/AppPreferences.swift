@@ -5,18 +5,24 @@ import os
 /// without mutating the real application preferences.
 private final class DefaultsState: @unchecked Sendable {
     private var overriddenDefaults: UserDefaults?
-    private let queue = DispatchQueue(label: "com.ayna.appPreferences")
+    private let lock = OSAllocatedUnfairLock()
 
     func storage() -> UserDefaults {
-        queue.sync { overriddenDefaults ?? .standard }
+        lock.lock()
+        defer { lock.unlock() }
+        return overriddenDefaults ?? .standard
     }
 
     func use(_ defaults: UserDefaults) {
-        queue.sync { overriddenDefaults = defaults }
+        lock.lock()
+        defer { lock.unlock() }
+        overriddenDefaults = defaults
     }
 
     func reset() {
-        queue.sync { overriddenDefaults = nil }
+        lock.lock()
+        defer { lock.unlock() }
+        overriddenDefaults = nil
     }
 }
 
