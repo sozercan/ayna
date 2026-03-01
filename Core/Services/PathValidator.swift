@@ -48,7 +48,7 @@ struct PathValidator {
         "credentials.json",
         "secrets.yaml",
         "secrets.yml",
-        ".git/config",
+        ".git",
         ".gitconfig",
         "id_rsa",
         "id_ed25519",

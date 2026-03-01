@@ -6,6 +6,9 @@
 //  Available on macOS, iOS, and watchOS.
 //
 
+#if !os(watchOS)
+    import CFNetwork
+#endif
 import Foundation
 import os.log
 
@@ -61,6 +64,70 @@ enum WebFetchError: Error, LocalizedError, Sendable {
     }
 }
 
+// MARK: - SSRF Redirect Protection
+
+/// URLSession delegate that validates redirect targets against private IP ranges.
+/// Prevents SSRF bypass via HTTP redirects (e.g., 302 to http://169.254.169.254/).
+final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let url = request.url,
+              let host = url.host,
+              (url.scheme == "https" || url.scheme == "http"),
+              !Self.isPrivateHost(host)
+        else {
+            // Block redirect to private/internal address or non-HTTP scheme
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+
+    /// Checks if a host is a private/internal address
+    static func isPrivateHost(_ host: String) -> Bool {
+        let lowercased = host.lowercased()
+
+        // Localhost variants
+        if lowercased == "localhost" || lowercased == "127.0.0.1" || lowercased == "::1" {
+            return true
+        }
+
+        // Block 0.0.0.0 (binds to all interfaces)
+        if lowercased == "0.0.0.0" {
+            return true
+        }
+
+        // IPv6 private/local ranges
+        if lowercased.hasPrefix("fd") || lowercased.hasPrefix("fe80:") || lowercased.hasPrefix("fc") {
+            return true
+        }
+
+        // Check for IP addresses in private ranges
+        let parts = lowercased.split(separator: ".")
+        if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+            // 127.x.x.x - Loopback
+            if first == 127 { return true }
+            // 10.x.x.x
+            if first == 10 { return true }
+            // 172.16.x.x - 172.31.x.x
+            if first == 172, (16 ... 31).contains(second) { return true }
+            // 192.168.x.x
+            if first == 192, second == 168 { return true }
+            // 169.254.x.x (link-local, includes cloud metadata 169.254.169.254)
+            if first == 169, second == 254 { return true }
+            // 0.x.x.x - "This" network
+            if first == 0 { return true }
+        }
+
+        return false
+    }
+}
+
 // MARK: - Web Fetch Service
 
 /// Cross-platform service for fetching web content.
@@ -110,7 +177,8 @@ final class WebFetchService {
         }
 
         // SSRF protection: Block internal/private IPs
-        if isPrivateHost(host) {
+        // Also resolves DNS to prevent DNS rebinding attacks
+        if await resolveAndCheckHost(host) {
             throw WebFetchError.ssrfBlocked(url: url)
         }
 
@@ -123,7 +191,9 @@ final class WebFetchService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            let session = URLSession(configuration: .ephemeral, delegate: SSRFRedirectValidator(), delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            (data, response) = try await session.data(for: request)
         } catch {
             throw WebFetchError.networkError(underlying: error.localizedDescription)
         }
@@ -224,50 +294,84 @@ final class WebFetchService {
 
     // MARK: - Private Helpers
 
-    /// Checks if a host is a private/internal address (SSRF protection)
-    private func isPrivateHost(_ host: String) -> Bool {
-        let lowercased = host.lowercased()
-
-        // Localhost variants
-        if lowercased == "localhost" || lowercased == "127.0.0.1" || lowercased == "::1" {
-            return true
-        }
-
-        // Block 0.0.0.0 (binds to all interfaces)
-        if lowercased == "0.0.0.0" {
-            return true
-        }
+    /// Checks if an IP address string is in private/internal ranges
+    private func isPrivateIPAddress(_ address: String) -> Bool {
+        let lowercased = address.lowercased()
 
         // IPv6 private/local ranges
-        // fd00::/8 - Unique local addresses
-        if lowercased.hasPrefix("fd") {
-            return true
-        }
-        // fe80::/10 - Link-local addresses
-        if lowercased.hasPrefix("fe80:") {
-            return true
-        }
-        // fc00::/7 - Unique local addresses (includes fd00::/8)
-        if lowercased.hasPrefix("fc") {
-            return true
-        }
+        if lowercased.hasPrefix("fd") { return true }
+        if lowercased.hasPrefix("fe80:") { return true }
+        if lowercased.hasPrefix("fc") { return true }
+        if lowercased == "::1" { return true }
 
-        // Check for IP addresses in private ranges
+        // Check for IPv4 addresses in private ranges
         let parts = lowercased.split(separator: ".")
         if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
-            // 10.x.x.x
+            if first == 127 { return true }
             if first == 10 { return true }
-            // 172.16.x.x - 172.31.x.x
             if first == 172, (16 ... 31).contains(second) { return true }
-            // 192.168.x.x
             if first == 192, second == 168 { return true }
-            // 169.254.x.x (link-local, includes cloud metadata 169.254.169.254)
             if first == 169, second == 254 { return true }
-            // 0.x.x.x - "This" network
             if first == 0 { return true }
         }
 
         return false
+    }
+
+    /// Resolves a hostname to IP addresses and checks if any are private (DNS rebinding protection)
+    private func resolveAndCheckHost(_ host: String) async -> Bool {
+        // First check the hostname string itself
+        if isPrivateHost(host) {
+            return true
+        }
+
+        #if !os(watchOS)
+            // Resolve DNS and check all returned IP addresses
+            let hostRef = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
+            var resolved = DarwinBoolean(false)
+
+            CFHostStartInfoResolution(hostRef, .addresses, nil)
+            guard let addresses = CFHostGetAddressing(hostRef, &resolved)?.takeUnretainedValue() as? [Data],
+                  resolved.boolValue
+            else {
+                // If DNS resolution fails, allow the request to proceed
+                // URLSession will handle the error appropriately
+                return false
+            }
+
+            for addressData in addresses {
+                let ipString = addressData.withUnsafeBytes { pointer -> String? in
+                    guard let sockaddr = pointer.baseAddress?.assumingMemoryBound(to: sockaddr.self) else {
+                        return nil
+                    }
+
+                    if sockaddr.pointee.sa_family == UInt8(AF_INET) {
+                        var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                        inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
+                        return String(cString: buffer)
+                    } else if sockaddr.pointee.sa_family == UInt8(AF_INET6) {
+                        var addr = sockaddr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                        var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                        inet_ntop(AF_INET6, &addr.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN))
+                        return String(cString: buffer)
+                    }
+                    return nil
+                }
+
+                if let ip = ipString, isPrivateIPAddress(ip) {
+                    log(.default, "DNS rebinding protection: \(host) resolved to private IP \(ip)")
+                    return true
+                }
+            }
+        #endif
+
+        return false
+    }
+
+    /// Checks if a host is a private/internal address (SSRF protection)
+    private func isPrivateHost(_ host: String) -> Bool {
+        SSRFRedirectValidator.isPrivateHost(host)
     }
 
     /// Converts HTML to plain text by stripping tags

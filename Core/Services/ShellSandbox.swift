@@ -189,7 +189,11 @@ struct ShellSandbox {
             return true
         }
 
-        let pathComponents = URL(fileURLWithPath: path).standardized.pathComponents
+        // Resolve symlinks to prevent symlink-based directory traversal
+        let url = URL(fileURLWithPath: path)
+        let resolvedURL = url.resolvingSymlinksInPath()
+
+        let pathComponents = resolvedURL.standardized.pathComponents
         let projectComponents = projectRoot.standardized.pathComponents
 
         // Path must have at least as many components as project root

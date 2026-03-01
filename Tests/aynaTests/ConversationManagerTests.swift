@@ -27,6 +27,7 @@ struct ConversationManagerTests {
     @Test("Create new conversation uses selected model")
     @MainActor
     func createNewConversationUsesSelectedModel() throws {
+        AIService.keychain = InMemoryKeychainStorage()
         let directory = try TestHelpers.makeTemporaryDirectory()
         let expectedModel = "unit-test-model"
 
