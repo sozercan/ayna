@@ -24,6 +24,24 @@ import os.log
 //
 // Uses dependency injection via SwiftUI Environment.
 #if os(macOS)
+    /// Thread-safe accumulator for pipe data from Process stdout/stderr.
+    private final class PipeAccumulator: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _data = Data()
+
+        var data: Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return _data
+        }
+
+        func append(_ newData: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            _data.append(newData)
+        }
+    }
+
     @Observable @MainActor
     final class BuiltinToolService {
         // MARK: - Properties
@@ -779,16 +797,42 @@ import os.log
 
                         do {
                             try process.run()
+
+                            // Read both pipes concurrently to avoid deadlock (Apple TN2050).
+                            // Sequential reads can deadlock if one pipe fills its buffer
+                            // while we're blocked reading the other.
+                            // Use readabilityHandler to drain pipes as data arrives.
+                            let stdoutAccumulator = PipeAccumulator()
+                            let stderrAccumulator = PipeAccumulator()
+
+                            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                                let data = handle.availableData
+                                if data.isEmpty {
+                                    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                                } else {
+                                    stdoutAccumulator.append(data)
+                                }
+                            }
+                            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                                let data = handle.availableData
+                                if data.isEmpty {
+                                    stderrPipe.fileHandleForReading.readabilityHandler = nil
+                                } else {
+                                    stderrAccumulator.append(data)
+                                }
+                            }
+
                             process.waitUntilExit()
                             timeoutTask.cancel()
 
+                            // Clear handlers after exit to ensure final data is flushed
+                            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                            stderrPipe.fileHandleForReading.readabilityHandler = nil
+
                             let duration = Date().timeIntervalSince(startTime)
 
-                            let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
-                            let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
-
-                            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-                            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                            let stdout = String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
+                            let stderr = String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
 
                             let commandResult = CommandResult(
                                 exitCode: process.terminationStatus,

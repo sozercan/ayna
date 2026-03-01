@@ -229,7 +229,20 @@ struct MacNewChatView: View {
                                             message: message,
                                             modelName: message.model,
                                             onRetry: nil,
-                                            onSwitchModel: nil
+                                            onSwitchModel: nil,
+                                            onEdit: message.role == .user && currentConversation != nil
+                                                ? { newContent in
+                                                    if let conversation = currentConversation {
+                                                        let edited = conversationManager.editMessage(
+                                                            in: conversation,
+                                                            messageId: message.id,
+                                                            newContent: newContent
+                                                        )
+                                                        if edited {
+                                                            sendMessageForConversation(conversation, model: conversation.model)
+                                                        }
+                                                    }
+                                                } : nil
                                         )
                                         .id(message.id)
                                     case let .responseGroup(groupId, responses):

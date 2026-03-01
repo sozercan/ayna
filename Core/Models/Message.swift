@@ -56,6 +56,10 @@ struct Message: Identifiable, Codable, Equatable {
     /// Web search citation support
     var citations: [CitationReference]?
 
+    /// Edit tracking support
+    var isEdited: Bool
+    var editedAt: Date?
+
     enum MediaType: String, Codable {
         case image
     }
@@ -99,7 +103,9 @@ struct Message: Identifiable, Codable, Equatable {
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
             reasoning: String? = nil,
-            citations: [CitationReference]? = nil
+            citations: [CitationReference]? = nil,
+            isEdited: Bool = false,
+            editedAt: Date? = nil
         ) {
             self.id = id
             self.role = role
@@ -115,6 +121,8 @@ struct Message: Identifiable, Codable, Equatable {
             self.attachments = attachments
             self.reasoning = reasoning
             self.citations = citations
+            self.isEdited = isEdited
+            self.editedAt = editedAt
         }
     #else
         init(
@@ -133,7 +141,9 @@ struct Message: Identifiable, Codable, Equatable {
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
             reasoning: String? = nil,
-            citations: [CitationReference]? = nil
+            citations: [CitationReference]? = nil,
+            isEdited: Bool = false,
+            editedAt: Date? = nil
         ) {
             self.id = id
             self.role = role
@@ -151,6 +161,8 @@ struct Message: Identifiable, Codable, Equatable {
             self.attachments = attachments
             self.reasoning = reasoning
             self.citations = citations
+            self.isEdited = isEdited
+            self.editedAt = editedAt
         }
     #endif
 
@@ -161,6 +173,7 @@ struct Message: Identifiable, Codable, Equatable {
             case id, role, content, timestamp, isLiked, model
             case responseGroupId, isSelectedResponse
             case mediaType, imageData, imagePath, attachments, reasoning, citations
+            case isEdited, editedAt
         }
 
         init(from decoder: Decoder) throws {
@@ -181,12 +194,16 @@ struct Message: Identifiable, Codable, Equatable {
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
+            // Edit tracking (backward compatibility - defaults to false for old messages)
+            isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
+            editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
         }
     #else
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, toolCalls, model
             case responseGroupId, isSelectedResponse, pendingToolCalls
             case mediaType, imageData, imagePath, attachments, reasoning, citations
+            case isEdited, editedAt
         }
 
         init(from decoder: Decoder) throws {
@@ -209,6 +226,9 @@ struct Message: Identifiable, Codable, Equatable {
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
+            // Edit tracking (backward compatibility - defaults to false for old messages)
+            isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
+            editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
         }
     #endif
 

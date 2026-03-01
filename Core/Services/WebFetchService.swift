@@ -6,6 +6,9 @@
 //  Available on macOS, iOS, and watchOS.
 //
 
+#if !os(watchOS)
+    import CFNetwork
+#endif
 import Foundation
 import os.log
 
@@ -58,6 +61,66 @@ enum WebFetchError: Error, LocalizedError, Sendable {
         case .serviceDisabled:
             "ERROR: Web fetch is currently disabled. Ask the user to enable it in Settings."
         }
+    }
+}
+
+// MARK: - SSRF Redirect Protection
+
+/// URLSession delegate that validates redirect targets against private IP ranges.
+/// Prevents SSRF bypass via HTTP redirects (e.g., 302 to http://169.254.169.254/).
+final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let url = request.url,
+              let host = url.host,
+              (url.scheme == "https" || url.scheme == "http"),
+              !Self.isPrivateHost(host)
+        else {
+            // Block redirect to private/internal address or non-HTTP scheme
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+
+    /// Checks if a host is a private/internal address
+    static func isPrivateHost(_ host: String) -> Bool {
+        let lowercased = host.lowercased()
+
+        // Localhost variants
+        if lowercased == "localhost" || lowercased == "127.0.0.1" || lowercased == "::1" {
+            return true
+        }
+
+        // Block 0.0.0.0 (binds to all interfaces)
+        if lowercased == "0.0.0.0" {
+            return true
+        }
+
+        // IPv6 private/local ranges (only check if host is an IPv6 address)
+        if lowercased.contains(":") {
+            if lowercased.hasPrefix("fd") || lowercased.hasPrefix("fe80:") || lowercased.hasPrefix("fc") {
+                return true
+            }
+        }
+
+        // Check for IP addresses in private ranges
+        let parts = lowercased.split(separator: ".")
+        if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+            if first == 127 { return true }
+            if first == 10 { return true }
+            if first == 172, (16 ... 31).contains(second) { return true }
+            if first == 192, second == 168 { return true }
+            if first == 169, second == 254 { return true }
+            if first == 0 { return true }
+        }
+
+        return false
     }
 }
 
@@ -128,7 +191,9 @@ final class WebFetchService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            let session = URLSession(configuration: .ephemeral, delegate: SSRFRedirectValidator(), delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            (data, response) = try await session.data(for: request)
         } catch {
             throw WebFetchError.networkError(underlying: error.localizedDescription)
         }

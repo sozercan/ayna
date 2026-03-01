@@ -45,7 +45,9 @@ import os.log
             request.timeoutInterval = TimeInterval(commandTimeoutSeconds)
             request.setValue("Ayna/1.0", forHTTPHeaderField: "User-Agent")
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let session = URLSession(configuration: .ephemeral, delegate: SSRFRedirectValidator(), delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ToolExecutionError.commandFailed(command: "web_fetch", exitCode: -1, stderr: "Invalid response")
