@@ -310,7 +310,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=latest'
+            device_name: 'Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -332,12 +332,11 @@ jobs:
     - name: Boot watchOS Simulator
       run: |
         # Pre-boot simulator for more reliable tests
-        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep '${{ matrix.device_name }}' | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
-          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          echo "Booting simulator: ${{ matrix.device_name }} ($DEVICE_UDID)"
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete
+          echo "WATCHOS_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
           sleep 5
         fi
 
@@ -347,7 +346,7 @@ jobs:
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS' \
-          -destination '${{ matrix.destination }}' \
+          -destination "platform=watchOS Simulator,id=$WATCHOS_UDID" \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
           CODE_SIGN_IDENTITY="" \
@@ -364,7 +363,7 @@ jobs:
         include:
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm),OS=latest'
+            device_name: 'Apple Watch Ultra 3 (49mm)'
     runs-on: ${{ matrix.macos-version }}
     steps:
     - name: Checkout code
@@ -386,12 +385,11 @@ jobs:
     - name: Boot watchOS Simulator
       run: |
         # Pre-boot simulator for more reliable tests
-        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
+        DEVICE_UDID=$(xcrun simctl list devices available | grep '${{ matrix.device_name }}' | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
-          echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          echo "Booting simulator: ${{ matrix.device_name }} ($DEVICE_UDID)"
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete
+          echo "WATCHOS_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
           sleep 5
         fi
 
@@ -404,7 +402,7 @@ jobs:
           if xcodebuild \
             -project Ayna.xcodeproj \
             -scheme 'Ayna-watchOS' \
-            -destination '${{ matrix.destination }}' \
+            -destination "platform=watchOS Simulator,id=$WATCHOS_UDID" \
             -derivedDataPath ./build \
             -resultBundlePath ./build/TestResults-watchOS-UI-$attempt.xcresult \
             -only-testing:Ayna-watchOSUITests \
