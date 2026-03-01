@@ -132,6 +132,9 @@ final class PermissionService {
 
     private func setupNotifications() {
         #if os(macOS)
+            // UNUserNotificationCenter requires an app bundle; skip in test/CLI context
+            guard Bundle.main.bundlePath.hasSuffix(".app") else { return }
+
             let center = UNUserNotificationCenter.current()
 
             // Set delegate to handle notification actions
@@ -211,6 +214,7 @@ final class PermissionService {
     /// Removes a system notification for an approval
     private func removeSystemNotification(for approvalId: UUID) {
         #if os(macOS)
+            guard systemNotificationsEnabled else { return }
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [approvalId.uuidString])
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [approvalId.uuidString])
         #endif
