@@ -25,16 +25,10 @@ jobs:
   macos_unit_tests:
     name: macOS Unit Tests
     timeout-minutes: 20
-    # Allow macOS 15 job to fail - known Xcode 16.4 crash at app bootstrap
-    continue-on-error: ${{ matrix.macos-version == 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
@@ -89,16 +83,10 @@ jobs:
   macos_ui_tests:
     name: macOS UI Tests
     timeout-minutes: 30
-    # Allow macOS 15 job to fail - known Xcode 16.4 crash at app bootstrap
-    continue-on-error: ${{ matrix.macos-version == 'macos-15' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-14
-            xcode-path: /Applications/Xcode_16.2.app/Contents/Developer
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
     runs-on: ${{ matrix.macos-version }}
@@ -156,9 +144,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 17'
@@ -246,9 +231,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=iOS Simulator,name=iPhone 16 Pro Max'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=iOS Simulator,name=iPhone 17'
@@ -326,9 +308,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
@@ -383,9 +362,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - macos-version: macos-15
-            xcode-path: /Applications/Xcode_16.4.app/Contents/Developer
-            destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 2 (49mm)'
           - macos-version: macos-26
             xcode-path: /Applications/Xcode_26.0.app/Contents/Developer
             destination: 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
