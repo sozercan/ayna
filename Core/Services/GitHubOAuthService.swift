@@ -70,7 +70,7 @@ struct GitHubRateLimitInfo {
     static func parse(from headers: [AnyHashable: Any]?) -> GitHubRateLimitInfo? {
         guard let headers else { return nil }
 
-        // Helper for case-insensitive lookup
+        /// Helper for case-insensitive lookup
         func header(_ key: String) -> String? {
             let lowercased = key.lowercased()
             for (headerKey, headerValue) in headers {
@@ -343,6 +343,10 @@ class GitHubOAuthService: NSObject, ObservableObject {
     }
 
     func signOut() {
+        // Cancel any in-flight token refresh to prevent it from saving a new token after sign-out
+        refreshTask?.cancel()
+        refreshTask = nil
+
         try? Self.keychain.removeValue(for: keychainTokenInfoKey)
         try? Self.keychain.removeValue(for: keychainKey)
         try? Self.keychain.removeValue(for: keychainUserKey)

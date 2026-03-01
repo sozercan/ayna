@@ -5,6 +5,11 @@ import Testing
 @Suite("DeepLinkManager Tests", .tags(.fast))
 @MainActor
 struct DeepLinkManagerTests {
+    init() {
+        // Use in-memory keychain to avoid polluting the real Keychain during tests
+        AIService.keychain = InMemoryKeychainStorage()
+    }
+
     // MARK: - Helper
 
     /// Creates a fresh manager with its own AIService instance for test isolation

@@ -23,7 +23,7 @@ This document details platform-specific capabilities, limitations, and implement
 
 ### macOS
 
-- **Minimum Version**: macOS 14.0 (Sonoma)
+- **Minimum Version**: macOS 26.0 (Tahoe)
 - **Apple Intelligence**: Requires macOS 26.0+
 - **UI Pattern**: `NavigationSplitView` with sidebar + detail
 - **Input**: Keyboard shortcuts (`Cmd+N`, `Cmd+,`, `Enter` to send)
@@ -32,7 +32,7 @@ This document details platform-specific capabilities, limitations, and implement
 
 ### iOS
 
-- **Minimum Version**: iOS 17.0
+- **Minimum Version**: iOS 26.0
 - **Apple Intelligence**: Requires iOS 26.0+
 - **UI Pattern**: `TabView` with navigation stacks
 - **Input**: Touch, swipe actions for conversation management
@@ -42,7 +42,7 @@ This document details platform-specific capabilities, limitations, and implement
 
 ### watchOS
 
-- **Minimum Version**: watchOS 10.0
+- **Minimum Version**: watchOS 26.0
 - **UI Pattern**: `NavigationStack` with list-based navigation
 - **Input**: Digital Crown, dictation, scribble
 - **Settings Sync**: All settings synced from paired iPhone via `WatchConnectivityService`
@@ -97,7 +97,7 @@ import UIKit   // Breaks macOS/watchOS build
 
 ## SwiftUI API Best Practices
 
-Use modern SwiftUI APIs. Our minimum targets (iOS 17.6, macOS 14.0, watchOS 10.6) support all of these.
+Use modern SwiftUI APIs. Our minimum targets (iOS 26.0, macOS 26.0, watchOS 26.0) support all of these.
 
 ### Deprecated APIs to Avoid
 
