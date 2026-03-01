@@ -45,6 +45,7 @@ struct PathValidator {
         ".env.local",
         ".env.production",
         ".env.development",
+        ".git",
         "credentials.json",
         "secrets.yaml",
         "secrets.yml",

@@ -233,7 +233,7 @@ struct PathValidatorTests {
     func gitConfigPathRequiresApproval() {
         let result = sut.validate("/tmp/project/.git/config", operation: .read)
         if case let .requiresApproval(reason) = result {
-            #expect(reason.contains("Sensitive file: .git/config"))
+            #expect(reason.contains(".git"))
         } else {
             Issue.record("Expected requiresApproval for .git/config")
         }
@@ -249,7 +249,7 @@ struct PathValidatorTests {
     func nestedGitConfigRequiresApproval() {
         let result = sut.validate("/tmp/project/subdir/.git/config", operation: .read)
         if case let .requiresApproval(reason) = result {
-            #expect(reason.contains("Sensitive file: .git/config"))
+            #expect(reason.contains(".git"))
         } else {
             Issue.record("Expected requiresApproval for nested .git/config")
         }

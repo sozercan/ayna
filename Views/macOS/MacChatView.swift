@@ -279,6 +279,17 @@ struct MacChatView: View {
                                         onSwitchModel: message.role == .assistant
                                             ? { newModel in
                                                 switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                            } : nil,
+                                        onEdit: message.role == .user
+                                            ? { newContent in
+                                                let edited = conversationManager.editMessage(
+                                                    in: currentConversation,
+                                                    messageId: message.id,
+                                                    newContent: newContent
+                                                )
+                                                if edited {
+                                                    resendMessage(message)
+                                                }
                                             } : nil
                                     )
                                     .id(message.id)
@@ -546,6 +557,7 @@ struct MacChatView: View {
                                 onSubmit: sendMessage,
                                 accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
                             )
+                            .accessibilityLabel("Message input")
                             .frame(height: calculateTextHeight())
                             .font(Typography.body)
                             .scrollContentBackground(.hidden)
@@ -724,6 +736,7 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                         .allowsHitTesting(isGenerating || !messageText.isEmpty)
                         .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
+                        .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
                         .padding(.horizontal, Spacing.md)
                         .frame(height: calculateTextHeight() + Spacing.xxl)
                     }
