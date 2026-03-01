@@ -233,11 +233,14 @@ struct MacNewChatView: View {
                                             onEdit: message.role == .user && currentConversation != nil
                                                 ? { newContent in
                                                     if let conversation = currentConversation {
-                                                        conversationManager.editMessage(
+                                                        let edited = conversationManager.editMessage(
                                                             in: conversation,
                                                             messageId: message.id,
                                                             newContent: newContent
                                                         )
+                                                        if edited {
+                                                            sendMessageForConversation(conversation, model: conversation.model)
+                                                        }
                                                     }
                                                 } : nil
                                         )

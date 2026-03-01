@@ -214,11 +214,14 @@ struct IOSNewChatView: View {
                                             viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                         } : nil,
                                         onEdit: message.role == .user ? { newContent in
-                                            conversationManager.editMessage(
+                                            let edited = conversationManager.editMessage(
                                                 in: conversation,
                                                 messageId: message.id,
                                                 newContent: newContent
                                             )
+                                            if edited {
+                                                viewModel.resendAfterEdit()
+                                            }
                                         } : nil,
                                         availableModels: aiService.usableModels
                                     )

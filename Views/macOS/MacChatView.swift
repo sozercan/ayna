@@ -282,11 +282,14 @@ struct MacChatView: View {
                                             } : nil,
                                         onEdit: message.role == .user
                                             ? { newContent in
-                                                conversationManager.editMessage(
+                                                let edited = conversationManager.editMessage(
                                                     in: currentConversation,
                                                     messageId: message.id,
                                                     newContent: newContent
                                                 )
+                                                if edited {
+                                                    resendMessage(message)
+                                                }
                                             } : nil
                                     )
                                     .id(message.id)

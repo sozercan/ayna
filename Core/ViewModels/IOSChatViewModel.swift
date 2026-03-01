@@ -928,6 +928,42 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
     }
 
+    /// Re-send the last user message to get a new AI response after editing.
+    func resendAfterEdit() {
+        guard let conversation else { return }
+        let targetConversationId = conversation.id
+
+        guard let updatedConversation = self.conversation else { return }
+
+        isGenerating = true
+        errorMessage = nil
+
+        // Add empty assistant message placeholder
+        let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        // Build messages to send (everything except the new empty assistant message)
+        guard let refreshed = self.conversation else { return }
+        var messagesToSend = Array(refreshed.messages.dropLast())
+
+        // Prepend system prompt if configured
+        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        let tools = aiService.getAllAvailableTools()
+        toolCallDepth = 0
+
+        sendMessageWithToolSupport(
+            messages: messagesToSend,
+            model: refreshed.model,
+            conversationId: targetConversationId,
+            assistantMessageId: assistantMessage.id,
+            tools: tools
+        )
+    }
+
     /// Switch to a different model and retry the message.
     /// This retries with the specified model without changing the conversation's default model.
     func switchModelAndRetry(beforeMessage: Message, newModel: String) {
