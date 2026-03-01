@@ -268,6 +268,11 @@ enum AnthropicRequestBuilder {
                     }
                     // All tool calls have matching responses - fall through to normal conversion
                 }
+            #else
+                // Skip tool messages on watchOS (tools not supported)
+                if message.role == .tool {
+                    continue
+                }
             #endif
 
             // Convert message

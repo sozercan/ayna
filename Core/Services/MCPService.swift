@@ -679,7 +679,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         healthCheckTask = Task { [weak self] in
             // Initial delay before first check
             try? await Task.sleep(for: .seconds(5))
-            
+
             while !Task.isCancelled {
                 guard let self else { return }
                 if !(self.process?.isRunning ?? false) {

@@ -95,9 +95,9 @@ import os.log
             switch name {
             case ToolName.readFile, ToolName.writeFile, ToolName.editFile,
                  ToolName.listDirectory, ToolName.searchFiles, ToolName.runCommand:
-                return true
+                true
             default:
-                return false
+                false
             }
         }
 
@@ -399,9 +399,9 @@ import os.log
             let revalidation = pathValidator.validate(url.path, operation: .write)
             switch revalidation {
             case let .denied(reason):
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
             case let .requiresApproval(reason):
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .allowed:
                 break
             }
@@ -515,9 +515,9 @@ import os.log
             let revalidation = pathValidator.validate(url.path, operation: .write)
             switch revalidation {
             case let .denied(reason):
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
             case let .requiresApproval(reason):
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .allowed:
                 break
             }
@@ -745,13 +745,58 @@ import os.log
             let timeoutSeconds = commandTimeoutSeconds
             let workingDir = workingDirectory.map { URL(fileURLWithPath: $0) } ?? projectRoot
 
+            let result = try await executeProcess(
+                command: command,
+                workingDir: workingDir,
+                timeoutSeconds: timeoutSeconds,
+                startTime: startTime
+            )
+
+            log(.info, "run_command completed", metadata: [
+                "command": command,
+                "exitCode": "\(result.exitCode)",
+                "duration": String(format: "%.2fs", result.duration)
+            ])
+
+            if result.exitCode != 0 {
+                throw ToolExecutionError.commandFailed(
+                    command: command,
+                    exitCode: result.exitCode,
+                    stderr: result.stderr
+                )
+            }
+
+            return result
+        }
+
+        /// Executes a shell command in a subprocess with timeout and cancellation support.
+        private func executeProcess(
+            command: String,
+            workingDir: URL?,
+            timeoutSeconds: Int,
+            startTime: Date
+        ) async throws -> CommandResult {
             // Use a class to share process reference with cancellation handler
             final class ProcessHolder: @unchecked Sendable {
-                var process: Process?
+                private var _process: Process?
+                private let lock = NSLock()
+
+                var process: Process? {
+                    get {
+                        lock.lock()
+                        defer { lock.unlock() }
+                        return _process
+                    }
+                    set {
+                        lock.lock()
+                        defer { lock.unlock() }
+                        _process = newValue
+                    }
+                }
             }
             let processHolder = ProcessHolder()
 
-            let result: CommandResult = try await withTaskCancellationHandler {
+            return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     Task.detached {
                         let process = Process()
@@ -811,9 +856,19 @@ import os.log
                             process.waitUntilExit()
                             timeoutTask.cancel()
 
-                            // Clear handlers after exit to ensure final data is flushed
+                            // Clear handlers after exit
                             stdoutPipe.fileHandleForReading.readabilityHandler = nil
                             stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+                            // Drain any remaining buffered data not captured by handlers
+                            let remainingStdout = stdoutPipe.fileHandleForReading.availableData
+                            let remainingStderr = stderrPipe.fileHandleForReading.availableData
+                            if !remainingStdout.isEmpty {
+                                stdoutAccumulator.append(remainingStdout)
+                            }
+                            if !remainingStderr.isEmpty {
+                                stderrAccumulator.append(remainingStderr)
+                            }
 
                             let duration = Date().timeIntervalSince(startTime)
 
@@ -843,22 +898,6 @@ import os.log
                     process.terminate()
                 }
             }
-
-            log(.info, "run_command completed", metadata: [
-                "command": command,
-                "exitCode": "\(result.exitCode)",
-                "duration": String(format: "%.2fs", result.duration)
-            ])
-
-            if result.exitCode != 0 {
-                throw ToolExecutionError.commandFailed(
-                    command: command,
-                    exitCode: result.exitCode,
-                    stderr: result.stderr
-                )
-            }
-
-            return result
         }
 
         // MARK: - Web Fetch

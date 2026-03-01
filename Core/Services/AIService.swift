@@ -207,24 +207,24 @@ class AIService: ObservableObject {
                 imageService = OpenAIImageService(urlSession: self.urlSession)
             #endif
         }
-        
+
         // Check if running in UI test mode - configure test model early
         // Multiple checks because different platforms/test runners set flags differently
         let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
-                         ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
-                         ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
-                         UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
-        
+            ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+            ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
+            UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
+
         // Load custom models first
         var loadedCustomModels: [String] = if let savedModels = AppPreferences.storage.array(forKey: "customModels") as? [String] {
             savedModels
         } else {
             []
         }
-        
+
         // Ensure test model exists during UI testing
         let testModelName = "ui-test-model"
-        if isUITesting && !loadedCustomModels.contains(testModelName) {
+        if isUITesting, !loadedCustomModels.contains(testModelName) {
             loadedCustomModels.insert(testModelName, at: 0)
         }
         customModels = loadedCustomModels
@@ -240,10 +240,10 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
             )
         }
-        
+
         // Ensure test model has a provider during UI testing
         var updatedProviders = loadedProviders
-        if isUITesting && updatedProviders[testModelName] == nil {
+        if isUITesting, updatedProviders[testModelName] == nil {
             updatedProviders[testModelName] = .openai
         }
         modelProviders = updatedProviders
@@ -259,10 +259,10 @@ class AIService: ObservableObject {
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
             )
         }
-        
+
         // Ensure test model has an endpoint type during UI testing
         var updatedEndpointTypes = loadedEndpointTypes
-        if isUITesting && updatedEndpointTypes[testModelName] == nil {
+        if isUITesting, updatedEndpointTypes[testModelName] == nil {
             updatedEndpointTypes[testModelName] = .chatCompletions
         }
         modelEndpointTypes = updatedEndpointTypes
@@ -279,9 +279,9 @@ class AIService: ObservableObject {
 
         // Load per-model API keys
         var loadedAPIKeys = AIService.loadModelAPIKeys()
-        
+
         // Ensure test model has an API key during UI testing
-        if isUITesting && (loadedAPIKeys[testModelName]?.isEmpty ?? true) {
+        if isUITesting, loadedAPIKeys[testModelName]?.isEmpty ?? true {
             loadedAPIKeys[testModelName] = "ui-test-api-key"
         }
         modelAPIKeys = loadedAPIKeys
@@ -366,14 +366,23 @@ class AIService: ObservableObject {
     private static func loadModelAPIKeys() -> [String: String] {
         do {
             if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
-                let keys = try JSONDecoder().decode([String: String].self, from: data)
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .info,
-                    message: "Loaded model API keys from Keychain",
-                    metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
-                )
-                return keys
+                do {
+                    let keys = try JSONDecoder().decode([String: String].self, from: data)
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "Loaded model API keys from Keychain",
+                        metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
+                    )
+                    return keys
+                } catch {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "Failed to decode model API keys from Keychain",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
             } else {
                 DiagnosticsLogger.log(
                     .aiService,
@@ -2340,16 +2349,16 @@ extension AIService {
             #endif
             return true
         }
-        
+
         // Check if running in UI test mode
         let isUITestMode = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
-                          ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
-                          ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
-        
+            ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
+            ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
+
         // Ensure test model is available during UI testing
         // This is a fallback in case the init-time detection didn't work
         let testModelName = "ui-test-model"
-        if isUITestMode && !models.contains(testModelName) {
+        if isUITestMode, !models.contains(testModelName) {
             models.insert(testModelName, at: 0)
             // Also ensure the test model is fully configured
             if modelProviders[testModelName] == nil {
@@ -2368,7 +2377,7 @@ extension AIService {
                 selectedModel = testModelName
             }
         }
-        
+
         return models
     }
 
