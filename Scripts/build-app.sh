@@ -213,6 +213,16 @@ if [[ -d "$ICON_SOURCE" ]]; then
   cp -R "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/ayna.icon"
 fi
 
+# Compile asset catalog if actool is available
+XCASSETS_PATH="$ROOT/Sources/Ayna/App/Assets.xcassets"
+if [[ -d "$XCASSETS_PATH" ]] && command -v actool &>/dev/null; then
+  echo "🎨 Compiling asset catalog..."
+  actool --compile "$APP_BUNDLE/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    "$XCASSETS_PATH" 2>/dev/null || true
+fi
+
 # Embed Sparkle.framework
 SPARKLE_FRAMEWORK=""
 for arch in "${ARCH_LIST[@]}"; do
