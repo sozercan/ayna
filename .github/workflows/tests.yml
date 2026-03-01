@@ -100,6 +100,9 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: Clear SPM artifact cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+
     - name: Run UI tests (with retry)
       run: |
         set -o pipefail
