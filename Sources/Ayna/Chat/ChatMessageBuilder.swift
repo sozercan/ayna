@@ -5,6 +5,8 @@
 //  Extracted from MacChatView/MacNewChatView - handles message construction
 //
 
+#if os(macOS)
+
 import Foundation
 
 /// Builds user messages with optional app content context and file attachments
@@ -101,3 +103,5 @@ struct ChatMessageBuilder {
         )
     }
 }
+
+#endif

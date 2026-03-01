@@ -700,17 +700,15 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
-                // IMPORTANT: Set currentToolName synchronously BEFORE the Task
-                // to prevent race condition with onComplete checking if tool call is pending.
-                // The callback is called from MainActor.run in the stream parser, so we can
-                // safely assume main actor isolation.
-                MainActor.assumeIsolated {
-                    self?.currentToolName = toolName
-                }
                 let selfRef = self
                 let argumentsWrapper = UncheckedSendable(arguments)
+                let toolNameCopy = toolName
                 Task { @MainActor in
                     guard let self = selfRef else { return }
+                    // Set currentToolName first thing to prevent race condition with onComplete
+                    // checking if tool call is pending. The stream may send [DONE] immediately
+                    // after finish_reason: "tool_calls".
+                    self.currentToolName = toolNameCopy
                     let arguments = argumentsWrapper.value
 
                     // Validate conversation still exists

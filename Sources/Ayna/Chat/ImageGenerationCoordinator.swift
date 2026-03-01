@@ -5,6 +5,8 @@
 //  Extracted from MacChatView/MacNewChatView - handles image generation logic
 //
 
+#if !os(watchOS)
+
 import Foundation
 
 /// Coordinates image generation, including multi-model parallel generation
@@ -203,3 +205,5 @@ private actor AsyncCounter {
         return remaining <= 0
     }
 }
+
+#endif

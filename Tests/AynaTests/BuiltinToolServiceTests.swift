@@ -36,7 +36,6 @@
             func doesNotIdentifyNonBuiltin() {
                 #expect(!BuiltinToolService.isBuiltinTool("custom_tool"))
                 #expect(!BuiltinToolService.isBuiltinTool("mcp_tool"))
-                #expect(!BuiltinToolService.isBuiltinTool("web_fetch")) // web_fetch handled separately
                 #expect(!BuiltinToolService.isBuiltinTool(""))
             }
         }
@@ -85,15 +84,16 @@
                 #expect(toolNames.contains("list_directory"))
                 #expect(toolNames.contains("search_files"))
                 #expect(toolNames.contains("run_command"))
+                #expect(toolNames.contains("web_fetch"))
             }
 
-            @Test("Tool count is 6")
-            func toolCountIs6() {
+            @Test("Tool count is 7")
+            func toolCountIs7() {
                 let permissionService = PermissionService()
                 let sut = BuiltinToolService(permissionService: permissionService)
                 let definitions = sut.allToolDefinitions()
 
-                #expect(definitions.count == 6)
+                #expect(definitions.count == 7)
             }
         }
 

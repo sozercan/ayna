@@ -325,15 +325,13 @@
                 onToolCall: nil,
                 onToolCallRequested: { [weak self] _, toolName, arguments in
                     nonisolated(unsafe) let arguments = arguments
-                    // IMPORTANT: Set currentToolName synchronously BEFORE the Task
-                    // to prevent race condition with onComplete checking if tool call is pending.
-                    // The callback is called from MainActor.run in the stream parser, so we can
-                    // safely assume main actor isolation.
-                    MainActor.assumeIsolated {
-                        self?.currentToolName = toolName
-                    }
+                    let toolNameCopy = toolName
                     Task { @MainActor in
                         guard let self else { return }
+                        // Set currentToolName first thing to prevent race condition with onComplete
+                        // checking if tool call is pending. The stream may send [DONE] immediately
+                        // after finish_reason: "tool_calls".
+                        self.currentToolName = toolNameCopy
 
                         // Check depth limit
                         guard self.toolCallDepth < self.maxToolCallDepth else {

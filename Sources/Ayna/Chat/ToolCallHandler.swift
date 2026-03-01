@@ -5,6 +5,8 @@
 //  Extracted from MacChatView/MacNewChatView - handles tool call execution
 //
 
+#if os(macOS)
+
 import Foundation
 
 /// Handles tool call execution and response processing
@@ -114,3 +116,5 @@ final class ToolCallHandler {
         return messages
     }
 }
+
+#endif
