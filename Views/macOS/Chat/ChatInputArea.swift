@@ -57,6 +57,7 @@ struct ChatInputArea: View {
             .overlay(
                 RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill + Spacing.CornerRadius.sm)
                     .stroke(Theme.border, lineWidth: Spacing.Border.hairline)
+                    .allowsHitTesting(false)
             )
             .shadow(color: Theme.shadow.opacity(0.35), radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetY)
             .padding(.horizontal, Spacing.contentPadding)
