@@ -732,7 +732,7 @@ struct MacChatView: View {
                         .buttonStyle(.plain)
                         .allowsHitTesting(isGenerating || !messageText.isEmpty)
                         .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
-                        .accessibilityLabel("Send message")
+                        .accessibilityLabel(isGenerating ? "Stop generating" : "Send message")
                         .padding(.horizontal, Spacing.md)
                         .frame(height: calculateTextHeight() + Spacing.xxl)
                     }
