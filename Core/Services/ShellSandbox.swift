@@ -189,8 +189,8 @@ struct ShellSandbox {
             return true
         }
 
-        let pathComponents = URL(fileURLWithPath: path).standardized.pathComponents
-        let projectComponents = projectRoot.standardized.pathComponents
+        let pathComponents = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.pathComponents
+        let projectComponents = projectRoot.resolvingSymlinksInPath().standardized.pathComponents
 
         // Path must have at least as many components as project root
         guard pathComponents.count >= projectComponents.count else {

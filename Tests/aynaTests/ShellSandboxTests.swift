@@ -252,6 +252,32 @@ struct ShellSandboxTests {
         #expect(sandbox.isWorkingDirectoryAllowed("/other/path") == true)
     }
 
+    @Test("Allows real subdirectory inside project root")
+    func allowsRealSubdirectory() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let subDir = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+
+        let sandbox = ShellSandbox(projectRoot: tempDir, restrictToProjectDirectory: true)
+        #expect(sandbox.isWorkingDirectoryAllowed(subDir.path) == true)
+    }
+
+    @Test("Rejects symlink pointing outside project root")
+    func rejectsSymlinkOutsideProject() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let escapePath = tempDir.appendingPathComponent("escape")
+        try FileManager.default.createSymbolicLink(at: escapePath, withDestinationURL: URL(fileURLWithPath: "/tmp"))
+
+        let sandbox = ShellSandbox(projectRoot: tempDir, restrictToProjectDirectory: true)
+        #expect(sandbox.isWorkingDirectoryAllowed(escapePath.path) == false)
+    }
+
     // MARK: - Custom Configuration
 
     @Test("Respects custom allowed commands")

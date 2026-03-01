@@ -379,8 +379,13 @@ import os.log
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)
-            if case let .denied(reason) = revalidation {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+            switch revalidation {
+            case let .denied(reason):
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
+            case let .requiresApproval(reason):
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
+            case .allowed:
+                break
             }
 
             // Create parent directories if needed
@@ -490,8 +495,13 @@ import os.log
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)
-            if case let .denied(reason) = revalidation {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed during operation: \(reason)")
+            switch revalidation {
+            case let .denied(reason):
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
+            case let .requiresApproval(reason):
+                throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
+            case .allowed:
+                break
             }
 
             // Write updated content
@@ -719,7 +729,21 @@ import os.log
 
             // Use a class to share process reference with cancellation handler
             final class ProcessHolder: @unchecked Sendable {
-                var process: Process?
+                private var _process: Process?
+                private let lock = NSLock()
+
+                var process: Process? {
+                    get {
+                        lock.lock()
+                        defer { lock.unlock() }
+                        return _process
+                    }
+                    set {
+                        lock.lock()
+                        defer { lock.unlock() }
+                        _process = newValue
+                    }
+                }
             }
             let processHolder = ProcessHolder()
 

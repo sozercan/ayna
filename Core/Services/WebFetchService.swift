@@ -114,6 +114,11 @@ final class WebFetchService {
             throw WebFetchError.ssrfBlocked(url: url)
         }
 
+        // DNS rebinding protection: resolve hostname and check resolved IPs
+        if await resolveAndCheckHost(host) {
+            throw WebFetchError.ssrfBlocked(url: url)
+        }
+
         // Fetch with timeout
         var request = URLRequest(url: parsedURL)
         request.httpMethod = "GET"
@@ -224,6 +229,79 @@ final class WebFetchService {
 
     // MARK: - Private Helpers
 
+    /// Resolves hostname via DNS and checks if any resolved IP is private (DNS rebinding protection)
+    private func resolveAndCheckHost(_ host: String) async -> Bool {
+        #if os(macOS)
+        let hostRef = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
+        var resolved = DarwinBoolean(false)
+
+        CFHostStartInfoResolution(hostRef, .addresses, nil)
+        guard let addresses = CFHostGetAddressing(hostRef, &resolved)?.takeUnretainedValue() as? [Data],
+              resolved.boolValue
+        else {
+            return false // DNS resolution failed; let URLSession handle it
+        }
+
+        for addressData in addresses {
+            let ipString = addressData.withUnsafeBytes { pointer -> String? in
+                guard let sockaddr = pointer.baseAddress?.assumingMemoryBound(to: sockaddr.self) else {
+                    return nil
+                }
+
+                if sockaddr.pointee.sa_family == UInt8(AF_INET) {
+                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                    var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
+                    return String(cString: buffer)
+                } else if sockaddr.pointee.sa_family == UInt8(AF_INET6) {
+                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                    var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    inet_ntop(AF_INET6, &addr.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN))
+                    return String(cString: buffer)
+                }
+                return nil
+            }
+
+            if let ip = ipString, isPrivateIPString(ip) {
+                log(.default, "DNS rebinding blocked: \(host) resolved to private IP \(ip)")
+                return true
+            }
+        }
+        return false
+        #else
+        return false // iOS/watchOS: hostname-string checks are sufficient
+        #endif
+    }
+
+    /// Checks if a resolved IP address string is in private/internal ranges
+    private func isPrivateIPString(_ ip: String) -> Bool {
+        let lowercased = ip.lowercased()
+
+        if lowercased == "127.0.0.1" || lowercased == "::1" || lowercased == "0.0.0.0" {
+            return true
+        }
+
+        // IPv6 private ranges
+        if lowercased.contains(":") {
+            if lowercased.hasPrefix("fd") || lowercased.hasPrefix("fe80:") || lowercased.hasPrefix("fc") {
+                return true
+            }
+        }
+
+        // IPv4 private ranges
+        let parts = lowercased.split(separator: ".")
+        if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+            if first == 127 { return true }
+            if first == 10 { return true }
+            if first == 172, (16 ... 31).contains(second) { return true }
+            if first == 192, second == 168 { return true }
+            if first == 169, second == 254 { return true }
+            if first == 0 { return true }
+        }
+
+        return false
+    }
+
     /// Checks if a host is a private/internal address (SSRF protection)
     private func isPrivateHost(_ host: String) -> Bool {
         let lowercased = host.lowercased()
@@ -238,23 +316,27 @@ final class WebFetchService {
             return true
         }
 
-        // IPv6 private/local ranges
-        // fd00::/8 - Unique local addresses
-        if lowercased.hasPrefix("fd") {
-            return true
-        }
-        // fe80::/10 - Link-local addresses
-        if lowercased.hasPrefix("fe80:") {
-            return true
-        }
-        // fc00::/7 - Unique local addresses (includes fd00::/8)
-        if lowercased.hasPrefix("fc") {
-            return true
+        // IPv6 private/local ranges (only check if host is an IPv6 address)
+        if lowercased.contains(":") {
+            // fd00::/8 - Unique local addresses
+            if lowercased.hasPrefix("fd") {
+                return true
+            }
+            // fe80::/10 - Link-local addresses
+            if lowercased.hasPrefix("fe80:") {
+                return true
+            }
+            // fc00::/7 - Unique local addresses (includes fd00::/8)
+            if lowercased.hasPrefix("fc") {
+                return true
+            }
         }
 
         // Check for IP addresses in private ranges
         let parts = lowercased.split(separator: ".")
         if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
+            // 127.x.x.x - Loopback
+            if first == 127 { return true }
             // 10.x.x.x
             if first == 10 { return true }
             // 172.16.x.x - 172.31.x.x

@@ -48,7 +48,6 @@ struct PathValidator {
         "credentials.json",
         "secrets.yaml",
         "secrets.yml",
-        ".git/config",
         ".gitconfig",
         "id_rsa",
         "id_ed25519",
@@ -133,6 +132,15 @@ struct PathValidator {
         let pathComponents = canonicalURL.pathComponents
         for component in pathComponents where sensitiveFilenames.contains(component) {
             return .requiresApproval(reason: "Path contains sensitive component: \(component)")
+        }
+
+        // Check for sensitive multi-component paths (e.g., .git/config)
+        if pathComponents.count >= 2 {
+            for i in 0..<(pathComponents.count - 1) {
+                if pathComponents[i] == ".git" && pathComponents[i + 1] == "config" {
+                    return .requiresApproval(reason: "Sensitive file: .git/config")
+                }
+            }
         }
 
         // Step 6: For write/execute operations, check project boundary

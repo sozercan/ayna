@@ -154,6 +154,41 @@ struct PathValidatorTests {
         #expect(validator.isWithinProject("/tmp/any/file.swift") == false)
     }
 
+    // MARK: - TOCTOU Revalidation (paths that must remain requiresApproval on re-check)
+
+    @Test("SSH known_hosts requires approval on revalidation")
+    func sshKnownHostsRequiresApproval() {
+        let result = sut.validate("~/.ssh/known_hosts", operation: .write)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("Protected path"))
+        } else {
+            Issue.record("Expected requiresApproval for ~/.ssh/known_hosts")
+        }
+    }
+
+    @Test("Dot-env file requires approval for write")
+    func dotEnvRequiresApprovalForWrite() {
+        let result = sut.validate("/tmp/project/.env", operation: .write)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("Sensitive file"))
+        } else {
+            Issue.record("Expected requiresApproval for .env on write")
+        }
+    }
+
+    @Test("Write outside project requires approval on revalidation")
+    func writeOutsideProjectRequiresApprovalOnRevalidation() {
+        let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
+        let validator = PathValidator(projectRoot: projectRoot)
+
+        let result = validator.validate("/tmp/elsewhere/output.txt", operation: .write)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("outside project"))
+        } else {
+            Issue.record("Expected requiresApproval for write outside project")
+        }
+    }
+
     // MARK: - Edge Cases
 
     @Test("Handles empty path")
@@ -184,6 +219,39 @@ struct PathValidatorTests {
             #expect(reason.contains("Protected path"))
         } else {
             Issue.record("Expected requiresApproval for custom protected path")
+        }
+    }
+
+    // MARK: - .git/config Multi-Component Path
+
+    @Test(".git/config is not in defaultSensitiveFilenames")
+    func gitConfigNotInDefaultSensitiveFilenames() {
+        #expect(!PathValidator.defaultSensitiveFilenames.contains(".git/config"))
+    }
+
+    @Test(".git/config path requires approval")
+    func gitConfigPathRequiresApproval() {
+        let result = sut.validate("/tmp/project/.git/config", operation: .read)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("Sensitive file: .git/config"))
+        } else {
+            Issue.record("Expected requiresApproval for .git/config")
+        }
+    }
+
+    @Test("Regular config file is allowed")
+    func regularConfigFileIsAllowed() {
+        let result = sut.validate("/tmp/project/config", operation: .read)
+        #expect(result.isAllowed)
+    }
+
+    @Test("Nested .git/config also requires approval")
+    func nestedGitConfigRequiresApproval() {
+        let result = sut.validate("/tmp/project/subdir/.git/config", operation: .read)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("Sensitive file: .git/config"))
+        } else {
+            Issue.record("Expected requiresApproval for nested .git/config")
         }
     }
 
