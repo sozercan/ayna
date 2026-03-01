@@ -127,7 +127,7 @@ final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
     ) {
         guard let url = request.url,
               let host = url.host,
-              (url.scheme == "https" || url.scheme == "http"),
+              url.scheme == "https" || url.scheme == "http",
               !Self.isPrivateHost(host)
         else {
             // Block redirect to private/internal address or non-HTTP scheme

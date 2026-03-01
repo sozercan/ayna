@@ -745,6 +745,37 @@ import os.log
             let timeoutSeconds = commandTimeoutSeconds
             let workingDir = workingDirectory.map { URL(fileURLWithPath: $0) } ?? projectRoot
 
+            let result = try await executeProcess(
+                command: command,
+                workingDir: workingDir,
+                timeoutSeconds: timeoutSeconds,
+                startTime: startTime
+            )
+
+            log(.info, "run_command completed", metadata: [
+                "command": command,
+                "exitCode": "\(result.exitCode)",
+                "duration": String(format: "%.2fs", result.duration)
+            ])
+
+            if result.exitCode != 0 {
+                throw ToolExecutionError.commandFailed(
+                    command: command,
+                    exitCode: result.exitCode,
+                    stderr: result.stderr
+                )
+            }
+
+            return result
+        }
+
+        /// Executes a shell command in a subprocess with timeout and cancellation support.
+        private func executeProcess(
+            command: String,
+            workingDir: URL?,
+            timeoutSeconds: Int,
+            startTime: Date
+        ) async throws -> CommandResult {
             // Use a class to share process reference with cancellation handler
             final class ProcessHolder: @unchecked Sendable {
                 private var _process: Process?
@@ -765,7 +796,7 @@ import os.log
             }
             let processHolder = ProcessHolder()
 
-            let result: CommandResult = try await withTaskCancellationHandler {
+            return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     Task.detached {
                         let process = Process()
@@ -867,22 +898,6 @@ import os.log
                     process.terminate()
                 }
             }
-
-            log(.info, "run_command completed", metadata: [
-                "command": command,
-                "exitCode": "\(result.exitCode)",
-                "duration": String(format: "%.2fs", result.duration)
-            ])
-
-            if result.exitCode != 0 {
-                throw ToolExecutionError.commandFailed(
-                    command: command,
-                    exitCode: result.exitCode,
-                    stderr: result.stderr
-                )
-            }
-
-            return result
         }
 
         // MARK: - Web Fetch
