@@ -285,22 +285,41 @@ jobs:
     - name: Boot watchOS Simulator
       run: |
         # Pre-boot simulator for more reliable tests
-        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed 's/.*name=//')
+        echo "Looking for watchOS device: '$DEVICE_NAME'"
+        # Use simctl JSON to find a watchOS-only device UDID (avoids paired/duplicate ambiguity)
+        DEVICE_UDID=$(xcrun simctl list devices available -j | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        name = sys.argv[1]
+        for runtime, devices in data.get('devices', {}).items():
+            if 'watchOS' not in runtime:
+                continue
+            for d in devices:
+                if d['name'] == name and d['isAvailable']:
+                    print(d['udid'])
+                    sys.exit(0)
+        sys.exit(1)
+        " "$DEVICE_NAME" 2>/dev/null) || \
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          echo "WATCHOS_DEVICE_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus instead of fixed sleep
           xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 3
         fi
 
     - name: Run watchOS unit tests
       run: |
         set -o pipefail
+        DESTINATION='platform=watchOS Simulator,id=${{ env.WATCHOS_DEVICE_UDID }}'
+        if [ -z "${{ env.WATCHOS_DEVICE_UDID }}" ]; then
+          DESTINATION='${{ matrix.destination }}'
+        fi
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination '${{ matrix.destination }}' \
+          -destination "$DESTINATION" \
           -derivedDataPath ./build \
           -only-testing:Ayna-watchOSTests \
           -parallel-testing-enabled NO \
@@ -343,22 +362,41 @@ jobs:
     - name: Boot watchOS Simulator
       run: |
         # Pre-boot simulator for more reliable tests
-        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed -n 's/.*name=\([^)]*\).*/\1/p')
+        DEVICE_NAME=$(echo '${{ matrix.destination }}' | sed 's/.*name=//')
+        echo "Looking for watchOS device: '$DEVICE_NAME'"
+        # Use simctl JSON to find a watchOS-only device UDID (avoids paired/duplicate ambiguity)
+        DEVICE_UDID=$(xcrun simctl list devices available -j | python3 -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        name = sys.argv[1]
+        for runtime, devices in data.get('devices', {}).items():
+            if 'watchOS' not in runtime:
+                continue
+            for d in devices:
+                if d['name'] == name and d['isAvailable']:
+                    print(d['udid'])
+                    sys.exit(0)
+        sys.exit(1)
+        " "$DEVICE_NAME" 2>/dev/null) || \
         DEVICE_UDID=$(xcrun simctl list devices available | grep "$DEVICE_NAME" | head -1 | grep -oE '[A-F0-9-]{36}')
         if [ -n "$DEVICE_UDID" ]; then
           echo "Booting simulator: $DEVICE_NAME ($DEVICE_UDID)"
+          echo "WATCHOS_DEVICE_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
-          # Wait for boot to complete using bootstatus instead of fixed sleep
           xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 3
         fi
 
     - name: Run watchOS UI tests
       run: |
         set -o pipefail
+        DESTINATION='platform=watchOS Simulator,id=${{ env.WATCHOS_DEVICE_UDID }}'
+        if [ -z "${{ env.WATCHOS_DEVICE_UDID }}" ]; then
+          DESTINATION='${{ matrix.destination }}'
+        fi
         xcodebuild \
           -project Ayna.xcodeproj \
           -scheme 'Ayna-watchOS Watch App' \
-          -destination '${{ matrix.destination }}' \
+          -destination "$DESTINATION" \
           -derivedDataPath ./build \
           -resultBundlePath ./build/TestResults-watchOS-UI.xcresult \
           -only-testing:Ayna-watchOSUITests \
