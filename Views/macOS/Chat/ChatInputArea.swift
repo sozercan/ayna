@@ -21,6 +21,8 @@ struct ChatInputArea: View {
 
     let isGenerating: Bool
     let composerModelLabel: String
+    var textEditorIdentifier: String = TestIdentifiers.ChatComposer.textEditor
+    var sendButtonIdentifier: String = TestIdentifiers.ChatComposer.sendButton
     let onSendMessage: () -> Void
     let onAttachFile: () -> Void
     let onShowAppContentPicker: () -> Void
@@ -148,7 +150,7 @@ struct ChatInputArea: View {
                 text: $messageText,
                 isFirstResponder: $isComposerFocused,
                 onSubmit: onSendMessage,
-                accessibilityIdentifier: TestIdentifiers.ChatComposer.textEditor
+                accessibilityIdentifier: textEditorIdentifier
             )
             .frame(height: calculateTextHeight())
             .font(Typography.body)
@@ -251,7 +253,7 @@ struct ChatInputArea: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(isGenerating || !messageText.isEmpty)
-        .accessibilityIdentifier(TestIdentifiers.ChatComposer.sendButton)
+        .accessibilityIdentifier(sendButtonIdentifier)
         .padding(.horizontal, Spacing.md)
         .frame(height: calculateTextHeight() + Spacing.xxl)
     }

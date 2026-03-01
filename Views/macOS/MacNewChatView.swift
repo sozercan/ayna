@@ -306,6 +306,8 @@ struct MacNewChatView: View {
             isToolSectionExpanded: $isToolSectionExpanded,
             isGenerating: isGenerating,
             composerModelLabel: composerModelLabel,
+            textEditorIdentifier: TestIdentifiers.NewChatComposer.textEditor,
+            sendButtonIdentifier: TestIdentifiers.NewChatComposer.sendButton,
             onSendMessage: sendMessage,
             onAttachFile: attachFile,
             onShowAppContentPicker: { showAppContentPicker = true },
