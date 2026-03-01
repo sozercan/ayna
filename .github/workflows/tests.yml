@@ -100,6 +100,9 @@ jobs:
       run: |
         sudo cp -R .build/app/Ayna.app /Applications/Ayna.app
 
+    - name: Register app with Launch Services
+      run: /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f /Applications/Ayna.app
+
     - name: Run UI tests (with retry)
       run: |
         set -o pipefail

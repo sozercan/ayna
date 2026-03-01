@@ -346,6 +346,7 @@
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 			};
 			name = Debug;
 		};
@@ -361,6 +362,7 @@
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 			};
 			name = Release;
 		};
@@ -377,6 +379,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 			};
 			name = Debug;
 		};
@@ -392,6 +395,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 			};
 			name = Release;
 		};
@@ -407,6 +411,7 @@
 				SDKROOT = watchos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
@@ -422,6 +427,7 @@
 				SDKROOT = watchos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Ayna;
 				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
