@@ -136,8 +136,8 @@ struct PathValidator {
 
         // Check for sensitive multi-component paths (e.g., .git/config)
         if pathComponents.count >= 2 {
-            for i in 0..<(pathComponents.count - 1) {
-                if pathComponents[i] == ".git" && pathComponents[i + 1] == "config" {
+            for idx in 0..<(pathComponents.count - 1) {
+                if pathComponents[idx] == ".git" && pathComponents[idx + 1] == "config" {
                     return .requiresApproval(reason: "Sensitive file: .git/config")
                 }
             }
