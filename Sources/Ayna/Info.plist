@@ -37,5 +37,7 @@
 <array>
 <string>com.sertacozercan.ayna.conversation</string>
 </array>
+<key>WKCompanionAppBundleIdentifier</key>
+<string>com.sertacozercan.ayna</string>
 </dict>
 </plist>
