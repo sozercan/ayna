@@ -244,6 +244,7 @@ struct IOSSettingsView: View {
             aiService.modelEndpoints.removeValue(forKey: model)
             aiService.modelAPIKeys.removeValue(forKey: model)
             aiService.modelEndpointTypes.removeValue(forKey: model)
+            aiService.modelUsesGitHubOAuth.removeValue(forKey: model)
 
             // If we removed the selected model, select the first available one
             if aiService.selectedModel == model, let first = aiService.customModels.first {
