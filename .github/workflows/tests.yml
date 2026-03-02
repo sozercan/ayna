@@ -40,8 +40,8 @@ jobs:
     - name: Show Swift version
       run: swift --version
 
-      - name: Clear SPM artifacts cache
-        run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Run unit tests
       run: swift test -q
@@ -60,8 +60,8 @@ jobs:
     - name: Show Swift version
       run: swift --version
 
-      - name: Clear SPM artifacts cache
-        run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Compile for iOS
       run: swift build --triple arm64-apple-ios26.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -80,8 +80,8 @@ jobs:
     - name: Show Swift version
       run: swift --version
 
-      - name: Clear SPM artifacts cache
-        run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Compile for watchOS
       run: swift build --triple arm64-apple-watchos26.0 --sdk "$(xcrun --sdk watchos --show-sdk-path)"
@@ -100,8 +100,8 @@ jobs:
     - name: Show Swift version
       run: swift --version
 
-      - name: Clear SPM artifacts cache
-        run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Build app for UI tests
       env:
