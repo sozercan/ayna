@@ -45,8 +45,15 @@ struct IOSMessageView: View {
         self.onEdit = onEdit
         self.availableModels = availableModels
         // Parse content synchronously on init to avoid flash of empty/raw text bubbles
-        _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
-        _lastContentHash = State(initialValue: message.content.hashValue)
+        // Tool messages start collapsed (preview uses plain text), so defer parsing
+        // to the async background path to avoid blocking the main thread on large results.
+        if message.role == .tool {
+            _contentBlocks = State(initialValue: [])
+            _lastContentHash = State(initialValue: 0)
+        } else {
+            _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+            _lastContentHash = State(initialValue: message.content.hashValue)
+        }
         // Pre-set hasAppeared to true for messages that are likely already in view
         // This prevents janky animations when scrolling through existing messages
         _hasAppeared = State(initialValue: !message.content.isEmpty)
