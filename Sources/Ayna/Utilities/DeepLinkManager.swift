@@ -142,11 +142,12 @@ final class DeepLinkManager: ObservableObject {
     /// - Parameter url: The URL to handle
     /// - Returns: The parsed action, or nil if the URL couldn't be handled
     func handle(url: URL) async {
+        let safeURL = "\(url.scheme ?? "")://\(url.host ?? "")\(url.path)"
         DiagnosticsLogger.log(
             .app,
             level: .info,
             message: "🔗 Handling deep link",
-            metadata: ["url": url.absoluteString]
+            metadata: ["url": safeURL]
         )
 
         // Clear any previous error

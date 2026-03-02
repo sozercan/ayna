@@ -55,6 +55,10 @@ enum SSRFProtection {
             if first == 192, second == 168 { return true }
             if first == 169, second == 254 { return true } // Link-local / cloud metadata
             if first == 0 { return true } // "This" network
+            // RFC 6598 CGNAT (100.64.0.0/10)
+            if first == 100, (64 ... 127).contains(second) { return true }
+            // RFC 2544 Benchmark (198.18.0.0/15)
+            if first == 198, (18 ... 19).contains(second) { return true }
         }
 
         return false
@@ -381,6 +385,10 @@ final class WebFetchService {
             if first == 192, second == 168 { return true }
             if first == 169, second == 254 { return true }
             if first == 0 { return true }
+            // RFC 6598 CGNAT (100.64.0.0/10)
+            if first == 100, (64 ... 127).contains(second) { return true }
+            // RFC 2544 Benchmark (198.18.0.0/15)
+            if first == 198, (18 ... 19).contains(second) { return true }
         }
 
         return false
@@ -397,12 +405,12 @@ final class WebFetchService {
 
         // Remove script and style content
         text = text.replacingOccurrences(
-            of: "<script[^>]*>.*?</script>",
+            of: "(?s)<script[^>]*>.*?</script>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )
         text = text.replacingOccurrences(
-            of: "<style[^>]*>.*?</style>",
+            of: "(?s)<style[^>]*>.*?</style>",
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )

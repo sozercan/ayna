@@ -2015,6 +2015,7 @@ class AIService: ObservableObject {
             }
         }
 
+        currentTask = task
         task.resume()
     }
 

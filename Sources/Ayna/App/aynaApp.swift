@@ -211,7 +211,16 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Flush pending conversation saves before quitting to prevent data loss
         Task { @MainActor in
-            await Self.conversationManager?.flushPendingSaves()
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    await Self.conversationManager?.flushPendingSaves()
+                }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(5))
+                }
+                await group.next()
+                group.cancelAll()
+            }
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

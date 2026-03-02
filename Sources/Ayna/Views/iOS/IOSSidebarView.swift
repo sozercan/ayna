@@ -405,7 +405,7 @@ struct ConversationRow: View {
     /// Generate a consistent color based on conversation ID for unique avatars
     private var avatarColor: Color {
         let hash = conversation.id.hashValue
-        let hue = Double(abs(hash) % 360) / 360.0
+        let hue = Double((hash % 360 + 360) % 360) / 360.0
         return Color(hue: hue, saturation: 0.4, brightness: 0.65)
     }
 

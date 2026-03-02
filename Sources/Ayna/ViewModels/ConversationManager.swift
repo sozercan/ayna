@@ -208,7 +208,16 @@ final class ConversationManager: ObservableObject {
                 decodedFromDisk[index].model = defaultModel
                 let conversationToSave = decodedFromDisk[index]
                 Task {
-                    try? await store.save(conversationToSave)
+                    do {
+                        try await store.save(conversationToSave)
+                    } catch {
+                        DiagnosticsLogger.log(
+                            .conversationManager,
+                            level: .error,
+                            message: "Failed to save conversation",
+                            metadata: ["error": "\(error)"]
+                        )
+                    }
                 }
             }
 
@@ -271,18 +280,10 @@ final class ConversationManager: ObservableObject {
                 level: .error,
                 metadata: ["error": error.localizedDescription]
             )
-            logManager("⚠️ Clearing corrupted conversation data", level: .default)
-            do {
-                try store.clear()
-            } catch {
-                logManager(
-                    "❌ Failed to clear corrupted store",
-                    level: .error,
-                    metadata: ["error": error.localizedDescription]
-                )
+            if conversations.isEmpty {
+                conversations = []
+                conversationIndexCache.removeAll()
             }
-            conversations = []
-            conversationIndexCache.removeAll()
             isLoaded = true
         }
     }
@@ -753,6 +754,7 @@ final class ConversationManager: ObservableObject {
 
             // Insert and save
             conversations.insert(conversation, at: 0)
+            updateCacheForInsertion(at: 0)
             save(conversation)
 
             // Select the new conversation

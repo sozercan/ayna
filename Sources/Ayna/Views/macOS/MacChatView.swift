@@ -921,10 +921,7 @@ struct MacChatView: View {
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendableWrapper(tools)
 
-        // Cache the conversation index to avoid repeated lookups in onChunk
-        let conversationIndex = conversationManager.conversations.firstIndex(where: {
-            $0.id == conversation.id
-        })
+        let conversationId = conversation.id
 
         aiService.sendMessage(
             messages: messages,
@@ -974,7 +971,7 @@ struct MacChatView: View {
                         conversationManager.save(conversationManager.conversations[index])
 
                         // Only update UI state if we're currently viewing this conversation
-                        if index == conversationIndex {
+                        if conversationManager.conversations[index].id == conversationId {
                             // Clear tool execution indicator when we start receiving actual content
                             if currentToolName != nil {
                                 currentToolName = nil
@@ -1012,14 +1009,21 @@ struct MacChatView: View {
                     }
 
                     // Only update UI state if we're viewing this conversation
-                    guard
-                        let currentIndex = conversationManager.conversations.firstIndex(where: {
-                            $0.id == conversation.id
-                        }),
-                        currentIndex == conversationIndex
-                    else {
+                    guard let currentIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }) else {
+                        isGenerating = false
                         logChat(
-                            "✅ onComplete for conversation \(conversation.id) (background)",
+                            "✅ onComplete for conversation \(conversationId) (background)",
+                            level: .info
+                        )
+                        return
+                    }
+
+                    guard conversationManager.conversations[currentIndex].id == conversationId else {
+                        isGenerating = false
+                        logChat(
+                            "✅ onComplete for conversation \(conversationId) (background)",
                             level: .info
                         )
                         return
@@ -1069,15 +1073,13 @@ struct MacChatView: View {
                     }
 
                     // Only update UI state if we're viewing this conversation
-                    guard
-                        let currentIndex = conversationManager.conversations.firstIndex(where: {
-                            $0.id == conversation.id
-                        }),
-                        currentIndex == conversationIndex
-                    else {
+                    guard conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }) != nil else {
+                        isGenerating = false
                         let safeMessage = ErrorPresenter.userMessage(for: error)
                         logChat(
-                            "❌ onError for conversation \(conversation.id) (background): \(safeMessage)",
+                            "❌ onError for conversation \(conversationId) (background): \(safeMessage)",
                             level: .error,
                             metadata: ["error": safeMessage]
                         )
@@ -1205,11 +1207,7 @@ struct MacChatView: View {
                                     })
                                 else {
                                     // Only update UI if viewing this conversation
-                                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                                        $0.id == conversation.id
-                                    }),
-                                        currentIndex == conversationIndex
-                                    {
+                                    if conversationManager.conversations.contains(where: { $0.id == conversationId }) {
                                         isGenerating = false
                                         currentToolName = nil
                                         toolCallDepth = 0
