@@ -620,7 +620,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
 xcodebuild -scheme Ayna -destination 'platform=macOS' build
 
 # iOS builds successfully (Core/ code must compile even if tools are disabled)
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 **Manual Verification:**
@@ -652,7 +652,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
 
 # Both platforms build
 xcodebuild -scheme Ayna -destination 'platform=macOS' build
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 **Manual Verification:**
@@ -681,7 +681,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
 
 # Both platforms build
 xcodebuild -scheme Ayna -destination 'platform=macOS' build
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 **Manual Verification:**
@@ -712,7 +712,7 @@ xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17'
 ```bash
 # All tests pass, both platforms build
 xcodebuild -scheme Ayna -destination 'platform=macOS' test
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 **Manual Verification:**
@@ -866,7 +866,7 @@ xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTes
    xcodebuild -scheme Ayna -destination 'platform=macOS' build
 
    # iOS (should compile, tools hidden/disabled)
-   xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+   xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
    ```
 
 ## References

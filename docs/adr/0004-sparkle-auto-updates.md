@@ -161,10 +161,9 @@ This outputs:
 
 ## Files Added/Modified
 
-- `Core/Services/UpdaterService.swift` - Sparkle wrapper service (macOS only)
-- `Core/Diagnostics/DiagnosticsLogger.swift` - Added `.updater` category
-- `App/macOS/aynaApp.swift` - Added "Check for Updates..." menu item
-- `App/macOS/Info.plist` - Added Sparkle configuration keys
+- `Sources/Ayna/Services/UpdaterService.swift` - Sparkle wrapper service (macOS only)
+- `Sources/Ayna/Diagnostics/DiagnosticsLogger.swift` - Added `.updater` category
+- `Sources/Ayna/App/aynaApp.swift` - Added "Check for Updates..." menu item
 - `appcast.xml` - Sparkle update feed (updated by CI)
 - `Tools/sign-update.sh` - Local signing helper script
 - `.github/workflows/release.yml` - Sparkle signing and appcast updates

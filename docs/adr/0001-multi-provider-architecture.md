@@ -98,6 +98,6 @@ struct OpenAIEndpointResolver {
 
 ## References
 
-- [Core/Services/Providers/AIProviderProtocol.swift](../../Core/Services/Providers/AIProviderProtocol.swift)
-- [Core/Services/AIService.swift](../../Core/Services/AIService.swift)
-- [Core/Services/OpenAIEndpointResolver.swift](../../Core/Services/OpenAIEndpointResolver.swift)
+- [Sources/Ayna/Services/Providers/AIProviderProtocol.swift](../../Sources/Ayna/Services/Providers/AIProviderProtocol.swift)
+- [Sources/Ayna/Services/AIService.swift](../../Sources/Ayna/Services/AIService.swift)
+- [Sources/Ayna/Services/OpenAIEndpointResolver.swift](../../Sources/Ayna/Services/OpenAIEndpointResolver.swift)

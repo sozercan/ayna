@@ -1,0 +1,500 @@
+#if os(macOS)
+//
+//  MCPSettingsView.swift
+//  ayna
+//
+//  Created on 11/3/25.
+//
+
+import Foundation
+import SwiftUI
+
+struct MCPSettingsView: View {
+    @StateObject private var mcpManager = MCPServerManager.shared
+    @State private var showingAddServer = false
+    @State private var editingServer: MCPServerConfig?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with stats
+            HStack {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text("MCP Servers")
+                        .font(Typography.title2)
+                        .fontWeight(.semibold)
+
+                    Text("\(mcpManager.getConnectedServerCount()) connected • \(mcpManager.availableTools.count) tools available")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                Spacer()
+
+                Button(action: {
+                    Task {
+                        await mcpManager.discoverAllTools()
+                    }
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(mcpManager.isDiscovering)
+
+                Button(action: {
+                    showingAddServer = true
+                }) {
+                    Label("Add Server", systemImage: "plus")
+                }
+            }
+            .padding()
+
+            Divider()
+
+            // Server List
+            if mcpManager.serverConfigs.isEmpty {
+                VStack(spacing: Spacing.md) {
+                    Spacer()
+
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 48))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.5))
+
+                    Text("No MCP Servers")
+                        .font(Typography.headline)
+
+                    Text("Add an MCP server to enable tools like search and file access")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+
+                    Button("Add Your First Server") {
+                        showingAddServer = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top)
+
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: Spacing.md) {
+                        ForEach(mcpManager.serverConfigs) { config in
+                            ServerConfigRow(
+                                config: config,
+                                status: mcpManager.getServerStatus(config.name),
+                                tools: mcpManager.availableTools.filter { $0.serverName == config.name },
+                                onEdit: {
+                                    editingServer = config
+                                },
+                                onDelete: {
+                                    mcpManager.removeServerConfig(config)
+                                },
+                                onToggle: {
+                                    var updated = config
+                                    updated.enabled.toggle()
+                                    mcpManager.updateServerConfig(updated)
+                                },
+                                onRetry: {
+                                    Task {
+                                        await mcpManager.connectToServer(config, autoDisableOnFailure: false)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddServer) {
+            ServerConfigSheet(
+                config: nil,
+                onSave: { config in
+                    mcpManager.addServerConfig(config)
+                    showingAddServer = false
+                },
+                onCancel: {
+                    showingAddServer = false
+                }
+            )
+        }
+        .sheet(item: $editingServer) { config in
+            ServerConfigSheet(
+                config: config,
+                onSave: { updated in
+                    mcpManager.updateServerConfig(updated)
+                    editingServer = nil
+                },
+                onCancel: {
+                    editingServer = nil
+                }
+            )
+        }
+    }
+}
+
+// MARK: - Server Config Row
+
+struct ServerConfigRow: View {
+    let config: MCPServerConfig
+    let status: MCPServerStatus?
+    let tools: [MCPTool]
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onToggle: () -> Void
+    let onRetry: () -> Void
+
+    @State private var showingTools = false
+    @State private var isEnabled: Bool
+
+    init(
+        config: MCPServerConfig,
+        status: MCPServerStatus?,
+        tools: [MCPTool],
+        onEdit: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
+        onToggle: @escaping () -> Void,
+        onRetry: @escaping () -> Void
+    ) {
+        self.config = config
+        self.status = status
+        self.tools = tools
+        self.onEdit = onEdit
+        self.onDelete = onDelete
+        self.onToggle = onToggle
+        self.onRetry = onRetry
+        _isEnabled = State(initialValue: config.enabled)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Text(config.name)
+                    .font(Typography.headline)
+
+                Text(statusDescription)
+                    .font(Typography.micro)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xxxs)
+                    .background(statusColor.opacity(0.15))
+                    .foregroundStyle(statusColor)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                // Tool count badge
+                if !tools.isEmpty {
+                    Text("\(tools.count) tools")
+                        .font(Typography.caption)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundStyle(Theme.accent)
+                        .clipShape(Capsule())
+                }
+
+                // Toggle
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+                    .onChange(of: isEnabled) { _, _ in
+                        onToggle()
+                    }
+
+                // Actions
+                Menu {
+                    Button("Edit") {
+                        onEdit()
+                    }
+
+                    if canRetry {
+                        Button("Retry Connection") {
+                            onRetry()
+                        }
+                    }
+
+                    if !tools.isEmpty {
+                        Button("Show Tools") {
+                            showingTools.toggle()
+                        }
+                    }
+
+                    Divider()
+
+                    Button("Delete", role: .destructive) {
+                        onDelete()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
+            }
+
+            // Command
+            HStack {
+                Text(config.command)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+
+                if !config.args.isEmpty {
+                    Text(config.args.joined(separator: " "))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            if let lastUpdatedText {
+                Text("Updated \(lastUpdatedText)")
+                    .font(Typography.micro)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            // Error message
+            if let errorMessage = status?.lastError, !errorMessage.isEmpty {
+                HStack(alignment: .top, spacing: Spacing.xs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.statusError)
+                        .font(Typography.caption)
+
+                    Text(errorMessage)
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.statusError)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(Spacing.sm)
+                .background(Color.red.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
+            }
+
+            // Tools list (expandable)
+            if showingTools, !tools.isEmpty {
+                Divider()
+                    .padding(.vertical, Spacing.xxs)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Available Tools")
+                        .font(Typography.caption)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    ForEach(tools) { tool in
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                                .font(Typography.micro)
+                                .foregroundStyle(Theme.accent)
+
+                            Text(tool.name)
+                                .font(Typography.caption)
+
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(.top, Spacing.xxs)
+            }
+        }
+        .padding()
+        .background(Theme.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+    }
+
+    private var statusColor: Color {
+        switch status?.state {
+        case .connected:
+            Theme.statusConnected
+        case .connecting:
+            Theme.statusConnecting
+        case .reconnecting:
+            .yellow
+        case .error:
+            Theme.statusError
+        case .disabled:
+            Theme.statusDisconnected
+        case .idle:
+            .secondary
+        case .none:
+            config.enabled ? .secondary : Theme.statusDisconnected
+        }
+    }
+
+    private var statusDescription: String {
+        switch status?.state {
+        case .connected:
+            "Connected"
+        case .connecting:
+            "Connecting"
+        case .reconnecting:
+            "Reconnecting"
+        case .error:
+            "Error"
+        case .disabled:
+            "Disabled"
+        case .idle:
+            "Idle"
+        case .none:
+            config.enabled ? "Idle" : "Disabled"
+        }
+    }
+
+    private var lastUpdatedText: String? {
+        guard let lastUpdated = status?.lastUpdated else { return nil }
+        return Self.relativeFormatter.localizedString(for: lastUpdated, relativeTo: Date())
+    }
+
+    private var canRetry: Bool {
+        guard config.enabled else { return false }
+        switch status?.state {
+        case .connected, .connecting, .reconnecting:
+            return false
+        case .disabled:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+}
+
+// MARK: - Server Config Sheet
+
+struct ServerConfigSheet: View {
+    let config: MCPServerConfig?
+    let onSave: (MCPServerConfig) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String
+    @State private var command: String
+    @State private var args: String
+    @State private var envVars: [EnvVar]
+
+    init(config: MCPServerConfig?, onSave: @escaping (MCPServerConfig) -> Void, onCancel: @escaping () -> Void) {
+        self.config = config
+        self.onSave = onSave
+        self.onCancel = onCancel
+
+        _name = State(initialValue: config?.name ?? "")
+        _command = State(initialValue: config?.command ?? "npx")
+        _args = State(initialValue: config?.args.joined(separator: " ") ?? "")
+        _envVars = State(initialValue: config?.env.map { EnvVar(key: $0.key, value: $0.value) } ?? [])
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text(config == nil ? "Add MCP Server" : "Edit MCP Server")
+                    .font(Typography.title2)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                Button("Cancel") {
+                    onCancel()
+                }
+            }
+            .padding()
+
+            Divider()
+
+            // Form
+            Form {
+                Section {
+                    TextField("Server Name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Command", text: $command)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Arguments", text: $args)
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("Basic Configuration")
+                }
+
+                Section {
+                    ForEach($envVars) { $envVar in
+                        HStack {
+                            TextField("Key", text: $envVar.key)
+                                .textFieldStyle(.roundedBorder)
+
+                            TextField("Value", text: $envVar.value)
+                                .textFieldStyle(.roundedBorder)
+
+                            Button(action: {
+                                envVars.removeAll { $0.id == envVar.id }
+                            }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Button("Add Environment Variable") {
+                        envVars.append(EnvVar(key: "", value: ""))
+                    }
+                } header: {
+                    Text("Environment Variables")
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+
+            Divider()
+
+            // Footer
+            HStack {
+                Spacer()
+
+                Button("Save") {
+                    let argsArray = args
+                        .split(separator: " ")
+                        .map { String($0) }
+                        .filter { !$0.isEmpty }
+
+                    let envDict = Dictionary(
+                        uniqueKeysWithValues: envVars
+                            .filter { !$0.key.isEmpty }
+                            .map { ($0.key, $0.value) }
+                    )
+
+                    let newConfig = MCPServerConfig(
+                        id: config?.id ?? UUID(),
+                        name: name,
+                        command: command,
+                        args: argsArray,
+                        env: envDict,
+                        enabled: config?.enabled ?? true
+                    )
+
+                    onSave(newConfig)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(name.isEmpty || command.isEmpty)
+            }
+            .padding()
+        }
+        .frame(width: 600, height: 500)
+    }
+}
+
+// MARK: - Helper Types
+
+struct EnvVar: Identifiable {
+    let id = UUID()
+    var key: String
+    var value: String
+}
+
+// MARK: - Preview
+
+#Preview {
+    MCPSettingsView()
+}
+#endif

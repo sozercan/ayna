@@ -5,16 +5,14 @@ Native macOS/iOS/watchOS ChatGPT client. Swift 6.0+, macOS 26.0+, iOS 26.0+, wat
 ## Project Structure
 
 ```
-App/   → Platform entry points
-Core/  → Shared logic — MUST compile for all platforms
-Views/ → Platform-specific UI (macOS/, iOS/, watchOS/)
-Tests/ → aynaTests (unit), aynaUITests (UI)
+Sources/Ayna/  → All source code (single SwiftPM executableTarget)
+Tests/AynaTests/ → Unit tests (Swift Testing)
 docs/  → Detailed docs (architecture, testing, platforms, workflow, patterns, performance)
 ```
 
 ## Critical Rules
 
-- **Cross-platform**: Code in `Core/` must build for macOS, iOS, AND watchOS. Use `#if os()` guards for AppKit/UIKit.
+- **Cross-platform**: Code in `Sources/Ayna/` must build for macOS, iOS, AND watchOS. Use `#if os()` guards for AppKit/UIKit.
 - **No third-party deps** without asking first.
 - **Swift Concurrency**: Mark `@Observable` classes with `@MainActor`. Never use `DispatchQueue`.
 - **Swift Testing** for unit tests, not XCTest. See [docs/testing.md](docs/testing.md).
@@ -23,20 +21,23 @@ docs/  → Detailed docs (architecture, testing, platforms, workflow, patterns, 
 
 ```bash
 # macOS
-xcodebuild -scheme Ayna -destination 'platform=macOS' build
+swift build
 
-# iOS
-xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build
+# iOS (compile check)
+swift build --triple arm64-apple-ios26.0
 
-# watchOS
-xcodebuild -scheme Ayna-watchOS -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' build
+# watchOS (compile check)
+swift build --triple arm64-apple-watchos26.0
+
+# iOS/watchOS simulator (use AynaMobile.xcodeproj)
+open AynaMobile.xcodeproj
 ```
 
 ## Test Commands
 
 ```bash
 # Unit tests only (preferred)
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+swift test
 
 # Never run unit + UI tests together
 ```
@@ -61,10 +62,10 @@ swiftlint --strict && swiftformat .
 
 ## Key Files
 
-- `Core/Services/AIService.swift` — AI service coordinator
-- `Core/ViewModels/ConversationManager.swift` — App state
-- `Core/Services/Providers/AIProviderProtocol.swift` — Provider protocol
-- `Core/Diagnostics/DiagnosticsLogger.swift` — Use for all logging
+- `Sources/Ayna/Services/AIService.swift` — AI service coordinator
+- `Sources/Ayna/ViewModels/ConversationManager.swift` — App state
+- `Sources/Ayna/Services/Providers/AIProviderProtocol.swift` — Provider protocol
+- `Sources/Ayna/Diagnostics/DiagnosticsLogger.swift` — Use for all logging
 
 ## Detailed Docs
 
