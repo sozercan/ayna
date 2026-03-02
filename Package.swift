@@ -2,18 +2,6 @@
 
 import PackageDescription
 
-#if os(macOS)
-let sparkleDependency: [Package.Dependency] = [
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.1"),
-]
-let sparkleTarget: [Target.Dependency] = [
-    .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
-]
-#else
-let sparkleDependency: [Package.Dependency] = []
-let sparkleTarget: [Target.Dependency] = []
-#endif
-
 let package = Package(
     name: "Ayna",
     platforms: [
@@ -24,11 +12,19 @@ let package = Package(
     products: [
         .executable(name: "Ayna", targets: ["Ayna"]),
     ],
-    dependencies: sparkleDependency,
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.1"),
+    ],
     targets: [
         .executableTarget(
             name: "Ayna",
-            dependencies: sparkleTarget,
+            dependencies: [
+                .product(
+                    name: "Sparkle",
+                    package: "Sparkle",
+                    condition: .when(platforms: [.macOS])
+                ),
+            ],
             path: "Sources/Ayna",
             exclude: [
                 "Resources/ayna.icon",

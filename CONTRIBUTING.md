@@ -8,21 +8,23 @@ Thank you for helping improve **ayna**! This document captures the practical ste
 - Xcode 16.0 or newer (Swift 6.0+ toolchain)
 - iOS Simulator or device for iOS development
 - watchOS Simulator for watchOS development
-- Clone the repo and open `Package.swift`.
+- Clone the repo. Open `Package.swift` for macOS, or `AynaMobile.xcodeproj` for iOS/watchOS.
 
 ```bash
 git clone https://github.com/yourusername/ayna.git
 cd ayna
-open Package.swift
+open Package.swift          # macOS
+open AynaMobile.xcodeproj   # iOS / watchOS
 ```
 
 ## Build from Source
 
-1. Open `Package.swift` in Xcode, or build from the command line.
-2. In Xcode, select the appropriate scheme and destination:
-   - **Ayna** scheme with **My Mac** for macOS
-   - **Ayna-iOS** scheme with an iOS Simulator for iOS
-   - **Ayna-watchOS** scheme with a watchOS Simulator for watchOS
+1. For macOS: open `Package.swift` in Xcode or use `swift build` from the terminal.
+2. For iOS/watchOS: open `AynaMobile.xcodeproj` in Xcode.
+3. Select the appropriate scheme and destination:
+   - **Ayna** scheme with **My Mac** for macOS (from Package.swift)
+   - **Ayna-iOS** scheme with an iOS Simulator (from AynaMobile.xcodeproj)
+   - **Ayna-watchOS** scheme with a watchOS Simulator (from AynaMobile.xcodeproj)
 3. Run with **Cmd+R** or click the Run button.
 4. Prefer running from Terminal? Use:
 

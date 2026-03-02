@@ -48,7 +48,7 @@ Every task should be broken into phases. Each phase must have:
 | Deliverable | Exit Criteria |
 |-------------|---------------|
 | macOS build succeeds | `xcodebuild -scheme Ayna -destination 'platform=macOS' build` |
-| iOS build succeeds | `xcodebuild -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` |
+| iOS build succeeds | `xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` |
 | watchOS build succeeds (if applicable) | `xcodebuild -scheme Ayna-watchOS ...` |
 
 **Exit gate**: All platform builds pass.

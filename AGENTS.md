@@ -23,11 +23,14 @@ docs/  → Detailed docs (architecture, testing, platforms, workflow, patterns, 
 # macOS
 swift build
 
-# iOS (cross-compile)
+# iOS (compile check)
 swift build --triple arm64-apple-ios26.0
 
-# watchOS (cross-compile)
+# watchOS (compile check)
 swift build --triple arm64-apple-watchos26.0
+
+# iOS/watchOS simulator (use AynaMobile.xcodeproj)
+open AynaMobile.xcodeproj
 ```
 
 ## Test Commands
