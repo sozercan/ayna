@@ -55,8 +55,15 @@ struct MacMessageView: View {
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
         // Parse content synchronously on init to avoid flash of empty bubbles
-        _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
-        _lastContentHash = State(initialValue: message.content.hashValue)
+        // Tool messages start collapsed (preview uses plain text), so defer parsing
+        // to the async background path to avoid blocking the main thread on large results.
+        if message.role == .tool {
+            _cachedContentBlocks = State(initialValue: [])
+            _lastContentHash = State(initialValue: 0)
+        } else {
+            _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+            _lastContentHash = State(initialValue: message.content.hashValue)
+        }
         if let reasoning = message.reasoning {
             _cachedReasoningBlocks = State(initialValue: MarkdownRenderer.parse(reasoning))
             _lastReasoningHash = State(initialValue: reasoning.hashValue)

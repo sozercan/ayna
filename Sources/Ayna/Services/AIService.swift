@@ -45,6 +45,10 @@ class AIService: ObservableObject {
         static let modelAPIKeys = "model_api_keys"
     }
 
+    /// Tracks whether API keys were successfully loaded from Keychain during init.
+    /// Prevents overwriting valid Keychain data when a read failure caused an empty load.
+    private var keychainLoadSucceeded = false
+
     @Published var selectedModel: String {
         didSet {
             // Only persist on iOS/macOS
@@ -230,13 +234,25 @@ class AIService: ObservableObject {
         customModels = loadedCustomModels
 
         // Load model providers mapping
-        let loadedProviders: [String: AIProvider] = if let savedProviders = AppPreferences.storage.dictionary(forKey: "modelProviders")
+        let loadedProviders: [String: AIProvider]
+        if let savedProviders = AppPreferences.storage.dictionary(forKey: "modelProviders")
             as? [String: String]
         {
-            savedProviders.compactMapValues { AIProvider(rawValue: $0) }
+            let mapped = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
+            let droppedProviders = savedProviders.keys.filter { mapped[$0] == nil }
+            if !droppedProviders.isEmpty {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "Dropped unrecognized provider mappings during load — models may appear reset",
+                    metadata: ["droppedModels": droppedProviders.joined(separator: ", "),
+                               "rawValues": droppedProviders.compactMap { savedProviders[$0] }.joined(separator: ", ")]
+                )
+            }
+            loadedProviders = mapped
         } else {
             // Default all initial models to OpenAI
-            Dictionary(
+            loadedProviders = Dictionary(
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
             )
         }
@@ -249,13 +265,25 @@ class AIService: ObservableObject {
         modelProviders = updatedProviders
 
         // Load model endpoint types mapping
-        let loadedEndpointTypes: [String: APIEndpointType] = if let savedEndpointTypes = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes")
+        let loadedEndpointTypes: [String: APIEndpointType]
+        if let savedEndpointTypes = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes")
             as? [String: String]
         {
-            savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
+            let mapped = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
+            let droppedTypes = savedEndpointTypes.keys.filter { mapped[$0] == nil }
+            if !droppedTypes.isEmpty {
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "Dropped unrecognized endpoint type mappings during load — models may appear reset",
+                    metadata: ["droppedModels": droppedTypes.joined(separator: ", "),
+                               "rawValues": droppedTypes.compactMap { savedEndpointTypes[$0] }.joined(separator: ", ")]
+                )
+            }
+            loadedEndpointTypes = mapped
         } else {
             // Default all models to Chat Completions
-            Dictionary(
+            loadedEndpointTypes = Dictionary(
                 uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
             )
         }
@@ -278,13 +306,15 @@ class AIService: ObservableObject {
         modelEndpoints = loadedEndpoints
 
         // Load per-model API keys
-        var loadedAPIKeys = AIService.loadModelAPIKeys()
+        let (loadedAPIKeys, loadSuccess) = AIService.loadModelAPIKeys()
+        var mutableAPIKeys = loadedAPIKeys
 
         // Ensure test model has an API key during UI testing
-        if isUITesting, loadedAPIKeys[testModelName]?.isEmpty ?? true {
-            loadedAPIKeys[testModelName] = "ui-test-api-key"
+        if isUITesting, mutableAPIKeys[testModelName]?.isEmpty ?? true {
+            mutableAPIKeys[testModelName] = "ui-test-api-key"
         }
-        modelAPIKeys = loadedAPIKeys
+        modelAPIKeys = mutableAPIKeys
+        keychainLoadSucceeded = loadSuccess
 
         // Load GitHub OAuth flags for models
         if let savedOAuthFlags = AppPreferences.storage.dictionary(forKey: "modelUsesGitHubOAuth") as? [String: NSNumber] {
@@ -351,6 +381,14 @@ class AIService: ObservableObject {
     #endif
 
     private func persistModelAPIKeys() {
+        guard keychainLoadSucceeded else {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .error,
+                message: "Skipping API key persistence — Keychain load failed at init, refusing to overwrite potentially valid data"
+            )
+            return
+        }
         do {
             try AIService.storeModelAPIKeys(modelAPIKeys)
         } catch {
@@ -363,7 +401,7 @@ class AIService: ObservableObject {
         }
     }
 
-    private static func loadModelAPIKeys() -> [String: String] {
+    private static func loadModelAPIKeys() -> (keys: [String: String], success: Bool) {
         do {
             if let data = try keychain.data(for: KeychainKeys.modelAPIKeys) {
                 do {
@@ -374,7 +412,7 @@ class AIService: ObservableObject {
                         message: "Loaded model API keys from Keychain",
                         metadata: ["modelCount": "\(keys.count)", "models": keys.keys.joined(separator: ", ")]
                     )
-                    return keys
+                    return (keys, true)
                 } catch {
                     DiagnosticsLogger.log(
                         .aiService,
@@ -389,6 +427,8 @@ class AIService: ObservableObject {
                     level: .info,
                     message: "No model API keys found in Keychain (first launch or code signature changed)"
                 )
+                // No data in Keychain is a valid state (first launch), not a failure
+                return ([:], true)
             }
         } catch {
             DiagnosticsLogger.log(
@@ -398,7 +438,7 @@ class AIService: ObservableObject {
                 metadata: ["error": error.localizedDescription]
             )
         }
-        return [:]
+        return ([:], false)
     }
 
     private static func storeModelAPIKeys(_ dictionary: [String: String]) throws {

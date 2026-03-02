@@ -1186,6 +1186,7 @@ struct APISettingsView: View {
                                                     aiService.modelAPIKeys.removeValue(forKey: selectedName)
                                                     aiService.modelEndpoints.removeValue(forKey: selectedName)
                                                     aiService.modelEndpointTypes.removeValue(forKey: selectedName)
+                                                    aiService.modelUsesGitHubOAuth.removeValue(forKey: selectedName)
 
                                                     // Add new model name if not already present
                                                     if !aiService.customModels.contains(modelName) {
@@ -1655,6 +1656,8 @@ struct APISettingsView: View {
         aiService.modelProviders.removeValue(forKey: model)
         aiService.modelEndpoints.removeValue(forKey: model)
         aiService.modelAPIKeys.removeValue(forKey: model)
+        aiService.modelEndpointTypes.removeValue(forKey: model)
+        aiService.modelUsesGitHubOAuth.removeValue(forKey: model)
 
         // If we removed the selected default model, pick the next available one or clear it
         if aiService.selectedModel == model {
@@ -2173,6 +2176,8 @@ struct GitHubModelsConfigurationView: View {
             aiService.customModels.removeAll { $0 == oldName }
             aiService.modelProviders.removeValue(forKey: oldName)
             aiService.modelAPIKeys.removeValue(forKey: oldName)
+            aiService.modelEndpoints.removeValue(forKey: oldName)
+            aiService.modelEndpointTypes.removeValue(forKey: oldName)
             aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
 
             // Add new model name if not already present
@@ -2531,6 +2536,8 @@ struct AnthropicConfigurationView: View {
             aiService.modelProviders.removeValue(forKey: oldName)
             aiService.modelAPIKeys.removeValue(forKey: oldName)
             aiService.modelEndpoints.removeValue(forKey: oldName)
+            aiService.modelEndpointTypes.removeValue(forKey: oldName)
+            aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
         }
 
         // Add or update model
