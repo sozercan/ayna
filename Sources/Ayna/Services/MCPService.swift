@@ -442,6 +442,11 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     private func handleOutput(_ output: String) {
         let completedLines: [String] = withLock {
+            if outputBuffer.count + output.count > 1_048_576 {
+                DiagnosticsLogger.log(.mcpService, level: .error, message: "MCP output buffer exceeded 1MB limit, clearing")
+                outputBuffer = ""
+                return []
+            }
             outputBuffer += output
 
             // Process complete JSON-RPC messages (newline-delimited)

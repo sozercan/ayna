@@ -276,7 +276,10 @@ final class AnthropicStreamParser {
             if let partialJson = delta["partial_json"] as? String,
                let partialData = partialJson.data(using: .utf8)
             {
-                activeBlocks[index]?.buffer.append(partialData)
+                let maxToolInputSize = 10_485_760 // 10MB
+                if (activeBlocks[index]?.buffer.count ?? 0) + partialData.count <= maxToolInputSize {
+                    activeBlocks[index]?.buffer.append(partialData)
+                }
             }
 
         case "signature_delta":

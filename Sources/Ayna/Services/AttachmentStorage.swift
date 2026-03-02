@@ -92,7 +92,7 @@ final class AttachmentStorage: Sendable {
         let fileURL = attachmentsDirectory.appendingPathComponent(filename)
 
         do {
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
             DiagnosticsLogger.log(
                 .attachmentStorage,
                 level: .info,

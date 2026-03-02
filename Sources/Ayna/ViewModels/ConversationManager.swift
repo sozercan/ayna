@@ -225,8 +225,14 @@ final class ConversationManager: ObservableObject {
             // - Disk is the authoritative snapshot for non-dirty conversations
             // - In-memory wins for conversations that have pending saves queued
             let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            let memoryById = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
-            let diskById = Dictionary(uniqueKeysWithValues: decodedFromDisk.map { ($0.id, $0) })
+            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID in memory", metadata: ["id": "\(new.id)"])
+                return new
+            })
+            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID on disk", metadata: ["id": "\(new.id)"])
+                return new
+            })
 
             var reconciled: [Conversation] = []
             reconciled.reserveCapacity(max(memoryById.count, diskById.count))
@@ -318,6 +324,12 @@ final class ConversationManager: ObservableObject {
     func createNewConversation(title: String = "New Conversation") {
         let defaultModel = AIService.shared.selectedModel
         let conversation = Conversation(title: title, model: defaultModel)
+        conversations.insert(conversation, at: 0)
+        updateCacheForInsertion(at: 0)
+        save(conversation)
+    }
+
+    func insertConversationFromSync(_ conversation: Conversation) {
         conversations.insert(conversation, at: 0)
         updateCacheForInsertion(at: 0)
         save(conversation)

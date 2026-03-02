@@ -1144,7 +1144,9 @@ struct MacChatView: View {
                             toolName: toolName,
                             arguments: arguments
                         )
-                        lastMessage.toolCalls = [toolCall]
+                        var existingToolCalls = lastMessage.toolCalls ?? []
+                        existingToolCalls.append(toolCall)
+                        lastMessage.toolCalls = existingToolCalls
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage

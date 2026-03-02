@@ -8,6 +8,11 @@
 import Foundation
 import os
 
+/// Thread-safe mutable flag for use in @Sendable closures
+private final class SendableFlag: @unchecked Sendable {
+    var value = false
+}
+
 /// Provider implementation for Anthropic (Claude) API
 ///
 /// Handles:
@@ -221,6 +226,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         bytes: URLSession.AsyncBytes,
         callbacks: AIProviderStreamCallbacks
     ) async throws -> Bool {
+        let errorFlag = SendableFlag()
         let parser = AnthropicStreamParser(
             onChunk: nil,
             onReasoning: nil,
@@ -230,9 +236,10 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                 callbacks.onToolCallRequested?(id, name, anyInput)
             },
             onComplete: nil,
-            onError: { error in callbacks.onError(error) }
+            onError: { error in errorFlag.value = true; callbacks.onError(error) }
         )
 
+        var errorOccurred: Bool { errorFlag.value }
         var buffer = Data()
         var contentBuffer = ""
         var reasoningBuffer = ""
@@ -271,7 +278,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
         await MainActor.run {
             self.currentStreamTask = nil
-            callbacks.onComplete()
+            if !errorOccurred {
+                callbacks.onComplete()
+            }
         }
         return hasReceivedData
     }

@@ -65,7 +65,7 @@ final class KeychainStorage: Sendable {
         let query = baseQuery(for: key)
         let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
 
         // Try to update existing item first to avoid creating duplicates
@@ -84,7 +84,7 @@ final class KeychainStorage: Sendable {
             // Item doesn't exist yet, add it
             var addQuery = query
             addQuery[kSecValueData as String] = data
-            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 
@@ -141,7 +141,7 @@ final class KeychainStorage: Sendable {
 
         var addQuery = query
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 

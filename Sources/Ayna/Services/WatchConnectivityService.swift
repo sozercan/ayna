@@ -144,7 +144,8 @@ private enum WatchMessageKeys {
                 let modelEndpointTypes = AIService.shared.modelEndpointTypes.mapValues { $0.rawValue }
                 let modelUsesGitHubOAuth = AIService.shared.modelUsesGitHubOAuth
 
-                // API keys via WatchConnectivity (for free dev accounts without shared Keychain)
+                // SECURITY: API keys are persisted in WCSession applicationContext on watch.
+                // Consider migrating to sendMessage + Keychain.
                 let modelAPIKeys = AIService.shared.modelAPIKeys
 
                 // GitHub OAuth token for GitHub Models
@@ -247,7 +248,7 @@ private enum WatchMessageKeys {
                     createdAt: Date(),
                     model: model
                 )
-                conversationManager.conversations.insert(newConversation, at: 0)
+                conversationManager.insertConversationFromSync(newConversation)
 
                 // Now add the message
                 let message = watchMessage.toMessage()
@@ -279,7 +280,7 @@ private enum WatchMessageKeys {
 
             // Create the conversation on iPhone
             let conversation = watchConversation.toConversation()
-            conversationManager.conversations.insert(conversation, at: 0)
+            conversationManager.insertConversationFromSync(conversation)
 
             DiagnosticsLogger.log(
                 .watchConnectivity,
@@ -295,6 +296,7 @@ private enum WatchMessageKeys {
 
             if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
                 conversationManager.conversations[index].title = newTitle
+                conversationManager.save(conversationManager.conversations[index])
 
                 DiagnosticsLogger.log(
                     .watchConnectivity,

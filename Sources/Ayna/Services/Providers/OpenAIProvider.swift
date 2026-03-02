@@ -161,8 +161,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                     NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
                     var buffer = Data()
-                    var currentToolCallBuffer: [String: Any] = [:]
-                    var toolCallId = ""
+                    var currentToolCallBuffers: [Int: [String: Any]] = [:]
+                    var toolCallIds: [Int: String] = [:]
                     var contentBuffer = ""
                     var reasoningBuffer = ""
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
@@ -193,13 +193,13 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
                                 let result = await OpenAIStreamParser.processStreamLine(
                                     line,
-                                    toolCallBuffer: currentToolCallBuffer,
-                                    toolCallId: toolCallId,
+                                    toolCallBuffers: currentToolCallBuffers,
+                                    toolCallIds: toolCallIds,
                                     onToolCall: streamCallbacks.onToolCall,
                                     onToolCallRequested: streamCallbacks.onToolCallRequested
                                 )
-                                currentToolCallBuffer = result.toolCallBuffer
-                                toolCallId = result.toolCallId
+                                currentToolCallBuffers = result.toolCallBuffers
+                                toolCallIds = result.toolCallIds
 
                                 if let content = result.content {
                                     contentBuffer += content
