@@ -7,10 +7,18 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		B4000200 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5000200 /* Ayna Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B4000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B4000500 /* Ayna-iOS */;
+		};
 		C5000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -21,10 +29,17 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C5000001 /* Sources/Ayna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C5000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Sources/Ayna; sourceTree = SOURCE_ROOT; };
+		D6000001 /* Sources/Ayna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (B4000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, C5000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Sources/Ayna; sourceTree = SOURCE_ROOT; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B4000300 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C5000300 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -35,17 +50,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		C5000400 = {
+		D6000400 = {
 			isa = PBXGroup;
 			children = (
-				C5000001 /* Sources/Ayna */,
-				C5000402 /* Products */,
+				D6000001 /* Sources/Ayna */,
+				D6000402 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		C5000402 /* Products */ = {
+		D6000402 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				B4000200 /* Ayna.app */,
 				C5000200 /* Ayna Watch App.app */,
 			);
 			name = Products;
@@ -54,6 +70,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B4000500 /* Ayna-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B4000700 /* Build configuration list for PBXNativeTarget "Ayna-iOS" */;
+			buildPhases = (
+				B4000600 /* Sources */,
+				B4000300 /* Frameworks */,
+				B4000601 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D6000001 /* Sources/Ayna */,
+			);
+			name = "Ayna-iOS";
+			productName = Ayna;
+			productReference = B4000200 /* Ayna.app */;
+			productType = "com.apple.product-type.application";
+		};
 		C5000500 /* Ayna-watchOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C5000700 /* Build configuration list for PBXNativeTarget "Ayna-watchOS" */;
@@ -67,7 +103,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				C5000001 /* Sources/Ayna */,
+				D6000001 /* Sources/Ayna */,
 			);
 			name = "Ayna-watchOS";
 			productName = "Ayna Watch App";
@@ -77,14 +113,14 @@
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		C5000800 /* Project object */ = {
+		D6000800 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 1620;
 			};
-			buildConfigurationList = C5000900 /* Build configuration list for PBXProject "AynaWatchOS" */;
+			buildConfigurationList = D6000900 /* Build configuration list for PBXProject "AynaMobile" */;
 			compatibilityVersion = "Xcode 16.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -92,18 +128,26 @@
 				en,
 				Base,
 			);
-			mainGroup = C5000400;
+			mainGroup = D6000400;
 			minimizedProjectReferenceProxies = 1;
-			productRefGroup = C5000402 /* Products */;
+			productRefGroup = D6000402 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				B4000500 /* Ayna-iOS */,
 				C5000500 /* Ayna-watchOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B4000601 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C5000601 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -114,6 +158,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B4000600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C5000600 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,7 +175,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		C5000A01 /* Debug */ = {
+		D6000A01 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -186,7 +237,7 @@
 			};
 			name = Debug;
 		};
-		C5000A02 /* Release */ = {
+		D6000A02 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -239,6 +290,60 @@
 			};
 			name = Release;
 		};
+		B4000B01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = ayna;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sources/Ayna/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
+				PRODUCT_NAME = Ayna;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B4000B02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = ayna;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sources/Ayna/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Ayna;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sertacozercan.ayna;
+				PRODUCT_NAME = Ayna;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		C5000B01 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -286,6 +391,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B4000700 /* Build configuration list for PBXNativeTarget "Ayna-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B4000B01 /* Debug */,
+				B4000B02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C5000700 /* Build configuration list for PBXNativeTarget "Ayna-watchOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -295,16 +409,16 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		C5000900 /* Build configuration list for PBXProject "AynaWatchOS" */ = {
+		D6000900 /* Build configuration list for PBXProject "AynaMobile" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C5000A01 /* Debug */,
-				C5000A02 /* Release */,
+				D6000A01 /* Debug */,
+				D6000A02 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = C5000800 /* Project object */;
+	rootObject = D6000800 /* Project object */;
 }

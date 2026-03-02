@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "C5000500"
-               BuildableName = "Ayna Watch App.app"
-               BlueprintName = "Ayna-watchOS"
-               ReferencedContainer = "container:AynaWatchOS.xcodeproj">
+               BlueprintIdentifier = "B4000500"
+               BuildableName = "Ayna.app"
+               BlueprintName = "Ayna-iOS"
+               ReferencedContainer = "container:AynaMobile.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -44,10 +44,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "C5000500"
-            BuildableName = "Ayna Watch App.app"
-            BlueprintName = "Ayna-watchOS"
-            ReferencedContainer = "container:AynaWatchOS.xcodeproj">
+            BlueprintIdentifier = "B4000500"
+            BuildableName = "Ayna.app"
+            BlueprintName = "Ayna-iOS"
+            ReferencedContainer = "container:AynaMobile.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -61,10 +61,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "C5000500"
-            BuildableName = "Ayna Watch App.app"
-            BlueprintName = "Ayna-watchOS"
-            ReferencedContainer = "container:AynaWatchOS.xcodeproj">
+            BlueprintIdentifier = "B4000500"
+            BuildableName = "Ayna.app"
+            BlueprintName = "Ayna-iOS"
+            ReferencedContainer = "container:AynaMobile.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
