@@ -170,6 +170,12 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    /// Flushes all pending debounced saves immediately.
+    /// Call on app termination to prevent data loss.
+    func flushPendingSaves() async {
+        await persistenceCoordinator.flushPendingSaves()
+    }
+
     func delete(_ conversationId: UUID) {
         Task {
             do {

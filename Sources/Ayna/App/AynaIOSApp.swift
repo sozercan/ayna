@@ -71,8 +71,9 @@ struct AynaIOSApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .background {
-                        // Save memory data when app goes to background
+                        // Save memory and flush pending conversation saves when app goes to background
                         Task { @MainActor in
+                            await conversationManager.flushPendingSaves()
                             await MemoryContextProvider.shared.saveAll()
                         }
                     }

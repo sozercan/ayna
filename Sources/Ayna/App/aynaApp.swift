@@ -208,6 +208,15 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Flush pending conversation saves before quitting to prevent data loss
+        Task { @MainActor in
+            await Self.conversationManager?.flushPendingSaves()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         DiagnosticsLogger.log(
             .app,
