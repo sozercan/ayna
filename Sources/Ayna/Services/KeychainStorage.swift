@@ -236,16 +236,11 @@ final class KeychainStorage: Sendable {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceIdentifier,
-            kSecAttrAccount as String: key
-            // iCloud sync disabled for free developer account
-            // kSecAttrSynchronizable as String: kCFBooleanTrue!
+            kSecAttrAccount as String: key,
         ]
-        // Note: Access group for shared keychain requires paid developer account.
-        // Uncomment below if using App Groups:
-        // #if os(iOS) || os(watchOS)
-        // query[kSecAttrAccessGroup as String] = accessGroup
-        // #endif
     }
+
+
 }
 
 extension KeychainStorage: KeychainStoring {}

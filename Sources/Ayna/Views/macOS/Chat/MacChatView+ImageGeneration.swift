@@ -11,26 +11,22 @@ import SwiftUI
 // MARK: - Image Generation & Multi-Model Messaging
 
 extension MacChatView {
-    /// Finds the most recent generated or selected image in the conversation for editing context.
-    func findPreviousImageForEditing() -> Data? {
-        // Look for the most recent assistant message with an image
-        // Prioritize selected responses from multi-model groups
+    /// Finds the storage path of the most recent generated or selected image for editing context.
+    /// Returns a path (cheap) rather than loading full image data on MainActor.
+    private func findPreviousImagePath() -> String? {
         for message in conversation.messages.reversed() {
             guard message.role == .assistant, message.mediaType == .image else { continue }
 
-            // If this message is part of a response group, only use it if it was selected
             if let groupId = message.responseGroupId {
                 if let group = conversation.getResponseGroup(groupId),
                    group.selectedResponseId == message.id
                 {
-                    return message.effectiveImageData
+                    return message.imagePath
                 }
-                // Skip unselected multi-model responses
                 continue
             }
 
-            // Single-model image - use it
-            return message.effectiveImageData
+            return message.imagePath
         }
         return nil
     }
@@ -47,70 +43,81 @@ extension MacChatView {
         )
         conversationManager.addMessage(to: conversation, message: placeholderMessage)
 
-        // Check if we have a previous image to edit
-        if let previousImage = findPreviousImageForEditing() {
-            // Use image editing API for follow-up requests
-            logChat("📝 Using image edit API with previous image context", level: .info)
+        // Find previous image path (cheap, no disk I/O)
+        let previousImagePath = findPreviousImagePath()
 
-            aiService.editImage(
-                prompt: prompt,
-                sourceImage: previousImage,
-                model: model,
-                onComplete: { imageData in
-                    Task { @MainActor in
-                        handleImageGenerationSuccess(imageData: imageData, messageId: messageId)
+        // Load previous image data off MainActor to avoid blocking the UI
+        Task {
+            var previousImage: Data?
+            if let path = previousImagePath {
+                previousImage = await Task.detached(priority: .userInitiated) {
+                    AttachmentStorage.shared.load(path: path)
+                }.value
+            }
+
+            if let previousImage {
+                logChat("📝 Using image edit API with previous image context", level: .info)
+
+                aiService.editImage(
+                    prompt: prompt,
+                    sourceImage: previousImage,
+                    model: model,
+                    onComplete: { imageData in
+                        Task { @MainActor in
+                            handleImageGenerationSuccess(imageData: imageData, messageId: messageId)
+                        }
+                    },
+                    onError: { error in
+                        Task { @MainActor in
+                            handleImageGenerationError(error: error, messageId: messageId)
+                        }
                     }
-                },
-                onError: { error in
-                    Task { @MainActor in
-                        handleImageGenerationError(error: error, messageId: messageId)
+                )
+            } else {
+                aiService.generateImage(
+                    prompt: prompt,
+                    model: model,
+                    onComplete: { imageData in
+                        Task { @MainActor in
+                            handleImageGenerationSuccess(imageData: imageData, messageId: messageId)
+                        }
+                    },
+                    onError: { error in
+                        Task { @MainActor in
+                            handleImageGenerationError(error: error, messageId: messageId)
+                        }
                     }
-                }
-            )
-        } else {
-            // No previous image - use generation API
-            aiService.generateImage(
-                prompt: prompt,
-                model: model,
-                onComplete: { imageData in
-                    Task { @MainActor in
-                        handleImageGenerationSuccess(imageData: imageData, messageId: messageId)
-                    }
-                },
-                onError: { error in
-                    Task { @MainActor in
-                        handleImageGenerationError(error: error, messageId: messageId)
-                    }
-                }
-            )
+                )
+            }
         }
     }
 
     func handleImageGenerationSuccess(imageData: Data, messageId: UUID) {
-        // Save image to disk
-        var imagePath: String?
-        do {
-            imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-        } catch {
-            logChat(
-                "❌ Failed to save generated image: \(error.localizedDescription)", level: .error
-            )
-        }
+        // Save image to disk off MainActor to avoid blocking the UI
+        Task {
+            let imagePath = await Task.detached(priority: .userInitiated) {
+                try? AttachmentStorage.shared.save(data: imageData, extension: "png")
+            }.value
 
-        // Update the placeholder message with actual image using the proper method
-        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-            message.content = ""
-            if let path = imagePath {
-                message.imagePath = path
-                message.imageData = nil // Don't store raw data if saved to disk
-            } else {
-                // Fallback to storing in message if save failed
-                message.imageData = imageData
-                message.imagePath = nil
+            if imagePath == nil {
+                logChat("❌ Failed to save generated image to disk", level: .error)
             }
-        }
 
-        isGenerating = false
+            // Update the placeholder message with actual image using the proper method
+            conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                message.content = ""
+                if let path = imagePath {
+                    message.imagePath = path
+                    message.imageData = nil // Don't store raw data if saved to disk
+                } else {
+                    // Fallback to storing in message if save failed
+                    message.imageData = imageData
+                    message.imagePath = nil
+                }
+            }
+
+            isGenerating = false
+        }
     }
 
     func handleImageGenerationError(error: Error, messageId _: UUID) {
@@ -134,8 +141,8 @@ extension MacChatView {
 
     /// Generates images from multiple models in parallel for comparison
     func generateMultiModelImages(prompt: String, models: [String]) {
-        // Check if we have a previous image to edit
-        let previousImage = findPreviousImageForEditing()
+        // Find previous image path (cheap, no disk I/O)
+        let previousImagePath = findPreviousImagePath()
 
         // Create a response group for the multi-model comparison
         let responseGroupId = UUID()
@@ -181,100 +188,103 @@ extension MacChatView {
         // Track completion state with actor-isolated counter
         let counter = MainActorCompletionCounter(total: models.count)
 
-        // Log whether we're using edit or generation
-        if previousImage != nil {
-            logChat("📝 Using image edit API with previous image context for multi-model", level: .info)
-        }
+        // Load previous image off MainActor, then dispatch parallel generations
+        Task {
+            var previousImage: Data?
+            if let path = previousImagePath {
+                previousImage = await Task.detached(priority: .userInitiated) {
+                    AttachmentStorage.shared.load(path: path)
+                }.value
+            }
 
-        // Generate/edit images in parallel
-        for model in models {
-            guard let messageId = messageIds[model] else { continue }
+            if previousImage != nil {
+                logChat("📝 Using image edit API with previous image context for multi-model", level: .info)
+            }
 
-            let onComplete: @Sendable (Data) -> Void = { imageData in
-                Task { @MainActor in
-                    // Save image to disk
-                    var imagePath: String?
-                    do {
-                        imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png")
-                    } catch {
-                        logChat(
-                            "❌ Failed to save generated image: \(error.localizedDescription)",
-                            level: .error
-                        )
-                    }
+            // Generate/edit images in parallel
+            for model in models {
+                guard let messageId = messageIds[model] else { continue }
 
-                    // Update the placeholder message with actual image
-                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = ""
-                        if let path = imagePath {
-                            message.imagePath = path
-                            message.imageData = nil
-                        } else {
-                            message.imageData = imageData
-                            message.imagePath = nil
+                let onComplete: @Sendable (Data) -> Void = { imageData in
+                    Task { @MainActor in
+                        // Save image to disk off MainActor
+                        let imagePath = await Task.detached(priority: .userInitiated) {
+                            try? AttachmentStorage.shared.save(data: imageData, extension: "png")
+                        }.value
+
+                        // Update the placeholder message with actual image
+                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = ""
+                            if let path = imagePath {
+                                message.imagePath = path
+                                message.imageData = nil
+                            } else {
+                                message.imageData = imageData
+                                message.imagePath = nil
+                            }
+                        }
+
+                        // Update response group status
+                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
+                        {
+                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
+                        }
+
+                        counter.increment()
+                        if counter.isComplete {
+                            isGenerating = false
                         }
                     }
+                }
 
-                    // Update response group status
-                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                       let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                       let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                    {
-                        conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
-                    }
+                let onError: @Sendable (Error) -> Void = { error in
+                    Task { @MainActor in
+                        logChat(
+                            "❌ Image generation failed for \(model): \(error.localizedDescription)",
+                            level: .error,
+                            metadata: ["model": model]
+                        )
 
-                    counter.increment()
-                    if counter.isComplete {
-                        isGenerating = false
+                        // Update response group status to failed
+                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
+                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
+                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
+                        {
+                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
+                        }
+
+                        // Update message with error
+                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = "Image generation failed: \(error.localizedDescription)"
+                        }
+
+                        counter.increment()
+                        if counter.isComplete {
+                            isGenerating = false
+                        }
                     }
                 }
-            }
 
-            let onError: @Sendable (Error) -> Void = { error in
-                Task { @MainActor in
-                    logChat(
-                        "❌ Image generation failed for \(model): \(error.localizedDescription)",
-                        level: .error,
-                        metadata: ["model": model]
+                if let sourceImage = previousImage {
+                    // Use image editing API
+                    aiService.editImage(
+                        prompt: prompt,
+                        sourceImage: sourceImage,
+                        model: model,
+                        onComplete: onComplete,
+                        onError: onError
                     )
-
-                    // Update response group status to failed
-                    if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                       let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                       let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                    {
-                        conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
-                    }
-
-                    // Update message with error
-                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = "Image generation failed: \(error.localizedDescription)"
-                    }
-
-                    counter.increment()
-                    if counter.isComplete {
-                        isGenerating = false
-                    }
+                } else {
+                    // Use image generation API
+                    aiService.generateImage(
+                        prompt: prompt,
+                        model: model,
+                        onComplete: onComplete,
+                        onError: onError
+                    )
                 }
-            }
-
-            if let sourceImage = previousImage {
-                // Use image editing API
-                aiService.editImage(
-                    prompt: prompt,
-                    sourceImage: sourceImage,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
-            } else {
-                // Use image generation API
-                aiService.generateImage(
-                    prompt: prompt,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
             }
         }
     }
@@ -351,6 +361,8 @@ extension MacChatView {
                     else { return }
 
                     conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
+                    // Persist during streaming so content isn't lost on quit
+                    conversationManager.save(conversationManager.conversations[convIndex])
                 }
             },
             onModelComplete: { model in
@@ -379,11 +391,11 @@ extension MacChatView {
                     isGenerating = false
                     logChat("🏁 All models completed", level: .info)
 
-                    // Save the conversation
+                    // Save the conversation immediately on completion
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversationId
                     }) {
-                        conversationManager.save(conversationManager.conversations[convIndex])
+                        conversationManager.saveImmediately(conversationManager.conversations[convIndex])
                     }
                 }
             },
