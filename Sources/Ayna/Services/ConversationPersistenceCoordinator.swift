@@ -96,6 +96,39 @@ actor ConversationPersistenceCoordinator {
         pendingSaves.removeAll()
     }
 
+    /// Flush all pending saves immediately, bypassing the debounce timer.
+    /// Call this on app termination to prevent data loss.
+    func flushPendingSaves() async {
+        // Cancel debounce timers — we'll save directly
+        for task in activeSaveTasks.values {
+            task.cancel()
+        }
+        activeSaveTasks.removeAll()
+
+        // Save all pending conversations
+        let conversationsToSave = pendingSaves
+        pendingSaves.removeAll()
+
+        for (id, conversation) in conversationsToSave {
+            do {
+                try await store.save(conversation)
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .info,
+                    message: "💾 Flushed pending conversation save on shutdown",
+                    metadata: ["id": id.uuidString]
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Failed to flush conversation on shutdown",
+                    metadata: ["id": id.uuidString, "error": error.localizedDescription]
+                )
+            }
+        }
+    }
+
     /// Returns the set of conversation IDs that currently have a pending save queued.
     /// Used to implement "dirty-wins" reload reconciliation.
     func pendingConversationIds() -> Set<UUID> {

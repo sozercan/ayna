@@ -970,6 +970,9 @@ struct MacChatView: View {
                             ] = lastMessage!
                         }
 
+                        // Persist during streaming so content isn't lost on quit
+                        conversationManager.save(conversationManager.conversations[index])
+
                         // Only update UI state if we're currently viewing this conversation
                         if index == conversationIndex {
                             // Clear tool execution indicator when we start receiving actual content
@@ -1001,11 +1004,11 @@ struct MacChatView: View {
                         }
                     }
 
-                    // Always save conversations
+                    // Always save conversations immediately on completion
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        conversationManager.save(conversationManager.conversations[index])
+                        conversationManager.saveImmediately(conversationManager.conversations[index])
                     }
 
                     // Only update UI state if we're viewing this conversation

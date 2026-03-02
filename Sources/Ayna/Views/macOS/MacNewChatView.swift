@@ -435,14 +435,21 @@ struct MacNewChatView: View {
     }
 
     func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
-        var imagePath: String?
-        do { imagePath = try AttachmentStorage.shared.save(data: imageData, extension: "png") } catch {
-            logNewChat("❌ Failed to save generated image: \(error.localizedDescription)", level: .error)
-        }
-        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-            message.content = ""
-            if let path = imagePath { message.imagePath = path; message.imageData = nil } else {
-                message.imageData = imageData; message.imagePath = nil
+        // Save image to disk off MainActor to avoid blocking the UI
+        Task {
+            let imagePath = await Task.detached(priority: .userInitiated) {
+                try? AttachmentStorage.shared.save(data: imageData, extension: "png")
+            }.value
+
+            if imagePath == nil {
+                logNewChat("❌ Failed to save generated image to disk", level: .error)
+            }
+
+            conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                message.content = ""
+                if let path = imagePath { message.imagePath = path; message.imageData = nil } else {
+                    message.imageData = imageData; message.imagePath = nil
+                }
             }
         }
     }
@@ -825,6 +832,8 @@ struct MacNewChatView: View {
                     else { return }
 
                     conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
+                    // Persist during streaming so content isn't lost on quit
+                    conversationManager.save(conversationManager.conversations[convIndex])
                 }
             },
             onModelComplete: { model in
@@ -840,11 +849,11 @@ struct MacNewChatView: View {
                     isGenerating = false
                     logNewChat("🏁 All models completed", level: .info)
 
-                    // Save the conversation
+                    // Save the conversation immediately on completion
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversationId
                     }) {
-                        conversationManager.save(conversationManager.conversations[convIndex])
+                        conversationManager.saveImmediately(conversationManager.conversations[convIndex])
                     }
 
                     // Switch to chat view
@@ -910,6 +919,9 @@ struct MacNewChatView: View {
                         ] = lastMessage
                     }
 
+                    // Persist during streaming so content isn't lost on quit
+                    conversationManager.save(conversationManager.conversations[index])
+
                     if currentToolName != nil {
                         currentToolName = nil
                     }
@@ -917,6 +929,13 @@ struct MacNewChatView: View {
             },
             onComplete: {
                 Task { @MainActor in
+                    // Save immediately on completion
+                    if let index = conversationManager.conversations
+                        .firstIndex(where: { $0.id == conversationId })
+                    {
+                        conversationManager.saveImmediately(conversationManager.conversations[index])
+                    }
+
                     if currentToolName == nil {
                         currentToolName = nil
                         isGenerating = false
