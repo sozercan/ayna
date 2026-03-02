@@ -79,7 +79,7 @@ struct EncryptedMemoryStoreTests {
         try await store.saveMemory(memoryStore)
 
         // Clear
-        try store.clearMemory()
+        try await store.clearMemory()
 
         // Load should return empty
         let loaded = try await store.loadMemory()

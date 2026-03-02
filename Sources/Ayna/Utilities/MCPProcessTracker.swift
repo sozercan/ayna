@@ -40,6 +40,9 @@ final class MCPProcessTracker: Sendable {
 
     func register(serverName: String, pid: pid_t) {
         lock.withLock { trackedPIDs in
+            if let existingPid = trackedPIDs[serverName], existingPid != pid {
+                kill(existingPid, SIGTERM)
+            }
             trackedPIDs[serverName] = pid
         }
         persist()
@@ -83,7 +86,22 @@ final class MCPProcessTracker: Sendable {
         )
 
         for (server, pid) in pidsToClean {
-            terminateProcess(pid: pid, serverName: server)
+            guard pid > 0 else { continue }
+            if kill(pid, 0) == 0 {
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .info,
+                    message: "⚠️ Found persisted MCP PID still running; not terminating to avoid PID reuse risk",
+                    metadata: ["server": server, "pid": "\(pid)"]
+                )
+            } else {
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .info,
+                    message: "ℹ️ Persisted MCP PID no longer exists",
+                    metadata: ["server": server, "pid": "\(pid)"]
+                )
+            }
         }
         persist()
     }

@@ -107,12 +107,7 @@ struct PathValidator {
 
         // Step 2: Create URL and resolve symlinks
         let url = URL(fileURLWithPath: expandedPath)
-        let resolvedURL: URL
-        do {
-            resolvedURL = try url.resolvingSymlinksInPath()
-        } catch {
-            return .denied(reason: "Cannot resolve path: \(error.localizedDescription)")
-        }
+        let resolvedURL = url.resolvingSymlinksInPath()
 
         // Step 3: Standardize the path (removes . and ..)
         let canonicalURL = resolvedURL.standardized
@@ -125,13 +120,13 @@ struct PathValidator {
 
         // Step 5: Check for sensitive filenames
         let filename = canonicalURL.lastPathComponent
-        if sensitiveFilenames.contains(filename) {
+        if sensitiveFilenames.contains(filename.lowercased()) {
             return .requiresApproval(reason: "Sensitive file: \(filename)")
         }
 
         // Also check if any path component matches sensitive filenames
         let pathComponents = canonicalURL.pathComponents
-        for component in pathComponents where sensitiveFilenames.contains(component) {
+        for component in pathComponents where sensitiveFilenames.contains(component.lowercased()) {
             return .requiresApproval(reason: "Path contains sensitive component: \(component)")
         }
 
@@ -246,7 +241,7 @@ struct PathValidator {
 
         for protectedPath in protectedPaths {
             let expandedProtected = expandPath(protectedPath)
-            let protectedURL = URL(fileURLWithPath: expandedProtected).standardized
+            let protectedURL = URL(fileURLWithPath: expandedProtected).resolvingSymlinksInPath()
 
             if isPathWithinDirectory(pathURL, directory: protectedURL) {
                 return "Protected path: \(protectedPath)"

@@ -24,6 +24,7 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
     private let urlSession: URLSession
     private var currentStreamTask: Task<Void, Never>?
+    private var currentNonStreamTask: URLSessionDataTask?
 
     init(urlSession: URLSession) {
         self.urlSession = urlSession
@@ -102,6 +103,8 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
     func cancelRequest() {
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        currentNonStreamTask?.cancel()
+        currentNonStreamTask = nil
     }
 
     // MARK: - Private Methods
@@ -380,6 +383,7 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                 }
             }
         }
+        currentNonStreamTask = task
         task.resume()
     }
 

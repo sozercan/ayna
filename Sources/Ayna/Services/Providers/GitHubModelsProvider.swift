@@ -21,6 +21,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
 
     private let urlSession: URLSession
     private var currentStreamTask: Task<Void, Never>?
+    private var currentNonStreamTask: URLSessionDataTask?
 
     private static let chatCompletionsURL = "https://models.github.ai/inference/chat/completions"
 
@@ -92,6 +93,8 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     func cancelRequest() {
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        currentNonStreamTask?.cancel()
+        currentNonStreamTask = nil
     }
 
     // MARK: - Rate Limit Handling
@@ -424,6 +427,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                 }
             }
         }
+        currentNonStreamTask = task
         task.resume()
     }
 

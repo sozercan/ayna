@@ -67,6 +67,9 @@ struct ResponseGroup: Identifiable, Codable, Equatable {
     /// Mark a response as selected
     mutating func selectResponse(_ messageId: UUID) {
         selectedResponseId = messageId
+        for index in responses.indices where responses[index].status == .selected {
+            responses[index].status = .completed
+        }
         // Update status of all entries
         for index in responses.indices where responses[index].id == messageId {
             responses[index].status = .selected

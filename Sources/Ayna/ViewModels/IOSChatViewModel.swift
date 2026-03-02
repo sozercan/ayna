@@ -326,6 +326,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
         aiService.cancelCurrentRequest()
         isGenerating = false
+        currentToolName = nil
+        toolCallDepth = 0
+        pendingUserMessage = nil
     }
 
     /// Send a message in the current conversation.
@@ -485,6 +488,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 level: .error,
                 message: "❌ Failed to re-fetch conversation after adding messages"
             )
+            isGenerating = false
             return
         }
 
@@ -930,7 +934,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
 
         // Re-fetch conversation with updated messages
-        guard let updatedConversation = self.conversation else { return }
+        guard let updatedConversation = self.conversation else {
+            isGenerating = false
+            return
+        }
         var messagesToSend = Array(updatedConversation.messages.dropLast())
 
         // Prepend system prompt if configured
@@ -967,7 +974,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         // Build messages to send (everything except the new empty assistant message)
-        guard let refreshed = self.conversation else { return }
+        guard let refreshed = self.conversation else {
+            isGenerating = false
+            return
+        }
         var messagesToSend = Array(refreshed.messages.dropLast())
 
         // Prepend system prompt if configured
@@ -1025,7 +1035,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
 
         // Re-fetch conversation with updated messages
-        guard let updatedConversation = self.conversation else { return }
+        guard let updatedConversation = self.conversation else {
+            isGenerating = false
+            return
+        }
         var messagesToSend = Array(updatedConversation.messages.dropLast())
 
         // Prepend system prompt if configured
@@ -1088,10 +1101,11 @@ private extension IOSChatViewModel {
 
     /// Cleans up temporary attached files.
     func cleanupAttachedFiles() {
+        let tempDirPath = FileManager.default.temporaryDirectory.path
         for url in attachedFiles where FileManager.default.fileExists(atPath: url.path) {
-            // Only delete if it's in the temp directory to be safe
-            // Note: temporaryDirectory path might be symlinked, so we just check if it exists and is a file
-            try? FileManager.default.removeItem(at: url)
+            if url.path.hasPrefix(tempDirPath) {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
         attachedFiles.removeAll()
     }
@@ -1109,7 +1123,7 @@ extension IOSChatViewModel {
         let conversationId = targetConversation.id
 
         // Check for image generation and route accordingly
-        if let firstModel = selectedModels.first,
+        if let firstModel = selectedModels.sorted().first,
            aiService.getModelCapability(firstModel) == .imageGeneration
         {
             generateImagesWithMultipleModels(prompt: text, models: Array(selectedModels), conversation: targetConversation)
@@ -1141,7 +1155,10 @@ extension IOSChatViewModel {
         )
         conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
 
-        guard let updatedConversation = conversation else { return }
+        guard let updatedConversation = conversation else {
+            isGenerating = false
+            return
+        }
         var messagesToSend = updatedConversation.getEffectiveHistory().filter { $0.responseGroupId != responseGroupId }
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
             messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
@@ -1223,7 +1240,7 @@ extension IOSChatViewModel {
         var updatedConv = newConv
         updatedConv.activeModels = Array(selectedModels)
         updatedConv.multiModelEnabled = true
-        if let first = selectedModels.first { updatedConv.model = first }
+        if let first = selectedModels.sorted().first { updatedConv.model = first }
         conversationManager.updateConversation(updatedConv)
 
         DiagnosticsLogger.log(.chatView, level: .info, message: "🆕 Created new multi-model conversation",
@@ -1340,6 +1357,13 @@ extension IOSChatViewModel {
             message: "❌ Model failed in iOS multi-model",
             metadata: ["model": model, "error": error.localizedDescription]
         )
+
+        if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }),
+           let group = conv.getResponseGroup(responseGroupId),
+           group.responses.allSatisfy({ $0.status == .failed })
+        {
+            errorMessage = "All models failed"
+        }
     }
 }
 
@@ -1374,10 +1398,18 @@ extension IOSChatViewModel {
 
     /// Handles image generation or editing for a single model
     func generateImage(text: String, assistantMessage: Message, conversationId: UUID) {
-        guard let conversation else { return }
+        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) ?? conversation else {
+            return
+        }
 
         // Check if we have a previous image to edit
-        let previousImage = findPreviousImage()
+        let previousImage = conversation.messages.reversed().first { message in
+            guard message.role == .assistant, message.mediaType == .image else { return false }
+            if let groupId = message.responseGroupId {
+                return conversation.getResponseGroup(groupId)?.selectedResponseId == message.id
+            }
+            return true
+        }?.effectiveImageData
 
         DiagnosticsLogger.log(
             .chatView,

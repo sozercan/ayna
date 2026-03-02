@@ -297,7 +297,7 @@ struct MacChatView: View {
                     isToolSectionExpanded: $isToolSectionExpanded,
                     isGenerating: isGenerating,
                     composerModelLabel: composerModelLabel,
-                    onSendMessage: sendMessage,
+                    onSendMessage: { Task { await sendMessage() } },
                     onAttachFile: attachFile,
                     onShowAppContentPicker: { showAppContentPicker = true },
                     onToggleModelSelection: toggleModelSelection,
@@ -400,7 +400,7 @@ struct MacChatView: View {
         // Use a small delay to ensure the view is fully loaded
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(100))
-            sendMessage()
+            await sendMessage()
         }
     }
 
@@ -647,7 +647,7 @@ struct MacChatView: View {
 
         // Set message text and send
         messageText = message
-        sendMessage()
+        Task { await sendMessage() }
     }
 
     /// Dismiss the current error without retrying
@@ -663,7 +663,7 @@ struct MacChatView: View {
     // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
     // we defer that refactor and explicitly allow the longer body.
     // swiftlint:disable:next function_body_length
-    private func sendMessage() {
+    private func sendMessage() async {
         if isGenerating {
             // Stop generation immediately
             logChat("🛑 Stop button clicked, cancelling...", level: .info)
@@ -733,7 +733,7 @@ struct MacChatView: View {
         )
 
         // Build user message using ChatMessageBuilder
-        let userMessage = ChatMessageBuilder.createUserMessage(
+        let userMessage = await ChatMessageBuilder.createUserMessage(
             text: messageText,
             appContent: attachedAppContent,
             fileURLs: attachedFiles,

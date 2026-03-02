@@ -303,7 +303,7 @@
             }
 
             if !tailLines.isEmpty {
-                let omittedAfter = tailStartIndex - (middleStart + selectedMiddleLines.count)
+                let omittedAfter = tailStartIndex - (middleStart + selectedMiddleLines.count - selectedMiddleLines.filter { $0 == "// ... [code omitted] ..." }.count)
                 if omittedAfter > 10 {
                     resultLines.append("// ... [\(omittedAfter) lines omitted] ...")
                 }

@@ -12,7 +12,7 @@ import SwiftUI
 struct MCPToolSummaryView: View {
     @ObservedObject private var mcpManager = MCPServerManager.shared
     @ObservedObject private var tavilyService = TavilyService.shared
-    private var agentSettingsStore = AgentSettingsStore.shared
+    @ObservedObject private var agentSettingsStore = AgentSettingsStore.shared
     @Binding var isExpanded: Bool
 
     init(isExpanded: Binding<Bool>) {

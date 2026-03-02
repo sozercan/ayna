@@ -81,6 +81,11 @@ enum AnthropicEndpointResolver {
             return cleanBase
         }
 
+        // If the endpoint ends with /v1, append /messages directly
+        if cleanBase.hasSuffix("/v1") {
+            return cleanBase + "/messages"
+        }
+
         // If it contains /v1/ but not /messages, check if it's complete
         if cleanBase.contains("/v1/") {
             // Already has a path under /v1/, use as-is

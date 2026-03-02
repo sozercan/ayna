@@ -146,7 +146,6 @@ struct ServerConfigRow: View {
     let onRetry: () -> Void
 
     @State private var showingTools = false
-    @State private var isEnabled: Bool
 
     init(
         config: MCPServerConfig,
@@ -164,7 +163,6 @@ struct ServerConfigRow: View {
         self.onDelete = onDelete
         self.onToggle = onToggle
         self.onRetry = onRetry
-        _isEnabled = State(initialValue: config.enabled)
     }
 
     var body: some View {
@@ -195,11 +193,14 @@ struct ServerConfigRow: View {
                 }
 
                 // Toggle
-                Toggle("", isOn: $isEnabled)
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { config.enabled },
+                        set: { _ in onToggle() }
+                    )
+                )
                     .labelsHidden()
-                    .onChange(of: isEnabled) { _, _ in
-                        onToggle()
-                    }
 
                 // Actions
                 Menu {
@@ -459,9 +460,10 @@ struct ServerConfigSheet: View {
                         .filter { !$0.isEmpty }
 
                     let envDict = Dictionary(
-                        uniqueKeysWithValues: envVars
+                        envVars
                             .filter { !$0.key.isEmpty }
-                            .map { ($0.key, $0.value) }
+                            .map { ($0.key, $0.value) },
+                        uniquingKeysWith: { _, last in last }
                     )
 
                     let newConfig = MCPServerConfig(

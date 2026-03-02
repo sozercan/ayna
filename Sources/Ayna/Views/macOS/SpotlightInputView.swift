@@ -45,6 +45,7 @@
 
         /// Loading state for content extraction
         @State private var isExtracting: Bool = false
+        @State private var extractionTask: Task<Void, Never>?
 
         /// Focus state for the text field
         @FocusState private var isTextFieldFocused: Bool
@@ -99,6 +100,9 @@
                     isTextFieldFocused = true
                 }
                 checkAccessibilityAndLoadWindows()
+            }
+            .onDisappear {
+                extractionTask?.cancel()
             }
         }
 
@@ -562,7 +566,8 @@
             isExtracting = true
             errorMessage = nil
 
-            Task {
+            extractionTask?.cancel()
+            extractionTask = Task {
                 let result = await AccessibilityService.shared.extractContent(from: window)
                 await MainActor.run {
                     isExtracting = false

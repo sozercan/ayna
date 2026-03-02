@@ -14,6 +14,7 @@ struct GeneralSettingsSection: View {
     @State private var globalSystemPrompt = AppPreferences.globalSystemPrompt
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
+    @State private var showClearConfirmation = false
     @ObservedObject private var aiService = AIService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
@@ -130,11 +131,16 @@ struct GeneralSettingsSection: View {
     private var dataSection: some View {
         Section {
             Button("Clear All Conversations") {
-                conversationManager.clearAllConversations()
+                showClearConfirmation = true
             }
             .foregroundStyle(.red)
         } header: {
             Text("Data")
+        }
+        .confirmationDialog("Clear All Conversations?", isPresented: $showClearConfirmation) {
+            Button("Clear All", role: .destructive) {
+                conversationManager.clearAllConversations()
+            }
         }
     }
 }

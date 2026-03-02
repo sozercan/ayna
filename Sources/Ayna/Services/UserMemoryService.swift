@@ -66,7 +66,7 @@ final class UserMemoryService {
     /// Loads facts received from iOS sync (watchOS only).
     /// Replaces local facts with synced facts and persists to disk.
     func loadFactsFromSync(_ syncedFacts: [UserMemoryFact]) {
-        facts = syncedFacts
+        facts = Array(syncedFacts.prefix(Self.maxFacts))
         isLoaded = true
         scheduleSave() // Persist to disk for offline access
 
@@ -148,11 +148,12 @@ final class UserMemoryService {
 
     /// Clears all facts.
     func clearAllFacts() async {
+        await saveTask?.value
         facts.removeAll()
         saveTask?.cancel()
 
         do {
-            try store.clearMemory()
+            try await store.clearMemory()
             DiagnosticsLogger.log(
                 .conversationManager,
                 level: .info,

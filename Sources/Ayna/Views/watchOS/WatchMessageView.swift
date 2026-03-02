@@ -34,7 +34,7 @@
                     // Message content
                     Text(WatchMarkdownRenderer.render(message.content))
                         .font(Typography.body)
-                        .foregroundStyle(Theme.userBubbleText)
+                        .foregroundStyle(isUser ? Theme.userBubbleText : .primary)
                         .padding(.horizontal, Spacing.bubblePaddingH)
                         .padding(.vertical, Spacing.bubblePaddingV)
                         .background(bubbleBackground)
@@ -166,7 +166,7 @@
                     // Content
                     Text(WatchMarkdownRenderer.render(content))
                         .font(Typography.body)
-                        .foregroundStyle(Theme.userBubbleText)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, Spacing.bubblePaddingH)
                         .padding(.vertical, Spacing.bubblePaddingV)
                         .background(Theme.assistantBubble)

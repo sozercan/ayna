@@ -116,6 +116,9 @@ struct ChatMessageList: View {
                     }
                 }
             }
+            .onDisappear {
+                scrollDebounceTask?.cancel()
+            }
             .onChange(of: conversation.id) { _, _ in
                 onConversationChange()
                 Task { @MainActor in
