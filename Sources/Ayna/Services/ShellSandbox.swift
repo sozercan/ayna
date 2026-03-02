@@ -274,8 +274,8 @@ struct ShellSandbox {
         while index < command.endIndex {
             let char = command[index]
 
-            // Skip backslash-escaped characters to avoid quote desync
-            if char == "\\" {
+            // Skip backslash-escaped characters (only outside single quotes — backslash is literal in single quotes)
+            if char == "\\", !inSingleQuote {
                 index = command.index(index, offsetBy: 2, limitedBy: command.endIndex) ?? command.endIndex
                 continue
             }
