@@ -709,7 +709,12 @@ class GitHubOAuthService: NSObject, ObservableObject {
     /// Generates a cryptographically random code verifier (43-128 chars, base64url)
     private func generateCodeVerifier() -> String {
         var buffer = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, buffer.count, &buffer)
+        let status = SecRandomCopyBytes(kSecRandomDefault, buffer.count, &buffer)
+        guard status == errSecSuccess else {
+            DiagnosticsLogger.log(.app, level: .error, message: "Failed to generate secure random bytes", metadata: ["status": "\(status)"])
+            // Fall back to UUID-based generation as last resort
+            return UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        }
         return Data(buffer).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")

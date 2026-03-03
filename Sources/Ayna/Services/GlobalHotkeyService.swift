@@ -212,14 +212,22 @@
         /// Parses a hotkey string like "⌘⇧Space" and registers it
         /// - Parameter hotkeyString: The hotkey string to parse
         func register(hotkeyString: String) throws {
-            let parsed = parseHotkeyString(hotkeyString)
+            guard let parsed = parseHotkeyString(hotkeyString) else {
+                DiagnosticsLogger.log(
+                    .attachFromApp,
+                    level: .fault,
+                    message: "⚠️ Unrecognized key in hotkey string, skipping registration",
+                    metadata: ["hotkeyString": hotkeyString]
+                )
+                return
+            }
             try register(keyCode: parsed.keyCode, modifiers: parsed.modifiers)
         }
 
-        /// Parses a hotkey string into key code and modifiers
-        private func parseHotkeyString(_ string: String) -> (keyCode: UInt32, modifiers: UInt32) {
+        /// Parses a hotkey string into key code and modifiers; returns nil if no key is recognized
+        private func parseHotkeyString(_ string: String) -> (keyCode: UInt32, modifiers: UInt32)? {
             var modifiers: UInt32 = 0
-            var keyCode = UInt32(kVK_Space) // Default
+            var keyCode: UInt32?
 
             // Parse modifiers
             if string.contains("⌘") || string.lowercased().contains("cmd") {
@@ -248,7 +256,10 @@
             }
             // Add more key mappings as needed
 
-            return (keyCode, modifiers)
+            guard let resolvedKeyCode = keyCode else {
+                return nil
+            }
+            return (resolvedKeyCode, modifiers)
         }
     }
 

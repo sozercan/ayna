@@ -334,10 +334,9 @@ import os.log
 
                     do {
                         try process.run()
-                        process.waitUntilExit()
-
                         let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
                         let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
+                        process.waitUntilExit()
 
                         continuation.resume(returning: GitCommandResult(
                             exitCode: process.terminationStatus,

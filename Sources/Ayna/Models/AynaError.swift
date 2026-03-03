@@ -446,6 +446,12 @@ struct AnyCodable: Codable, Equatable, @unchecked Sendable {
             lhs == rhs
         case let (lhs as String, rhs as String):
             lhs == rhs
+        case let (lhs as [AnyCodable], rhs as [AnyCodable]):
+            lhs == rhs
+        case let (lhs as [String: AnyCodable], rhs as [String: AnyCodable]):
+            lhs == rhs
+        case (is NSNull, is NSNull):
+            true
         default:
             false
         }

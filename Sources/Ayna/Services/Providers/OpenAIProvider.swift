@@ -21,6 +21,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
     private let urlSession: URLSession
     private var currentStreamTask: Task<Void, Never>?
+    private var currentNonStreamTask: URLSessionDataTask?
 
     init(urlSession: URLSession) {
         self.urlSession = urlSession
@@ -100,6 +101,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
     func cancelRequest() {
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        currentNonStreamTask?.cancel()
+        currentNonStreamTask = nil
     }
 
     // MARK: - Private Methods
@@ -161,8 +164,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                     NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
                     var buffer = Data()
-                    var currentToolCallBuffer: [String: Any] = [:]
-                    var toolCallId = ""
+                    var currentToolCallBuffers: [Int: [String: Any]] = [:]
+                    var toolCallIds: [Int: String] = [:]
                     var contentBuffer = ""
                     var reasoningBuffer = ""
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
@@ -193,13 +196,13 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
                                 let result = await OpenAIStreamParser.processStreamLine(
                                     line,
-                                    toolCallBuffer: currentToolCallBuffer,
-                                    toolCallId: toolCallId,
+                                    toolCallBuffers: currentToolCallBuffers,
+                                    toolCallIds: toolCallIds,
                                     onToolCall: streamCallbacks.onToolCall,
                                     onToolCallRequested: streamCallbacks.onToolCallRequested
                                 )
-                                currentToolCallBuffer = result.toolCallBuffer
-                                toolCallId = result.toolCallId
+                                currentToolCallBuffers = result.toolCallBuffers
+                                toolCallIds = result.toolCallIds
 
                                 if let content = result.content {
                                     contentBuffer += content
@@ -378,6 +381,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                 }
             }
         }
+        currentNonStreamTask = task
         task.resume()
     }
 

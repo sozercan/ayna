@@ -297,7 +297,7 @@ struct MacChatView: View {
                     isToolSectionExpanded: $isToolSectionExpanded,
                     isGenerating: isGenerating,
                     composerModelLabel: composerModelLabel,
-                    onSendMessage: sendMessage,
+                    onSendMessage: { Task { await sendMessage() } },
                     onAttachFile: attachFile,
                     onShowAppContentPicker: { showAppContentPicker = true },
                     onToggleModelSelection: toggleModelSelection,
@@ -400,7 +400,7 @@ struct MacChatView: View {
         // Use a small delay to ensure the view is fully loaded
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(100))
-            sendMessage()
+            await sendMessage()
         }
     }
 
@@ -647,7 +647,7 @@ struct MacChatView: View {
 
         // Set message text and send
         messageText = message
-        sendMessage()
+        Task { await sendMessage() }
     }
 
     /// Dismiss the current error without retrying
@@ -663,7 +663,7 @@ struct MacChatView: View {
     // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
     // we defer that refactor and explicitly allow the longer body.
     // swiftlint:disable:next function_body_length
-    private func sendMessage() {
+    private func sendMessage() async {
         if isGenerating {
             // Stop generation immediately
             logChat("🛑 Stop button clicked, cancelling...", level: .info)
@@ -733,7 +733,7 @@ struct MacChatView: View {
         )
 
         // Build user message using ChatMessageBuilder
-        let userMessage = ChatMessageBuilder.createUserMessage(
+        let userMessage = await ChatMessageBuilder.createUserMessage(
             text: messageText,
             appContent: attachedAppContent,
             fileURLs: attachedFiles,
@@ -921,10 +921,7 @@ struct MacChatView: View {
         let mcpManager = MCPServerManager.shared
         let toolsWrapper = UncheckedSendableWrapper(tools)
 
-        // Cache the conversation index to avoid repeated lookups in onChunk
-        let conversationIndex = conversationManager.conversations.firstIndex(where: {
-            $0.id == conversation.id
-        })
+        let conversationId = conversation.id
 
         aiService.sendMessage(
             messages: messages,
@@ -974,7 +971,7 @@ struct MacChatView: View {
                         conversationManager.save(conversationManager.conversations[index])
 
                         // Only update UI state if we're currently viewing this conversation
-                        if index == conversationIndex {
+                        if conversationManager.conversations[index].id == conversationId {
                             // Clear tool execution indicator when we start receiving actual content
                             if currentToolName != nil {
                                 currentToolName = nil
@@ -1012,14 +1009,21 @@ struct MacChatView: View {
                     }
 
                     // Only update UI state if we're viewing this conversation
-                    guard
-                        let currentIndex = conversationManager.conversations.firstIndex(where: {
-                            $0.id == conversation.id
-                        }),
-                        currentIndex == conversationIndex
-                    else {
+                    guard let currentIndex = conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }) else {
+                        isGenerating = false
                         logChat(
-                            "✅ onComplete for conversation \(conversation.id) (background)",
+                            "✅ onComplete for conversation \(conversationId) (background)",
+                            level: .info
+                        )
+                        return
+                    }
+
+                    guard conversationManager.conversations[currentIndex].id == conversationId else {
+                        isGenerating = false
+                        logChat(
+                            "✅ onComplete for conversation \(conversationId) (background)",
                             level: .info
                         )
                         return
@@ -1069,15 +1073,13 @@ struct MacChatView: View {
                     }
 
                     // Only update UI state if we're viewing this conversation
-                    guard
-                        let currentIndex = conversationManager.conversations.firstIndex(where: {
-                            $0.id == conversation.id
-                        }),
-                        currentIndex == conversationIndex
-                    else {
+                    guard conversationManager.conversations.firstIndex(where: {
+                        $0.id == conversationId
+                    }) != nil else {
+                        isGenerating = false
                         let safeMessage = ErrorPresenter.userMessage(for: error)
                         logChat(
-                            "❌ onError for conversation \(conversation.id) (background): \(safeMessage)",
+                            "❌ onError for conversation \(conversationId) (background): \(safeMessage)",
                             level: .error,
                             metadata: ["error": safeMessage]
                         )
@@ -1142,7 +1144,9 @@ struct MacChatView: View {
                             toolName: toolName,
                             arguments: arguments
                         )
-                        lastMessage.toolCalls = [toolCall]
+                        var existingToolCalls = lastMessage.toolCalls ?? []
+                        existingToolCalls.append(toolCall)
+                        lastMessage.toolCalls = existingToolCalls
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
@@ -1205,11 +1209,7 @@ struct MacChatView: View {
                                     })
                                 else {
                                     // Only update UI if viewing this conversation
-                                    if let currentIndex = conversationManager.conversations.firstIndex(where: {
-                                        $0.id == conversation.id
-                                    }),
-                                        currentIndex == conversationIndex
-                                    {
+                                    if conversationManager.conversations.contains(where: { $0.id == conversationId }) {
                                         isGenerating = false
                                         currentToolName = nil
                                         toolCallDepth = 0

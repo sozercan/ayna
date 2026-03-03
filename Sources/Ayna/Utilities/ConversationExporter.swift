@@ -63,7 +63,13 @@ enum ConversationExporter {
     static func generatePDF(for conversation: Conversation) -> URL? {
         // We'll use a temporary URL for the PDF
         let tempDir = FileManager.default.temporaryDirectory
-        let fileName = "\(conversation.title.replacingOccurrences(of: " ", with: "_")).pdf"
+        let sanitized = conversation.title
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "..", with: "_")
+            .filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" || $0 == "." }
+        let fileName = sanitized.isEmpty ? "conversation.pdf" : "\(sanitized).pdf"
         let pdfURL = tempDir.appendingPathComponent(fileName)
 
         // Page setup
@@ -135,6 +141,7 @@ enum ConversationExporter {
 
         // Create PDF Context
         guard let pdfContext = CGContext(pdfURL as CFURL, mediaBox: nil, nil) else {
+            DiagnosticsLogger.log(.app, level: .error, message: "Failed to create PDF context")
             return nil
         }
 
@@ -172,6 +179,7 @@ enum ConversationExporter {
                 framesetter, CFRange(location: currentTextRange.location, length: 0), path, nil
             )
             let frameRange = CTFrameGetVisibleStringRange(frame)
+            if frameRange.length == 0 { break }
 
             CTFrameDraw(frame, pdfContext)
 

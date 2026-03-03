@@ -167,13 +167,31 @@ enum OpenAIRequestBuilder {
                         continue
                     }
 
-                    // Check if the preceding message is an assistant with matching tool_call
-                    if index > 0 {
-                        let prevMessage = messages[index - 1]
-                        if prevMessage.role == .assistant,
-                           let toolCalls = prevMessage.toolCalls,
-                           toolCalls.contains(where: { $0.id == toolCallId })
-                        {
+                    // Check if a preceding assistant message has matching tool_call
+                    if index == 0 {
+                        DiagnosticsLogger.log(
+                            .aiService,
+                            level: .info,
+                            message: "⚠️ Skipping orphaned/mismatched tool message",
+                            metadata: ["index": "\(index)", "toolCallId": toolCallId]
+                        )
+                    } else {
+                        var foundAssistant = false
+                        for prevIdx in stride(from: index - 1, through: 0, by: -1) {
+                            let prevMessage = messages[prevIdx]
+                            if prevMessage.role == .assistant {
+                                if let toolCalls = prevMessage.toolCalls,
+                                   toolCalls.contains(where: { $0.id == toolCallId }) {
+                                    foundAssistant = true
+                                }
+                                break
+                            } else if prevMessage.role == .tool {
+                                continue // Skip other tool messages in the sequence
+                            } else {
+                                break
+                            }
+                        }
+                        if foundAssistant {
                             // Valid tool message with matching ID - keep it
                             filteredMessages.append(message)
                         } else {

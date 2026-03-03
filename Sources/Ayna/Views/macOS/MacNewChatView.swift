@@ -309,7 +309,7 @@ struct MacNewChatView: View {
             composerModelLabel: composerModelLabel,
             textEditorIdentifier: TestIdentifiers.NewChatComposer.textEditor,
             sendButtonIdentifier: TestIdentifiers.NewChatComposer.sendButton,
-            onSendMessage: sendMessage,
+            onSendMessage: { Task { await sendMessage() } },
             onAttachFile: attachFile,
             onShowAppContentPicker: { showAppContentPicker = true },
             onToggleModelSelection: toggleModelSelection,
@@ -456,7 +456,7 @@ struct MacNewChatView: View {
 
     // MARK: - Send Message
 
-    private func sendMessage() {
+    private func sendMessage() async {
         dismissError()
         if isGenerating {
             // Stop generation immediately
@@ -524,7 +524,7 @@ struct MacNewChatView: View {
         conversationManager.updateConversation(updatedConversation)
 
         // Build user message using ChatMessageBuilder
-        let userMessage = ChatMessageBuilder.createUserMessage(
+        let userMessage = await ChatMessageBuilder.createUserMessage(
             text: textToSend,
             appContent: attachedAppContent,
             fileURLs: filesToSend,
@@ -709,8 +709,7 @@ struct MacNewChatView: View {
         // Create response group
         let responseGroup = ResponseGroup(
             id: responseGroupId,
-            userMessageId: conversation.messages.first(where: { $0.role == .user })?.id
-                ?? conversation.messages.last(where: { $0.role == .user })?.id ?? UUID(),
+            userMessageId: conversation.messages.last(where: { $0.role == .user })?.id ?? UUID(),
             responses: responseEntries
         )
 

@@ -393,7 +393,7 @@
                 }
 
                 // Create a unique ID using index since we can't easily get CGWindowID from AXUIElement
-                let windowId = CGWindowID(app.processIdentifier * 1000 + Int32(index))
+                let windowId = CGWindowID(app.processIdentifier * 100_000 + Int32(index))
 
                 let windowInfo = WindowInfo(
                     id: windowId,

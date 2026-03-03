@@ -122,8 +122,8 @@ enum OpenAIEndpointResolver {
 
     /// Checks if the given endpoint is an Azure OpenAI endpoint.
     static func isAzureEndpoint(_ endpoint: String?) -> Bool {
-        guard let endpoint else { return false }
-        return endpoint.lowercased().contains("openai.azure.com")
+        guard let endpoint, let url = URL(string: endpoint), let host = url.host?.lowercased() else { return false }
+        return host == "openai.azure.com" || host.hasSuffix(".openai.azure.com")
     }
 
     // MARK: - Private Helpers
@@ -216,8 +216,15 @@ enum OpenAIEndpointResolver {
 
     private static func appendPathIfNeeded(_ endpoint: String, path: String) -> String {
         let cleanBase = sanitizedBaseEndpoint(endpoint)
-        if cleanBase.hasSuffix(path) || cleanBase.contains(path) {
+        if cleanBase.hasSuffix(path) {
             return cleanBase
+        }
+        // Strip partial prefix overlap (e.g. cleanBase ending in /v1 when path is /v1/chat/completions)
+        for length in stride(from: path.count - 1, through: 1, by: -1) {
+            let prefix = String(path.prefix(length))
+            if cleanBase.hasSuffix(prefix) {
+                return String(cleanBase.dropLast(prefix.count)) + path
+            }
         }
         return "\(cleanBase)\(path.hasPrefix("/") ? "" : "/")\(path)"
     }

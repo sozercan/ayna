@@ -208,7 +208,16 @@ final class ConversationManager: ObservableObject {
                 decodedFromDisk[index].model = defaultModel
                 let conversationToSave = decodedFromDisk[index]
                 Task {
-                    try? await store.save(conversationToSave)
+                    do {
+                        try await store.save(conversationToSave)
+                    } catch {
+                        DiagnosticsLogger.log(
+                            .conversationManager,
+                            level: .error,
+                            message: "Failed to save conversation",
+                            metadata: ["error": "\(error)"]
+                        )
+                    }
                 }
             }
 
@@ -216,8 +225,14 @@ final class ConversationManager: ObservableObject {
             // - Disk is the authoritative snapshot for non-dirty conversations
             // - In-memory wins for conversations that have pending saves queued
             let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            let memoryById = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
-            let diskById = Dictionary(uniqueKeysWithValues: decodedFromDisk.map { ($0.id, $0) })
+            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID in memory", metadata: ["id": "\(new.id)"])
+                return new
+            })
+            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID on disk", metadata: ["id": "\(new.id)"])
+                return new
+            })
 
             var reconciled: [Conversation] = []
             reconciled.reserveCapacity(max(memoryById.count, diskById.count))
@@ -271,18 +286,10 @@ final class ConversationManager: ObservableObject {
                 level: .error,
                 metadata: ["error": error.localizedDescription]
             )
-            logManager("⚠️ Clearing corrupted conversation data", level: .default)
-            do {
-                try store.clear()
-            } catch {
-                logManager(
-                    "❌ Failed to clear corrupted store",
-                    level: .error,
-                    metadata: ["error": error.localizedDescription]
-                )
+            if conversations.isEmpty {
+                conversations = []
+                conversationIndexCache.removeAll()
             }
-            conversations = []
-            conversationIndexCache.removeAll()
             isLoaded = true
         }
     }
@@ -317,6 +324,12 @@ final class ConversationManager: ObservableObject {
     func createNewConversation(title: String = "New Conversation") {
         let defaultModel = AIService.shared.selectedModel
         let conversation = Conversation(title: title, model: defaultModel)
+        conversations.insert(conversation, at: 0)
+        updateCacheForInsertion(at: 0)
+        save(conversation)
+    }
+
+    func insertConversationFromSync(_ conversation: Conversation) {
         conversations.insert(conversation, at: 0)
         updateCacheForInsertion(at: 0)
         save(conversation)
@@ -753,6 +766,7 @@ final class ConversationManager: ObservableObject {
 
             // Insert and save
             conversations.insert(conversation, at: 0)
+            updateCacheForInsertion(at: 0)
             save(conversation)
 
             // Select the new conversation

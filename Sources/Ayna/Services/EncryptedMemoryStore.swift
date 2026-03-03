@@ -110,10 +110,13 @@ final class EncryptedMemoryStore: Sendable {
     }
 
     /// Clears all user memory.
-    func clearMemory() throws {
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try FileManager.default.removeItem(at: fileURL)
-        }
+    func clearMemory() async throws {
+        let fileURL = fileURL
+        try await Task.detached(priority: .userInitiated) {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+        }.value
         DiagnosticsLogger.log(
             .encryptedStore,
             level: .info,

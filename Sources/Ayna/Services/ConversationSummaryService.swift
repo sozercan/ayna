@@ -266,6 +266,7 @@ final class ConversationSummaryService {
 
     /// Clears all summaries.
     func clearAllSummaries() async {
+        await saveTask?.value
         digest = RecentConversationsDigest()
         saveTask?.cancel()
 

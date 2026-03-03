@@ -34,7 +34,6 @@ struct ShellSandbox {
         "git",
         // Development tools (read-only)
         "npm", "yarn", "pnpm", "swift", "swiftc", "xcodebuild",
-        "python", "python3", "ruby", "node",
         // System info
         "echo", "pwd", "which", "whereis", "env", "printenv",
         "uname", "hostname", "date", "whoami",
@@ -88,6 +87,12 @@ struct ShellSandbox {
         "brew install --cask",
         "pip install --user",
         "npm install -g"
+    ]
+
+    /// Commands that require user approval due to arbitrary code execution potential.
+    /// These are not in `defaultAllowed` but are allowed with explicit user approval.
+    static let requiresApprovalCommands: Set<String> = [
+        "python", "python3", "ruby", "node"
     ]
 
     /// Commands that are always blocked regardless of arguments.
@@ -263,14 +268,28 @@ struct ShellSandbox {
         // Track quote state to avoid false positives in single-quoted strings
         // (single quotes prevent substitution in shells)
         var inSingleQuote = false
+        var inDoubleQuote = false
         var index = command.startIndex
 
         while index < command.endIndex {
             let char = command[index]
 
-            // Toggle single quote state
-            if char == "'" {
+            // Skip backslash-escaped characters (only outside single quotes — backslash is literal in single quotes)
+            if char == "\\", !inSingleQuote {
+                index = command.index(index, offsetBy: 2, limitedBy: command.endIndex) ?? command.endIndex
+                continue
+            }
+
+            // Toggle single quote state (only when not inside double quotes)
+            if char == "'", !inDoubleQuote {
                 inSingleQuote.toggle()
+                index = command.index(after: index)
+                continue
+            }
+
+            // Toggle double quote state (only when not inside single quotes)
+            if char == "\"", !inSingleQuote {
+                inDoubleQuote.toggle()
                 index = command.index(after: index)
                 continue
             }
@@ -413,6 +432,11 @@ struct ShellSandbox {
             return .allowed
         }
 
+        // Interpreter commands always require approval (arbitrary code execution risk)
+        if Self.requiresApprovalCommands.contains(commandName.lowercased()) {
+            return .requiresApproval
+        }
+
         // Not in allowed list
         if allowUnlistedCommands {
             return .requiresApproval
@@ -430,6 +454,7 @@ struct ShellSandbox {
             // git push --force, git reset --hard, etc.
             return lowercased.contains("--force") ||
                 lowercased.contains("-f ") ||
+                lowercased.hasSuffix("-f") ||
                 lowercased.contains("reset --hard") ||
                 lowercased.contains("clean -fd") ||
                 lowercased.contains("checkout .") ||
@@ -449,6 +474,11 @@ struct ShellSandbox {
         case "mv", "cp":
             // Moving/copying over existing files
             return lowercased.contains("-f") || lowercased.contains("--force")
+
+        case "python", "python3", "ruby", "node":
+            // -c/-e flags allow arbitrary inline code execution
+            return lowercased.contains(" -c ") || lowercased.hasSuffix(" -c") ||
+                lowercased.contains(" -e ") || lowercased.hasSuffix(" -e")
 
         default:
             return false

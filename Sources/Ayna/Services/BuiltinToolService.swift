@@ -27,7 +27,13 @@ import os.log
     /// Thread-safe accumulator for pipe data from Process stdout/stderr.
     private final class PipeAccumulator: @unchecked Sendable {
         private let lock = NSLock()
+        private let maxSize: Int
         private var _data = Data()
+        private var _truncated = false
+
+        init(maxSize: Int) {
+            self.maxSize = maxSize
+        }
 
         var data: Data {
             lock.lock()
@@ -35,10 +41,27 @@ import os.log
             return _data
         }
 
+        var truncated: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return _truncated
+        }
+
         func append(_ newData: Data) {
             lock.lock()
             defer { lock.unlock() }
-            _data.append(newData)
+            if _data.count >= maxSize {
+                _truncated = true
+                return
+            }
+
+            let remaining = maxSize - _data.count
+            if newData.count > remaining {
+                _data.append(newData.prefix(remaining))
+                _truncated = true
+            } else {
+                _data.append(newData)
+            }
         }
     }
 
@@ -59,6 +82,9 @@ import os.log
 
         /// Maximum file size to read (10 MB)
         let maxReadSize: Int = 10 * 1024 * 1024
+
+        /// Maximum command output size to accumulate (10 MB)
+        let maxOutputSize: Int = 10_485_760
 
         /// Maximum search results
         private let maxSearchResults: Int = 100
@@ -496,6 +522,9 @@ import os.log
                 let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
                 guard resourceValues?.isRegularFile == true else { continue }
 
+                let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                if let size = attrs?[.size] as? Int, size > maxReadSize { continue }
+
                 // Read file
                 guard let data = try? Data(contentsOf: fileURL),
                       !isBinaryData(data),
@@ -673,8 +702,8 @@ import os.log
                             // Sequential reads can deadlock if one pipe fills its buffer
                             // while we're blocked reading the other.
                             // Use readabilityHandler to drain pipes as data arrives.
-                            let stdoutAccumulator = PipeAccumulator()
-                            let stderrAccumulator = PipeAccumulator()
+                            let stdoutAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
+                            let stderrAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
 
                             stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
                                 let data = handle.availableData
@@ -712,8 +741,11 @@ import os.log
 
                             let duration = Date().timeIntervalSince(startTime)
 
-                            let stdout = String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
-                            let stderr = String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
+                            var stdout = String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
+                            var stderr = String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
+                            let truncationNote = "\n[Output truncated at \(self.maxOutputSize / 1024 / 1024)MB]"
+                            if stdoutAccumulator.truncated { stdout += truncationNote }
+                            if stderrAccumulator.truncated { stderr += truncationNote }
 
                             let commandResult = CommandResult(
                                 exitCode: process.terminationStatus,

@@ -103,19 +103,17 @@
                         mergedConv.title = existingConv.title
                     }
 
-                    // CRITICAL: If local has MORE messages than iPhone, keep local messages
-                    // This happens during streaming when we've added a placeholder assistant message
-                    // but haven't synced it back to iPhone yet
-                    if existingConv.messages.count > newConv.messages.count {
+                    // Keep messages from the newer conversation state
+                    if existingConv.updatedAt > newConv.updatedAt {
                         mergedConv.messages = existingConv.messages
                         mergedConv.updatedAt = existingConv.updatedAt
                         DiagnosticsLogger.log(
                             .watchConnectivity,
                             level: .debug,
-                            message: "⌚ Preserved local messages during sync (local has more)",
+                            message: "⌚ Preserved local messages during sync (local is newer)",
                             metadata: [
-                                "localCount": "\(existingConv.messages.count)",
-                                "remoteCount": "\(newConv.messages.count)"
+                                "localUpdatedAt": "\(existingConv.updatedAt.timeIntervalSince1970)",
+                                "remoteUpdatedAt": "\(newConv.updatedAt.timeIntervalSince1970)"
                             ]
                         )
                     }
@@ -200,6 +198,7 @@
                     message: "⌚ updateLastMessage: index=\(lastIndex) role='\(role)' content='\(content.prefix(20))...'"
                 )
                 conversations[convIndex].messages[lastIndex].content = content
+                saveToDisk()
             }
         }
 

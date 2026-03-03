@@ -47,7 +47,7 @@ final class StreamingChunkBuffer {
     private let config: Config
 
     /// Callback for delivering accumulated chunks
-    private let onDeliver: (String) -> Void
+    fileprivate var onDeliver: (String) -> Void
 
     // MARK: - Initialization
 
@@ -159,6 +159,7 @@ final class MultiModelStreamingBuffer {
     /// Get or create a buffer for a specific model
     func buffer(for model: String, onDeliver: @escaping (String) -> Void) -> StreamingChunkBuffer {
         if let existing = buffers[model] {
+            existing.onDeliver = onDeliver
             return existing
         }
 

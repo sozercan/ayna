@@ -326,7 +326,7 @@ final class OpenAIImageService: @unchecked Sendable {
             {
                 Task {
                     do {
-                        let (imageData, _) = try await URLSession.shared.data(from: url)
+                        let (imageData, _) = try await self.urlSession.data(from: url)
                         await MainActor.run {
                             onComplete(imageData)
                         }
@@ -456,7 +456,8 @@ final class OpenAIImageService: @unchecked Sendable {
     private func executeEditRequest(
         _ request: URLRequest,
         onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void
+        onError: @escaping @Sendable (Error) -> Void,
+        attempt: Int = 0
     ) {
         let circuitKey = NetworkCircuitBreaker.key(for: request.url, label: "openai.image.edit")
         let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
@@ -476,8 +477,15 @@ final class OpenAIImageService: @unchecked Sendable {
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
-                Task { @MainActor in
-                    onError(error)
+                if AIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
+                    Task { @MainActor [weak self] in
+                        await AIRetryPolicy.wait(for: attempt)
+                        self?.executeEditRequest(request, onComplete: onComplete, onError: onError, attempt: attempt + 1)
+                    }
+                } else {
+                    Task { @MainActor in
+                        onError(error)
+                    }
                 }
                 return
             }

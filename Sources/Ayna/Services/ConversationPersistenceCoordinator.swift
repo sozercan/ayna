@@ -142,17 +142,16 @@ actor ConversationPersistenceCoordinator {
         let conversationsToSave = pendingSaves
         pendingSaves.removeAll()
 
+        // B39: Track which items were saved or error-handled so we can requeue the rest on cancellation.
+        var handledIds = Set<UUID>()
+
         for (id, conversation) in conversationsToSave {
-            // Guard: skip if task was cancelled during debounce period
-            guard !Task.isCancelled else {
-                activeSaveTasks.removeValue(forKey: id)
-                continue
-            }
+            // B39: Break (not continue) so unprocessed items can be requeued below.
+            guard !Task.isCancelled else { break }
 
             do {
                 try await store.save(conversation)
-                // Remove from active tasks AFTER save completes to prevent concurrent writes
-                activeSaveTasks.removeValue(forKey: id)
+                handledIds.insert(id)
                 DiagnosticsLogger.log(
                     .conversationManager,
                     level: .debug,
@@ -160,8 +159,7 @@ actor ConversationPersistenceCoordinator {
                     metadata: ["id": id.uuidString]
                 )
             } catch {
-                // Also remove on error to allow future saves
-                activeSaveTasks.removeValue(forKey: id)
+                handledIds.insert(id)
                 DiagnosticsLogger.log(
                     .conversationManager,
                     level: .error,
@@ -179,5 +177,16 @@ actor ConversationPersistenceCoordinator {
                 }
             }
         }
+
+        // B39: Requeue any items skipped due to Task cancellation, unless a newer
+        // version was already enqueued by enqueueSave during a suspension point.
+        for (id, conversation) in conversationsToSave where !handledIds.contains(id) {
+            if pendingSaves[id] == nil {
+                pendingSaves[id] = conversation
+            }
+        }
+        // B32: activeSaveTasks entries are NOT removed here. enqueueSave is the sole
+        // writer to activeSaveTasks[id], ensuring a newer task is never accidentally
+        // removed after an await suspension in store.save().
     }
 }

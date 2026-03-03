@@ -211,17 +211,24 @@ enum AnthropicRequestBuilder {
                         continue
                     }
 
-                    // Verify the preceding message is an assistant with matching tool_call
-                    if index > 0 {
-                        let prevMessage = messages[index - 1]
-                        guard prevMessage.role == .assistant,
-                              let toolCalls = prevMessage.toolCalls,
-                              toolCalls.contains(where: { $0.id == toolCallId })
-                        else {
-                            // Orphaned tool message - skip it
-                            continue
+                    // Verify a preceding assistant message has matching tool_call
+                    if index == 0 { continue }
+                    var foundAssistant = false
+                    for prevIdx in stride(from: index - 1, through: 0, by: -1) {
+                        let prevMessage = messages[prevIdx]
+                        if prevMessage.role == .assistant {
+                            if let toolCalls = prevMessage.toolCalls,
+                               toolCalls.contains(where: { $0.id == toolCallId }) {
+                                foundAssistant = true
+                            }
+                            break
+                        } else if prevMessage.role == .tool {
+                            continue // Skip other tool messages in the sequence
+                        } else {
+                            break
                         }
                     }
+                    if !foundAssistant { continue } // Skip orphaned tool message
 
                     // Convert to Anthropic tool_result format (user role with tool_result content)
                     let toolResultBlock = buildToolResultContent(

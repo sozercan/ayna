@@ -224,14 +224,20 @@ enum MarkdownRenderer {
 
     private nonisolated static func headingLevel(for line: String) -> Int? {
         let level = line.prefix { $0 == "#" }.count
-        return level > 0 && level <= 6 && line.count > level ? level : nil
+        guard level > 0 && level <= 6 && line.count > level else { return nil }
+        guard line[line.index(line.startIndex, offsetBy: level)] == " " else { return nil }
+        return level
     }
 
     private nonisolated static func isHorizontalRule(_ line: String) -> Bool {
         if line.count < 3 { return false }
         let allowed = CharacterSet(charactersIn: "-_* ")
-        return line.trimmingCharacters(in: allowed).isEmpty
+        guard line.trimmingCharacters(in: allowed).isEmpty
             && line.replacingOccurrences(of: " ", with: "").count >= 3
+        else { return false }
+        let nonSpace = line.filter { $0 != " " }
+        guard let ruleChar = nonSpace.first, nonSpace.allSatisfy({ $0 == ruleChar }) else { return false }
+        return true
     }
 
     private nonisolated static func parseBlockquote(from lines: [String], startingAt index: Int) -> (

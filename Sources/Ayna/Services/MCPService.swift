@@ -53,12 +53,23 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     private var outputBuffer = ""
 
+    private let stateLock = NSLock()
+
+    @discardableResult
+    private func withLock<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
     init(serverConfig: MCPServerConfig) {
         self.serverConfig = serverConfig
     }
 
     deinit {
-        disconnect()
+        healthCheckTask?.cancel()
+        process?.terminate()
+        standardInput = nil
     }
 
     // MARK: - Connection Management
@@ -132,10 +143,12 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        self.process = process
-        standardInput = inputPipe
-        standardOutput = outputPipe
-        standardError = errorPipe
+        withLock {
+            self.process = process
+            standardInput = inputPipe
+            standardOutput = outputPipe
+            standardError = errorPipe
+        }
         process.terminationHandler = { [weak self] process in
             guard let self else { return }
             handleProcessTermination(exitCode: process.terminationStatus)
@@ -222,8 +235,12 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     }
 
     func disconnect() {
-        guard !isDisconnectingManually else { return }
-        isDisconnectingManually = true
+        let alreadyDisconnecting = withLock {
+            if isDisconnectingManually { return true }
+            isDisconnectingManually = true
+            return false
+        }
+        guard !alreadyDisconnecting else { return }
 
         stopHealthCheckTimer()
 
@@ -231,8 +248,11 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         cleanupProcessResources()
 
         // Capture process reference before clearing
-        let processToTerminate = process
-        process = nil
+        let processToTerminate = withLock {
+            let p = process
+            process = nil
+            return p
+        }
 
         // Unregister from process tracker
         MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
@@ -246,8 +266,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         }
 
         Task { @MainActor [weak self] in
-            self?.isConnected = false
-            self?.isDisconnectingManually = false
+            guard let self else { return }
+            isConnected = false
+            withLock { isDisconnectingManually = false }
         }
     }
 
@@ -360,26 +381,28 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     @MainActor
     private func sendRequest(method: String, params: [String: AnyCodable]?) async throws -> MCPResponse {
-        requestId += 1
-        let id = requestId
+        let id = withLock {
+            requestId += 1
+            return requestId
+        }
 
         return try await withCheckedThrowingContinuation { continuation in
-            pendingRequests[id] = continuation
+            withLock { pendingRequests[id] = continuation }
 
             let request = MCPRequest(id: id, method: method, params: params)
 
             do {
                 let data = try JSONEncoder().encode(request)
                 guard var jsonString = String(data: data, encoding: .utf8) else {
-                    pendingRequests.removeValue(forKey: id)
+                    withLock { pendingRequests.removeValue(forKey: id) }
                     continuation.resume(throwing: MCPServiceError.encodingFailed)
                     return
                 }
 
                 jsonString += "\n"
 
-                guard let inputHandle = standardInput?.fileHandleForWriting else {
-                    pendingRequests.removeValue(forKey: id)
+                guard let inputHandle = withLock({ standardInput?.fileHandleForWriting }) else {
+                    withLock { pendingRequests.removeValue(forKey: id) }
                     continuation.resume(throwing: MCPServiceError.notConnected)
                     return
                 }
@@ -388,7 +411,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     inputHandle.write(data)
                 }
             } catch {
-                pendingRequests.removeValue(forKey: id)
+                withLock { pendingRequests.removeValue(forKey: id) }
                 continuation.resume(throwing: error)
             }
         }
@@ -408,7 +431,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
         jsonString += "\n"
 
-        guard let inputHandle = standardInput?.fileHandleForWriting else {
+        guard let inputHandle = withLock({ standardInput?.fileHandleForWriting }) else {
             throw MCPServiceError.notConnected
         }
 
@@ -418,7 +441,12 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     }
 
     private func handleOutput(_ output: String) {
-        do {
+        let completedLines: [String] = withLock {
+            if outputBuffer.count + output.count > 1_048_576 {
+                DiagnosticsLogger.log(.mcpService, level: .error, message: "MCP output buffer exceeded 1MB limit, clearing")
+                outputBuffer = ""
+                return []
+            }
             outputBuffer += output
 
             // Process complete JSON-RPC messages (newline-delimited)
@@ -431,20 +459,15 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 outputBuffer = ""
             }
 
-            // Process complete lines
-            for line in lines.dropLast() {
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
+            return Array(lines.dropLast())
+        }
 
-                processJSONRPCMessage(trimmed)
-            }
-        } catch {
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .error,
-                message: "Error handling MCP output",
-                metadata: ["server": serverConfig.name, "error": error.localizedDescription]
-            )
+        // Process complete lines
+        for line in completedLines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            processJSONRPCMessage(trimmed)
         }
     }
 
@@ -465,7 +488,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
             if let id = response.id {
                 Task { @MainActor in
-                    if let continuation = self.pendingRequests.removeValue(forKey: id) {
+                    if let continuation = self.withLock({ self.pendingRequests.removeValue(forKey: id) }) {
                         continuation.resume(returning: response)
                     } else {
                         DiagnosticsLogger.log(
@@ -617,7 +640,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         // This is important because the sandboxed app may not have access to the same PATH
         let shellProcess = Process()
         shellProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
-        shellProcess.arguments = ["-l", "-c", "which \(command)"]
+        shellProcess.arguments = ["-l", "-c", "which '\(command.replacingOccurrences(of: "'", with: "'\\''"))'"]
 
         // Set up environment to use the user's actual PATH
         var environment = ProcessInfo.processInfo.environment
@@ -677,30 +700,35 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private func startHealthCheckTimer() {
         stopHealthCheckTimer()
 
-        healthCheckTask = Task { [weak self] in
+        let task = Task { [weak self] in
             // Initial delay before first check
             try? await Task.sleep(for: .seconds(5))
 
             while !Task.isCancelled {
                 guard let self else { return }
-                if !(self.process?.isRunning ?? false) {
-                    self.handleProcessTermination(exitCode: self.process?.terminationStatus)
+                let running = self.withLock { self.process?.isRunning ?? false }
+                if !running {
+                    let status = self.withLock { self.process?.terminationStatus }
+                    self.handleProcessTermination(exitCode: status)
                     return
                 }
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+        withLock { healthCheckTask = task }
     }
 
     private func stopHealthCheckTimer() {
-        healthCheckTask?.cancel()
-        healthCheckTask = nil
+        withLock {
+            healthCheckTask?.cancel()
+            healthCheckTask = nil
+        }
     }
 
     private func handleProcessTermination(exitCode: Int32?) {
         stopHealthCheckTimer()
         cleanupProcessResources()
-        process = nil
+        withLock { process = nil }
         let message: String? =
             if let exitCode, exitCode != 0 {
                 "Exited with code \(exitCode)"
@@ -713,8 +741,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private func handleUnexpectedDisconnect(reason: String?) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if isDisconnectingManually {
-                isDisconnectingManually = false
+            if withLock({ isDisconnectingManually }) {
+                withLock { isDisconnectingManually = false }
                 return
             }
 
@@ -736,11 +764,20 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     }
 
     private func cleanupProcessResources() {
-        standardOutput?.fileHandleForReading.readabilityHandler = nil
-        standardError?.fileHandleForReading.readabilityHandler = nil
-        standardInput = nil
-        standardOutput = nil
-        standardError = nil
+        let pending: [Int: CheckedContinuation<MCPResponse, Error>] = withLock {
+            standardOutput?.fileHandleForReading.readabilityHandler = nil
+            standardError?.fileHandleForReading.readabilityHandler = nil
+            standardInput = nil
+            standardOutput = nil
+            standardError = nil
+            let p = pendingRequests
+            pendingRequests.removeAll()
+            return p
+        }
+
+        for (_, continuation) in pending {
+            continuation.resume(throwing: MCPServiceError.notConnected)
+        }
     }
 }
 

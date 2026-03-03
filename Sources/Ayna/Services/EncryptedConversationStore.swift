@@ -128,10 +128,20 @@ final class EncryptedConversationStore: Sendable {
                 }
 
                 var conversations: [Conversation] = []
+                var failedCount = 0
                 for await conversation in group {
                     if let conversation {
                         conversations.append(conversation)
+                    } else {
+                        failedCount += 1
                     }
+                }
+                if failedCount > 0 && conversations.isEmpty {
+                    DiagnosticsLogger.log(
+                        .encryptedStore, level: .error,
+                        message: "❌ All conversations failed to decrypt",
+                        metadata: ["failedCount": "\(failedCount)"]
+                    )
                 }
                 return conversations
             }

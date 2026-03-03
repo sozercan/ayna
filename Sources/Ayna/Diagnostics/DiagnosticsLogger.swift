@@ -150,6 +150,10 @@ final class LogThrottle: @unchecked Sendable {
         }
 
         lastLogByKey[key] = now
+        if lastLogByKey.count > 200 {
+            let cutoff = Date().addingTimeInterval(-3600)
+            lastLogByKey = lastLogByKey.filter { $0.value > cutoff }
+        }
         return true
     }
 }

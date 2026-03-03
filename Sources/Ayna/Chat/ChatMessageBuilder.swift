@@ -50,11 +50,14 @@ struct ChatMessageBuilder {
     static func buildAttachments(
         from fileURLs: [URL],
         saveToStorage: Bool = false
-    ) -> [Message.FileAttachment] {
+    ) async -> [Message.FileAttachment] {
         var attachments: [Message.FileAttachment] = []
 
         for fileURL in fileURLs {
-            guard let fileData = try? Data(contentsOf: fileURL) else {
+            let fileData = await Task.detached(priority: .utility) {
+                try? Data(contentsOf: fileURL)
+            }.value
+            guard let fileData else {
                 continue
             }
 
@@ -92,9 +95,9 @@ struct ChatMessageBuilder {
         appContent: AppContent?,
         fileURLs: [URL],
         saveToStorage: Bool = false
-    ) -> Message {
+    ) async -> Message {
         let content = formatContent(text: text, appContent: appContent)
-        let attachments = buildAttachments(from: fileURLs, saveToStorage: saveToStorage)
+        let attachments = await buildAttachments(from: fileURLs, saveToStorage: saveToStorage)
 
         return Message(
             role: .user,

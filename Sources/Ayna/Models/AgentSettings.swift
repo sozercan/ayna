@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Combine
 
 /// Settings for native agentic tools (macOS only)
 struct AgentSettings: Codable, Sendable {
@@ -147,4 +148,6 @@ struct AgentSettings: Codable, Sendable {
             settings = .default
         }
     }
+
+    extension AgentSettingsStore: ObservableObject {}
 #endif

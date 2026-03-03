@@ -465,18 +465,13 @@
             let titlePrompt = "Generate a very short title (3-5 words maximum) for a conversation that starts with: \"\(firstMessage.prefix(200))\". Only respond with the title, nothing else."
 
             let titleMessage = Message(role: .user, content: titlePrompt)
-            nonisolated(unsafe) var generatedTitle = ""
-
             aiService.sendMessage(
                 messages: [titleMessage],
                 model: conversation.model,
                 stream: false,
-                onChunk: { chunk in
-                    generatedTitle += chunk
-                },
-                onComplete: { [weak self] in
+                onChunk: { [weak self] chunk in
                     Task { @MainActor in
-                        let cleanTitle = generatedTitle
+                        let cleanTitle = chunk
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                             .replacingOccurrences(of: "\"", with: "")
                             .replacingOccurrences(of: "\n", with: " ")
@@ -490,6 +485,7 @@
                         }
                     }
                 },
+                onComplete: { },
                 onError: { [weak self] _ in
                     Task { @MainActor in
                         // Fallback to simple title on error

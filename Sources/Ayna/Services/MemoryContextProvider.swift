@@ -107,7 +107,7 @@ final class MemoryContextProvider {
 
         /// Creates allocation based on available context tokens.
         init(availableTokens: Int) {
-            let available = availableTokens - Self.reservedForResponse
+            let available = max(0, availableTokens - Self.reservedForResponse)
 
             // For small context models (< 8K), drop summaries entirely
             if available < 8000 {

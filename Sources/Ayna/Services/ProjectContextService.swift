@@ -281,6 +281,15 @@ import os.log
 
             for url in contextFiles {
                 do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                    let fileSize = (attributes[.size] as? Int) ?? 0
+                    if fileSize > 100 * 1024 {
+                        log(.default, "Skipping large context file", metadata: [
+                            "file": url.lastPathComponent,
+                            "size": "\(fileSize)"
+                        ])
+                        continue
+                    }
                     let fileContent = try String(contentsOf: url, encoding: .utf8)
                     content += """
 

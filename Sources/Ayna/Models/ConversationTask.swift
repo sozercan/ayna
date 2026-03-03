@@ -116,8 +116,8 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             status: TaskStatus = .pending,
             parentId: UUID? = nil,
             toConversation conversationId: UUID? = nil
-        ) -> ConversationTask {
-            let id = conversationId ?? currentConversationId ?? UUID()
+        ) -> ConversationTask? {
+            guard let id = conversationId ?? currentConversationId else { return nil }
             var tasks = tasksByConversation[id] ?? []
 
             let task = ConversationTask(
@@ -140,7 +140,7 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             notes: String? = nil,
             inConversation conversationId: UUID? = nil
         ) {
-            let id = conversationId ?? currentConversationId ?? UUID()
+            guard let id = conversationId ?? currentConversationId else { return }
             guard var tasks = tasksByConversation[id],
                   let index = tasks.firstIndex(where: { $0.id == taskId })
             else {
@@ -164,7 +164,7 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
 
         /// Removes a task
         func removeTask(id taskId: UUID, inConversation conversationId: UUID? = nil) {
-            let id = conversationId ?? currentConversationId ?? UUID()
+            guard let id = conversationId ?? currentConversationId else { return }
             guard var tasks = tasksByConversation[id] else { return }
 
             if let task = tasks.first(where: { $0.id == taskId }) {
@@ -179,7 +179,7 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
 
         /// Clears all tasks for a conversation
         func clearTasks(forConversation conversationId: UUID? = nil) {
-            let id = conversationId ?? currentConversationId ?? UUID()
+            guard let id = conversationId ?? currentConversationId else { return }
             tasksByConversation[id] = []
 
             DiagnosticsLogger.log(
@@ -192,7 +192,7 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
 
         /// Replaces all tasks for a conversation (used by update_tasks tool)
         func replaceTasks(_ tasks: [ConversationTask], forConversation conversationId: UUID? = nil) {
-            let id = conversationId ?? currentConversationId ?? UUID()
+            guard let id = conversationId ?? currentConversationId else { return }
             tasksByConversation[id] = tasks
 
             DiagnosticsLogger.log(
@@ -210,7 +210,9 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
 
         /// Returns task statistics for a conversation
         func statistics(forConversation conversationId: UUID? = nil) -> TaskStatistics {
-            let id = conversationId ?? currentConversationId ?? UUID()
+            guard let id = conversationId ?? currentConversationId else {
+                return TaskStatistics(total: 0, pending: 0, inProgress: 0, completed: 0, failed: 0, blocked: 0)
+            }
             let tasks = tasksByConversation[id] ?? []
 
             return TaskStatistics(

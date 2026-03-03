@@ -663,7 +663,7 @@ class MCPServerManager: ObservableObject {
         cachedEnabledTools = availableTools.filter { tool in
             serverConfigs.first(where: { $0.name == tool.serverName })?.enabled ?? false
         }
-        toolLookup = Dictionary(uniqueKeysWithValues: cachedEnabledTools.map { ($0.name, $0) })
+        toolLookup = Dictionary(cachedEnabledTools.map { ($0.name, $0) }, uniquingKeysWith: { _, last in last })
         cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
         cacheVersion += 1
     }

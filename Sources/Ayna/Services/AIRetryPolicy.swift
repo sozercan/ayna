@@ -176,6 +176,10 @@ final class CircuitBreakerRegistry: @unchecked Sendable {
             return existing
         }
 
+        if breakers.count > 50, let oldKey = breakers.keys.first {
+            breakers.removeValue(forKey: oldKey)
+        }
+
         let newBreaker = CircuitBreaker(config: defaultConfig)
         breakers[endpoint] = newBreaker
         return newBreaker

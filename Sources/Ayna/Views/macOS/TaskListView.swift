@@ -22,7 +22,7 @@ struct TaskListView: View {
         if !tasks.isEmpty {
             DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(taskManager.rootTasks) { task in
+                    ForEach(tasks.filter { $0.parentId == nil }) { task in
                         TaskRowView(
                             task: task,
                             taskManager: taskManager,

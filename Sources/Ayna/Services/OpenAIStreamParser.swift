@@ -3,13 +3,13 @@ import os
 
 /// Result from parsing a single SSE stream line
 ///
-/// Marked as `@unchecked Sendable` because the `toolCallBuffer` dictionary
+/// Marked as `@unchecked Sendable` because the `toolCallBuffers` dictionary
 /// contains JSON-like data that is only accessed sequentially within the
 /// streaming pipeline. The dictionary is never mutated concurrently.
 struct StreamLineResult: @unchecked Sendable {
     let shouldComplete: Bool
-    let toolCallBuffer: [String: Any]
-    let toolCallId: String
+    let toolCallBuffers: [Int: [String: Any]]
+    let toolCallIds: [Int: String]
     let content: String?
     let reasoning: String?
 
@@ -17,8 +17,8 @@ struct StreamLineResult: @unchecked Sendable {
     static var empty: StreamLineResult {
         StreamLineResult(
             shouldComplete: false,
-            toolCallBuffer: [:],
-            toolCallId: "",
+            toolCallBuffers: [:],
+            toolCallIds: [:],
             content: nil,
             reasoning: nil
         )
@@ -27,13 +27,17 @@ struct StreamLineResult: @unchecked Sendable {
 
 /// Result from tool call completion handling
 ///
-/// Marked as `@unchecked Sendable` because the `buffer` dictionary
+/// Marked as `@unchecked Sendable` because the `buffers` dictionary
 /// contains JSON-like data that is only accessed sequentially within the
 /// streaming pipeline.
 struct ToolCallCompletionResult: @unchecked Sendable {
-    let buffer: [String: Any]
-    let id: String
+    let buffers: [Int: [String: Any]]
+    let ids: [Int: String]
     let content: String?
+}
+
+private struct SendableToolArguments: @unchecked Sendable {
+    let value: [String: Any]
 }
 
 /// Callbacks for streaming response events
@@ -60,22 +64,22 @@ enum OpenAIStreamParser {
     ///
     /// - Parameters:
     ///   - line: The raw SSE line (e.g., "data: {...}")
-    ///   - toolCallBuffer: Current accumulated tool call data
-    ///   - toolCallId: Current tool call ID being processed
+    ///   - toolCallBuffers: Current accumulated tool call data keyed by tool call index
+    ///   - toolCallIds: Current tool call IDs keyed by tool call index
     ///   - onToolCall: Legacy callback for inline tool execution
     ///   - onToolCallRequested: Callback when a tool call is requested
     ///   - onReasoning: Callback for reasoning content (reserved for future use)
     /// - Returns: A `StreamLineResult` with parsed data and updated state
     static func processStreamLine(
         _ line: String,
-        toolCallBuffer: [String: Any],
-        toolCallId: String,
+        toolCallBuffers: [Int: [String: Any]],
+        toolCallIds: [Int: String],
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
         onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
-        var updatedToolCallBuffer = toolCallBuffer
-        var updatedToolCallId = toolCallId
+        var updatedToolCallBuffers = toolCallBuffers
+        var updatedToolCallIds = toolCallIds
         var extractedContent: String?
         var extractedReasoning: String?
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -98,8 +102,8 @@ enum OpenAIStreamParser {
         guard trimmedLine.hasPrefix("data: ") else {
             return StreamLineResult(
                 shouldComplete: false,
-                toolCallBuffer: updatedToolCallBuffer,
-                toolCallId: updatedToolCallId,
+                toolCallBuffers: updatedToolCallBuffers,
+                toolCallIds: updatedToolCallIds,
                 content: nil,
                 reasoning: nil
             )
@@ -116,8 +120,8 @@ enum OpenAIStreamParser {
             )
             return StreamLineResult(
                 shouldComplete: true,
-                toolCallBuffer: updatedToolCallBuffer,
-                toolCallId: updatedToolCallId,
+                toolCallBuffers: updatedToolCallBuffers,
+                toolCallIds: updatedToolCallIds,
                 content: nil,
                 reasoning: nil
             )
@@ -143,8 +147,8 @@ enum OpenAIStreamParser {
             }
             return StreamLineResult(
                 shouldComplete: false,
-                toolCallBuffer: updatedToolCallBuffer,
-                toolCallId: updatedToolCallId,
+                toolCallBuffers: updatedToolCallBuffers,
+                toolCallIds: updatedToolCallIds,
                 content: nil,
                 reasoning: nil
             )
@@ -182,29 +186,29 @@ enum OpenAIStreamParser {
         }
 
         // Handle tool calls
-        (updatedToolCallBuffer, updatedToolCallId) = processToolCallDelta(
+        (updatedToolCallBuffers, updatedToolCallIds) = processToolCallDelta(
             delta: delta,
-            currentBuffer: updatedToolCallBuffer,
-            currentId: updatedToolCallId
+            currentBuffers: updatedToolCallBuffers,
+            currentIds: updatedToolCallIds
         )
 
         // Check if tool call is complete and execute
         let toolResult = await handleToolCallCompletion(
             firstChoice: firstChoice,
-            toolCallBuffer: updatedToolCallBuffer,
-            toolCallId: updatedToolCallId,
+            toolCallBuffers: updatedToolCallBuffers,
+            toolCallIds: updatedToolCallIds,
             extractedContent: extractedContent,
             onToolCall: onToolCall,
             onToolCallRequested: onToolCallRequested
         )
-        updatedToolCallBuffer = toolResult.buffer
-        updatedToolCallId = toolResult.id
+        updatedToolCallBuffers = toolResult.buffers
+        updatedToolCallIds = toolResult.ids
         extractedContent = toolResult.content
 
         return StreamLineResult(
             shouldComplete: false,
-            toolCallBuffer: updatedToolCallBuffer,
-            toolCallId: updatedToolCallId,
+            toolCallBuffers: updatedToolCallBuffers,
+            toolCallIds: updatedToolCallIds,
             content: extractedContent,
             reasoning: extractedReasoning
         )
@@ -215,69 +219,89 @@ enum OpenAIStreamParser {
     /// Process tool call delta from stream chunk
     private static func processToolCallDelta(
         delta: [String: Any],
-        currentBuffer: [String: Any],
-        currentId: String
-    ) -> (buffer: [String: Any], id: String) {
-        var buffer = currentBuffer
-        var id = currentId
+        currentBuffers: [Int: [String: Any]],
+        currentIds: [Int: String]
+    ) -> (buffers: [Int: [String: Any]], ids: [Int: String]) {
+        var buffers = currentBuffers
+        var ids = currentIds
 
-        guard let toolCalls = delta["tool_calls"] as? [[String: Any]],
-              let toolCall = toolCalls.first
-        else {
-            return (buffer, id)
+        guard let toolCalls = delta["tool_calls"] as? [[String: Any]] else {
+            return (buffers, ids)
         }
 
-        if let newId = toolCall["id"] as? String {
-            id = newId
-        }
-        if let function = toolCall["function"] as? [String: Any] {
-            if let name = function["name"] as? String {
-                buffer["name"] = name
+        for toolCall in toolCalls {
+            let index = toolCall["index"] as? Int ?? 0
+            var buffer = buffers[index] ?? [:]
+
+            if let newId = toolCall["id"] as? String {
+                ids[index] = newId
             }
-            if let argsChunk = function["arguments"] as? String {
-                let currentArgs = buffer["arguments"] as? String ?? ""
-                buffer["arguments"] = currentArgs + argsChunk
+            if let function = toolCall["function"] as? [String: Any] {
+                if let name = function["name"] as? String {
+                    buffer["name"] = name
+                }
+                if let argsChunk = function["arguments"] as? String {
+                    let currentArgs = buffer["arguments"] as? String ?? ""
+                    buffer["arguments"] = currentArgs + argsChunk
+                }
             }
+
+            buffers[index] = buffer
         }
-        return (buffer, id)
+
+        return (buffers, ids)
     }
 
     /// Handle tool call completion and execution
     private static func handleToolCallCompletion(
         firstChoice: [String: Any],
-        toolCallBuffer: [String: Any],
-        toolCallId: String,
+        toolCallBuffers: [Int: [String: Any]],
+        toolCallIds: [Int: String],
         extractedContent: String?,
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     ) async -> ToolCallCompletionResult {
         guard let finishReason = firstChoice["finish_reason"] as? String,
-              finishReason == "tool_calls",
-              let toolName = toolCallBuffer["name"] as? String,
-              let argsString = toolCallBuffer["arguments"] as? String,
-              let argsData = argsString.data(using: .utf8),
-              let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
+              finishReason == "tool_calls"
         else {
-            return ToolCallCompletionResult(buffer: toolCallBuffer, id: toolCallId, content: extractedContent)
+            return ToolCallCompletionResult(buffers: toolCallBuffers, ids: toolCallIds, content: extractedContent)
         }
 
+        var remainingBuffers = toolCallBuffers
+        var remainingIds = toolCallIds
         var content = extractedContent
 
-        // Notify about tool call request (for proper flow)
-        if let onToolCallRequested {
-            await MainActor.run {
-                onToolCallRequested(toolCallId, toolName, arguments)
+        for index in toolCallBuffers.keys.sorted() {
+            guard let toolCallBuffer = toolCallBuffers[index],
+                  let toolName = toolCallBuffer["name"] as? String,
+                  let argsString = toolCallBuffer["arguments"] as? String,
+                  let argsData = argsString.data(using: .utf8),
+                  let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
+            else {
+                continue
             }
-        }
-        // Legacy support: still execute inline if old callback provided
-        else if let onToolCall {
-            let result = await onToolCall(toolCallId, toolName, arguments)
-            let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
-            content = (content ?? "") + toolOutput
+
+            let toolCallId = toolCallIds[index] ?? ""
+
+            // Notify about tool call request (for proper flow)
+            if let onToolCallRequested {
+                let sendableArguments = SendableToolArguments(value: arguments)
+                await MainActor.run {
+                    onToolCallRequested(toolCallId, toolName, sendableArguments.value)
+                }
+            }
+            // Legacy support: still execute inline if old callback provided
+            else if let onToolCall {
+                let result = await onToolCall(toolCallId, toolName, arguments)
+                let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
+                content = (content ?? "") + toolOutput
+            }
+
+            remainingBuffers.removeValue(forKey: index)
+            remainingIds.removeValue(forKey: index)
         }
 
-        // Clear buffer for next tool call
-        return ToolCallCompletionResult(buffer: [:], id: "", content: content)
+        return ToolCallCompletionResult(buffers: remainingBuffers, ids: remainingIds, content: content)
     }
 
     // MARK: - Text Extraction

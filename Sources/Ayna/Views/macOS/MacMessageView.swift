@@ -232,6 +232,11 @@ struct MacMessageView: View {
                     loadGeneratedImage()
                 }
             }
+            .onDisappear {
+                parseTask?.cancel()
+                reasoningParseTask?.cancel()
+                parseDebounceTask?.cancel()
+            }
     }
 
     private var accessibilityText: String {

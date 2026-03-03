@@ -338,9 +338,12 @@ enum IOSFileAttachmentUtils {
         var errors: [String] = []
 
         for url in urls {
+            let didStart = url.startAccessingSecurityScopedResource()
             // Use defer to ensure resource is always released
             defer {
-                url.stopAccessingSecurityScopedResource()
+                if didStart {
+                    url.stopAccessingSecurityScopedResource()
+                }
             }
 
             do {

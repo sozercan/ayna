@@ -120,7 +120,7 @@ extension MacChatView {
         }
     }
 
-    func handleImageGenerationError(error: Error, messageId _: UUID) {
+    func handleImageGenerationError(error: Error, messageId: UUID) {
         isGenerating = false
         errorMessage = ErrorPresenter.userMessage(for: error)
         errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
@@ -129,12 +129,10 @@ extension MacChatView {
         if let index = conversationManager.conversations.firstIndex(where: {
             $0.id == conversation.id
         }) {
-            let lastIndex = conversationManager.conversations[index].messages.count - 1
-            if lastIndex >= 0,
-               conversationManager.conversations[index].messages[lastIndex].role == .assistant,
-               conversationManager.conversations[index].messages[lastIndex].content.isEmpty
-            {
-                conversationManager.conversations[index].messages.remove(at: lastIndex)
+            if let messageIndex = conversationManager.conversations[index].messages.firstIndex(where: {
+                $0.id == messageId
+            }) {
+                conversationManager.conversations[index].messages.remove(at: messageIndex)
             }
         }
     }

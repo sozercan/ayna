@@ -1605,8 +1605,8 @@ class AIService: ObservableObject {
                     }
 
                     var buffer = Data()
-                    var currentToolCallBuffer: [String: Any] = [:]
-                    var toolCallId = ""
+                    var currentToolCallBuffers: [Int: [String: Any]] = [:]
+                    var toolCallIds: [Int: String] = [:]
 
                     // Batching buffers
                     var contentBuffer = ""
@@ -1644,13 +1644,13 @@ class AIService: ObservableObject {
                             if let line = String(data: buffer, encoding: .utf8) {
                                 let result = await OpenAIStreamParser.processStreamLine(
                                     line,
-                                    toolCallBuffer: currentToolCallBuffer,
-                                    toolCallId: toolCallId,
+                                    toolCallBuffers: currentToolCallBuffers,
+                                    toolCallIds: toolCallIds,
                                     onToolCall: callbacks.onToolCall,
                                     onToolCallRequested: callbacks.onToolCallRequested
                                 )
-                                currentToolCallBuffer = result.toolCallBuffer
-                                toolCallId = result.toolCallId
+                                currentToolCallBuffers = result.toolCallBuffers
+                                toolCallIds = result.toolCallIds
 
                                 if let content = result.content {
                                     contentBuffer += content
@@ -2055,6 +2055,7 @@ class AIService: ObservableObject {
             }
         }
 
+        currentTask = task
         task.resume()
     }
 
