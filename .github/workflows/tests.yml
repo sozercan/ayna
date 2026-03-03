@@ -174,12 +174,12 @@ jobs:
 
     - name: Prepare iOS Simulator
       run: |
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "iPhone 17" | head -1 | grep -oE '[A-F0-9-]{36}')
-        if [ -n "$DEVICE_UDID" ]; then
-          echo "Preparing simulator: iPhone 17 ($DEVICE_UDID)"
-          xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
-          sleep 3
-        fi
+        # Pick the last (latest runtime) device to avoid "multiple devices matched" errors
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "iPhone 17" | tail -1 | grep -oE '[A-F0-9-]{36}')
+        echo "DEVICE_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
+        echo "Preparing simulator: iPhone 17 ($DEVICE_UDID)"
+        xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+        sleep 3
 
     - name: Build iOS app
       run: |
@@ -187,7 +187,7 @@ jobs:
         xcodebuild \
           -project AynaMobile.xcodeproj \
           -scheme Ayna-iOS \
-          -destination 'platform=iOS Simulator,name=iPhone 17' \
+          -destination "id=$DEVICE_UDID" \
           -derivedDataPath ./build \
           -configuration Debug \
           CODE_SIGN_IDENTITY="" \
@@ -198,7 +198,6 @@ jobs:
     - name: Install iOS app on simulator
       run: |
         APP_PATH=$(find ./build -name "Ayna.app" -path "*/Debug-iphonesimulator/*" | head -1)
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "iPhone 17" | head -1 | grep -oE '[A-F0-9-]{36}')
         xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
         xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 5
         xcrun simctl install "$DEVICE_UDID" "$APP_PATH"
@@ -211,7 +210,7 @@ jobs:
           if xcodebuild \
             -project AynaUITests.xcodeproj \
             -scheme AynaIOSUITests \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -destination "id=$DEVICE_UDID" \
             -resultBundlePath ./build/TestResults-iOS-UI.xcresult \
             -parallel-testing-enabled NO \
             CODE_SIGN_IDENTITY="" \
@@ -266,12 +265,12 @@ jobs:
 
     - name: Prepare watchOS Simulator
       run: |
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "Apple Watch Ultra 3 (49mm)" | head -1 | grep -oE '[A-F0-9-]{36}')
-        if [ -n "$DEVICE_UDID" ]; then
-          echo "Preparing simulator: Apple Watch Ultra 3 ($DEVICE_UDID)"
-          xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
-          sleep 3
-        fi
+        # Pick the last (latest runtime) device to avoid "multiple devices matched" errors
+        DEVICE_UDID=$(xcrun simctl list devices available | grep "Apple Watch Ultra 3 (49mm)" | tail -1 | grep -oE '[A-F0-9-]{36}')
+        echo "DEVICE_UDID=$DEVICE_UDID" >> "$GITHUB_ENV"
+        echo "Preparing simulator: Apple Watch Ultra 3 ($DEVICE_UDID)"
+        xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
+        sleep 3
 
     - name: Build watchOS app
       run: |
@@ -279,7 +278,7 @@ jobs:
         xcodebuild \
           -project AynaMobile.xcodeproj \
           -scheme Ayna-watchOS \
-          -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' \
+          -destination "id=$DEVICE_UDID" \
           -derivedDataPath ./build \
           -configuration Debug \
           CODE_SIGN_IDENTITY="" \
@@ -290,7 +289,6 @@ jobs:
     - name: Install watchOS app on simulator
       run: |
         APP_PATH=$(find ./build -name "Ayna Watch App.app" -path "*/Debug-watchsimulator/*" | head -1)
-        DEVICE_UDID=$(xcrun simctl list devices available | grep "Apple Watch Ultra 3 (49mm)" | head -1 | grep -oE '[A-F0-9-]{36}')
         xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
         xcrun simctl bootstatus "$DEVICE_UDID" -b 2>/dev/null || sleep 5
         xcrun simctl install "$DEVICE_UDID" "$APP_PATH"
@@ -303,7 +301,7 @@ jobs:
           if xcodebuild \
             -project AynaUITests.xcodeproj \
             -scheme AynaWatchOSUITests \
-            -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' \
+            -destination "id=$DEVICE_UDID" \
             -resultBundlePath ./build/TestResults-watchOS-UI.xcresult \
             -parallel-testing-enabled NO \
             CODE_SIGN_IDENTITY="" \
