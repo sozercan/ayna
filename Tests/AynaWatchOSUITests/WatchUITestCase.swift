@@ -18,7 +18,7 @@ class WatchUITestCase: XCTestCase {
         try super.setUpWithError()
         continueAfterFailure = false
 
-        app = XCUIApplication()
+        app = XCUIApplication(bundleIdentifier: "com.sertacozercan.ayna.watchkitapp")
         app.launchArguments += ["--ui-testing"]
         app.launchArguments += ["-AYNA_UI_TESTING", "YES"]
         app.launchEnvironment["AYNA_UI_TESTING"] = "1"
