@@ -65,12 +65,12 @@ struct MCPToolSummaryView: View {
                                 }
                                 .buttonStyle(.plain)
 
-                                // Web Search chip - always show if configured
-                                if tavilyService.isConfigured {
+                                // Web Search chip - always show when enabled
+                                if tavilyService.isEnabled {
                                     Button {
                                         tavilyService.isEnabled.toggle()
                                     } label: {
-                                        WebSearchChip(isEnabled: tavilyService.isEnabled, isConfigured: tavilyService.isConfigured)
+                                        WebSearchChip(isEnabled: tavilyService.isEnabled, isConfigured: true)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -165,8 +165,8 @@ struct MCPToolSummaryView: View {
             .filter { $0.state?.isConnected ?? false }
             .reduce(0) { $0 + $1.toolsCount }
 
-        // Add web search tool if configured
-        if tavilyService.isEnabled, tavilyService.isConfigured {
+        // Add web search tool if enabled (DDG is always available, no API key needed)
+        if tavilyService.isEnabled {
             count += 1
         }
 
@@ -188,10 +188,8 @@ struct MCPToolSummaryView: View {
             if agentSettingsStore.settings.isEnabled {
                 sources.append("Agentic")
             }
-            if tavilyService.isEnabled, tavilyService.isConfigured {
+            if tavilyService.isEnabled {
                 sources.append("Web Search")
-            } else if tavilyService.isEnabled {
-                return "Web Search needs API key • \(readyToolCount) tool\(readyToolCount == 1 ? "" : "s") ready"
             }
 
             if readyToolCount > 0 {

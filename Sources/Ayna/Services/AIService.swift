@@ -160,10 +160,11 @@ class AIService: ObservableObject {
         }
     }
 
-    // Tavily web search settings (synced from iPhone on watchOS)
+    // Web search settings (synced from iPhone on watchOS)
     #if os(watchOS)
         @Published var tavilyAPIKey: String = ""
         @Published var tavilyEnabled: Bool = false
+        @Published var webSearchEnabled: Bool = false
     #endif
 
     /// Image generation settings
@@ -2492,19 +2493,24 @@ extension AIService {
     func getAllAvailableTools() -> [[String: Any]]? {
         var tools: [[String: Any]] = []
 
-        // Add Tavily web search if available
+        // Add web search tool (Tavily if configured, else DuckDuckGo)
         #if os(watchOS)
-            // On watchOS, use synced settings stored in AIService
-            if tavilyEnabled, !tavilyAPIKey.isEmpty {
-                tools.append(tavilyToolDefinition())
-            }
-        #else
-            if TavilyService.shared.isAvailable {
-                tools.append(TavilyService.shared.toolDefinition())
+            // On watchOS, use synced settings
+            if webSearchEnabled {
+                tools.append(WebSearchCoordinator.shared.toolDefinition())
                 DiagnosticsLogger.log(
                     .aiService,
                     level: .info,
-                    message: "🔧 Added Tavily tool"
+                    message: "🔧 Added web_search tool (watchOS)"
+                )
+            }
+        #else
+            if WebSearchCoordinator.shared.isAvailable {
+                tools.append(WebSearchCoordinator.shared.toolDefinition())
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .info,
+                    message: "🔧 Added web_search tool (\(WebSearchCoordinator.shared.activeProvider))"
                 )
             }
         #endif
@@ -2577,11 +2583,11 @@ extension AIService {
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
-            return toolName == "web_search" || WebFetchService.isWebFetchTool(toolName)
+            return toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
         #elseif os(macOS)
-            return toolName == TavilyService.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
+            return toolName == WebSearchCoordinator.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
         #else
-            return toolName == TavilyService.toolName || WebFetchService.isWebFetchTool(toolName)
+            return toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
         #endif
     }
 
@@ -2599,8 +2605,8 @@ extension AIService {
 
         #if os(watchOS)
             switch toolName {
-            case "web_search":
-                return await executeWatchTavilySearch(arguments: arguments)
+            case WebSearchCoordinator.toolName:
+                return await WebSearchCoordinator.shared.executeToolCall(arguments: arguments)
             default:
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
@@ -2620,17 +2626,16 @@ extension AIService {
                 )
             }
 
-            // Fall back to Tavily
             switch toolName {
-            case TavilyService.toolName:
-                return await TavilyService.shared.executeToolCall(arguments: arguments)
+            case WebSearchCoordinator.toolName:
+                return await WebSearchCoordinator.shared.executeToolCall(arguments: arguments)
             default:
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
         #else
             switch toolName {
-            case TavilyService.toolName:
-                return await TavilyService.shared.executeToolCall(arguments: arguments)
+            case WebSearchCoordinator.toolName:
+                return await WebSearchCoordinator.shared.executeToolCall(arguments: arguments)
             default:
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
@@ -2655,9 +2660,15 @@ extension AIService {
         }
 
         #if os(watchOS)
-            // watchOS doesn't support citations yet
-            let result = await executeBuiltInTool(name: toolName, arguments: arguments)
-            return (result, nil)
+            // watchOS uses WebSearchCoordinator (with citations)
+            switch toolName {
+            case WebSearchCoordinator.toolName:
+                let (result, citations) = await WebSearchCoordinator.shared.executeToolCallWithCitations(arguments: arguments)
+                return (result, citations.isEmpty ? nil : citations)
+            default:
+                let result = await executeBuiltInTool(name: toolName, arguments: arguments)
+                return (result, nil)
+            }
         #elseif os(macOS)
             // Native agentic tools don't have citations (excluding web_fetch which is handled above)
             if BuiltinToolService.isBuiltinTool(toolName) {
@@ -2666,16 +2677,16 @@ extension AIService {
             }
 
             switch toolName {
-            case TavilyService.toolName:
-                let (result, citations) = await TavilyService.shared.executeToolCallWithCitations(arguments: arguments)
+            case WebSearchCoordinator.toolName:
+                let (result, citations) = await WebSearchCoordinator.shared.executeToolCallWithCitations(arguments: arguments)
                 return (result, citations.isEmpty ? nil : citations)
             default:
                 return ("Error: Unknown built-in tool '\(toolName)'", nil)
             }
         #else
             switch toolName {
-            case TavilyService.toolName:
-                let (result, citations) = await TavilyService.shared.executeToolCallWithCitations(arguments: arguments)
+            case WebSearchCoordinator.toolName:
+                let (result, citations) = await WebSearchCoordinator.shared.executeToolCallWithCitations(arguments: arguments)
                 return (result, citations.isEmpty ? nil : citations)
             default:
                 return ("Error: Unknown built-in tool '\(toolName)'", nil)
@@ -2684,130 +2695,6 @@ extension AIService {
     }
 
     #if os(watchOS)
-        /// Returns the Tavily tool definition for watchOS
-        private func tavilyToolDefinition() -> [String: Any] {
-            [
-                "type": "function",
-                "function": [
-                    "name": "web_search",
-                    "description": "Search the web for current information. Use for recent events, prices, weather, or time-sensitive topics.",
-                    "parameters": [
-                        "type": "object",
-                        "properties": [
-                            "query": [
-                                "type": "string",
-                                "description": "The search query"
-                            ],
-                            "topic": [
-                                "type": "string",
-                                "enum": ["general", "news", "finance"],
-                                "description": "Topic: news, finance, or general"
-                            ],
-                            "max_results": [
-                                "type": "integer",
-                                "description": "Results to return (1-5). Default 3.",
-                                "minimum": 1,
-                                "maximum": 5
-                            ]
-                        ] as [String: Any],
-                        "required": ["query"]
-                    ] as [String: Any]
-                ] as [String: Any]
-            ]
-        }
-
-        /// Executes a Tavily web search on watchOS using the synced API key
-        private func executeWatchTavilySearch(arguments: [String: Any]) async -> String {
-            guard !tavilyAPIKey.isEmpty else {
-                return "Error: Web search not configured. Please configure on iPhone."
-            }
-
-            guard let query = arguments["query"] as? String else {
-                return "Error: Missing 'query' parameter for web search"
-            }
-
-            let topic = (arguments["topic"] as? String) ?? "general"
-            let maxResults = min(max((arguments["max_results"] as? Int) ?? 3, 1), 5)
-
-            // Build the Tavily API request
-            let endpoint = "https://api.tavily.com/search"
-            guard let url = URL(string: endpoint) else {
-                return "Error: Invalid search endpoint"
-            }
-
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-            let body: [String: Any] = [
-                "api_key": tavilyAPIKey,
-                "query": query,
-                "topic": topic,
-                "search_depth": "basic",
-                "max_results": maxResults,
-                "include_answer": true,
-                "include_raw_content": false,
-                "include_images": false
-            ]
-
-            do {
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-                let (data, response) = try await urlSession.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    return "Error: Invalid response from search"
-                }
-
-                switch httpResponse.statusCode {
-                case 200:
-                    // Parse and format the response
-                    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                        return "Error: Failed to parse search results"
-                    }
-                    return formatTavilyResponse(json, maxResults: maxResults)
-                case 401:
-                    return "Error: Invalid API key. Please reconfigure on iPhone."
-                case 429:
-                    return "Error: Rate limit exceeded. Please try again later."
-                default:
-                    return "Error: Search failed (HTTP \(httpResponse.statusCode))"
-                }
-            } catch {
-                return "Error searching the web: \(error.localizedDescription)"
-            }
-        }
-
-        /// Formats the Tavily API response for the model
-        private func formatTavilyResponse(_ json: [String: Any], maxResults: Int) -> String {
-            var output = ""
-
-            // Add AI-generated answer if available
-            if let answer = json["answer"] as? String, !answer.isEmpty {
-                output += "**Answer:** \(answer)\n\n"
-            }
-
-            // Add search results
-            if let results = json["results"] as? [[String: Any]], !results.isEmpty {
-                output += "**Sources:**\n"
-                for (index, result) in results.prefix(maxResults).enumerated() {
-                    let title = result["title"] as? String ?? "Untitled"
-                    let url = result["url"] as? String ?? ""
-                    var content = result["content"] as? String ?? ""
-
-                    // Truncate long content
-                    if content.count > 150 {
-                        content = String(content.prefix(150)) + "..."
-                    }
-
-                    output += "\(index + 1). [\(title)](\(url))\n   \(content)\n\n"
-                }
-            } else {
-                output = "No results found."
-            }
-
-            return output.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
     #endif
 }
 

@@ -181,6 +181,16 @@ struct WebSearchSettingsSection: View {
                 .accessibilityIdentifier("settings.webSearch.enableToggle")
 
             if tavilyService.isEnabled {
+                // Active provider indicator
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: tavilyService.isConfigured ? "bolt.fill" : "magnifyingglass")
+                        .foregroundStyle(Theme.accent)
+                        .font(Typography.caption)
+                    Text("Using: \(tavilyService.isConfigured ? "Tavily" : "DuckDuckGo")")
+                        .font(Typography.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack {
                         Text("Tavily API Key")
@@ -191,12 +201,12 @@ struct WebSearchSettingsSection: View {
                                 .foregroundStyle(Theme.statusConnected)
                                 .font(Typography.caption)
                         } else {
-                            Text("Required")
+                            Text("Optional")
                                 .font(Typography.micro)
-                                .foregroundStyle(Theme.statusConnecting)
+                                .foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, Spacing.xxxs)
-                                .background(Color.orange.opacity(0.1))
+                                .background(Color.secondary.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                         }
                     }
@@ -240,7 +250,7 @@ struct WebSearchSettingsSection: View {
         } header: {
             Text("Web Search")
         } footer: {
-            Text("When enabled, models can search the web for current information using Tavily. This allows answering questions about recent events, current prices, and other time-sensitive topics.")
+            Text("Web search works without an API key using DuckDuckGo. For higher quality results with AI-generated answers, configure a Tavily API key.")
                 .font(Typography.caption)
         }
     }
@@ -341,7 +351,7 @@ struct ToolsSettingsView: View {
                         .font(Typography.title2)
                         .fontWeight(.semibold)
 
-                    let webSearchCount = (tavilyService.isEnabled && tavilyService.isConfigured ? 1 : 0)
+                    let webSearchCount = tavilyService.isEnabled ? 1 : 0
                     let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
                     let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
                     Text("\(toolCount) tools available")
@@ -447,7 +457,7 @@ struct WebSearchToolRow: View {
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
 
-                        if tavilyService.isEnabled, tavilyService.isConfigured {
+                        if tavilyService.isEnabled {
                             Text("•")
                                 .foregroundStyle(Theme.textSecondary)
                             Text("1 tool")
@@ -481,6 +491,16 @@ struct WebSearchToolRow: View {
                     .padding(.horizontal)
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
+                    // Active provider indicator
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: tavilyService.isConfigured ? "bolt.fill" : "magnifyingglass")
+                            .foregroundStyle(Theme.accent)
+                            .font(Typography.caption)
+                        Text("Using: \(tavilyService.isConfigured ? "Tavily" : "DuckDuckGo")")
+                            .font(Typography.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
                     HStack {
                         Text("Tavily API Key")
                             .font(Typography.subheadline)
@@ -490,12 +510,12 @@ struct WebSearchToolRow: View {
                                 .foregroundStyle(Theme.statusConnected)
                                 .font(Typography.caption)
                         } else {
-                            Text("Required")
+                            Text("Optional")
                                 .font(Typography.micro)
-                                .foregroundStyle(Theme.statusConnecting)
+                                .foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, Spacing.xs)
                                 .padding(.vertical, Spacing.xxxs)
-                                .background(Color.orange.opacity(0.1))
+                                .background(Color.secondary.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                         }
                     }
@@ -531,29 +551,23 @@ struct WebSearchToolRow: View {
                         Link("tavily.com", destination: URL(string: "https://tavily.com")!)
                             .font(Typography.caption)
                     }
+
+                    Text("Web search works without an API key using DuckDuckGo. Add a Tavily key for higher quality results.")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
                 }
                 .padding()
             }
         }
         .background(Theme.backgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-        .onChange(of: tavilyService.isEnabled) { _, newValue in
-            // Auto-expand when enabled and not configured
-            if newValue, !tavilyService.isConfigured {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded = true
-                }
-            }
-        }
     }
 
     private var statusColor: Color {
         if !tavilyService.isEnabled {
             Theme.statusDisconnected
-        } else if tavilyService.isConfigured {
-            Theme.statusConnected
         } else {
-            Theme.statusConnecting
+            Theme.statusConnected
         }
     }
 
@@ -561,9 +575,9 @@ struct WebSearchToolRow: View {
         if !tavilyService.isEnabled {
             "Disabled"
         } else if tavilyService.isConfigured {
-            "Configured"
+            "Tavily"
         } else {
-            "API key required"
+            "DuckDuckGo"
         }
     }
 }
