@@ -31,8 +31,8 @@ jobs:
     - name: Show Swift version
       run: swift --version
 
-      - name: Clear SPM artifacts cache
-        run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Get short SHA
       id: slug
