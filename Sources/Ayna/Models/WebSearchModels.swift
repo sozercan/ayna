@@ -40,8 +40,10 @@ struct WebSearchResult: Codable, Sendable {
 // MARK: - Formatting Extension
 
 extension WebSearchResponse {
-    /// Formats the search response as a concise markdown string for the model.
-    /// Reduces token usage while preserving useful information.
+    /// Formats the search response as a markdown string for the model.
+    ///
+    /// Includes an instruction preamble so the model synthesizes information
+    /// rather than just listing links.
     func formattedForModel(maxResults: Int = 3) -> String {
         var output = ""
 
@@ -51,11 +53,15 @@ extension WebSearchResponse {
 
         let topResults = Array(results.prefix(maxResults))
         if !topResults.isEmpty {
-            output += "**Sources:**\n"
+            output += "Use the following search results to write a comprehensive answer. Synthesize the information — do not just list the links.\n\n"
             for (index, result) in topResults.enumerated() {
-                let snippet = result.content.prefix(150)
-                output += "\(index + 1). [\(result.title)](\(result.url)): \(snippet)...\n"
+                output += "[\(index + 1)] \(result.title)\nURL: \(result.url)\n"
+                if !result.content.isEmpty {
+                    output += "Content: \(result.content)\n"
+                }
+                output += "\n"
             }
+            output += "Cite sources using [1], [2], etc. inline."
         }
 
         if output.isEmpty {

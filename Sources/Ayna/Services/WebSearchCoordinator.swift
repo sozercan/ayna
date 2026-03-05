@@ -85,9 +85,9 @@ final class WebSearchCoordinator: ObservableObject {
                         ],
                         "max_results": [
                             "type": "integer",
-                            "description": "Results to return (1-5). Default 3.",
+                            "description": "Results to return (1-10). Default 5.",
                             "minimum": 1,
-                            "maximum": 5,
+                            "maximum": 10,
                         ],
                     ] as [String: Any],
                     "required": ["query"],
@@ -115,7 +115,8 @@ final class WebSearchCoordinator: ObservableObject {
             return ("Error: Missing 'query' parameter for web search", [])
         }
 
-        let maxResults = min(max((arguments["max_results"] as? Int) ?? 3, 1), 5)
+        let defaultMaxResults = tavilyService.isConfigured ? 3 : 5
+        let maxResults = min(max((arguments["max_results"] as? Int) ?? defaultMaxResults, 1), 10)
         let topic: TavilyTopic = if let topicString = arguments["topic"] as? String,
                                     let parsed = TavilyTopic(rawValue: topicString)
         {
