@@ -349,7 +349,7 @@ struct TavilyServiceTests {
         #expect(result.contains("**Answer:**"))
         #expect(result.contains("The weather is sunny."))
         #expect(result.contains("Synthesize"))
-        #expect(result.contains("Weather Report"))
+        #expect(result.contains("• Weather Report"))
     }
 
     @Test("Execute tool call handles missing query parameter")
@@ -506,8 +506,8 @@ struct TavilyServiceTests {
 
         #expect(formatted.contains("**Answer:** This is the answer."))
         #expect(formatted.contains("Synthesize"))
-        #expect(formatted.contains("[1] First Result"))
-        #expect(formatted.contains("[2] Second Result"))
+        #expect(formatted.contains("• First Result"))
+        #expect(formatted.contains("• Second Result"))
     }
 
     @Test("Formatted for model without answer")
@@ -570,10 +570,10 @@ struct TavilyServiceTests {
 
         let formatted = response.formattedForModel(maxResults: 2)
 
-        #expect(formatted.contains("[1] Result 1"))
-        #expect(formatted.contains("[2] Result 2"))
-        #expect(!formatted.contains("[3] Result 3"))
-        #expect(!formatted.contains("[4] Result 4"))
+        #expect(formatted.contains("• Result 1"))
+        #expect(formatted.contains("• Result 2"))
+        #expect(!formatted.contains("• Result 3"))
+        #expect(!formatted.contains("• Result 4"))
     }
 
     @Test("Formatted for model truncates long content")
@@ -600,7 +600,7 @@ struct TavilyServiceTests {
         let formatted = response.formattedForModel()
 
         // Full content should now be included (no truncation)
-        #expect(formatted.contains("Content: \(longContent)"))
+        #expect(formatted.contains(longContent))
     }
 
     // MARK: - Citation Reference Tests
@@ -730,7 +730,7 @@ struct TavilyServiceTests {
         // Verify formatted result
         #expect(result.contains("**Answer:**"))
         #expect(result.contains("Swift is a programming language."))
-        #expect(result.contains("Synthesize"))
+        #expect(result.contains("• Swift.org"))
 
         // Verify citations
         #expect(citations.count == 2)

@@ -99,9 +99,9 @@ struct WebSearchCoordinatorTests {
 
         let formatted = response.formattedForModel(maxResults: 3)
         #expect(formatted.contains("The answer is 42"))
-        #expect(formatted.contains("Source 1"))
-        #expect(formatted.contains("https://example.com"))
-        #expect(formatted.contains("Source 2"))
+        #expect(formatted.contains("• Source 1"))
+        #expect(!formatted.contains("https://example.com"))
+        #expect(formatted.contains("• Source 2"))
     }
 
     @Test("formattedForModel returns 'No results found' for empty results")
