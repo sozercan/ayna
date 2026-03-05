@@ -70,7 +70,7 @@ final class WebSearchCoordinator: ObservableObject {
             "type": "function",
             "function": [
                 "name": Constants.toolName,
-                "description": "Search the web for current information. Use for recent events, prices, weather, or time-sensitive topics.",
+                "description": "Search the web for information. Use this tool for any factual question, to look up people, organizations, recent events, current data, or when you're unsure about the answer.",
                 "parameters": [
                     "type": "object",
                     "properties": [

@@ -46,7 +46,8 @@ final class DuckDuckGoSearchService {
         static let searchEndpoint = "https://html.duckduckgo.com/html/"
         static let maxResponseBytes = 1 << 20 // 1 MB
         static let timeoutSeconds: TimeInterval = 30
-        static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+        static let referer = "https://duckduckgo.com/"
         static let circuitLabel = "duckduckgo.search"
     }
 
@@ -74,12 +75,7 @@ final class DuckDuckGoSearchService {
     func search(query: String, maxResults: Int = 5) async throws -> WebSearchResponse {
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        guard var components = URLComponents(string: Constants.searchEndpoint) else {
-            throw DuckDuckGoSearchError.parsingError
-        }
-        components.queryItems = [URLQueryItem(name: "q", value: query)]
-
-        guard let url = components.url else {
+        guard let url = URL(string: Constants.searchEndpoint) else {
             throw DuckDuckGoSearchError.parsingError
         }
 
@@ -92,9 +88,21 @@ final class DuckDuckGoSearchService {
 
         log(.info, "🔍 Performing DuckDuckGo search", metadata: ["query": query])
 
+        // POST with form-encoded body avoids DDG's CAPTCHA on GET requests
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue(Constants.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Constants.referer, forHTTPHeaderField: "Referer")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        var formComponents = URLComponents()
+        formComponents.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "b", value: ""),
+            URLQueryItem(name: "kl", value: ""),
+        ]
+        request.httpBody = formComponents.percentEncodedQuery?.data(using: .utf8)
 
         do {
             let (data, response) = try await urlSession.data(for: request)

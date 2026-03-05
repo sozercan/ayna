@@ -32,9 +32,9 @@ struct DuckDuckGoSearchServiceTests {
 
         DDGMockURLProtocol.requestHandler = { request in
             #expect(request.url?.host == "html.duckduckgo.com")
-            #expect(request.url?.path.contains("html") == true)
-            #expect(request.url?.absoluteString.contains("swift") == true)
+            #expect(request.httpMethod == "POST")
             #expect(request.value(forHTTPHeaderField: "User-Agent")?.contains("Mozilla") == true)
+            #expect(request.value(forHTTPHeaderField: "Referer") == "https://duckduckgo.com/")
 
             let response = HTTPURLResponse(
                 url: request.url!,
