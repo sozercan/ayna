@@ -147,56 +147,33 @@ enum TavilyError: LocalizedError, Sendable {
 // MARK: - Formatting Extension
 
 extension TavilySearchResponse {
-    /// Formats the search response as a concise markdown string for the model
-    /// This reduces token usage while preserving useful information
-    func formattedForModel(maxResults: Int = 3) -> String {
-        var output = ""
-
-        // Include the AI-generated answer if available - this is the most valuable part
-        if let answer, !answer.isEmpty {
-            output += "**Answer:** \(answer)\n\n"
-        }
-
-        // Include top search results with shorter snippets for speed
-        let topResults = Array(results.prefix(maxResults))
-        if !topResults.isEmpty {
-            output += "**Sources:**\n"
-            for (index, result) in topResults.enumerated() {
-                // Shorter snippets reduce tokens sent to LLM
-                let snippet = result.content.prefix(150)
-                output += "\(index + 1). [\(result.title)](\(result.url)): \(snippet)...\n"
-            }
-        }
-
-        if output.isEmpty {
-            output = "No results found."
-        }
-
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Converts to the common WebSearchResponse type
+    func toWebSearchResponse() -> WebSearchResponse {
+        WebSearchResponse(
+            query: query,
+            answer: answer,
+            results: results.map { result in
+                WebSearchResult(
+                    title: result.title,
+                    url: result.url,
+                    content: result.content,
+                    favicon: result.favicon
+                )
+            },
+            responseTime: responseTime,
+            provider: .tavily
+        )
     }
 
-    /// Converts search results to CitationReference array for inline display
-    /// - Parameter maxResults: Maximum number of citations to include (default 5)
-    /// - Returns: Array of CitationReference with numbered citations
-    func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
-        let topResults = Array(results.prefix(maxResults))
-        return topResults.enumerated().map { index, result in
-            // Use Tavily's favicon if available, otherwise generate from domain using Google's service
-            let faviconURL: String? = if let existingFavicon = result.favicon, !existingFavicon.isEmpty {
-                existingFavicon
-            } else if let url = URL(string: result.url), let host = url.host {
-                // Use Google's favicon service which is reliable and fast
-                "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
-            } else {
-                nil
-            }
+    /// Formats the search response as a concise markdown string for the model.
+    /// Delegates to the common WebSearchResponse formatting.
+    func formattedForModel(maxResults: Int = 3) -> String {
+        toWebSearchResponse().formattedForModel(maxResults: maxResults)
+    }
 
-            return CitationReference(
-                number: index + 1,
-                title: result.title,
-                url: result.url,
-                favicon: faviconURL
-            )
-        }
+    /// Converts search results to CitationReference array for inline display.
+    /// Delegates to the common WebSearchResponse formatting.
+    func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
+        toWebSearchResponse().toCitationReferences(maxResults: maxResults)
     }
 }

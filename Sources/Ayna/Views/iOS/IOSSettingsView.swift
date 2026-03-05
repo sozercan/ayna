@@ -855,7 +855,7 @@ struct IOSToolsSettingsView: View {
                 HStack {
                     Image(systemName: "globe")
                         .font(Typography.title2)
-                        .foregroundStyle(tavilyService.isEnabled && tavilyService.isConfigured ? Theme.accent : Theme.textSecondary)
+                        .foregroundStyle(tavilyService.isEnabled ? Theme.accent : Theme.textSecondary)
                         .frame(width: 32)
 
                     VStack(alignment: .leading, spacing: Spacing.xxxs) {
@@ -863,15 +863,9 @@ struct IOSToolsSettingsView: View {
                             .font(Typography.headline)
 
                         if tavilyService.isEnabled {
-                            if tavilyService.isConfigured {
-                                Text("Powered by Tavily")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            } else {
-                                Text("API key required")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.statusConnecting)
-                            }
+                            Text(tavilyService.isConfigured ? "Tavily" : "DuckDuckGo")
+                                .font(Typography.caption)
+                                .foregroundStyle(Theme.textSecondary)
                         } else {
                             Text("Disabled")
                                 .font(Typography.caption)
@@ -911,10 +905,7 @@ struct IOSToolsSettingsView: View {
                     Text("Web Search Configuration")
                 } footer: {
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        if !tavilyService.isConfigured {
-                            Text("Enter your Tavily API key to enable web search.")
-                                .foregroundStyle(Theme.statusConnecting)
-                        }
+                        Text("Web search works without an API key using DuckDuckGo. Add a Tavily key for higher quality results.")
                         Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
                     }
                 }
@@ -953,10 +944,7 @@ struct IOSWebSearchSettingsSection: View {
         } footer: {
             if tavilyService.isEnabled {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    if !tavilyService.isConfigured {
-                        Text("Enter your Tavily API key to enable web search.")
-                            .foregroundStyle(Theme.statusConnecting)
-                    }
+                    Text("Using \(tavilyService.isConfigured ? "Tavily" : "DuckDuckGo"). Add a Tavily key for higher quality results.")
                     Link("Get an API key at tavily.com", destination: URL(string: "https://tavily.com")!)
                 }
             } else {

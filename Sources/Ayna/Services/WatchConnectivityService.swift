@@ -177,9 +177,7 @@ private enum WatchMessageKeys {
                 }
 
                 // Tavily settings (always send to keep watch in sync)
-                if !tavilyAPIKey.isEmpty {
-                    context[WatchContextKeys.tavilyAPIKey] = tavilyAPIKey
-                }
+                context[WatchContextKeys.tavilyAPIKey] = tavilyAPIKey
                 context[WatchContextKeys.tavilyEnabled] = tavilyEnabled
 
                 // Web fetch settings (always enabled on iOS, sync to watch)
@@ -848,20 +846,33 @@ private enum WatchMessageKeys {
 
         /// Process Tavily web search settings from iPhone context
         private func processTavilySettingsFromContext(_ context: [String: Any]) {
-            if let tavilyKey = context[WatchContextKeys.tavilyAPIKey] as? String, !tavilyKey.isEmpty {
-                AIService.shared.tavilyAPIKey = tavilyKey
-                DiagnosticsLogger.log(
-                    .watchConnectivity,
-                    level: .info,
-                    message: "⌚ Received Tavily API key from iPhone"
-                )
+            if let tavilyKey = context[WatchContextKeys.tavilyAPIKey] as? String {
+                if !tavilyKey.isEmpty {
+                    AIService.shared.tavilyAPIKey = tavilyKey
+                    TavilyService.shared.apiKey = tavilyKey
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .info,
+                        message: "⌚ Received Tavily API key from iPhone"
+                    )
+                } else {
+                    AIService.shared.tavilyAPIKey = ""
+                    TavilyService.shared.apiKey = ""
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .info,
+                        message: "⌚ Cleared Tavily API key (removed on iPhone)"
+                    )
+                }
             }
             if let tavilyEnabled = context[WatchContextKeys.tavilyEnabled] as? Bool {
                 AIService.shared.tavilyEnabled = tavilyEnabled
+                AIService.shared.webSearchEnabled = tavilyEnabled
+                TavilyService.shared.isEnabled = tavilyEnabled
                 DiagnosticsLogger.log(
                     .watchConnectivity,
                     level: .info,
-                    message: "⌚ Updated Tavily enabled state from iPhone",
+                    message: "⌚ Updated web search settings from iPhone",
                     metadata: ["enabled": "\(tavilyEnabled)"]
                 )
             }
