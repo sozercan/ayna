@@ -210,6 +210,9 @@
                !conversations[convIndex].messages.isEmpty
             {
                 let lastIndex = conversations[convIndex].messages.count - 1
+                guard conversations[convIndex].messages[lastIndex].content != content else {
+                    return
+                }
                 let role = conversations[convIndex].messages[lastIndex].role
                 DiagnosticsLogger.log(
                     .watchConnectivity,
@@ -217,6 +220,7 @@
                     message: "⌚ updateLastMessage: index=\(lastIndex) role='\(role)' content='\(content.prefix(20))...'"
                 )
                 conversations[convIndex].messages[lastIndex].content = content
+                saveToDisk()
             }
         }
 

@@ -245,13 +245,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let parser = AnthropicStreamParser(
             onChunk: nil,
             onReasoning: nil,
-            onToolCallRequested: { id, name, input in
-                // Convert [String: AnyCodable] to [String: Any] for the callback interface
-                let anyInput = input.mapValues { $0.value }
-                Task { @MainActor in
-                    callbacks.onToolCallRequested?(id, name, anyInput)
-                }
-            },
+            onToolCallRequested: nil,
             onComplete: nil,
             onError: { error in
                 errorFlag.value = true
@@ -320,6 +314,12 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let result = parser.processLine(line)
         if let content = result.content { contentBuffer += content }
         if let reasoning = result.reasoning { reasoningBuffer += reasoning }
+        if let toolCall = result.toolCall {
+            let anyInput = toolCall.input.mapValues { $0.value }
+            await MainActor.run {
+                callbacks.onToolCallRequested?(toolCall.id, toolCall.name, anyInput)
+            }
+        }
 
         if result.shouldComplete {
             await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)

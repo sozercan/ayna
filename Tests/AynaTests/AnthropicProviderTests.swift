@@ -859,6 +859,70 @@ struct AnthropicProviderTests {
         #expect(receivedToolName == "web_search")
     }
 
+    @Test("Streaming tool use is delivered before completion", .timeLimit(.minutes(1)))
+    func streamingToolUseDeliveredBeforeCompletion() async {
+        let provider = makeProvider()
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Search for Swift")]
+
+        let sseResponse = """
+        event: message_start
+        data: {"type": "message_start", "message": {"id": "msg_order", "type": "message", "role": "assistant"}}
+
+        event: content_block_start
+        data: {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_order", "name": "web_search"}}
+
+        event: content_block_delta
+        data: {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\\"query\\": \\"Swift\\"}"}}
+
+        event: content_block_stop
+        data: {"type": "content_block_stop", "index": 0}
+
+        event: message_delta
+        data: {"type": "message_delta", "delta": {"stop_reason": "tool_use"}}
+
+        event: message_stop
+        data: {"type": "message_stop"}
+
+        """
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            return (response, Data(sseResponse.utf8))
+        }
+
+        let callbackOrder = CallbackOrderCollector()
+
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: {
+                        callbackOrder.append("complete")
+                        completed()
+                    },
+                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onToolCallRequested: { _, _, _ in
+                        callbackOrder.append("tool")
+                    }
+                )
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        #expect(callbackOrder.events == ["tool", "complete"])
+    }
+
     @Test("Thinking budget adds beta header for Claude 4 models", .timeLimit(.minutes(1)))
     func thinkingBudgetAddsBetaHeader() async {
         let provider = makeProvider()
@@ -965,5 +1029,22 @@ private final class ChunkCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return chunks.joined()
+    }
+}
+
+private final class CallbackOrderCollector: @unchecked Sendable {
+    private var recordedEvents: [String] = []
+    private let lock = NSLock()
+
+    func append(_ event: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedEvents.append(event)
+    }
+
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents
     }
 }

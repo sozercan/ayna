@@ -15,11 +15,11 @@ import Testing
 @MainActor
 struct WatchConversationStoreNativeTests {
     private var store: WatchConversationStore
-    private let testDefaultsKey = "com.sertacozercan.ayna.watch.conversations.test"
+    private let persistenceKey = "com.sertacozercan.ayna.watch.conversations"
 
     init() {
         // Clear any existing test data
-        UserDefaults.standard.removeObject(forKey: testDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
         // Note: WatchConversationStore.shared is a singleton, so we test through it
         store = WatchConversationStore.shared
         // Clear existing conversations for clean test state
@@ -119,6 +119,24 @@ struct WatchConversationStoreNativeTests {
 
         let updated = store.conversation(for: conversation.id)
         #expect(updated?.messages.last?.content == "Hello, World!")
+    }
+
+    @Test("Update last message persists streamed content")
+    func updateLastMessagePersistsStreamedContent() throws {
+        let conversation = store.createConversation(model: "gpt-4o")
+        let message = WatchMessage(from: Message(role: .assistant, content: ""))
+
+        store.addMessage(message, to: conversation.id)
+        store.updateLastMessage(in: conversation.id, content: "Persist me")
+
+        guard let data = UserDefaults.standard.data(forKey: persistenceKey) else {
+            Issue.record("Expected persisted watch conversations data")
+            return
+        }
+
+        let decoded = try JSONDecoder().decode([WatchConversation].self, from: data)
+        let persistedConversation = decoded.first { $0.id == conversation.id }
+        #expect(persistedConversation?.messages.last?.content == "Persist me")
     }
 
     // MARK: - Conversation Retrieval Tests
