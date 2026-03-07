@@ -17,20 +17,7 @@ struct IOSSidebarView: View {
     @State private var showSettings = false
     @State private var isEditing = false
     @State private var selectedConversations = Set<UUID>()
-
-    var filteredConversations: [Conversation] {
-        if searchText.isEmpty {
-            return conversationManager.conversations
-        }
-        return conversationManager.conversations.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    /// Grouped conversations for timeline display
-    var groupedConversations: [ConversationTimelineSection] {
-        ConversationTimelineGrouper.sections(from: filteredConversations)
-    }
+    @State private var conversationSections: [ConversationTimelineSection] = []
 
     var body: some View {
         conversationListView
@@ -75,12 +62,19 @@ struct IOSSidebarView: View {
                 }
             }
             .onAppear {
+                refreshConversationSections()
                 DiagnosticsLogger.log(
                     .contentView,
                     level: .info,
                     message: "📱 IOSSidebarView appeared",
                     metadata: ["conversationCount": "\(conversationManager.conversations.count)"]
                 )
+            }
+            .onChange(of: searchText) { _, newValue in
+                refreshConversationSections(searchText: newValue)
+            }
+            .onChange(of: conversationManager.conversations) { _, newValue in
+                refreshConversationSections(conversations: newValue)
             }
     }
 
@@ -136,7 +130,7 @@ struct IOSSidebarView: View {
 
     private var conversationListView: some View {
         List(selection: $conversationManager.selectedConversationId) {
-            ForEach(groupedConversations) { section in
+            ForEach(conversationSections) { section in
                 Section {
                     ForEach(section.conversations) { conversation in
                         conversationRowContent(for: conversation)
@@ -369,6 +363,24 @@ struct IOSSidebarView: View {
             level: .info,
             message: "🆕 New conversation button tapped"
         )
+    }
+
+    private func refreshConversationSections(
+        conversations: [Conversation]? = nil,
+        searchText: String? = nil
+    ) {
+        let sourceConversations = conversations ?? conversationManager.conversations
+        let activeSearchText = searchText ?? self.searchText
+        let filteredConversations: [Conversation]
+        if activeSearchText.isEmpty {
+            filteredConversations = sourceConversations
+        } else {
+            filteredConversations = sourceConversations.filter {
+                $0.title.localizedCaseInsensitiveContains(activeSearchText)
+            }
+        }
+
+        conversationSections = ConversationTimelineGrouper.sections(from: filteredConversations)
     }
 }
 

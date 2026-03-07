@@ -72,12 +72,13 @@ struct AIProviderStreamCallbacks: Sendable {
 ///
 /// Each provider (OpenAI, GitHub Models, etc.) implements this protocol
 /// to handle chat completions with their specific API requirements.
-@MainActor
 protocol AIProviderProtocol: AnyObject, Sendable {
     /// The provider type this implementation handles
+    @MainActor
     var providerType: AIProvider { get }
 
     /// Whether this provider requires an API key
+    @MainActor
     var requiresAPIKey: Bool { get }
 
     /// Send a chat message to the provider
@@ -88,6 +89,7 @@ protocol AIProviderProtocol: AnyObject, Sendable {
     ///   - stream: Whether to stream the response
     ///   - tools: Optional tool definitions for function calling
     ///   - callbacks: Callbacks for handling the response
+    @MainActor
     func sendMessage(
         messages: [Message],
         config: AIProviderRequestConfig,
@@ -97,6 +99,7 @@ protocol AIProviderProtocol: AnyObject, Sendable {
     )
 
     /// Cancel any in-progress request
+    @MainActor
     func cancelRequest()
 
     /// Check if the provider is ready to handle requests
@@ -104,11 +107,13 @@ protocol AIProviderProtocol: AnyObject, Sendable {
     /// - Parameters:
     ///   - config: The request configuration to validate
     /// - Returns: nil if ready, or an error describing why not ready
+    @MainActor
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error?
 }
 
 /// Default implementations for AIProviderProtocol
 extension AIProviderProtocol {
+    @MainActor
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error? {
         if requiresAPIKey, config.apiKey.isEmpty {
             return AynaError.missingAPIKey(provider: String(describing: providerType))

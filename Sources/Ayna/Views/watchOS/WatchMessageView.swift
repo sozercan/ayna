@@ -19,6 +19,19 @@
     struct WatchMessageView: View {
         let message: WatchMessage
         var showTimestamp: Bool = false
+        @State private var renderedContent: AttributedString
+
+        init(message: WatchMessage, showTimestamp: Bool = false) {
+            self.message = message
+            self.showTimestamp = showTimestamp
+            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(message.content))
+        }
+
+        private static let timeFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return formatter
+        }()
 
         private var isUser: Bool {
             message.role.lowercased() == "user"
@@ -32,7 +45,7 @@
                     }
 
                     // Message content
-                    Text(WatchMarkdownRenderer.render(message.content))
+                    Text(renderedContent)
                         .font(Typography.body)
                         .foregroundStyle(isUser ? Theme.userBubbleText : .primary)
                         .padding(.horizontal, Spacing.bubblePaddingH)
@@ -53,6 +66,9 @@
                         .padding(.horizontal, Spacing.xxs)
                 }
             }
+            .onChange(of: message.content) { _, newContent in
+                renderedContent = WatchMarkdownRenderer.render(newContent)
+            }
         }
 
         private var bubbleBackground: Color {
@@ -60,9 +76,7 @@
         }
 
         private var formattedTime: String {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: message.timestamp)
+            Self.timeFormatter.string(from: message.timestamp)
         }
     }
 
@@ -146,6 +160,13 @@
     struct WatchStreamingMessageView: View {
         let content: String
         let isStreaming: Bool
+        @State private var renderedContent: AttributedString
+
+        init(content: String, isStreaming: Bool) {
+            self.content = content
+            self.isStreaming = isStreaming
+            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(content))
+        }
 
         var body: some View {
             HStack {
@@ -164,7 +185,7 @@
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl))
                 } else {
                     // Content
-                    Text(WatchMarkdownRenderer.render(content))
+                    Text(renderedContent)
                         .font(Typography.body)
                         .foregroundStyle(.primary)
                         .padding(.horizontal, Spacing.bubblePaddingH)
@@ -174,6 +195,9 @@
                 }
 
                 Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
+            }
+            .onChange(of: content) { _, newContent in
+                renderedContent = WatchMarkdownRenderer.render(newContent)
             }
         }
     }

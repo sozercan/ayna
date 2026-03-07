@@ -30,6 +30,51 @@ final class EncryptedConversationStore: Sendable {
     private let legacyFileURL: URL
     private let keyIdentifier: String
     private let keychain: KeychainStoring
+    private let encryptionKeyCache: EncryptionKeyCache
+
+    private final class EncryptionKeyCache: @unchecked Sendable {
+        private let keyIdentifier: String
+        private let keychain: KeychainStoring
+        private let lock = NSLock()
+        private var cachedKeyData: Data?
+
+        init(keyIdentifier: String, keychain: KeychainStoring) {
+            self.keyIdentifier = keyIdentifier
+            self.keychain = keychain
+        }
+
+        func keyData() throws -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let cachedKeyData {
+                return cachedKeyData
+            }
+
+            let flagKey = "\(keyIdentifier)_initialized"
+
+            if let existing = try keychain.data(for: keyIdentifier) {
+                cachedKeyData = existing
+                return existing
+            }
+
+            if (try? keychain.string(for: flagKey)) != nil {
+                DiagnosticsLogger.log(
+                    .encryptedStore,
+                    level: .error,
+                    message: "❌ Encryption key missing but initialization flag exists - possible key loss"
+                )
+                throw EncryptedStoreError.keyLost
+            }
+
+            let newKey = SymmetricKey(size: .bits256)
+            let newKeyData = newKey.withUnsafeBytes { Data($0) }
+            try keychain.setData(newKeyData, for: keyIdentifier)
+            try keychain.setString("1", for: flagKey)
+            cachedKeyData = newKeyData
+            return newKeyData
+        }
+    }
 
     init(
         directoryURL: URL? = nil,
@@ -60,6 +105,7 @@ final class EncryptedConversationStore: Sendable {
         legacyFileURL = baseDirectory.appendingPathComponent("conversations.enc")
         self.keyIdentifier = keyIdentifier
         self.keychain = keychain
+        encryptionKeyCache = EncryptionKeyCache(keyIdentifier: keyIdentifier, keychain: keychain)
     }
 
     private func log(
@@ -73,23 +119,23 @@ final class EncryptedConversationStore: Sendable {
     func loadConversations() async throws -> [Conversation] {
         let directoryURL = directoryURL
         let legacyFileURL = legacyFileURL
-        let keyIdentifier = keyIdentifier
-        let keychain = keychain
+        let keyCache = encryptionKeyCache
 
         return try await Task.detached(priority: .userInitiated) {
             // 1. Check for legacy file and migrate if needed
             if FileManager.default.fileExists(atPath: legacyFileURL.path) {
+                let keyData = try keyCache.keyData()
                 DiagnosticsLogger.log(
                     .encryptedStore, level: .info, message: "Found legacy conversation file, migrating..."
                 )
                 do {
                     let conversations = try Self.loadLegacyFile(
-                        at: legacyFileURL, keyIdentifier: keyIdentifier, keychain: keychain
+                        at: legacyFileURL, keyData: keyData
                     )
                     // Save all to new format
                     for conversation in conversations {
                         try Self.save(
-                            conversation, to: directoryURL, keyIdentifier: keyIdentifier, keychain: keychain
+                            conversation, to: directoryURL, keyData: keyData
                         )
                     }
                     // Delete legacy file
@@ -109,13 +155,20 @@ final class EncryptedConversationStore: Sendable {
             let fileURLs = try FileManager.default.contentsOfDirectory(
                 at: directoryURL, includingPropertiesForKeys: nil
             )
+            let encryptedFileURLs = fileURLs.filter { $0.pathExtension == "enc" }
+
+            guard !encryptedFileURLs.isEmpty else {
+                return []
+            }
+
+            let keyData = try keyCache.keyData()
 
             return await withTaskGroup(of: Conversation?.self) { group in
-                for url in fileURLs where url.pathExtension == "enc" {
+                for url in encryptedFileURLs {
                     group.addTask {
                         do {
                             return try Self.load(
-                                from: url, keyIdentifier: keyIdentifier, keychain: keychain
+                                from: url, keyData: keyData
                             )
                         } catch {
                             DiagnosticsLogger.log(
@@ -150,12 +203,12 @@ final class EncryptedConversationStore: Sendable {
 
     func save(_ conversation: Conversation) async throws {
         let directoryURL = directoryURL
-        let keyIdentifier = keyIdentifier
-        let keychain = keychain
+        let keyCache = encryptionKeyCache
 
         try await Task.detached(priority: .userInitiated) {
+            let keyData = try keyCache.keyData()
             try Self.save(
-                conversation, to: directoryURL, keyIdentifier: keyIdentifier, keychain: keychain
+                conversation, to: directoryURL, keyData: keyData
             )
         }.value
     }
@@ -193,61 +246,32 @@ final class EncryptedConversationStore: Sendable {
 
     // MARK: - Helpers
 
-    private nonisolated static func getEncryptionKey(keyIdentifier: String, keychain: KeychainStoring) throws
-        -> SymmetricKey
-    {
-        let flagKey = "\(keyIdentifier)_initialized"
-
-        if let existing = try keychain.data(for: keyIdentifier) {
-            return SymmetricKey(data: existing)
-        }
-
-        // Check if we previously had a key (flag exists but key is missing)
-        if (try? keychain.string(for: flagKey)) != nil {
-            // Key was deleted/corrupted but flag exists - don't silently generate new key
-            // This would orphan all existing encrypted data
-            DiagnosticsLogger.log(
-                .encryptedStore,
-                level: .error,
-                message: "❌ Encryption key missing but initialization flag exists - possible key loss"
-            )
-            throw EncryptedStoreError.keyLost
-        }
-
-        // First-time setup: generate new key and set initialization flag
-        let newKey = SymmetricKey(size: .bits256)
-        let keyData = newKey.withUnsafeBytes { Data($0) }
-        try keychain.setData(keyData, for: keyIdentifier)
-        try keychain.setString("1", for: flagKey)
-        return newKey
-    }
-
-    private nonisolated static func loadLegacyFile(at url: URL, keyIdentifier: String, keychain: KeychainStoring)
+    private nonisolated static func loadLegacyFile(at url: URL, keyData: Data)
         throws -> [Conversation]
     {
         let encryptedData = try Data(contentsOf: url)
         let box = try AES.GCM.SealedBox(combined: encryptedData)
-        let key = try getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+        let key = SymmetricKey(data: keyData)
         let plaintext = try AES.GCM.open(box, using: key)
         return try JSONDecoder().decode([Conversation].self, from: plaintext)
     }
 
-    private nonisolated static func load(from url: URL, keyIdentifier: String, keychain: KeychainStoring) throws
-        -> Conversation
+    private nonisolated static func load(from url: URL, keyData: Data) throws -> Conversation
     {
         let encryptedData = try Data(contentsOf: url)
         let box = try AES.GCM.SealedBox(combined: encryptedData)
-        let key = try getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+        let key = SymmetricKey(data: keyData)
         let plaintext = try AES.GCM.open(box, using: key)
         return try JSONDecoder().decode(Conversation.self, from: plaintext)
     }
 
     private nonisolated static func save(
-        _ conversation: Conversation, to directory: URL, keyIdentifier: String,
-        keychain: KeychainStoring
+        _ conversation: Conversation,
+        to directory: URL,
+        keyData: Data
     ) throws {
         let encoded = try JSONEncoder().encode(conversation)
-        let key = try getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+        let key = SymmetricKey(data: keyData)
         let sealed = try AES.GCM.seal(encoded, using: key)
         guard let combined = sealed.combined else {
             throw KeychainStorageError.unexpectedStatus(errSecParam)

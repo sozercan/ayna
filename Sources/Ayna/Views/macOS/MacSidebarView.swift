@@ -230,19 +230,29 @@ struct MacSidebarView: View {
 struct ConversationRow: View {
     let conversation: Conversation
 
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
     private var lastMessagePreview: String {
         conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
     }
 
     private var timeString: String {
-        let formatter = DateFormatter()
         if Calendar.current.isDateInToday(conversation.updatedAt) {
-            formatter.dateFormat = "HH:mm"
+            Self.timeFormatter.string(from: conversation.updatedAt)
         } else {
-            formatter.dateStyle = .short
-            formatter.timeStyle = .none
+            Self.dateFormatter.string(from: conversation.updatedAt)
         }
-        return formatter.string(from: conversation.updatedAt)
     }
 
     /// Generate a consistent color based on conversation ID for unique avatars

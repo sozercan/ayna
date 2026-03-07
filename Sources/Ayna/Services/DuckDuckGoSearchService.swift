@@ -53,19 +53,23 @@ final class DuckDuckGoSearchService {
 
     // MARK: - Private Properties
 
+    private static let defaultSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = Constants.timeoutSeconds
+        config.timeoutIntervalForResource = Constants.timeoutSeconds
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config)
+    }()
+
     private let urlSession: URLSession
 
     // MARK: - Initialization
 
     init(urlSession: URLSession? = nil) {
-        if let urlSession {
-            self.urlSession = urlSession
-        } else {
-            let config = URLSessionConfiguration.ephemeral
-            config.timeoutIntervalForRequest = Constants.timeoutSeconds
-            config.timeoutIntervalForResource = Constants.timeoutSeconds
-            self.urlSession = URLSession(configuration: config)
-        }
+        self.urlSession = urlSession ?? Self.defaultSession
     }
 
     // MARK: - Public Methods
@@ -178,7 +182,7 @@ final class DuckDuckGoSearchService {
         let linkMatches = html.matches(of: linkRegex)
         var results: [WebSearchResult] = []
 
-        for (i, linkMatch) in linkMatches.prefix(maxResults).enumerated() {
+        for (index, linkMatch) in linkMatches.prefix(maxResults).enumerated() {
             let rawURL = String(linkMatch.output.1)
             let rawTitle = String(linkMatch.output.2)
 
@@ -190,7 +194,7 @@ final class DuckDuckGoSearchService {
 
             // Find snippet between this link and the next link (or end of HTML)
             let searchStart = linkMatch.range.upperBound
-            let searchEnd = (i + 1 < linkMatches.count) ? linkMatches[i + 1].range.lowerBound : html.endIndex
+            let searchEnd = (index + 1 < linkMatches.count) ? linkMatches[index + 1].range.lowerBound : html.endIndex
             let searchRange = searchStart ..< searchEnd
             let searchSlice = html[searchRange]
 
@@ -245,22 +249,7 @@ final class DuckDuckGoSearchService {
 
     /// Strips HTML tags and decodes common HTML entities.
     func stripHTMLTags(_ string: String) -> String {
-        let tagRegex = /<[^>]+>/
-        var result = string.replacing(tagRegex, with: "")
-
-        let entities: [(String, String)] = [
-            ("&amp;", "&"),
-            ("&lt;", "<"),
-            ("&gt;", ">"),
-            ("&quot;", "\""),
-            ("&#39;", "'"),
-            ("&nbsp;", " "),
-        ]
-        for (entity, replacement) in entities {
-            result = result.replacingOccurrences(of: entity, with: replacement)
-        }
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        WebTextExtractor.plainText(fromHTMLFragment: string)
     }
 
     // MARK: - Logging

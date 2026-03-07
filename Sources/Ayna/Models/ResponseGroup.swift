@@ -8,7 +8,7 @@
 import Foundation
 
 /// Status of a response in a multi-model response group
-enum ResponseGroupStatus: String, Codable, Equatable {
+enum ResponseGroupStatus: String, Codable, Equatable, Sendable {
     case streaming // Currently receiving chunks
     case completed // Finished streaming
     case failed // Error occurred
@@ -16,7 +16,7 @@ enum ResponseGroupStatus: String, Codable, Equatable {
 }
 
 /// An entry tracking a single model's response within a ResponseGroup
-struct ResponseGroupEntry: Identifiable, Codable, Equatable {
+struct ResponseGroupEntry: Identifiable, Codable, Equatable, Sendable {
     let id: UUID // Same as the Message.id
     let modelName: String
     var status: ResponseGroupStatus
@@ -24,7 +24,7 @@ struct ResponseGroupEntry: Identifiable, Codable, Equatable {
 
 /// Represents a group of parallel responses from multiple AI models
 /// for a single user prompt in multi-model mode.
-struct ResponseGroup: Identifiable, Codable, Equatable {
+struct ResponseGroup: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let userMessageId: UUID // The user message that triggered these responses
     var responses: [ResponseGroupEntry] // All model responses in this group

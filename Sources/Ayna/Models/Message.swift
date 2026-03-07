@@ -24,7 +24,7 @@ struct CitationReference: Codable, Equatable, Sendable {
     }
 }
 
-struct Message: Identifiable, Codable, Equatable {
+struct Message: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var role: Role
     var content: String
@@ -64,7 +64,7 @@ struct Message: Identifiable, Codable, Equatable {
         case image
     }
 
-    struct FileAttachment: Codable, Equatable {
+    struct FileAttachment: Codable, Equatable, Sendable {
         let fileName: String
         let mimeType: String
         var data: Data?
@@ -78,6 +78,13 @@ struct Message: Identifiable, Codable, Equatable {
                 return Message.attachmentLoader?(path)
             }
             return nil
+        }
+
+        /// Async loader that avoids blocking the current actor on disk I/O.
+        func loadContent() async -> Data? {
+            if let data { return data }
+            guard let path = localPath else { return nil }
+            return await Message.loadAttachmentData(at: path)
         }
     }
 
@@ -242,6 +249,23 @@ struct Message: Identifiable, Codable, Equatable {
         return nil
     }
 
+    /// Async loader that avoids blocking the current actor on attachment I/O.
+    func loadEffectiveImageData() async -> Data? {
+        if let data = imageData { return data }
+        guard let path = imagePath else { return nil }
+        return await Message.loadAttachmentData(at: path)
+    }
+
     /// Static loader to decouple from AttachmentStorage
     @MainActor static var attachmentLoader: ((String) -> Data?)?
+    @MainActor static var attachmentAsyncLoader: (@Sendable (String) async -> Data?)?
+
+    private static func loadAttachmentData(at path: String) async -> Data? {
+        if let asyncLoader = await MainActor.run(body: { attachmentAsyncLoader }) {
+            return await asyncLoader(path)
+        }
+        return await MainActor.run {
+            attachmentLoader?(path)
+        }
+    }
 }

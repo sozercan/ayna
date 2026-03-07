@@ -42,6 +42,9 @@ struct MacMessageView: View {
     @State private var cachedGeneratedImage: NSImage?
     @State private var cachedAttachmentImages: [Int: NSImage] = [:]
 
+    private static let deferredMarkdownCharacterLimit = 6_000
+    private static let deferredMarkdownLineLimit = 180
+
     init(
         message: Message,
         modelName: String? = nil,
@@ -54,23 +57,51 @@ struct MacMessageView: View {
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
-        // Parse content synchronously on init to avoid flash of empty bubbles
-        // Tool messages start collapsed (preview uses plain text), so defer parsing
-        // to the async background path to avoid blocking the main thread on large results.
+        // Only hydrate from the shared markdown cache in init. Parsing here would
+        // run on every SwiftUI view refresh and can stall the macOS chat UI for
+        // large markdown responses.
         if message.role == .tool {
             _cachedContentBlocks = State(initialValue: [])
             _lastContentHash = State(initialValue: 0)
         } else {
-            _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+            _cachedContentBlocks = State(initialValue: Self.initialContentBlocks(for: message.content))
             _lastContentHash = State(initialValue: message.content.hashValue)
         }
         if let reasoning = message.reasoning {
-            _cachedReasoningBlocks = State(initialValue: MarkdownRenderer.parse(reasoning))
+            _cachedReasoningBlocks = State(initialValue: Self.initialContentBlocks(for: reasoning))
             _lastReasoningHash = State(initialValue: reasoning.hashValue)
         } else {
             _cachedReasoningBlocks = State(initialValue: [])
             _lastReasoningHash = State(initialValue: 0)
         }
+    }
+
+    private static func initialContentBlocks(for content: String) -> [ContentBlock] {
+        if let cachedBlocks = MarkdownRenderer.cachedBlocks(for: content) {
+            return cachedBlocks
+        }
+
+        guard !shouldDeferMarkdownParsing(content) else {
+            return []
+        }
+
+        return MarkdownRenderer.parse(content)
+    }
+
+    private static func shouldDeferMarkdownParsing(_ content: String) -> Bool {
+        guard !content.isEmpty else { return false }
+        if content.count > deferredMarkdownCharacterLimit {
+            return true
+        }
+
+        var lineCount = 1
+        for character in content where character == "\n" {
+            lineCount += 1
+            if lineCount > deferredMarkdownLineLimit {
+                return true
+            }
+        }
+        return false
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -488,8 +519,19 @@ struct MacMessageView: View {
             }
         }
 
-        ForEach(cachedContentBlocks, id: \.id) { block in
-            block.view
+        if cachedContentBlocks.isEmpty, Self.shouldDeferMarkdownParsing(message.content) {
+            HStack(spacing: Spacing.xs) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Rendering markdown...")
+                    .font(Typography.bodySecondary)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.vertical, Spacing.xs)
+        } else {
+            ForEach(cachedContentBlocks, id: \.id) { block in
+                block.view
+            }
         }
 
         // Citation sources footer for web search results
@@ -600,7 +642,8 @@ struct MacMessageView: View {
     private func updateCachedBlocks() {
         let content = message.content
         let newHash = content.hashValue
-        guard newHash != lastContentHash else { return }
+        let needsInitialParse = !content.isEmpty && cachedContentBlocks.isEmpty
+        guard newHash != lastContentHash || needsInitialParse else { return }
         lastContentHash = newHash
 
         // Cancel any pending debounce task
@@ -641,7 +684,8 @@ struct MacMessageView: View {
     private func updateCachedReasoningBlocks() {
         if let reasoning = message.reasoning {
             let newHash = reasoning.hashValue
-            if newHash != lastReasoningHash {
+            let needsInitialParse = !reasoning.isEmpty && cachedReasoningBlocks.isEmpty
+            if newHash != lastReasoningHash || needsInitialParse {
                 lastReasoningHash = newHash
                 reasoningParseTask?.cancel()
                 reasoningParseTask = Task.detached(priority: .userInitiated) {
@@ -660,10 +704,11 @@ struct MacMessageView: View {
     /// Note: NSImage is non-Sendable so we create it on @MainActor directly
     private func loadGeneratedImage() {
         guard cachedGeneratedImage == nil else { return }
-        guard let imageData = message.effectiveImageData else { return }
-
-        if let image = NSImage(data: imageData) {
-            cachedGeneratedImage = image
+        Task { @MainActor in
+            guard let imageData = await message.loadEffectiveImageData() else { return }
+            if let image = NSImage(data: imageData) {
+                cachedGeneratedImage = image
+            }
         }
     }
 
@@ -671,10 +716,11 @@ struct MacMessageView: View {
     /// Note: NSImage is non-Sendable so we create it on @MainActor directly
     private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) {
         guard cachedAttachmentImages[index] == nil else { return }
-        guard let data = attachment.content else { return }
-
-        if let image = NSImage(data: data) {
-            cachedAttachmentImages[index] = image
+        Task { @MainActor in
+            guard let data = await attachment.loadContent() else { return }
+            if let image = NSImage(data: data) {
+                cachedAttachmentImages[index] = image
+            }
         }
     }
 
@@ -831,7 +877,6 @@ extension ContentBlock {
                 .lineSpacing(Typography.bodyLineSpacing)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
 
         case let .heading(level, text):
             let font: Font = switch level {
@@ -848,7 +893,6 @@ extension ContentBlock {
                 .font(font)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, level == 1 ? Spacing.xxs : Spacing.xxxs)
 
         case let .unorderedList(items):
@@ -862,7 +906,6 @@ extension ContentBlock {
                             .font(Typography.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, Spacing.xxxs)
                     .accessibilityLabel("Bullet item \(index + 1)")
@@ -881,7 +924,6 @@ extension ContentBlock {
                             .font(Typography.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -899,7 +941,6 @@ extension ContentBlock {
                     .lineSpacing(Typography.bodyLineSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Spacing.md)
             .background(Theme.textSecondary.opacity(0.08))
@@ -964,7 +1005,6 @@ extension ContentBlock {
                     SyntaxHighlightedCodeView(code: code, language: language)
                         .padding(Spacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .background(Theme.codeBackground)
@@ -1265,18 +1305,55 @@ private enum SyntaxRegexCache {
     }
 }
 
+private enum SyntaxHighlightCache {
+    private final class HighlightedCodeWrapper: @unchecked Sendable {
+        let value: AttributedString
+
+        init(value: AttributedString) {
+            self.value = value
+        }
+    }
+
+    private nonisolated(unsafe) static let cache: NSCache<NSString, HighlightedCodeWrapper> = {
+        let cache = NSCache<NSString, HighlightedCodeWrapper>()
+        cache.countLimit = 64
+        cache.totalCostLimit = 512_000
+        return cache
+    }()
+
+    static func value(for code: String, language: String) -> AttributedString? {
+        cache.object(forKey: key(for: code, language: language))?.value
+    }
+
+    static func insert(_ value: AttributedString, for code: String, language: String) {
+        cache.setObject(
+            HighlightedCodeWrapper(value: value),
+            forKey: key(for: code, language: language),
+            cost: code.utf16.count
+        )
+    }
+
+    private static func key(for code: String, language: String) -> NSString {
+        "\(language.lowercased())\u{0}\(code)" as NSString
+    }
+}
+
 /// Syntax highlighted code view
 struct SyntaxHighlightedCodeView: View {
     let code: String
     let language: String
 
     var body: some View {
-        Text(AttributedString(highlightedCode()))
+        Text(highlightedCode())
             .font(Typography.codeBlock)
             .textSelection(.enabled)
     }
 
-    private func highlightedCode() -> NSAttributedString {
+    private func highlightedCode() -> AttributedString {
+        if let cached = SyntaxHighlightCache.value(for: code, language: language) {
+            return cached
+        }
+
         let attributedString = NSMutableAttributedString(string: code)
         let fullRange = NSRange(location: 0, length: code.utf16.count)
 
@@ -1320,7 +1397,9 @@ struct SyntaxHighlightedCodeView: View {
             highlightGeneric(attributedString)
         }
 
-        return attributedString
+        let highlighted = AttributedString(NSAttributedString(attributedString: attributedString))
+        SyntaxHighlightCache.insert(highlighted, for: code, language: language)
+        return highlighted
     }
 
     private func highlightSwift(_ attributedString: NSMutableAttributedString) {

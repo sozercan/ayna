@@ -135,20 +135,21 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        let task = Task { [weak self] in
+        let session = urlSession
+        let task = Task.detached { [weak self, session] in
             guard let self else { return }
             var hasReceivedData = false
 
             do {
                 try await withTaskCancellationHandler {
-                    let (bytes, response) = try await urlSession.bytes(for: request)
+                    let (bytes, response) = try await session.bytes(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
                         throw AynaError.invalidResponse(detail: nil)
                     }
 
                     guard httpResponse.statusCode == 200 else {
-                        let errorMessage = await handleHTTPError(
+                        let errorMessage = await self.handleHTTPError(
                             bytes: bytes,
                             statusCode: httpResponse.statusCode,
                             request: request
@@ -163,12 +164,14 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
                     NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
-                    var buffer = Data()
+                    var buffer = Data(capacity: 4096)
                     var currentToolCallBuffers: [Int: [String: Any]] = [:]
                     var toolCallIds: [Int: String] = [:]
                     var contentBuffer = ""
                     var reasoningBuffer = ""
                     var lastUpdateTime = CFAbsoluteTimeGetCurrent()
+                    let onToolCall = callbacks.onToolCall
+                    let onToolCallRequested = callbacks.onToolCallRequested
 
                     // Maximum line length to prevent OOM from malformed streams without newlines
                     let maxLineLength = 65536 // 64KB
@@ -185,21 +188,12 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
                         if byte == 0x0A {
                             if let line = String(data: buffer, encoding: .utf8) {
-                                let streamCallbacks = StreamCallbacks(
-                                    onChunk: callbacks.onChunk,
-                                    onComplete: callbacks.onComplete,
-                                    onError: callbacks.onError,
-                                    onToolCall: callbacks.onToolCall,
-                                    onToolCallRequested: callbacks.onToolCallRequested,
-                                    onReasoning: callbacks.onReasoning
-                                )
-
                                 let result = await OpenAIStreamParser.processStreamLine(
                                     line,
                                     toolCallBuffers: currentToolCallBuffers,
                                     toolCallIds: toolCallIds,
-                                    onToolCall: streamCallbacks.onToolCall,
-                                    onToolCallRequested: streamCallbacks.onToolCallRequested
+                                    onToolCall: onToolCall,
+                                    onToolCallRequested: onToolCallRequested
                                 )
                                 currentToolCallBuffers = result.toolCallBuffers
                                 toolCallIds = result.toolCallIds
@@ -212,7 +206,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                                 }
 
                                 if result.shouldComplete {
-                                    await flushBuffers(
+                                    await self.flushBuffers(
                                         contentBuffer: contentBuffer,
                                         reasoningBuffer: reasoningBuffer,
                                         callbacks: callbacks
@@ -228,7 +222,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                                 if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
                                     let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
                                     if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
-                                        await flushBuffers(
+                                        await self.flushBuffers(
                                             contentBuffer: contentBuffer,
                                             reasoningBuffer: reasoningBuffer,
                                             callbacks: callbacks
@@ -239,12 +233,12 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                                     }
                                 }
                             }
-                            buffer.removeAll()
+                            buffer.removeAll(keepingCapacity: true)
                         }
                     }
 
                     // Flush remaining content
-                    await flushBuffers(
+                    await self.flushBuffers(
                         contentBuffer: contentBuffer,
                         reasoningBuffer: reasoningBuffer,
                         callbacks: callbacks
@@ -266,7 +260,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
-                await handleStreamError(
+                await self.handleStreamError(
                     error: error,
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
@@ -387,8 +381,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Error Handling
 
-    private func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int, request: URLRequest) async -> String {
-        var errorData = Data()
+    private nonisolated func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int, request: URLRequest) async -> String {
+        var errorData = Data(capacity: 4096)
         do {
             for try await byte in bytes {
                 errorData.append(byte)
@@ -486,7 +480,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         }
     }
 
-    private func flushBuffers(
+    private nonisolated func flushBuffers(
         contentBuffer: String,
         reasoningBuffer: String,
         callbacks: AIProviderStreamCallbacks

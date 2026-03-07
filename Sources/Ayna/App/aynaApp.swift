@@ -34,6 +34,9 @@ struct aynaApp: App {
         Message.attachmentLoader = { path in
             AttachmentStorage.shared.load(path: path)
         }
+        Message.attachmentAsyncLoader = { path in
+            await AttachmentStorage.shared.loadData(path: path)
+        }
 
         let manager: ConversationManager = if UITestEnvironment.isEnabled {
             UITestEnvironment.makeConversationManager()
