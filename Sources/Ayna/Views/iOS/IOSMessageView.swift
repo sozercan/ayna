@@ -232,12 +232,7 @@ struct IOSMessageView: View {
                         ProgressView()
                             .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20)
                             .task {
-                                // Load image from either imageData or imagePath
-                                if let imageData = message.effectiveImageData {
-                                    decodedImage = await Task.detached(priority: .userInitiated) {
-                                        UIImage(data: imageData)
-                                    }.value
-                                }
+                                loadDecodedImage()
                             }
                     }
                 }
@@ -418,26 +413,14 @@ struct IOSMessageView: View {
             // Reload image when path changes (e.g., after generation completes)
             if newPath != nil {
                 decodedImage = nil
-                Task {
-                    if let imageData = message.effectiveImageData {
-                        decodedImage = await Task.detached(priority: .userInitiated) {
-                            UIImage(data: imageData)
-                        }.value
-                    }
-                }
+                loadDecodedImage()
             }
         }
         .onChange(of: message.imageData) { _, newData in
             // Reload image when data changes
             if newData != nil {
                 decodedImage = nil
-                Task {
-                    if let imageData = message.effectiveImageData {
-                        decodedImage = await Task.detached(priority: .userInitiated) {
-                            UIImage(data: imageData)
-                        }.value
-                    }
-                }
+                loadDecodedImage()
             }
         }
     }
@@ -457,6 +440,15 @@ struct IOSMessageView: View {
         guard newHash != lastContentHash else { return }
         lastContentHash = newHash
         performParse(content: content)
+    }
+
+    private func loadDecodedImage() {
+        Task { @MainActor in
+            guard let imageData = await message.loadEffectiveImageData() else { return }
+            decodedImage = await Task.detached(priority: .userInitiated) {
+                UIImage(data: imageData)
+            }.value
+        }
     }
 
     private func saveImageToPhotos(_ image: UIImage) {

@@ -8,6 +8,12 @@
 import Foundation
 import os
 
+private enum AnthropicStreamParserLimits {
+    static let initialBlockBufferCapacity = 1024
+    static let maxToolInputSize = 10_485_760 // 10MB
+    static let maxSignatureSize = 65_536 // 64KB
+}
+
 /// Result from parsing Anthropic SSE events
 struct AnthropicStreamResult: Sendable {
     let shouldComplete: Bool
@@ -51,7 +57,7 @@ struct AnthropicBlockState {
 
     init(type: AnthropicContentBlockType, toolName: String? = nil, toolId: String? = nil) {
         self.type = type
-        buffer = Data()
+        buffer = Data(capacity: AnthropicStreamParserLimits.initialBlockBufferCapacity)
         self.toolName = toolName
         self.toolId = toolId
     }
@@ -73,8 +79,8 @@ struct AnthropicBlockState {
 /// - Error events
 ///
 /// Note: This parser maintains mutable state and should only be used from a single
-/// task/actor context. It is used exclusively within `AnthropicProvider` which is
-/// `@MainActor`, ensuring sequential access to the parser's state.
+/// task context. `AnthropicProvider` drives it from a single streaming task, ensuring
+/// sequential access to the parser's state.
 final class AnthropicStreamParser {
     // MARK: - State
 
@@ -276,8 +282,7 @@ final class AnthropicStreamParser {
             if let partialJson = delta["partial_json"] as? String,
                let partialData = partialJson.data(using: .utf8)
             {
-                let maxToolInputSize = 10_485_760 // 10MB
-                if (activeBlocks[index]?.buffer.count ?? 0) + partialData.count <= maxToolInputSize {
+                if (activeBlocks[index]?.buffer.count ?? 0) + partialData.count <= AnthropicStreamParserLimits.maxToolInputSize {
                     activeBlocks[index]?.buffer.append(partialData)
                 }
             }
@@ -287,7 +292,9 @@ final class AnthropicStreamParser {
             if let signature = delta["signature"] as? String,
                let sigData = signature.data(using: .utf8)
             {
-                activeBlocks[index]?.buffer.append(sigData)
+                if (activeBlocks[index]?.buffer.count ?? 0) + sigData.count <= AnthropicStreamParserLimits.maxSignatureSize {
+                    activeBlocks[index]?.buffer.append(sigData)
+                }
             }
 
         default:

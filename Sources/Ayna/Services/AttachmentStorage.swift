@@ -58,16 +58,25 @@ final class AttachmentStorage: Sendable {
     static let shared = AttachmentStorage()
 
     private let attachmentsDirectory: URL
-    private let dataCache = AttachmentDataCache.shared
+    private let dataCache: AttachmentDataCache
 
-    init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+    init(
+        directoryURL: URL? = nil,
+        dataCache: AttachmentDataCache = .shared
+    ) {
+        self.dataCache = dataCache
+        let fileManager = FileManager.default
 
-        attachmentsDirectory = appSupport.appendingPathComponent("Ayna/Attachments", isDirectory: true)
+        if let directoryURL {
+            attachmentsDirectory = directoryURL
+        } else {
+            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+                .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            attachmentsDirectory = appSupport.appendingPathComponent("Ayna/Attachments", isDirectory: true)
+        }
 
         do {
-            try FileManager.default.createDirectory(
+            try fileManager.createDirectory(
                 at: attachmentsDirectory, withIntermediateDirectories: true
             )
             DiagnosticsLogger.log(
@@ -93,6 +102,7 @@ final class AttachmentStorage: Sendable {
 
         do {
             try data.write(to: fileURL, options: .atomic)
+            dataCache.set(data, forKey: filename)
             DiagnosticsLogger.log(
                 .attachmentStorage,
                 level: .info,
@@ -111,6 +121,11 @@ final class AttachmentStorage: Sendable {
         }
     }
 
+    /// Returns cached data without touching disk.
+    func cachedData(path: String) -> Data? {
+        dataCache.get(path)
+    }
+
     /// Loads data from a relative path, using cache to avoid repeated disk I/O
     func load(path: String) -> Data? {
         // Check cache first
@@ -118,22 +133,21 @@ final class AttachmentStorage: Sendable {
             return cached
         }
 
-        // Load from disk
         let fileURL = attachmentsDirectory.appendingPathComponent(path)
-        do {
-            let data = try Data(contentsOf: fileURL)
-            // Cache the data for future access
-            dataCache.set(data, forKey: path)
-            return data
-        } catch {
-            DiagnosticsLogger.log(
-                .attachmentStorage,
-                level: .error,
-                message: "Failed to load attachment",
-                metadata: ["error": error.localizedDescription, "path": path]
-            )
-            return nil
+        return Self.readData(at: fileURL, path: path, cache: dataCache)
+    }
+
+    /// Loads data from disk off the caller's actor, caching the result for future access.
+    func loadData(path: String) async -> Data? {
+        if let cached = dataCache.get(path) {
+            return cached
         }
+
+        let fileURL = attachmentsDirectory.appendingPathComponent(path)
+        let dataCache = dataCache
+        return await Task.detached(priority: .userInitiated) {
+            Self.readData(at: fileURL, path: path, cache: dataCache)
+        }.value
     }
 
     /// Deletes a file at the given relative path
@@ -163,5 +177,25 @@ final class AttachmentStorage: Sendable {
     /// Returns the full URL for a relative path (useful for QuickLook or sharing)
     func fileURL(for path: String) -> URL {
         attachmentsDirectory.appendingPathComponent(path)
+    }
+
+    private nonisolated static func readData(
+        at fileURL: URL,
+        path: String,
+        cache: AttachmentDataCache
+    ) -> Data? {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            cache.set(data, forKey: path)
+            return data
+        } catch {
+            DiagnosticsLogger.log(
+                .attachmentStorage,
+                level: .error,
+                message: "Failed to load attachment",
+                metadata: ["error": error.localizedDescription, "path": path]
+            )
+            return nil
+        }
     }
 }

@@ -236,6 +236,8 @@
                                 content: self.streamingContent
                             )
                         }
+                        self.conversationStore.persistCurrentState()
+                        self.pendingContent = ""
 
                         self.isLoading = false
                         self.isStreaming = false
@@ -279,6 +281,14 @@
                                 level: .info,
                                 message: "⌚ Request cancelled"
                             )
+                            if !self.pendingContent.isEmpty {
+                                self.streamingContent = self.pendingContent
+                                self.conversationStore.updateLastMessage(
+                                    in: conversationId,
+                                    content: self.streamingContent
+                                )
+                            }
+                            self.conversationStore.persistCurrentState()
                             self.isLoading = false
                             self.isStreaming = false
                             self.currentToolName = nil
@@ -300,6 +310,7 @@
                         self.playHaptic(.failure)
 
                         // Remove the empty assistant message and the user message
+                        self.pendingContent = ""
                         if var conv = self.conversationStore.conversation(for: conversationId),
                            !conv.messages.isEmpty
                         {
@@ -309,9 +320,7 @@
                             if !conv.messages.isEmpty {
                                 conv.messages.removeLast()
                             }
-                            self.conversationStore.updateConversations(
-                                self.conversationStore.conversations.map { $0.id == conversationId ? conv : $0 }
-                            )
+                            _ = self.conversationStore.replaceConversation(conv)
                         }
 
                         DiagnosticsLogger.log(
@@ -393,6 +402,7 @@
                             let continuationMessages = updatedConv.messages.dropLast().map { $0.toMessage() }
 
                             self.streamingContent = ""
+                            self.pendingContent = ""
 
                             self.sendMessageWithToolSupport(
                                 messages: Array(continuationMessages),

@@ -10,6 +10,7 @@
     import Combine
     import Foundation
     import os
+    import SwiftUI
 
     /// Local store for conversations on Apple Watch
     /// Receives updates from iPhone via WatchConnectivity
@@ -87,6 +88,25 @@
                     metadata: ["error": error.localizedDescription]
                 )
             }
+        }
+
+        /// Persist the current in-memory conversation state.
+        func persistCurrentState() {
+            saveToDisk()
+        }
+
+        /// Replace an existing conversation in-place.
+        @discardableResult
+        func replaceConversation(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
+            guard let index = conversations.firstIndex(where: { $0.id == conversation.id }) else {
+                return false
+            }
+
+            conversations[index] = conversation
+            if persist {
+                saveToDisk()
+            }
+            return true
         }
 
         /// Update conversations from WatchConnectivity sync
@@ -175,10 +195,9 @@
                 conversations[index].messages.append(message)
                 conversations[index].updatedAt = Date()
 
-                // Re-sort to put updated conversation at top
-                let updated = conversations[index]
-                conversations.remove(at: index)
-                conversations.insert(updated, at: 0)
+                if index > 0 {
+                    conversations.move(fromOffsets: IndexSet(integer: index), toOffset: 0)
+                }
 
                 // Persist to disk
                 saveToDisk()
@@ -191,6 +210,9 @@
                !conversations[convIndex].messages.isEmpty
             {
                 let lastIndex = conversations[convIndex].messages.count - 1
+                guard conversations[convIndex].messages[lastIndex].content != content else {
+                    return
+                }
                 let role = conversations[convIndex].messages[lastIndex].role
                 DiagnosticsLogger.log(
                     .watchConnectivity,
