@@ -191,4 +191,19 @@ struct MarkdownRendererTests {
             Issue.record("Expected ordered list block")
         }
     }
+
+    @Test("Returns cached blocks after parsing")
+    func returnsCachedBlocksAfterParsing() {
+        let input = """
+        # Cached
+
+        Markdown cache lookup.
+        """
+
+        #expect(MarkdownRenderer.cachedBlocks(for: input) == nil)
+        let parsedBlocks = MarkdownRenderer.parse(input)
+        let cachedBlocks = MarkdownRenderer.cachedBlocks(for: input)
+
+        #expect(cachedBlocks?.count == parsedBlocks.count)
+    }
 }

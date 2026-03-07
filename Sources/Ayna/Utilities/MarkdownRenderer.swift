@@ -167,6 +167,10 @@ enum MarkdownRenderer {
         return blocks
     }
 
+    nonisolated static func cachedBlocks(for content: String) -> [ContentBlock]? {
+        cache.object(forKey: content as NSString)?.blocks
+    }
+
     private nonisolated static func parseCodeBlock(
         lines: [String],
         index: inout Int,
