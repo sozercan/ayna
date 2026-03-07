@@ -128,6 +128,7 @@ struct MultiModelResponseCard: View {
 
     @State private var isHovered = false
     @State private var cachedContentBlocks: [ContentBlock]
+    @State private var decodedImage: NSImage?
 
     init(
         message: Message,
@@ -207,6 +208,23 @@ struct MultiModelResponseCard: View {
                     }
                 }
             }
+            .onChange(of: message.imageData) { _, newImageData in
+                if newImageData != nil {
+                    decodedImage = nil
+                    loadImage()
+                }
+            }
+            .onChange(of: message.imagePath) { _, newPath in
+                if newPath != nil {
+                    decodedImage = nil
+                    loadImage()
+                }
+            }
+            .task {
+                if message.mediaType == .image, decodedImage == nil {
+                    loadImage()
+                }
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Response from \(modelName)")
             .accessibilityHint(isSelected ? "Selected" : "Double tap to select")
@@ -272,7 +290,8 @@ struct MultiModelResponseCard: View {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if message.mediaType == .image {
                     // Image generation content
-                    if let imageData = message.effectiveImageData, let nsImage = NSImage(data: imageData) {
+                    if let decodedImage {
+                        let nsImage = decodedImage
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -322,6 +341,13 @@ struct MultiModelResponseCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 120, maxHeight: 300)
+    }
+
+    private func loadImage() {
+        Task { @MainActor in
+            guard let imageData = await message.loadEffectiveImageData() else { return }
+            decodedImage = NSImage(data: imageData)
+        }
     }
 
     private var failedContentView: some View {

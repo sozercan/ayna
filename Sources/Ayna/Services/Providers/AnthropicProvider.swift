@@ -30,6 +30,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     private var currentStreamTask: Task<Void, Never>?
     private var currentDataTask: URLSessionDataTask?
 
+    private struct StreamProcessingResult: Sendable {
+        let hasReceivedData: Bool
+        let shouldComplete: Bool
+    }
+
     init(urlSession: URLSession) {
         self.urlSession = urlSession
     }
@@ -156,17 +161,26 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        let task = Task { [weak self] in
+        let session = urlSession
+        let task = Task.detached { [weak self, session] in
             guard let self else { return }
             var hasReceivedData = false
 
             do {
                 try await withTaskCancellationHandler {
-                    hasReceivedData = try await processStreamRequest(
+                    let streamResult = try await self.processStreamRequest(
+                        session: session,
                         request: request,
                         callbacks: callbacks,
                         circuitKey: circuitKey
                     )
+                    hasReceivedData = streamResult.hasReceivedData
+                    await MainActor.run {
+                        self.currentStreamTask = nil
+                        if streamResult.shouldComplete {
+                            callbacks.onComplete()
+                        }
+                    }
                 } onCancel: {}
             } catch is CancellationError {
                 await MainActor.run { self.currentStreamTask = nil }
@@ -180,7 +194,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
-                await handleStreamError(
+                await self.handleStreamError(
                     error: error,
                     attempt: attempt,
                     hasReceivedData: hasReceivedData,
@@ -193,12 +207,13 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask = task
     }
 
-    private func processStreamRequest(
+    private nonisolated func processStreamRequest(
+        session: URLSession,
         request: URLRequest,
         callbacks: AIProviderStreamCallbacks,
         circuitKey: String
-    ) async throws -> Bool {
-        let (bytes, response) = try await urlSession.bytes(for: request)
+    ) async throws -> StreamProcessingResult {
+        let (bytes, response) = try await session.bytes(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AynaError.apiError(message: "Invalid Anthropic response")
@@ -222,10 +237,10 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         return try await processStreamBytes(bytes: bytes, callbacks: callbacks)
     }
 
-    private func processStreamBytes(
+    private nonisolated func processStreamBytes(
         bytes: URLSession.AsyncBytes,
         callbacks: AIProviderStreamCallbacks
-    ) async throws -> Bool {
+    ) async throws -> StreamProcessingResult {
         let errorFlag = SendableFlag()
         let parser = AnthropicStreamParser(
             onChunk: nil,
@@ -233,14 +248,21 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             onToolCallRequested: { id, name, input in
                 // Convert [String: AnyCodable] to [String: Any] for the callback interface
                 let anyInput = input.mapValues { $0.value }
-                callbacks.onToolCallRequested?(id, name, anyInput)
+                Task { @MainActor in
+                    callbacks.onToolCallRequested?(id, name, anyInput)
+                }
             },
             onComplete: nil,
-            onError: { error in errorFlag.value = true; callbacks.onError(error) }
+            onError: { error in
+                errorFlag.value = true
+                Task { @MainActor in
+                    callbacks.onError(error)
+                }
+            }
         )
 
         var errorOccurred: Bool { errorFlag.value }
-        var buffer = Data()
+        var buffer = Data(capacity: 4096)
         var contentBuffer = ""
         var reasoningBuffer = ""
         var lastUpdateTime = CFAbsoluteTimeGetCurrent()
@@ -269,23 +291,25 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                         lastUpdateTime: &lastUpdateTime,
                         callbacks: callbacks
                     )
-                    if completed { return hasReceivedData }
+                    if completed {
+                        return StreamProcessingResult(
+                            hasReceivedData: hasReceivedData,
+                            shouldComplete: !errorOccurred
+                        )
+                    }
                 }
-                buffer.removeAll()
+                buffer.removeAll(keepingCapacity: true)
             }
         }
 
         await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
-        await MainActor.run {
-            self.currentStreamTask = nil
-            if !errorOccurred {
-                callbacks.onComplete()
-            }
-        }
-        return hasReceivedData
+        return StreamProcessingResult(
+            hasReceivedData: hasReceivedData,
+            shouldComplete: !errorOccurred
+        )
     }
 
-    private func processSSELine(
+    private nonisolated func processSSELine(
         line: String,
         parser: AnthropicStreamParser,
         contentBuffer: inout String,
@@ -299,10 +323,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
         if result.shouldComplete {
             await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
-            await MainActor.run {
-                self.currentStreamTask = nil
-                callbacks.onComplete()
-            }
             return true
         }
 
@@ -478,8 +498,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Error Handling
 
-    private func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int) async -> String {
-        var errorData = Data()
+    private nonisolated func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int) async -> String {
+        var errorData = Data(capacity: 4096)
         do {
             for try await byte in bytes {
                 errorData.append(byte)
@@ -572,7 +592,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
     }
 
-    private func flushBuffers(
+    private nonisolated func flushBuffers(
         contentBuffer: String,
         reasoningBuffer: String,
         callbacks: AIProviderStreamCallbacks

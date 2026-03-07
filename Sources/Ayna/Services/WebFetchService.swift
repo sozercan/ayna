@@ -63,6 +63,51 @@ enum SSRFProtection {
 
         return false
     }
+
+    /// Resolves a hostname and returns the first private/internal IP if one is found.
+    static func resolvedPrivateIPAddress(for host: String) async -> String? {
+        #if !os(watchOS)
+        let hostRef = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
+        var resolved = DarwinBoolean(false)
+
+        CFHostStartInfoResolution(hostRef, .addresses, nil)
+        guard let addresses = CFHostGetAddressing(hostRef, &resolved)?.takeUnretainedValue() as? [Data],
+              resolved.boolValue
+        else {
+            return nil
+        }
+
+        for addressData in addresses {
+            let ipString = addressData.withUnsafeBytes { pointer -> String? in
+                guard let sockaddr = pointer.baseAddress?.assumingMemoryBound(to: sockaddr.self) else {
+                    return nil
+                }
+
+                if sockaddr.pointee.sa_family == UInt8(AF_INET) {
+                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                    var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
+                    return String(bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+                } else if sockaddr.pointee.sa_family == UInt8(AF_INET6) {
+                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                    var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+                    inet_ntop(AF_INET6, &addr.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN))
+                    return String(bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+                }
+
+                return nil
+            }
+
+            if let ipString, isPrivateHost(ipString) {
+                return ipString
+            }
+        }
+
+        return nil
+        #else
+        return nil
+        #endif
+    }
 }
 
 // MARK: - Web Fetch Error
@@ -147,6 +192,146 @@ final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
     }
 }
 
+// MARK: - Shared Web Fetch Helpers
+
+enum WebTextExtractor {
+    private static let scriptRegex = makeRegex("(?is)<script[^>]*>.*?</script>")
+    private static let styleRegex = makeRegex("(?is)<style[^>]*>.*?</style>")
+    private static let blockElementRegex = makeRegex("(?i)<(br|p|div|h[1-6]|li|tr)[^>]*>")
+    private static let tagRegex = makeRegex("<[^>]+>")
+    private static let collapsedNewlineRegex = makeRegex("\n{3,}")
+    private static let htmlEntities: [(entity: String, replacement: String)] = [
+        ("&nbsp;", " "),
+        ("&amp;", "&"),
+        ("&lt;", "<"),
+        ("&gt;", ">"),
+        ("&quot;", "\""),
+        ("&#39;", "'")
+    ]
+
+    static func plainTextIfNeeded(from content: String, contentType: String) -> String {
+        let isHTML = contentType.localizedCaseInsensitiveContains("text/html") ||
+            content.range(of: "<html", options: .caseInsensitive) != nil
+
+        if isHTML {
+            return plainText(fromHTML: content)
+        }
+
+        return content
+    }
+
+    static func plainText(fromHTML html: String) -> String {
+        var text = replace(scriptRegex, in: html, with: "")
+        text = replace(styleRegex, in: text, with: "")
+        text = replace(blockElementRegex, in: text, with: "\n")
+        text = plainText(fromHTMLFragment: text)
+        text = replace(collapsedNewlineRegex, in: text, with: "\n\n")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func plainText(fromHTMLFragment htmlFragment: String) -> String {
+        let text = replace(tagRegex, in: htmlFragment, with: "")
+        return decodeHTMLEntities(in: text).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func decodeHTMLEntities(in text: String) -> String {
+        htmlEntities.reduce(into: text) { result, entity in
+            result = result.replacingOccurrences(of: entity.entity, with: entity.replacement)
+        }
+    }
+
+    private static func replace(_ regex: NSRegularExpression, in string: String, with template: String) -> String {
+        regex.stringByReplacingMatches(
+            in: string,
+            options: [],
+            range: NSRange(string.startIndex..., in: string),
+            withTemplate: template
+        )
+    }
+
+    private static func makeRegex(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure("Invalid regex pattern: \(pattern)")
+        }
+    }
+}
+
+enum WebFetchRequestExecutor {
+    private static let userAgent = "Ayna/1.0"
+
+    static let sharedSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration, delegate: SSRFRedirectValidator(), delegateQueue: nil)
+    }()
+
+    static func fetchText(
+        from urlString: String,
+        timeoutSeconds: TimeInterval,
+        maxResponseSize: Int,
+        session: URLSession = sharedSession
+    ) async throws -> String {
+        guard let parsedURL = URL(string: urlString),
+              let host = parsedURL.host,
+              parsedURL.scheme == "https" || parsedURL.scheme == "http"
+        else {
+            throw WebFetchError.invalidURL(url: urlString)
+        }
+
+        if SSRFProtection.isPrivateHost(host) {
+            throw WebFetchError.ssrfBlocked(url: urlString)
+        }
+
+        if let resolvedPrivateIP = await SSRFProtection.resolvedPrivateIPAddress(for: host) {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .default,
+                message: "🌐 WebFetch: DNS rebinding blocked",
+                metadata: ["host": host, "ip": resolvedPrivateIP]
+            )
+            throw WebFetchError.ssrfBlocked(url: urlString)
+        }
+
+        var request = URLRequest(url: parsedURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = timeoutSeconds
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw WebFetchError.networkError(underlying: error.localizedDescription)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WebFetchError.networkError(underlying: "Invalid response")
+        }
+
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
+            throw WebFetchError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        guard data.count <= maxResponseSize else {
+            throw WebFetchError.responseToLarge(size: data.count, limit: maxResponseSize)
+        }
+
+        guard let content = String(data: data, encoding: .utf8) else {
+            throw WebFetchError.binaryContent
+        }
+
+        let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+        return WebTextExtractor.plainTextIfNeeded(from: content, contentType: contentType)
+    }
+}
+
 // MARK: - Web Fetch Service
 
 /// Cross-platform service for fetching web content.
@@ -187,64 +372,11 @@ final class WebFetchService {
 
         log(.info, "web_fetch requested", metadata: ["url": url])
 
-        // Validate URL
-        guard let parsedURL = URL(string: url),
-              let host = parsedURL.host,
-              parsedURL.scheme == "https" || parsedURL.scheme == "http"
-        else {
-            throw WebFetchError.invalidURL(url: url)
-        }
-
-        // SSRF protection: Block internal/private IPs
-        if isPrivateHost(host) {
-            throw WebFetchError.ssrfBlocked(url: url)
-        }
-
-        // DNS rebinding protection: resolve hostname and check resolved IPs
-        if await resolveAndCheckHost(host) {
-            throw WebFetchError.ssrfBlocked(url: url)
-        }
-
-        // Fetch with timeout
-        var request = URLRequest(url: parsedURL)
-        request.httpMethod = "GET"
-        request.timeoutInterval = TimeInterval(timeoutSeconds)
-        request.setValue("Ayna/1.0", forHTTPHeaderField: "User-Agent")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            let session = URLSession(configuration: .ephemeral, delegate: SSRFRedirectValidator(), delegateQueue: nil)
-            defer { session.invalidateAndCancel() }
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw WebFetchError.networkError(underlying: error.localizedDescription)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw WebFetchError.networkError(underlying: "Invalid response")
-        }
-
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            throw WebFetchError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        // Check content size
-        guard data.count <= maxResponseSize else {
-            throw WebFetchError.responseToLarge(size: data.count, limit: maxResponseSize)
-        }
-
-        guard let content = String(data: data, encoding: .utf8) else {
-            throw WebFetchError.binaryContent
-        }
-
-        // Convert HTML to plain text if content appears to be HTML
-        let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
-        let result = if contentType.contains("text/html") || content.contains("<html") {
-            htmlToPlainText(content)
-        } else {
-            content
-        }
+        let result = try await WebFetchRequestExecutor.fetchText(
+            from: url,
+            timeoutSeconds: TimeInterval(timeoutSeconds),
+            maxResponseSize: maxResponseSize
+        )
 
         log(.info, "web_fetch completed", metadata: ["url": url, "size": "\(result.count)"])
         return result
@@ -313,138 +445,6 @@ final class WebFetchService {
         - Maximum response size is 10 MB
         - Binary content is not supported
         """
-    }
-
-    // MARK: - Private Helpers
-
-    /// Resolves hostname via DNS and checks if any resolved IP is private (DNS rebinding protection)
-    private func resolveAndCheckHost(_ host: String) async -> Bool {
-        #if !os(watchOS)
-        let hostRef = CFHostCreateWithName(nil, host as CFString).takeRetainedValue()
-        var resolved = DarwinBoolean(false)
-
-        CFHostStartInfoResolution(hostRef, .addresses, nil)
-        guard let addresses = CFHostGetAddressing(hostRef, &resolved)?.takeUnretainedValue() as? [Data],
-              resolved.boolValue
-        else {
-            return false // DNS resolution failed; let URLSession handle it
-        }
-
-        for addressData in addresses {
-            let ipString = addressData.withUnsafeBytes { pointer -> String? in
-                guard let sockaddr = pointer.baseAddress?.assumingMemoryBound(to: sockaddr.self) else {
-                    return nil
-                }
-
-                if sockaddr.pointee.sa_family == UInt8(AF_INET) {
-                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
-                    var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                    inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
-                    return String(cString: buffer)
-                } else if sockaddr.pointee.sa_family == UInt8(AF_INET6) {
-                    var addr = sockaddr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
-                    var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                    inet_ntop(AF_INET6, &addr.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN))
-                    return String(cString: buffer)
-                }
-                return nil
-            }
-
-            if let ip = ipString, isPrivateIPString(ip) {
-                log(.default, "DNS rebinding blocked: \(host) resolved to private IP \(ip)")
-                return true
-            }
-        }
-        return false
-        #else
-        return false // watchOS: hostname-string checks are sufficient
-        #endif
-    }
-
-    /// Checks if a resolved IP address string is in private/internal ranges
-    private func isPrivateIPString(_ ip: String) -> Bool {
-        let lowercased = ip.lowercased()
-
-        if lowercased == "127.0.0.1" || lowercased == "::1" || lowercased == "0.0.0.0" {
-            return true
-        }
-
-        // IPv6 private ranges
-        if lowercased.contains(":") {
-            if lowercased.hasPrefix("fd") || lowercased.hasPrefix("fe80:") || lowercased.hasPrefix("fc") {
-                return true
-            }
-        }
-
-        // IPv4 private ranges
-        let parts = lowercased.split(separator: ".")
-        if parts.count == 4, let first = Int(parts[0]), let second = Int(parts[1]) {
-            if first == 127 { return true }
-            if first == 10 { return true }
-            if first == 172, (16 ... 31).contains(second) { return true }
-            if first == 192, second == 168 { return true }
-            if first == 169, second == 254 { return true }
-            if first == 0 { return true }
-            // RFC 6598 CGNAT (100.64.0.0/10)
-            if first == 100, (64 ... 127).contains(second) { return true }
-            // RFC 2544 Benchmark (198.18.0.0/15)
-            if first == 198, (18 ... 19).contains(second) { return true }
-        }
-
-        return false
-    }
-
-    /// Checks if a host is a private/internal address (SSRF protection)
-    private func isPrivateHost(_ host: String) -> Bool {
-        SSRFProtection.isPrivateHost(host)
-    }
-
-    /// Converts HTML to plain text by stripping tags
-    private func htmlToPlainText(_ html: String) -> String {
-        var text = html
-
-        // Remove script and style content
-        text = text.replacingOccurrences(
-            of: "(?s)<script[^>]*>.*?</script>",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        text = text.replacingOccurrences(
-            of: "(?s)<style[^>]*>.*?</style>",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-
-        // Replace block elements with newlines
-        text = text.replacingOccurrences(
-            of: "<(br|p|div|h[1-6]|li|tr)[^>]*>",
-            with: "\n",
-            options: [.regularExpression, .caseInsensitive]
-        )
-
-        // Remove all remaining tags
-        text = text.replacingOccurrences(
-            of: "<[^>]+>",
-            with: "",
-            options: .regularExpression
-        )
-
-        // Decode HTML entities
-        text = text.replacingOccurrences(of: "&nbsp;", with: " ")
-        text = text.replacingOccurrences(of: "&amp;", with: "&")
-        text = text.replacingOccurrences(of: "&lt;", with: "<")
-        text = text.replacingOccurrences(of: "&gt;", with: ">")
-        text = text.replacingOccurrences(of: "&quot;", with: "\"")
-        text = text.replacingOccurrences(of: "&#39;", with: "'")
-
-        // Collapse multiple newlines
-        text = text.replacingOccurrences(
-            of: "\n{3,}",
-            with: "\n\n",
-            options: .regularExpression
-        )
-
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

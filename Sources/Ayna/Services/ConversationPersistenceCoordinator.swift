@@ -109,24 +109,12 @@ actor ConversationPersistenceCoordinator {
         let conversationsToSave = pendingSaves
         pendingSaves.removeAll()
 
-        for (id, conversation) in conversationsToSave {
-            do {
-                try await store.save(conversation)
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .info,
-                    message: "💾 Flushed pending conversation save on shutdown",
-                    metadata: ["id": id.uuidString]
-                )
-            } catch {
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .error,
-                    message: "❌ Failed to flush conversation on shutdown",
-                    metadata: ["id": id.uuidString, "error": error.localizedDescription]
-                )
-            }
-        }
+        await persistConversations(
+            conversationsToSave,
+            successMessage: "💾 Flushed pending conversation save on shutdown",
+            failureMessage: "❌ Failed to flush conversation on shutdown",
+            notifyOnFailure: false
+        )
     }
 
     /// Returns the set of conversation IDs that currently have a pending save queued.
@@ -142,51 +130,77 @@ actor ConversationPersistenceCoordinator {
         let conversationsToSave = pendingSaves
         pendingSaves.removeAll()
 
-        // B39: Track which items were saved or error-handled so we can requeue the rest on cancellation.
-        var handledIds = Set<UUID>()
-
-        for (id, conversation) in conversationsToSave {
-            // B39: Break (not continue) so unprocessed items can be requeued below.
-            guard !Task.isCancelled else { break }
-
-            do {
-                try await store.save(conversation)
-                handledIds.insert(id)
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .debug,
-                    message: "💾 Saved conversation (debounced)",
-                    metadata: ["id": id.uuidString]
-                )
-            } catch {
-                handledIds.insert(id)
-                DiagnosticsLogger.log(
-                    .conversationManager,
-                    level: .error,
-                    message: "❌ Failed to save conversation",
-                    metadata: ["id": id.uuidString, "error": error.localizedDescription]
-                )
-                // Post notification so ConversationManager can reload from disk
-                // This ensures in-memory state doesn't diverge from persisted state
-                await MainActor.run {
-                    NotificationCenter.default.post(
-                        name: .conversationSaveFailed,
-                        object: nil,
-                        userInfo: ["conversationId": id]
-                    )
-                }
-            }
+        guard !Task.isCancelled else {
+            requeuePendingConversations(conversationsToSave)
+            return
         }
 
-        // B39: Requeue any items skipped due to Task cancellation, unless a newer
-        // version was already enqueued by enqueueSave during a suspension point.
-        for (id, conversation) in conversationsToSave where !handledIds.contains(id) {
-            if pendingSaves[id] == nil {
-                pendingSaves[id] = conversation
-            }
-        }
+        await persistConversations(
+            conversationsToSave,
+            successMessage: "💾 Saved conversation (debounced)",
+            failureMessage: "❌ Failed to save conversation",
+            notifyOnFailure: true
+        )
+
         // B32: activeSaveTasks entries are NOT removed here. enqueueSave is the sole
         // writer to activeSaveTasks[id], ensuring a newer task is never accidentally
         // removed after an await suspension in store.save().
+    }
+
+    private func persistConversations(
+        _ conversationsToSave: [UUID: Conversation],
+        successMessage: String,
+        failureMessage: String,
+        notifyOnFailure: Bool
+    ) async {
+        guard !conversationsToSave.isEmpty else { return }
+
+        let persistenceStore = store
+        await withTaskGroup(of: (UUID, Result<Void, Error>).self) { group in
+            for (id, conversation) in conversationsToSave {
+                group.addTask {
+                    do {
+                        try await persistenceStore.save(conversation)
+                        return (id, .success(()))
+                    } catch {
+                        return (id, .failure(error))
+                    }
+                }
+            }
+
+            for await (id, result) in group {
+                switch result {
+                case .success:
+                    DiagnosticsLogger.log(
+                        .conversationManager,
+                        level: .debug,
+                        message: successMessage,
+                        metadata: ["id": id.uuidString]
+                    )
+                case let .failure(error):
+                    DiagnosticsLogger.log(
+                        .conversationManager,
+                        level: .error,
+                        message: failureMessage,
+                        metadata: ["id": id.uuidString, "error": error.localizedDescription]
+                    )
+
+                    guard notifyOnFailure else { continue }
+                    await MainActor.run {
+                        NotificationCenter.default.post(
+                            name: .conversationSaveFailed,
+                            object: nil,
+                            userInfo: ["conversationId": id]
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func requeuePendingConversations(_ conversationsToSave: [UUID: Conversation]) {
+        for (id, conversation) in conversationsToSave where pendingSaves[id] == nil {
+            pendingSaves[id] = conversation
+        }
     }
 }

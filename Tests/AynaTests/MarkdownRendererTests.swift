@@ -174,4 +174,21 @@ struct MarkdownRendererTests {
             #expect(code.trimmingCharacters(in: .whitespacesAndNewlines) == "code")
         }
     }
+
+    @Test("Parses ordered list starting at custom number")
+    func parsesOrderedListStartingAtCustomNumber() {
+        let input = """
+        3. Third
+        4. Fourth
+        """
+        let blocks = MarkdownRenderer.parse(input)
+        #expect(blocks.count == 1)
+        if case let .orderedList(start, items) = blocks.first?.type {
+            #expect(start == 3)
+            #expect(items.count == 2)
+            #expect(String(items[0].characters) == "Third")
+        } else {
+            Issue.record("Expected ordered list block")
+        }
+    }
 }

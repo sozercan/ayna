@@ -40,6 +40,12 @@ private struct SendableToolArguments: @unchecked Sendable {
     let value: [String: Any]
 }
 
+private enum ToolCallBufferKey {
+    static let name = "name"
+    static let argumentsData = "argumentsData"
+    static let legacyArguments = "arguments"
+}
+
 /// Callbacks for streaming response events
 struct StreamCallbacks {
     let onChunk: @Sendable (String) -> Void
@@ -238,11 +244,14 @@ enum OpenAIStreamParser {
             }
             if let function = toolCall["function"] as? [String: Any] {
                 if let name = function["name"] as? String {
-                    buffer["name"] = name
+                    buffer[ToolCallBufferKey.name] = name
                 }
                 if let argsChunk = function["arguments"] as? String {
-                    let currentArgs = buffer["arguments"] as? String ?? ""
-                    buffer["arguments"] = currentArgs + argsChunk
+                    var argumentsData = buffer[ToolCallBufferKey.argumentsData] as? Data
+                        ?? Data(capacity: max(256, argsChunk.utf8.count))
+                    argumentsData.reserveCapacity(argumentsData.count + argsChunk.utf8.count)
+                    argumentsData.append(contentsOf: argsChunk.utf8)
+                    buffer[ToolCallBufferKey.argumentsData] = argumentsData
                 }
             }
 
@@ -273,9 +282,8 @@ enum OpenAIStreamParser {
 
         for index in toolCallBuffers.keys.sorted() {
             guard let toolCallBuffer = toolCallBuffers[index],
-                  let toolName = toolCallBuffer["name"] as? String,
-                  let argsString = toolCallBuffer["arguments"] as? String,
-                  let argsData = argsString.data(using: .utf8),
+                  let toolName = toolCallBuffer[ToolCallBufferKey.name] as? String,
+                  let argsData = toolArgumentsData(from: toolCallBuffer),
                   let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
             else {
                 continue
@@ -302,6 +310,18 @@ enum OpenAIStreamParser {
         }
 
         return ToolCallCompletionResult(buffers: remainingBuffers, ids: remainingIds, content: content)
+    }
+
+    private static func toolArgumentsData(from toolCallBuffer: [String: Any]) -> Data? {
+        if let argumentsData = toolCallBuffer[ToolCallBufferKey.argumentsData] as? Data {
+            return argumentsData
+        }
+
+        if let arguments = toolCallBuffer[ToolCallBufferKey.legacyArguments] as? String {
+            return Data(arguments.utf8)
+        }
+
+        return nil
     }
 
     // MARK: - Text Extraction

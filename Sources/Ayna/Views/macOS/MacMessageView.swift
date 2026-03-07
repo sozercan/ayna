@@ -660,10 +660,11 @@ struct MacMessageView: View {
     /// Note: NSImage is non-Sendable so we create it on @MainActor directly
     private func loadGeneratedImage() {
         guard cachedGeneratedImage == nil else { return }
-        guard let imageData = message.effectiveImageData else { return }
-
-        if let image = NSImage(data: imageData) {
-            cachedGeneratedImage = image
+        Task { @MainActor in
+            guard let imageData = await message.loadEffectiveImageData() else { return }
+            if let image = NSImage(data: imageData) {
+                cachedGeneratedImage = image
+            }
         }
     }
 
@@ -671,10 +672,11 @@ struct MacMessageView: View {
     /// Note: NSImage is non-Sendable so we create it on @MainActor directly
     private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) {
         guard cachedAttachmentImages[index] == nil else { return }
-        guard let data = attachment.content else { return }
-
-        if let image = NSImage(data: data) {
-            cachedAttachmentImages[index] = image
+        Task { @MainActor in
+            guard let data = await attachment.loadContent() else { return }
+            if let image = NSImage(data: data) {
+                cachedAttachmentImages[index] = image
+            }
         }
     }
 

@@ -126,7 +126,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// The current conversation being managed.
     var conversation: Conversation? {
         guard let id = conversationId else { return nil }
-        return conversationManager.conversations.first { $0.id == id }
+        return conversationManager.conversation(byId: id)
     }
 
     // MARK: - Configuration Update
@@ -615,7 +615,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         // Play message received sound
                         SoundEngine.messageReceived()
 
-                        if let finalConversation = self.conversationManager.conversations.first(where: { $0.id == conversationId }) {
+                        if let finalConversation = self.conversationManager.conversation(byId: conversationId) {
                             self.conversationManager.save(finalConversation)
                         }
 
@@ -716,7 +716,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     let arguments = argumentsWrapper.value
 
                     // Validate conversation still exists
-                    guard self.conversationManager.conversations.contains(where: { $0.id == conversationId }) else {
+                    guard self.conversationManager.conversation(byId: conversationId) != nil else {
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .default,
@@ -892,7 +892,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Get the ID of the last assistant message in the conversation
     private func getLastAssistantMessageId(conversationId: UUID) -> UUID? {
-        guard let conv = conversationManager.conversations.first(where: { $0.id == conversationId }),
+        guard let conv = conversationManager.conversation(byId: conversationId),
               let lastMessage = conv.messages.last,
               lastMessage.role == .assistant
         else {
@@ -1358,7 +1358,7 @@ extension IOSChatViewModel {
             metadata: ["model": model, "error": error.localizedDescription]
         )
 
-        if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }),
+        if let conv = conversationManager.conversation(byId: conversationId),
            let group = conv.getResponseGroup(responseGroupId),
            group.responses.allSatisfy({ $0.status == .failed })
         {
@@ -1370,28 +1370,21 @@ extension IOSChatViewModel {
 // MARK: - Image Generation
 
 extension IOSChatViewModel {
-    /// Finds the most recent generated or selected image in the conversation for editing context.
-    func findPreviousImage() -> Data? {
-        guard let conversation else { return nil }
-
-        // Look for the most recent assistant message with an image
-        // Prioritize selected responses from multi-model groups
+    /// Finds the most recent generated or selected image reference in the conversation for editing context.
+    private func previousImageSource(in conversation: Conversation) -> (data: Data?, path: String?)? {
         for message in conversation.messages.reversed() {
             guard message.role == .assistant, message.mediaType == .image else { continue }
 
-            // If this message is part of a response group, only use it if it was selected
             if let groupId = message.responseGroupId {
                 if let group = conversation.getResponseGroup(groupId),
                    group.selectedResponseId == message.id
                 {
-                    return message.effectiveImageData
+                    return (message.imageData, message.imagePath)
                 }
-                // Skip unselected multi-model responses
                 continue
             }
 
-            // Single-model image - use it
-            return message.effectiveImageData
+            return (message.imageData, message.imagePath)
         }
         return nil
     }
@@ -1402,125 +1395,116 @@ extension IOSChatViewModel {
             return
         }
 
-        // Check if we have a previous image to edit
-        let previousImage = conversation.messages.reversed().first { message in
-            guard message.role == .assistant, message.mediaType == .image else { return false }
-            if let groupId = message.responseGroupId {
-                return conversation.getResponseGroup(groupId)?.selectedResponseId == message.id
-            }
-            return true
-        }?.effectiveImageData
+        let previousImageSource = previousImageSource(in: conversation)
+        let model = conversation.model
+        let assistantMessageId = assistantMessage.id
 
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: previousImage != nil ? "📝 Starting image edit" : "🎨 Starting image generation",
-            metadata: ["prompt": text, "hasContext": "\(previousImage != nil)"]
-        )
-
-        let onComplete: @Sendable (Data) -> Void = { [weak self] data in
-            let selfRef = self
-            Task { @MainActor in
-                guard let self = selfRef else { return }
-
-                // Save image to disk
-                var imagePath: String?
-                do {
-                    imagePath = try AttachmentStorage.shared.save(data: data, extension: "png")
-                } catch {
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "❌ Failed to save generated image: \(error.localizedDescription)"
-                    )
+        Task { [weak self] in
+            let previousImage: Data? =
+                if let data = previousImageSource?.data {
+                    data
+                } else if let path = previousImageSource?.path {
+                    await AttachmentStorage.shared.loadData(path: path)
+                } else {
+                    nil
                 }
 
-                if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-                   let msgIndex = self.conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessage.id })
-                {
-                    var updatedMessage = self.conversationManager.conversations[convIndex].messages[msgIndex]
-                    updatedMessage.mediaType = .image
-                    if let path = imagePath {
-                        updatedMessage.imagePath = path
-                        updatedMessage.imageData = nil
-                    } else {
-                        updatedMessage.imageData = data
-                        updatedMessage.imagePath = nil
-                    }
-                    updatedMessage.content = ""
-                    self.conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
-                    self.conversationManager.save(self.conversationManager.conversations[convIndex])
-                }
-                self.isGenerating = false
-
-                // Notify that conversation is ready (for new chat navigation)
-                if self.isNewChatMode {
-                    self.onConversationCreated?(conversationId)
-                }
-
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 DiagnosticsLogger.log(
                     .chatView,
                     level: .info,
-                    message: "✅ Image generation/edit completed"
+                    message: previousImage != nil ? "📝 Starting image edit" : "🎨 Starting image generation",
+                    metadata: ["prompt": text, "hasContext": "\(previousImage != nil)"]
                 )
-            }
-        }
 
-        let onError: @Sendable (Error) -> Void = { [weak self] error in
-            let selfRef = self
-            Task { @MainActor in
-                guard let self = selfRef else { return }
-                self.isGenerating = false
-                self.errorMessage = error.localizedDescription
+                let onComplete: @Sendable (Data) -> Void = { [weak self] data in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        var imagePath: String?
+                        do {
+                            imagePath = try AttachmentStorage.shared.save(data: data, extension: "png")
+                        } catch {
+                            DiagnosticsLogger.log(
+                                .chatView,
+                                level: .error,
+                                message: "❌ Failed to save generated image: \(error.localizedDescription)"
+                            )
+                        }
 
-                // Still notify for navigation even on error
-                if self.isNewChatMode {
-                    self.onConversationCreated?(conversationId)
+                        if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
+                           let msgIndex = self.conversationManager.conversations[convIndex].messages.firstIndex(where: { $0.id == assistantMessageId })
+                        {
+                            var updatedMessage = self.conversationManager.conversations[convIndex].messages[msgIndex]
+                            updatedMessage.mediaType = .image
+                            if let path = imagePath {
+                                updatedMessage.imagePath = path
+                                updatedMessage.imageData = nil
+                            } else {
+                                updatedMessage.imageData = data
+                                updatedMessage.imagePath = nil
+                            }
+                            updatedMessage.content = ""
+                            self.conversationManager.conversations[convIndex].messages[msgIndex] = updatedMessage
+                            self.conversationManager.save(self.conversationManager.conversations[convIndex])
+                        }
+                        self.isGenerating = false
+
+                        if self.isNewChatMode {
+                            self.onConversationCreated?(conversationId)
+                        }
+
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "✅ Image generation/edit completed"
+                        )
+                    }
                 }
 
-                DiagnosticsLogger.log(
-                    .chatView,
-                    level: .error,
-                    message: "❌ Image generation/edit failed: \(error.localizedDescription)"
-                )
-            }
-        }
+                let onError: @Sendable (Error) -> Void = { [weak self] error in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.isGenerating = false
+                        self.errorMessage = error.localizedDescription
 
-        if let previousImage {
-            // Use image editing API for follow-up requests
-            aiService.editImage(
-                prompt: text,
-                sourceImage: previousImage,
-                model: conversation.model,
-                onComplete: onComplete,
-                onError: onError
-            )
-        } else {
-            // No previous image - use generation API
-            aiService.generateImage(
-                prompt: text,
-                model: conversation.model,
-                onComplete: onComplete,
-                onError: onError
-            )
+                        if self.isNewChatMode {
+                            self.onConversationCreated?(conversationId)
+                        }
+
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .error,
+                            message: "❌ Image generation/edit failed: \(error.localizedDescription)"
+                        )
+                    }
+                }
+
+                if let previousImage {
+                    aiService.editImage(
+                        prompt: text,
+                        sourceImage: previousImage,
+                        model: model,
+                        onComplete: onComplete,
+                        onError: onError
+                    )
+                } else {
+                    aiService.generateImage(
+                        prompt: text,
+                        model: model,
+                        onComplete: onComplete,
+                        onError: onError
+                    )
+                }
+            }
         }
     }
 
     /// Generates images from multiple models in parallel for comparison
     func generateImagesWithMultipleModels(prompt: String, models: [String], conversation: Conversation) {
         let conversationId = conversation.id
+        let previousImageSource = previousImageSource(in: conversation)
 
-        // Check if we have a previous image to edit (must check BEFORE adding user message)
-        let previousImage = findPreviousImage()
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: previousImage != nil ? "📝 Starting multi-model image edit" : "🎨 Starting multi-model image generation",
-            metadata: ["prompt": prompt, "models": models.joined(separator: ", "), "hasContext": "\(previousImage != nil)"]
-        )
-
-        // Create user message
         let userMessage = Message(role: .user, content: prompt)
         conversationManager.addMessage(to: conversation, message: userMessage)
 
@@ -1528,12 +1512,10 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        // Create a response group for the multi-model comparison
         let responseGroupId = UUID()
         var responseEntries: [ResponseGroup.ResponseEntry] = []
         var messageIds: [String: UUID] = [:]
 
-        // Create placeholder messages for each model
         for model in models {
             let messageId = UUID()
             messageIds[model] = messageId
@@ -1555,62 +1537,79 @@ extension IOSChatViewModel {
             ))
         }
 
-        // Create response group
         let responseGroup = ResponseGroup(
             id: responseGroupId,
             userMessageId: userMessage.id,
             responses: responseEntries
         )
 
-        // Add response group to conversation
         if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
             conversationManager.conversations[index].responseGroups.append(responseGroup)
         }
 
-        // Track completion state using a class to allow mutation in closures
         final class CompletionTracker: @unchecked Sendable {
             var count = 0
         }
         let tracker = CompletionTracker()
         let totalCount = models.count
 
-        // Generate/edit images in parallel
-        for model in models {
-            guard let messageId = messageIds[model] else { continue }
-
-            let onComplete: @Sendable (Data) -> Void = { [weak self] imageData in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.processImageSuccess(
-                        imageData: imageData,
-                        conversationId: conversationId,
-                        messageId: messageId,
-                        responseGroupId: responseGroupId,
-                        completedCount: &tracker.count,
-                        totalCount: totalCount
-                    )
+        Task { [weak self] in
+            let previousImage: Data? =
+                if let data = previousImageSource?.data {
+                    data
+                } else if let path = previousImageSource?.path {
+                    await AttachmentStorage.shared.loadData(path: path)
+                } else {
+                    nil
                 }
-            }
 
-            let onError: @Sendable (Error) -> Void = { [weak self] error in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.processImageError(
-                        error: error,
-                        model: model,
-                        conversationId: conversationId,
-                        messageId: messageId,
-                        responseGroupId: responseGroupId,
-                        completedCount: &tracker.count,
-                        totalCount: totalCount
-                    )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .info,
+                    message: previousImage != nil ? "📝 Starting multi-model image edit" : "🎨 Starting multi-model image generation",
+                    metadata: ["prompt": prompt, "models": models.joined(separator: ", "), "hasContext": "\(previousImage != nil)"]
+                )
+
+                for model in models {
+                    guard let messageId = messageIds[model] else { continue }
+
+                    let onComplete: @Sendable (Data) -> Void = { [weak self] imageData in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.processImageSuccess(
+                                imageData: imageData,
+                                conversationId: conversationId,
+                                messageId: messageId,
+                                responseGroupId: responseGroupId,
+                                completedCount: &tracker.count,
+                                totalCount: totalCount
+                            )
+                        }
+                    }
+
+                    let onError: @Sendable (Error) -> Void = { [weak self] error in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.processImageError(
+                                error: error,
+                                model: model,
+                                conversationId: conversationId,
+                                messageId: messageId,
+                                responseGroupId: responseGroupId,
+                                completedCount: &tracker.count,
+                                totalCount: totalCount
+                            )
+                        }
+                    }
+
+                    if let previousImage {
+                        aiService.editImage(prompt: prompt, sourceImage: previousImage, model: model, onComplete: onComplete, onError: onError)
+                    } else {
+                        aiService.generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
+                    }
                 }
-            }
-
-            if let previousImage {
-                aiService.editImage(prompt: prompt, sourceImage: previousImage, model: model, onComplete: onComplete, onError: onError)
-            } else {
-                aiService.generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
             }
         }
     }
@@ -1696,7 +1695,7 @@ extension IOSChatViewModel {
     /// Finalizes a batch of image generation requests
     func finalizeImageGenerationBatch(conversationId: UUID) {
         isGenerating = false
-        if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }) {
+        if let conv = conversationManager.conversation(byId: conversationId) {
             conversationManager.save(conv)
         }
         if isNewChatMode {

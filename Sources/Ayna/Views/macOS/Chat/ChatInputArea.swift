@@ -8,6 +8,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The chat input/composer area including text editor, attachments, and model selector
 struct ChatInputArea: View {
@@ -35,6 +36,8 @@ struct ChatInputArea: View {
     @ObservedObject private var aiService = AIService.shared
 
     var body: some View {
+        let textHeight = calculateTextHeight()
+
         VStack(spacing: Spacing.sm) {
             MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
@@ -50,9 +53,9 @@ struct ChatInputArea: View {
 
             // Main input row
             HStack(spacing: 0) {
-                textEditorWithAttachButton
-                modelSelectorButton
-                sendButton
+                textEditorWithAttachButton(textHeight: textHeight)
+                modelSelectorButton(textHeight: textHeight)
+                sendButton(textHeight: textHeight)
             }
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.pill + Spacing.CornerRadius.sm))
             .overlay(
@@ -146,7 +149,7 @@ struct ChatInputArea: View {
 
     // MARK: - Text Editor with Attach Button
 
-    private var textEditorWithAttachButton: some View {
+    private func textEditorWithAttachButton(textHeight: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             DynamicTextEditor(
                 text: $messageText,
@@ -154,7 +157,7 @@ struct ChatInputArea: View {
                 onSubmit: onSendMessage,
                 accessibilityIdentifier: textEditorIdentifier
             )
-            .frame(height: calculateTextHeight())
+            .frame(height: textHeight)
             .font(Typography.body)
             .scrollContentBackground(.hidden)
             .padding(.leading, 48)
@@ -192,7 +195,7 @@ struct ChatInputArea: View {
 
     // MARK: - Model Selector Button
 
-    private var modelSelectorButton: some View {
+    private func modelSelectorButton(textHeight: CGFloat) -> some View {
         Button(action: { showModelSelector.toggle() }) {
             HStack(spacing: Spacing.xxs) {
                 Divider()
@@ -217,7 +220,7 @@ struct ChatInputArea: View {
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.horizontal, Spacing.md)
-            .frame(height: calculateTextHeight() + Spacing.xxl)
+            .frame(height: textHeight + Spacing.xxl)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -238,7 +241,7 @@ struct ChatInputArea: View {
 
     // MARK: - Send Button
 
-    private var sendButton: some View {
+    private func sendButton(textHeight: CGFloat) -> some View {
         Button(action: onSendMessage) {
             ZStack {
                 if isGenerating {
@@ -257,7 +260,7 @@ struct ChatInputArea: View {
         .allowsHitTesting(isGenerating || !messageText.isEmpty)
         .accessibilityIdentifier(sendButtonIdentifier)
         .padding(.horizontal, Spacing.md)
-        .frame(height: calculateTextHeight() + Spacing.xxl)
+        .frame(height: textHeight + Spacing.xxl)
     }
 
     // MARK: - Text Height Calculation
@@ -285,20 +288,50 @@ struct ChatInputArea: View {
     }
 }
 
+private enum AttachmentThumbnailCache {
+    private nonisolated(unsafe) static let thumbnails: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.countLimit = 64
+        return cache
+    }()
+
+    static func image(for fileURL: URL) -> NSImage? {
+        thumbnails.object(forKey: fileURL as NSURL)
+    }
+
+    static func insert(_ image: NSImage, for fileURL: URL) {
+        thumbnails.setObject(image, forKey: fileURL as NSURL)
+    }
+}
+
 /// Row for displaying an attached file
 struct AttachedFileRow: View {
     let fileURL: URL
     let onRemove: () -> Void
+    @State private var thumbnail: NSImage?
+
+    init(fileURL: URL, onRemove: @escaping () -> Void) {
+        self.fileURL = fileURL
+        self.onRemove = onRemove
+        _thumbnail = State(initialValue: AttachmentThumbnailCache.image(for: fileURL))
+    }
+
+    private var isImageFile: Bool {
+        fileURL.isImageFile
+    }
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            // Show image thumbnail if it's an image file
-            if let image = NSImage(contentsOf: fileURL) {
-                Image(nsImage: image)
+            if let thumbnail {
+                Image(nsImage: thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
+            } else if isImageFile {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 48, height: 48)
             } else {
                 Image(systemName: "doc.fill")
                     .font(.system(size: Typography.IconSize.lg))
@@ -327,6 +360,76 @@ struct AttachedFileRow: View {
         }
         .padding(Spacing.sm)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+        .task(id: fileURL) {
+            await loadThumbnailIfNeeded()
+        }
+    }
+
+    @MainActor
+    private func loadThumbnailIfNeeded() async {
+        guard thumbnail == nil, isImageFile else { return }
+
+        if let cachedThumbnail = AttachmentThumbnailCache.image(for: fileURL) {
+            thumbnail = cachedThumbnail
+            return
+        }
+
+        let imageData = await Task.detached(priority: .utility) { [fileURL] in
+            try? Data(contentsOf: fileURL)
+        }.value
+
+        guard !Task.isCancelled,
+              let imageData,
+              let image = NSImage(data: imageData)?.scaledThumbnail(maxSize: NSSize(width: 48, height: 48))
+        else {
+            return
+        }
+
+        AttachmentThumbnailCache.insert(image, for: fileURL)
+        thumbnail = image
+    }
+}
+
+private extension URL {
+    var isImageFile: Bool {
+        guard !pathExtension.isEmpty,
+              let contentType = UTType(filenameExtension: pathExtension.lowercased())
+        else {
+            return false
+        }
+
+        return contentType.conforms(to: .image)
+    }
+}
+
+private extension NSImage {
+    func scaledThumbnail(maxSize: NSSize) -> NSImage {
+        guard size.width > maxSize.width || size.height > maxSize.height else {
+            return self
+        }
+
+        let widthScale = maxSize.width / size.width
+        let heightScale = maxSize.height / size.height
+        let scale = max(widthScale, heightScale)
+        let scaledSize = NSSize(width: size.width * scale, height: size.height * scale)
+        let drawRect = NSRect(
+            x: (maxSize.width - scaledSize.width) / 2,
+            y: (maxSize.height - scaledSize.height) / 2,
+            width: scaledSize.width,
+            height: scaledSize.height
+        )
+
+        let thumbnail = NSImage(size: maxSize)
+        thumbnail.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        draw(
+            in: drawRect,
+            from: NSRect(origin: .zero, size: size),
+            operation: .copy,
+            fraction: 1
+        )
+        thumbnail.unlockFocus()
+        return thumbnail
     }
 }
 #endif

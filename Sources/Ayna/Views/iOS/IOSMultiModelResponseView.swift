@@ -264,18 +264,15 @@ struct IOSMultiModelResponseCard: View {
         }
         .onChange(of: message.imageData) { _, newImageData in
             // Reload image when imageData changes
-            if let data = newImageData {
-                Task.detached(priority: .userInitiated) {
-                    let image = UIImage(data: data)
-                    await MainActor.run {
-                        decodedImage = image
-                    }
-                }
+            if newImageData != nil {
+                decodedImage = nil
+                loadImageFromPath()
             }
         }
         .onChange(of: message.imagePath) { _, newPath in
             // Reload image when imagePath changes
             if newPath != nil {
+                decodedImage = nil
                 loadImageFromPath()
             }
         }
@@ -292,14 +289,10 @@ struct IOSMultiModelResponseCard: View {
 
     private func loadImageFromPath() {
         Task { @MainActor in
-            if let data = message.effectiveImageData {
-                Task.detached(priority: .userInitiated) {
-                    let image = UIImage(data: data)
-                    await MainActor.run {
-                        decodedImage = image
-                    }
-                }
-            }
+            guard let data = await message.loadEffectiveImageData() else { return }
+            decodedImage = await Task.detached(priority: .userInitiated) {
+                UIImage(data: data)
+            }.value
         }
     }
 

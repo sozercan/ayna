@@ -18,6 +18,22 @@ enum MarkdownRenderer {
         }
     }
 
+    private static let inlineMarkdownOptions: AttributedString.MarkdownParsingOptions = {
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+        return options
+    }()
+
+    private static let horizontalRuleCharacters = CharacterSet(charactersIn: "-_* ")
+    private static let unorderedListRegex =
+        try! NSRegularExpression(pattern: #"^\s*[-*+]\s+"#)
+    private static let orderedListRegex =
+        try! NSRegularExpression(pattern: #"^\s*(\d+)\.\s+"#)
+    #if !os(watchOS)
+    private static let tableDividerRegex =
+        try! NSRegularExpression(pattern: #"^\s*:?-+:?\s*$"#)
+    #endif
+
     nonisolated static func parse(_ content: String) -> [ContentBlock] {
         var blocks: [ContentBlock] = []
 
@@ -231,13 +247,18 @@ enum MarkdownRenderer {
 
     private nonisolated static func isHorizontalRule(_ line: String) -> Bool {
         if line.count < 3 { return false }
-        let allowed = CharacterSet(charactersIn: "-_* ")
-        guard line.trimmingCharacters(in: allowed).isEmpty
+        guard line.trimmingCharacters(in: Self.horizontalRuleCharacters).isEmpty
             && line.replacingOccurrences(of: " ", with: "").count >= 3
         else { return false }
         let nonSpace = line.filter { $0 != " " }
         guard let ruleChar = nonSpace.first, nonSpace.allSatisfy({ $0 == ruleChar }) else { return false }
         return true
+    }
+
+    private nonisolated static func firstMatch(using regex: NSRegularExpression, in text: String)
+        -> NSTextCheckingResult?
+    {
+        regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
     }
 
     private nonisolated static func parseBlockquote(from lines: [String], startingAt index: Int) -> (
@@ -271,19 +292,35 @@ enum MarkdownRenderer {
         var ordered = true
         var startIndex = 1
 
-        func listItem(from line: String) -> String? {
-            if let range = line.range(of: "^\\s*[-*+]\\s+", options: .regularExpression) {
-                ordered = false
-                return String(line[range.upperBound...])
-            } else if let range = line.range(of: "^\\s*(\\d+)\\.\\s+", options: .regularExpression) {
-                ordered = true
-                let prefix = line[..<range.upperBound]
-                if let number = Int(prefix.trimmingCharacters(in: CharacterSet(charactersIn: ". "))) {
-                    if items.isEmpty {
-                        startIndex = number
-                    }
+        struct ParsedListItem {
+            let text: String
+            let isOrdered: Bool
+            let startNumber: Int?
+        }
+
+        func listItem(from line: String) -> ParsedListItem? {
+            if let match = firstMatch(using: Self.unorderedListRegex, in: line),
+               let fullRange = Range(match.range, in: line)
+            {
+                return ParsedListItem(
+                    text: String(line[fullRange.upperBound...]),
+                    isOrdered: false,
+                    startNumber: nil
+                )
+            } else if let match = firstMatch(using: Self.orderedListRegex, in: line),
+                      let fullRange = Range(match.range, in: line)
+            {
+                let startNumber: Int?
+                if let numberRange = Range(match.range(at: 1), in: line) {
+                    startNumber = Int(String(line[numberRange]))
+                } else {
+                    startNumber = nil
                 }
-                return String(line[range.upperBound...])
+                return ParsedListItem(
+                    text: String(line[fullRange.upperBound...]),
+                    isOrdered: true,
+                    startNumber: startNumber
+                )
             }
             return nil
         }
@@ -291,8 +328,12 @@ enum MarkdownRenderer {
         while current < lines.count {
             let line = lines[current]
             if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
-            guard let itemText = listItem(from: line) else { break }
-            let attributed = makeInlineAttributedString(from: itemText)
+            guard let item = listItem(from: line) else { break }
+            ordered = item.isOrdered
+            if items.isEmpty, let startNumber = item.startNumber {
+                startIndex = startNumber
+            }
+            let attributed = makeInlineAttributedString(from: item.text)
             items.append(attributed)
             current += 1
         }
@@ -316,7 +357,7 @@ enum MarkdownRenderer {
         guard headerCells.count == dividerCells.count else { return nil }
         guard
             dividerCells.allSatisfy({
-                $0.range(of: "^\\s*:?-+:?\\s*$", options: .regularExpression) != nil
+                firstMatch(using: Self.tableDividerRegex, in: $0) != nil
             })
         else { return nil }
 
@@ -378,9 +419,7 @@ enum MarkdownRenderer {
     #endif
 
     private nonisolated static func makeInlineAttributedString(from markdown: String) -> AttributedString {
-        var options = AttributedString.MarkdownParsingOptions()
-        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
-        return (try? AttributedString(markdown: markdown, options: options))
+        return (try? AttributedString(markdown: markdown, options: Self.inlineMarkdownOptions))
             ?? AttributedString(markdown)
     }
 }
