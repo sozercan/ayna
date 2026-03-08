@@ -12,6 +12,7 @@ import SwiftUI
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @EnvironmentObject var projectManager: ProjectManager
     @ObservedObject var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
@@ -38,6 +39,23 @@ struct MacNewChatView: View {
     private var currentConversation: Conversation? {
         guard let id = currentConversationId else { return nil }
         return conversationManager.conversations.first(where: { $0.id == id })
+    }
+
+    private var selectedProject: Project? {
+        guard let selectedProjectId = projectManager.selectedProjectId else { return nil }
+        return projectManager.project(byId: selectedProjectId)
+    }
+
+    private var preferredProjectModel: String? {
+        guard let defaultModel = selectedProject?.defaultModel?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !defaultModel.isEmpty,
+            aiService.usableModels.contains(defaultModel)
+        else {
+            return nil
+        }
+
+        return defaultModel
     }
 
     /// Determines the capability type of currently selected models (if any)
@@ -275,10 +293,20 @@ struct MacNewChatView: View {
         .onChange(of: currentConversation?.model ?? "") { _, _ in
             syncSelectedModelState()
         }
+        .onChange(of: projectManager.selectedProjectId) { _, _ in
+            guard currentConversation == nil else { return }
+            syncSelectedModelState()
+        }
+        .onChange(of: projectManager.projects) { _, _ in
+            guard currentConversation == nil else { return }
+            syncSelectedModelState()
+        }
         .onChange(of: aiService.selectedModel) { _, newValue in
             // Only follow global selection if we don't have a conversation yet
             guard currentConversation == nil else { return }
+            guard preferredProjectModel == nil else { return }
             selectedModel = newValue
+            selectedModels = [newValue]
         }
         .sheet(isPresented: $showAppContentPicker) {
             AppContentPickerView(
@@ -350,6 +378,9 @@ struct MacNewChatView: View {
         {
             selectedModel = conversationModel
             selectedModels = [conversationModel]
+        } else if let preferredProjectModel {
+            selectedModel = preferredProjectModel
+            selectedModels = [preferredProjectModel]
         } else {
             selectedModel = aiService.selectedModel
             selectedModels = [aiService.selectedModel]
@@ -502,16 +533,20 @@ struct MacNewChatView: View {
             )
         } else {
             // Create a new conversation
-            conversationManager.createNewConversation()
-            guard let newConversation = conversationManager.conversations.first else {
-                return
-            }
+            let targetProject = projectManager.selectedProjectId.flatMap { projectManager.project(byId: $0) }
+            let newConversation = conversationManager.createNewConversation(
+                model: targetProject?.defaultModel,
+                projectId: targetProject?.id
+            )
             conversation = newConversation
             currentConversationId = newConversation.id
             logNewChat(
                 "🆕 Created new conversation: \(newConversation.id)",
                 level: .info,
-                metadata: ["conversationId": newConversation.id.uuidString]
+                metadata: [
+                    "conversationId": newConversation.id.uuidString,
+                    "projectId": targetProject?.id.uuidString ?? "none"
+                ]
             )
         }
 
@@ -607,7 +642,12 @@ struct MacNewChatView: View {
             metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        let currentMessages = updatedConversation.messages
+        var currentMessages = updatedConversation.messages
+
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            currentMessages.insert(systemMessage, at: 0)
+        }
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
@@ -809,7 +849,7 @@ struct MacNewChatView: View {
 
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
+        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
@@ -1151,6 +1191,20 @@ struct MacNewChatView: View {
                 }
             }
         )
+    }
+
+    private func buildFullSystemPrompt(for conversation: Conversation) -> String? {
+        var components: [String] = []
+
+        if let userPrompt = conversationManager.effectiveSystemPrompt(for: conversation), !userPrompt.isEmpty {
+            components.append(userPrompt)
+        }
+
+        if let agenticContext = aiService.getAgenticSystemPromptContext() {
+            components.append(agenticContext)
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: "\n\n")
     }
 
     func presentError(_ error: Error) {
