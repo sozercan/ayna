@@ -127,20 +127,7 @@ struct AgentSettings: Codable, Sendable {
 
         /// Applies current settings to the relevant services
         func applyToServices() {
-            guard let builtinService = AIService.shared.builtinToolService,
-                  let permissionService = AIService.shared.permissionService
-            else {
-                return
-            }
-
-            builtinService.isEnabled = settings.isEnabled
-            builtinService.commandTimeoutSeconds = settings.commandTimeoutSeconds
-            permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
-            permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
-
-            // Also control WebFetchService based on agent settings
-            WebFetchService.shared.isEnabled = settings.isEnabled
-            WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
+            AIService.shared.applyAgentSettings(settings)
         }
 
         /// Resets to default settings

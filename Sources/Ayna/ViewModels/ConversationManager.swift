@@ -321,12 +321,24 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    func createNewConversation(title: String = "New Conversation") {
-        let defaultModel = AIService.shared.selectedModel
-        let conversation = Conversation(title: title, model: defaultModel)
+    @discardableResult
+    func createNewConversation(
+        title: String = "New Conversation",
+        model: String? = nil,
+        projectId: UUID? = nil
+    ) -> Conversation {
+        let requestedModel = (model ?? AIService.shared.selectedModel).trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let availableModels = AIService.shared.customModels
+        let defaultModel = availableModels.contains(requestedModel)
+            ? requestedModel
+            : AIService.shared.selectedModel
+        let conversation = Conversation(title: title, model: defaultModel, projectId: projectId)
         conversations.insert(conversation, at: 0)
         updateCacheForInsertion(at: 0)
         save(conversation)
+        return conversation
     }
 
     func insertConversationFromSync(_ conversation: Conversation) {
@@ -415,6 +427,14 @@ final class ConversationManager: ObservableObject {
     func renameConversation(_ conversation: Conversation, newTitle: String) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].title = newTitle
+            conversations[index].updatedAt = Date()
+            save(conversations[index])
+        }
+    }
+
+    func updateProjectId(for conversation: Conversation, projectId: UUID?) {
+        if let index = getConversationIndex(for: conversation.id) {
+            conversations[index].projectId = projectId
             conversations[index].updatedAt = Date()
             save(conversations[index])
         }
