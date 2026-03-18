@@ -89,7 +89,13 @@ final class OpenAIImageService: @unchecked Sendable {
             customEndpoint: requestConfig.customEndpoint,
             azureAPIVersion: requestConfig.azureAPIVersion
         )
-        let imageURL = OpenAIEndpointResolver.imageGenerationURL(for: endpointConfig)
+        let imageURL: String
+        do {
+            imageURL = try OpenAIEndpointResolver.imageGenerationURL(for: endpointConfig)
+        } catch {
+            onError(error)
+            return
+        }
 
         guard let url = URL(string: imageURL) else {
             onError(AynaError.invalidEndpoint(imageURL))
@@ -387,7 +393,13 @@ final class OpenAIImageService: @unchecked Sendable {
             customEndpoint: requestConfig.customEndpoint,
             azureAPIVersion: requestConfig.azureAPIVersion
         )
-        let editURL = OpenAIEndpointResolver.imageEditURL(for: endpointConfig)
+        let editURL: String
+        do {
+            editURL = try OpenAIEndpointResolver.imageEditURL(for: endpointConfig)
+        } catch {
+            onError(error)
+            return
+        }
 
         guard let url = URL(string: editURL) else {
             onError(AynaError.invalidEndpoint(editURL))

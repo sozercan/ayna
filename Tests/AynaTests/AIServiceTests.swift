@@ -481,6 +481,58 @@ struct AIServiceTests {
         #expect(receivedChunks.value == "Here is my answer.")
         #expect(receivedReasoning.value == "Let me think about this...")
     }
+
+    @Test("Custom OpenAI-compatible endpoint can send without API key", .timeLimit(.minutes(1)))
+    func customOpenAICompatibleEndpointCanSendWithoutAPIKey() async throws {
+        let service = makeService()
+        service.modelAPIKeys["gpt-4o"] = ""
+        service.modelEndpoints["gpt-4o"] = "https://proxy.example.com"
+
+        MockURLProtocol.requestHandler = { request in
+            MockURLProtocol.lastRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = Data(
+                """
+                    {"choices":[{"message":{"content":"Hello from proxy"}}]}
+                """.utf8
+            )
+            return (response, body)
+        }
+
+        let receivedChunk = ResultHolder()
+
+        #expect(service.isModelConfigured("gpt-4o") == true)
+
+        await confirmation("Custom endpoint request completes") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hi")],
+                model: "gpt-4o",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { chunk in
+                    receivedChunk.value += chunk
+                },
+                onComplete: {
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let request = try #require(MockURLProtocol.lastRequest)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.url?.absoluteString == "https://proxy.example.com/v1/chat/completions")
+        #expect(receivedChunk.value == "Hello from proxy")
+    }
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {

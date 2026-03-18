@@ -42,10 +42,10 @@ enum OpenAIEndpointResolver {
     // MARK: - Public API
 
     /// Resolves the chat completions endpoint URL.
-    static func chatCompletionsURL(for config: EndpointConfig) -> String {
+    static func chatCompletionsURL(for config: EndpointConfig) throws -> String {
         switch config.provider {
         case .openai:
-            resolveOpenAIChatURL(config)
+            try resolveOpenAIChatURL(config)
         case .githubModels:
             githubModelsChatURL
         case .appleIntelligence:
@@ -56,10 +56,10 @@ enum OpenAIEndpointResolver {
     }
 
     /// Resolves the responses API endpoint URL.
-    static func responsesURL(for config: EndpointConfig) -> String {
+    static func responsesURL(for config: EndpointConfig) throws -> String {
         switch config.provider {
         case .openai:
-            resolveOpenAIResponsesURL(config)
+            try resolveOpenAIResponsesURL(config)
         case .githubModels:
             "" // GitHub Models doesn't support the Responses API
         case .appleIntelligence:
@@ -70,7 +70,7 @@ enum OpenAIEndpointResolver {
     }
 
     /// Resolves the image generation endpoint URL.
-    static func imageGenerationURL(for config: EndpointConfig) -> String {
+    static func imageGenerationURL(for config: EndpointConfig) throws -> String {
         guard config.provider == .openai || config.provider == .githubModels else {
             return "" // Only OpenAI and GitHub Models support image generation
         }
@@ -86,19 +86,21 @@ enum OpenAIEndpointResolver {
             return openAIImagesURL
         }
 
-        if isAzureEndpoint(customEndpoint) {
+        let validatedEndpoint = try validatedCustomEndpoint(customEndpoint)
+
+        if isAzureEndpoint(validatedEndpoint) {
             return azureImagesURL(
-                baseEndpoint: customEndpoint,
+                baseEndpoint: validatedEndpoint,
                 deployment: config.modelName,
                 apiVersion: config.azureAPIVersion
             )
         }
 
-        return appendPathIfNeeded(customEndpoint, path: "/v1/images/generations")
+        return appendPathIfNeeded(validatedEndpoint, path: "/v1/images/generations")
     }
 
     /// Resolves the image editing endpoint URL.
-    static func imageEditURL(for config: EndpointConfig) -> String {
+    static func imageEditURL(for config: EndpointConfig) throws -> String {
         guard config.provider == .openai else {
             return "" // Only OpenAI supports image editing
         }
@@ -109,15 +111,17 @@ enum OpenAIEndpointResolver {
             return openAIImageEditsURL
         }
 
-        if isAzureEndpoint(customEndpoint) {
+        let validatedEndpoint = try validatedCustomEndpoint(customEndpoint)
+
+        if isAzureEndpoint(validatedEndpoint) {
             return azureImageEditsURL(
-                baseEndpoint: customEndpoint,
+                baseEndpoint: validatedEndpoint,
                 deployment: config.modelName,
                 apiVersion: config.azureAPIVersion
             )
         }
 
-        return appendPathIfNeeded(customEndpoint, path: "/v1/images/edits")
+        return appendPathIfNeeded(validatedEndpoint, path: "/v1/images/edits")
     }
 
     /// Checks if the given endpoint is an Azure OpenAI endpoint.
@@ -128,39 +132,43 @@ enum OpenAIEndpointResolver {
 
     // MARK: - Private Helpers
 
-    private static func resolveOpenAIChatURL(_ config: EndpointConfig) -> String {
+    private static func resolveOpenAIChatURL(_ config: EndpointConfig) throws -> String {
         guard let customEndpoint = config.customEndpoint,
               !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return openAIChatURL
         }
 
-        if isAzureEndpoint(customEndpoint) {
+        let validatedEndpoint = try validatedCustomEndpoint(customEndpoint)
+
+        if isAzureEndpoint(validatedEndpoint) {
             return azureChatCompletionsURL(
-                baseEndpoint: customEndpoint,
+                baseEndpoint: validatedEndpoint,
                 deployment: config.modelName,
                 apiVersion: config.azureAPIVersion
             )
         }
 
-        return appendPathIfNeeded(customEndpoint, path: "/v1/chat/completions")
+        return appendPathIfNeeded(validatedEndpoint, path: "/v1/chat/completions")
     }
 
-    private static func resolveOpenAIResponsesURL(_ config: EndpointConfig) -> String {
+    private static func resolveOpenAIResponsesURL(_ config: EndpointConfig) throws -> String {
         guard let customEndpoint = config.customEndpoint,
               !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return openAIResponsesURL
         }
 
-        if isAzureEndpoint(customEndpoint) {
+        let validatedEndpoint = try validatedCustomEndpoint(customEndpoint)
+
+        if isAzureEndpoint(validatedEndpoint) {
             return azureResponsesURL(
-                baseEndpoint: customEndpoint,
+                baseEndpoint: validatedEndpoint,
                 apiVersion: config.azureAPIVersion
             )
         }
 
-        return appendPathIfNeeded(customEndpoint, path: "/v1/responses")
+        return appendPathIfNeeded(validatedEndpoint, path: "/v1/responses")
     }
 
     // MARK: - URL Building Helpers
@@ -169,6 +177,24 @@ enum OpenAIEndpointResolver {
         endpoint
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private static func validatedCustomEndpoint(_ endpoint: String) throws -> String {
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let url = URL(string: trimmed), url.host != nil else {
+            throw AynaError.invalidEndpoint(trimmed)
+        }
+
+        guard let scheme = url.scheme?.lowercased() else {
+            throw AynaError.invalidEndpoint(trimmed)
+        }
+
+        if scheme != "http", scheme != "https" {
+            throw AynaError.invalidEndpoint("Invalid URL scheme: \(scheme)")
+        }
+
+        return trimmed
     }
 
     private static func percentEncodedDeployment(_ deployment: String) -> String {

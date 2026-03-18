@@ -20,7 +20,7 @@ enum AnthropicEndpointResolver {
     ///
     /// - Parameter customEndpoint: Optional custom endpoint URL.
     /// - Returns: The resolved URL for the messages endpoint.
-    /// - Throws: `AynaError.invalidEndpoint` if the URL is malformed or uses HTTP (except localhost).
+    /// - Throws: `AynaError.invalidEndpoint` if the URL is malformed or uses an unsupported scheme.
     static func messagesURL(customEndpoint: String?) throws -> URL {
         guard let customEndpoint, !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             guard let url = URL(string: defaultMessagesURL) else {
@@ -39,13 +39,6 @@ enum AnthropicEndpointResolver {
         // Validate scheme
         guard let scheme = url.scheme?.lowercased() else {
             throw AynaError.invalidEndpoint(trimmed)
-        }
-
-        // Allow localhost for development testing
-        let isLocalhost = url.host?.lowercased() == "localhost" || url.host == "127.0.0.1"
-
-        if scheme == "http", !isLocalhost {
-            throw AynaError.invalidEndpoint("HTTP endpoints are not allowed (use HTTPS): \(trimmed)")
         }
 
         if scheme != "http", scheme != "https" {

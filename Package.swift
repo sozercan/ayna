@@ -37,6 +37,17 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v6),
                 .enableExperimentalFeature("StrictConcurrency"),
+            ],
+            linkerSettings: [
+                .unsafeFlags(
+                    [
+                        "-Xlinker", "-sectcreate",
+                        "-Xlinker", "__TEXT",
+                        "-Xlinker", "__info_plist",
+                        "-Xlinker", "Sources/Ayna/Info.plist",
+                    ],
+                    .when(platforms: [.macOS])
+                ),
             ]
         ),
         .testTarget(

@@ -34,7 +34,13 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         tools: [[String: Any]]?,
         callbacks: AIProviderStreamCallbacks
     ) {
-        let apiURL = resolveEndpointURL(config: config)
+        let apiURL: String
+        do {
+            apiURL = try resolveEndpointURL(config: config)
+        } catch {
+            callbacks.onError(error)
+            return
+        }
 
         guard let url = URL(string: apiURL) else {
             DiagnosticsLogger.log(
@@ -107,14 +113,14 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
 
     // MARK: - Private Methods
 
-    private func resolveEndpointURL(config: AIProviderRequestConfig) -> String {
+    private func resolveEndpointURL(config: AIProviderRequestConfig) throws -> String {
         let endpointConfig = OpenAIEndpointResolver.EndpointConfig(
             modelName: config.model,
             provider: .openai,
             customEndpoint: config.customEndpoint,
             azureAPIVersion: config.azureAPIVersion
         )
-        return OpenAIEndpointResolver.chatCompletionsURL(for: endpointConfig)
+        return try OpenAIEndpointResolver.chatCompletionsURL(for: endpointConfig)
     }
 
     private func streamResponse(
