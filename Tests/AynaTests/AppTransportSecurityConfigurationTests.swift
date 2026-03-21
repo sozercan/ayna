@@ -17,24 +17,24 @@ struct AppTransportSecurityConfigurationTests {
             .deletingLastPathComponent()
     }
 
-    @Test
-    func `Shared Info.plist allows insecure HTTP loads`() throws {
+    @Test("Shared Info.plist allows insecure HTTP loads")
+    func sharedInfoPlistAllowsInsecureHTTPLoads() throws {
         let plistURL = repositoryRootURL.appendingPathComponent("Sources/Ayna/Info.plist")
         let plist = try loadPlist(at: plistURL)
 
         try assertAllowsArbitraryLoads(in: plist)
     }
 
-    @Test
-    func `macOS build script preserves insecure HTTP ATS setting`() throws {
+    @Test("macOS build script preserves insecure HTTP ATS setting")
+    func macOSBuildScriptPreservesInsecureHTTPATSSetting() throws {
         let scriptURL = repositoryRootURL.appendingPathComponent("Scripts/build-app.sh")
         let contents = try String(contentsOf: scriptURL, encoding: .utf8)
 
         #expect(contents.contains("<key>NSAllowsArbitraryLoads</key>\n        <true/>"))
     }
 
-    @Test
-    func `Package manifest embeds shared Info plist for macOS builds`() throws {
+    @Test("Package manifest embeds shared Info plist for macOS builds")
+    func packageManifestEmbedsSharedInfoPlistForMacOSBuilds() throws {
         let packageURL = repositoryRootURL.appendingPathComponent("Package.swift")
         let contents = try String(contentsOf: packageURL, encoding: .utf8)
 

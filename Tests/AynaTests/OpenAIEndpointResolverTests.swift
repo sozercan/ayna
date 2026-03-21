@@ -10,8 +10,8 @@ import Testing
 
 @Suite(.tags(.fast, .errorHandling))
 struct OpenAIEndpointResolverTests {
-    @Test
-    func `Default OpenAI chat endpoint returns the platform URL`() throws {
+    @Test("Default OpenAI chat endpoint returns the platform URL")
+    func defaultOpenAIChatEndpointReturnsThePlatformURL() throws {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai
@@ -22,8 +22,8 @@ struct OpenAIEndpointResolverTests {
         #expect(url == "https://api.openai.com/v1/chat/completions")
     }
 
-    @Test
-    func `Custom HTTPS endpoint appends the chat completions path`() throws {
+    @Test("Custom HTTPS endpoint appends the chat completions path")
+    func customHTTPSEndpointAppendsTheChatCompletionsPath() throws {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai,
@@ -35,8 +35,8 @@ struct OpenAIEndpointResolverTests {
         #expect(url == "https://my-proxy.example.com/v1/chat/completions")
     }
 
-    @Test
-    func `HTTP localhost endpoint is allowed for development`() throws {
+    @Test("HTTP localhost endpoint is allowed for development")
+    func httpLocalhostEndpointIsAllowedForDevelopment() throws {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai,
@@ -48,8 +48,8 @@ struct OpenAIEndpointResolverTests {
         #expect(url == "http://localhost:8000/v1/chat/completions")
     }
 
-    @Test
-    func `HTTP loopback endpoint is allowed for development`() throws {
+    @Test("HTTP loopback endpoint is allowed for development")
+    func httpLoopbackEndpointIsAllowedForDevelopment() throws {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai,
@@ -61,8 +61,8 @@ struct OpenAIEndpointResolverTests {
         #expect(url == "http://127.0.0.1:8000/v1/chat/completions")
     }
 
-    @Test
-    func `HTTP non-localhost endpoint is allowed`() throws {
+    @Test("HTTP non-localhost endpoint is allowed")
+    func httpNonLocalhostEndpointIsAllowed() throws {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai,
