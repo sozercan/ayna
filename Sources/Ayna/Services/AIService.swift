@@ -567,7 +567,7 @@ class AIService: ObservableObject {
         return modelAPIKeys[model] ?? ""
     }
 
-    private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
+    private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) throws -> String {
         let effectiveProvider = provider ?? self.provider
         let modelName = deploymentName ?? selectedModel
         let endpointInfo = customEndpoint(for: modelName)
@@ -579,10 +579,10 @@ class AIService: ObservableObject {
             azureAPIVersion: azureAPIVersion
         )
 
-        return OpenAIEndpointResolver.chatCompletionsURL(for: config)
+        return try OpenAIEndpointResolver.chatCompletionsURL(for: config)
     }
 
-    private func getResponsesAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) -> String {
+    private func getResponsesAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) throws -> String {
         let effectiveProvider = provider ?? self.provider
         let modelName = deploymentName ?? selectedModel
         let endpointInfo = customEndpoint(for: modelName)
@@ -594,7 +594,7 @@ class AIService: ObservableObject {
             azureAPIVersion: azureAPIVersion
         )
 
-        return OpenAIEndpointResolver.responsesURL(for: config)
+        return try OpenAIEndpointResolver.responsesURL(for: config)
     }
 
     func getModelCapability(_ model: String) -> ModelCapability {
@@ -739,10 +739,10 @@ class AIService: ObservableObject {
     // MARK: - Helper Methods for sendMessage
 
     private func validateProviderSettings(for provider: AIProvider, model: String?) throws {
-        guard providerRequiresAPIKey(provider) else { return }
+        guard requiresAPIKey(for: provider, model: model) else { return }
 
         if !isAPIKeyConfigured(for: provider, model: model) {
-            throw AynaError.missingAPIKey(provider: "API")
+            throw AynaError.missingAPIKey(provider: provider.displayName)
         }
     }
 
@@ -925,7 +925,13 @@ class AIService: ObservableObject {
         }
 
         // Build API request
-        let apiURL = getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
+        let apiURL: String
+        do {
+            apiURL = try getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
+        } catch {
+            onError(error)
+            return
+        }
 
         guard let url = URL(string: apiURL) else {
             DiagnosticsLogger.log(
@@ -1269,7 +1275,13 @@ class AIService: ObservableObject {
 
         let requestModel = model
         let modelAPIKey = getAPIKey(for: requestModel)
-        let apiURL = getResponsesAPIURL(deploymentName: model, provider: effectiveProvider)
+        let apiURL: String
+        do {
+            apiURL = try getResponsesAPIURL(deploymentName: model, provider: effectiveProvider)
+        } catch {
+            onError(error)
+            return
+        }
 
         guard let url = URL(string: apiURL) else {
             onError(AIError.invalidURL)
@@ -2171,7 +2183,7 @@ class AIService: ObservableObject {
 
         // Validate API key
         guard !modelAPIKey.isEmpty else {
-            callbacks.onError(AynaError.missingAPIKey(provider: "API"))
+            callbacks.onError(AynaError.missingAPIKey(provider: AIProvider.anthropic.displayName))
             return
         }
 
@@ -2310,8 +2322,28 @@ extension AIService {
         }
     }
 
+    private func requiresAPIKey(for provider: AIProvider, model: String?) -> Bool {
+        guard providerRequiresAPIKey(provider) else { return false }
+
+        guard provider == .openai else { return true }
+        guard let endpoint = customEndpoint(for: model)?.endpoint else { return true }
+
+        if isAzureEndpoint(endpoint) {
+            return true
+        }
+
+        guard let host = URL(string: endpoint)?.host?.lowercased() else {
+            return true
+        }
+
+        return host == "api.openai.com" || host.hasSuffix(".openai.com")
+    }
+
     var requiresAPIKey: Bool {
-        providerRequiresAPIKey(provider)
+        let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModel = trimmedModel.isEmpty ? nil : trimmedModel
+        let activeProvider = normalizedModel.flatMap { modelProviders[$0] } ?? provider
+        return requiresAPIKey(for: activeProvider, model: normalizedModel)
     }
 
     var latestAzureAPIVersion: String {
@@ -2319,7 +2351,7 @@ extension AIService {
     }
 
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
-        guard providerRequiresAPIKey(provider) else { return true }
+        guard requiresAPIKey(for: provider, model: model) else { return true }
 
         // For GitHub Models, check OAuth token first
         if provider == .githubModels {
@@ -2348,7 +2380,8 @@ extension AIService {
     var isAPIKeyConfigured: Bool {
         let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedModel = trimmedModel.isEmpty ? nil : trimmedModel
-        return isAPIKeyConfigured(for: provider, model: normalizedModel)
+        let activeProvider = normalizedModel.flatMap { modelProviders[$0] } ?? provider
+        return isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
     }
 
     /// Check if a specific model is ready to use (has API key or doesn't need one)
@@ -2372,7 +2405,7 @@ extension AIService {
             issues.append("Select a default model in Settings > Model tab")
         }
 
-        if providerRequiresAPIKey(activeProvider),
+        if requiresAPIKey(for: activeProvider, model: normalizedModel),
            !isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
         {
             issues.append("Add an API key for \(activeProvider.displayName)")

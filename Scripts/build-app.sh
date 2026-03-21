@@ -137,6 +137,24 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <string>NSApplication</string>
     <key>LSUIElement</key>
     <false/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>localhost</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+            <key>127.0.0.1</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
 
     <!-- URL Scheme Registration -->
     <key>CFBundleURLTypes</key>

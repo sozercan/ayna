@@ -1102,14 +1102,14 @@ struct APISettingsView: View {
                                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                                         }
                                         TextField(
-                                            "https://api.openai.com or http://localhost:8000", text: $tempEndpoint
+                                            "https://api.openai.com or http://my-proxy.example.com:8000", text: $tempEndpoint
                                         )
                                         .textFieldStyle(.roundedBorder)
                                         .onChange(of: tempEndpoint) { _, _ in
                                             validationStatus = .notChecked
                                         }
                                         Text(
-                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name."
+                                            "OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://my-proxy.example.com:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name."
                                         )
                                         .font(Typography.caption)
                                         .foregroundStyle(.tertiary)
@@ -2277,12 +2277,12 @@ struct AnthropicConfigurationView: View {
                             .background(Color.secondary.opacity(0.1))
                             .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
                     }
-                    TextField("https://api.anthropic.com", text: $tempEndpoint)
+                    TextField("https://api.anthropic.com or http://my-proxy.example.com:8000", text: $tempEndpoint)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: tempEndpoint) { _, _ in
                             validationStatus = .notChecked
                         }
-                    Text("Leave empty for the default Anthropic API. Enter a custom URL for proxies or Azure.")
+                    Text("Leave empty for the default Anthropic API. Enter a custom HTTP or HTTPS URL for proxies or Azure.")
                         .font(Typography.caption)
                         .foregroundStyle(.tertiary)
                 }

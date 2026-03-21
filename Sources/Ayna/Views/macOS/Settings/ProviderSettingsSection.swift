@@ -77,12 +77,12 @@ struct OpenAIConfigurationSection: View {
                 Spacer()
                 requiredBadge
             }
-            TextField("https://api.openai.com or http://localhost:8000", text: $tempEndpoint)
+            TextField("https://api.openai.com or http://my-proxy.example.com:8000", text: $tempEndpoint)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: tempEndpoint) { _, _ in
                     validationStatus = .notChecked
                 }
-            Text("OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://localhost:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name.")
+            Text("OpenAI-compatible API endpoint (e.g., https://api.openai.com, http://my-proxy.example.com:8000). For Azure, enter https://<resource>.openai.azure.com and set Model Name to your deployment name.")
                 .font(Typography.caption)
                 .foregroundStyle(.tertiary)
         }
