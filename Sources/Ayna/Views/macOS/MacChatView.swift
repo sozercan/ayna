@@ -1073,15 +1073,14 @@ struct MacChatView: View {
                         var lastMessage = conversationManager.conversations[index].messages.last,
                         lastMessage.role == .assistant
                     {
-                        // Convert arguments to AnyCodable
-                        let toolCall = ToolCallHandler.createToolCall(
-                            id: toolCallId,
+                        let annotationPlan = ToolCallAnnotationPlan(
+                            existingToolCalls: lastMessage.toolCalls,
+                            toolCallId: toolCallId,
                             toolName: toolName,
-                            arguments: arguments
+                            arguments: arguments,
+                            mergePolicy: .append
                         )
-                        var existingToolCalls = lastMessage.toolCalls ?? []
-                        existingToolCalls.append(toolCall)
-                        lastMessage.toolCalls = existingToolCalls
+                        lastMessage.toolCalls = annotationPlan.toolCalls
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage

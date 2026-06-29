@@ -767,19 +767,18 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                        let lastMessage = conv.messages.last,
                        lastMessage.role == .assistant
                     {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-                        let toolCall = MCPToolCall(
-                            id: toolCallId,
+                        let annotationPlan = ToolCallAnnotationPlan(
+                            existingToolCalls: lastMessage.toolCalls,
+                            toolCallId: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments,
+                            mergePolicy: .replace
                         )
                         self.conversationManager.updateMessage(
                             conversationId: conversationId,
                             messageId: lastMessage.id
                         ) { message in
-                            message.toolCalls = [toolCall]
+                            message.toolCalls = annotationPlan.toolCalls
                         }
                         if let updatedConv = self.conversationManager.conversation(byId: conversationId) {
                             self.conversationManager.save(updatedConv)
