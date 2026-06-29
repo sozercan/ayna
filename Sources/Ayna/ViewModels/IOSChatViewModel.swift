@@ -533,7 +533,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             assistantMessageId: assistantMessage.id,
             tools: tools,
             failedUserMessageId: userMessage.id,
-            failedUserMessagePolicy: .removeForRetry
+            failedUserMessagePolicy: onConversationCreated == nil ? .removeForRetry : .preserve
         )
     }
 
