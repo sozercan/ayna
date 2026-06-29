@@ -130,6 +130,23 @@ enum OpenAIEndpointResolver {
         return host == "openai.azure.com" || host.hasSuffix(".openai.azure.com")
     }
 
+    /// Returns whether a custom OpenAI-compatible endpoint should require an API key.
+    /// OpenAI-hosted and Azure OpenAI endpoints require keys; other custom endpoints
+    /// may rely on local or network-level authentication and can omit provider auth.
+    static func customEndpointRequiresAPIKey(_ endpoint: String?) -> Bool {
+        if isAzureEndpoint(endpoint) {
+            return true
+        }
+
+        guard let endpoint,
+              let host = URL(string: endpoint)?.host?.lowercased()
+        else {
+            return true
+        }
+
+        return host == "api.openai.com" || host.hasSuffix(".openai.com")
+    }
+
     // MARK: - Private Helpers
 
     private static func resolveOpenAIChatURL(_ config: EndpointConfig) throws -> String {

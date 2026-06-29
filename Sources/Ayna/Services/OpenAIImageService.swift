@@ -553,16 +553,6 @@ final class OpenAIImageService: @unchecked Sendable {
 
 private extension OpenAIImageService.RequestConfig {
     var requiresAPIKey: Bool {
-        if OpenAIEndpointResolver.isAzureEndpoint(customEndpoint) {
-            return true
-        }
-
-        guard let customEndpoint,
-              let host = URL(string: customEndpoint)?.host?.lowercased()
-        else {
-            return true
-        }
-
-        return host == "api.openai.com" || host.hasSuffix(".openai.com")
+        OpenAIEndpointResolver.customEndpointRequiresAPIKey(customEndpoint)
     }
 }

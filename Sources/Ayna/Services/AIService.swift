@@ -2328,15 +2328,7 @@ extension AIService {
         guard provider == .openai else { return true }
         guard let endpoint = customEndpoint(for: model)?.endpoint else { return true }
 
-        if isAzureEndpoint(endpoint) {
-            return true
-        }
-
-        guard let host = URL(string: endpoint)?.host?.lowercased() else {
-            return true
-        }
-
-        return host == "api.openai.com" || host.hasSuffix(".openai.com")
+        return OpenAIEndpointResolver.customEndpointRequiresAPIKey(endpoint)
     }
 
     var requiresAPIKey: Bool {

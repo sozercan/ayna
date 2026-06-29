@@ -112,4 +112,12 @@ struct OpenAIEndpointResolverTests {
             _ = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
         }
     }
+
+    @Test("Custom endpoint API key requirement is centralized")
+    func customEndpointAPIKeyRequirementIsCentralized() {
+        #expect(OpenAIEndpointResolver.customEndpointRequiresAPIKey(nil))
+        #expect(OpenAIEndpointResolver.customEndpointRequiresAPIKey("https://api.openai.com"))
+        #expect(OpenAIEndpointResolver.customEndpointRequiresAPIKey("https://resource.openai.azure.com"))
+        #expect(!OpenAIEndpointResolver.customEndpointRequiresAPIKey("https://proxy.example.com"))
+    }
 }
