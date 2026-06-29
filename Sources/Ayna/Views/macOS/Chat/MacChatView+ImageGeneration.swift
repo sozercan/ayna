@@ -300,11 +300,10 @@ extension MacChatView {
         let messageIdsByModel = messageIds
 
         // Prepare messages for API
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Capture necessary values for closures
         let conversationId = conversation.id

@@ -26,9 +26,7 @@ final class ToolCallHandler {
         arguments: [String: Any],
         result: String? = nil
     ) -> MCPToolCall {
-        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { dict, pair in
-            dict[pair.key] = AnyCodable(pair.value)
-        }
+        let anyCodableArgs = ChatTurnRequestPlan.anyCodableArguments(from: arguments)
 
         return MCPToolCall(
             id: id,
@@ -93,27 +91,17 @@ final class ToolCallHandler {
         isWebSearch: Bool,
         systemPrompt: String?
     ) -> [Message] {
-        // Exclude the continuation assistant message (last one)
-        var messages = Array(conversationMessages.dropLast())
-
-        if isWebSearch {
-            // Append a synthetic tool message for the API only (not stored)
-            let syntheticToolMessage = createToolMessage(
+        ChatTurnRequestPlan.toolContinuationMessages(
+            conversationMessages: conversationMessages,
+            toolResult: ChatTurnRequestPlan.ToolResult(
                 toolCallId: toolCallId,
                 toolName: toolName,
-                arguments: arguments,
-                result: result
-            )
-            messages.append(syntheticToolMessage)
-        }
-
-        // Prepend system prompt if provided
-        if let systemPrompt {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messages.insert(systemMessage, at: 0)
-        }
-
-        return messages
+                arguments: ChatTurnRequestPlan.anyCodableArguments(from: arguments),
+                result: result,
+                shouldSynthesizeToolMessage: isWebSearch
+            ),
+            systemPrompt: systemPrompt
+        )
     }
 }
 

@@ -504,13 +504,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Messages to send (exclude the empty assistant message we just added)
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingTrailingPlaceholder: true
+        ).messages
 
         // Get available tools (Tavily web search on iOS)
         let tools = aiService.getAllAvailableTools()
@@ -849,28 +847,17 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 return
                             }
 
-                            // Build messages for API - exclude the continuation assistant message
-                            // The continuation message is just a placeholder for where we'll store the response
-                            var continuationMessages = Array(convWithAssistant.messages.dropLast())
-                            if isWebSearch {
-                                // Append a synthetic tool message for the API only
-                                var syntheticToolMessage = Message(role: .tool, content: result)
-                                syntheticToolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
-                                    )
-                                ]
-                                // Append the tool message at the end (after the assistant with tool_calls)
-                                continuationMessages.append(syntheticToolMessage)
-                            }
-
-                            if let sysPrompt = self.conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
-                                let sysMessage = Message(role: .system, content: sysPrompt)
-                                continuationMessages.insert(sysMessage, at: 0)
-                            }
+                            let continuationMessages = ChatTurnRequestPlan.toolContinuationMessages(
+                                conversationMessages: convWithAssistant.messages,
+                                toolResult: ChatTurnRequestPlan.ToolResult(
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: anyCodableArgs,
+                                    result: result,
+                                    shouldSynthesizeToolMessage: isWebSearch
+                                ),
+                                systemPrompt: self.conversationManager.effectiveSystemPrompt(for: convWithAssistant)
+                            )
 
                             // Clear tool name since tool execution is complete
                             // The continuation is now a regular API call
@@ -938,13 +925,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingTrailingPlaceholder: true
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -978,13 +963,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(refreshed.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: refreshed,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: refreshed),
+            excludingTrailingPlaceholder: true
+        ).messages
 
         let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
@@ -1039,13 +1022,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingTrailingPlaceholder: true
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -1159,10 +1140,11 @@ extension IOSChatViewModel {
             isGenerating = false
             return
         }
-        var messagesToSend = updatedConversation.getEffectiveHistory().filter { $0.responseGroupId != responseGroupId }
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingResponseGroupId: responseGroupId
+        )
 
         // Send to all models
         aiService.sendToMultipleModels(

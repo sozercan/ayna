@@ -351,12 +351,11 @@ struct MacChatView: View {
 
         isGenerating = true
 
-        // Build messages for API using the same pattern as sendMessage
-        var messagesToSend = currentConversation.messages
-        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        // Build messages for API using the shared chat-turn planner
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentConversation.messages,
+            systemPrompt: buildFullSystemPrompt(for: currentConversation)
+        )
 
         // Create assistant placeholder
         let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
@@ -734,12 +733,10 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentMessages,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)

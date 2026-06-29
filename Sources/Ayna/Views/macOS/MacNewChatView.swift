@@ -708,11 +708,10 @@ struct MacNewChatView: View {
         let messageIdsByModel = messageIds
 
         // Prepare messages for API
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
+        )
 
         // Send to all models in parallel
         aiService.sendToMultipleModels(
