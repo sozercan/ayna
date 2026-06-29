@@ -40,11 +40,9 @@ final class EncryptedMemoryStore: Sendable {
     init(
         directoryURL: URL? = nil,
         keyIdentifier: String = "memory_encryption_key",
-        keychain: KeychainStoring = KeychainStorage.shared
+        keychain: KeychainStoring = KeychainStorage.standard
     ) {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let baseDirectory = appSupport.appendingPathComponent("Ayna", isDirectory: true)
+        let baseDirectory = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
 
         if !FileManager.default.fileExists(atPath: baseDirectory.path) {
             try? FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
