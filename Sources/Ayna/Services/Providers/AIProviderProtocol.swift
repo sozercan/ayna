@@ -124,28 +124,3 @@ extension AIProviderProtocol {
         return nil
     }
 }
-
-/// Provider factory for creating provider instances
-enum AIProviderFactory {
-    /// Create a provider instance for the given type
-    ///
-    /// - Parameters:
-    ///   - type: The provider type to create
-    ///   - urlSession: URLSession to use for network requests
-    /// - Returns: An instance of the appropriate provider
-    @MainActor
-    static func createProvider(for type: AIProvider, urlSession: URLSession) -> AIProviderProtocol {
-        switch type {
-        case .openai:
-            OpenAIProvider(urlSession: urlSession)
-        case .githubModels:
-            GitHubModelsProvider(urlSession: urlSession)
-        case .appleIntelligence:
-            // Apple Intelligence is handled separately by its dedicated service
-            // Return OpenAI provider as fallback (should not be used)
-            OpenAIProvider(urlSession: urlSession)
-        case .anthropic:
-            AnthropicProvider(urlSession: urlSession)
-        }
-    }
-}
