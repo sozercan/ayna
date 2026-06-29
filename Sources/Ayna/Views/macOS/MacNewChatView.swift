@@ -530,7 +530,10 @@ struct MacNewChatView: View {
             metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        let currentMessages = updatedConversation.messages
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: updatedConversation.messages,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
@@ -542,7 +545,7 @@ struct MacNewChatView: View {
 
         sendMessageWithToolSupport(
             conversation: conversation,
-            messages: currentMessages,
+            messages: messagesToSend,
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools
@@ -1015,7 +1018,8 @@ struct MacNewChatView: View {
                                     arguments: argumentsWrapper.value,
                                     result: result,
                                     isWebSearch: isWebSearch,
-                                    systemPrompt: nil // MacNewChatView doesn't add system prompts here
+                                    continuationAssistantMessageId: newAssistantMessage.id,
+                                    systemPrompt: conversationManager.effectiveSystemPrompt(for: convWithAssistant)
                                 )
 
                                 // Clear tool name since tool execution is complete

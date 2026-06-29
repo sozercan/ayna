@@ -19,11 +19,19 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
         messages = Self.messages(from: history, systemPrompt: systemPrompt)
     }
 
-    init(conversation: Conversation, systemPrompt: String?, excludingTrailingPlaceholder: Bool) {
-        let history = excludingTrailingPlaceholder
-            ? Array(conversation.messages.dropLast())
-            : conversation.messages
-        self.init(history: history, systemPrompt: systemPrompt)
+    init(history: [Message], systemPrompt: String?, excludingAssistantPlaceholderId placeholderId: UUID?) {
+        self.init(
+            history: Self.history(from: history, excludingAssistantPlaceholderId: placeholderId),
+            systemPrompt: systemPrompt
+        )
+    }
+
+    init(conversation: Conversation, systemPrompt: String?, excludingAssistantPlaceholderId placeholderId: UUID?) {
+        self.init(
+            history: conversation.messages,
+            systemPrompt: systemPrompt,
+            excludingAssistantPlaceholderId: placeholderId
+        )
     }
 
     static func messages(from history: [Message], systemPrompt: String?) -> [Message] {
@@ -32,6 +40,29 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
             messages.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
         return messages
+    }
+
+
+    static func messages(
+        from history: [Message],
+        systemPrompt: String?,
+        excludingAssistantPlaceholderId placeholderId: UUID?
+    ) -> [Message] {
+        ChatTurnRequestPlan(
+            history: history,
+            systemPrompt: systemPrompt,
+            excludingAssistantPlaceholderId: placeholderId
+        ).messages
+    }
+
+    private static func history(
+        from messages: [Message],
+        excludingAssistantPlaceholderId placeholderId: UUID?
+    ) -> [Message] {
+        guard let placeholderId else { return messages }
+        return messages.filter { message in
+            !(message.id == placeholderId && message.role == .assistant && message.content.isEmpty)
+        }
     }
 
     static func effectiveMessages(
@@ -71,10 +102,14 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
 
         static func toolContinuationMessages(
             conversationMessages: [Message],
+            excludingAssistantPlaceholderId placeholderId: UUID?,
             toolResult: ToolResult,
             systemPrompt: String?
         ) -> [Message] {
-            var history = Array(conversationMessages.dropLast())
+            var history = Self.history(
+                from: conversationMessages,
+                excludingAssistantPlaceholderId: placeholderId
+            )
 
             if toolResult.shouldSynthesizeToolMessage {
                 var syntheticToolMessage = Message(role: .tool, content: toolResult.result)

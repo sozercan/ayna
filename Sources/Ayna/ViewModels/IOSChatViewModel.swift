@@ -507,7 +507,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         let messagesToSend = ChatTurnRequestPlan(
             conversation: updatedConversation,
             systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
-            excludingTrailingPlaceholder: true
+            excludingAssistantPlaceholderId: assistantMessage.id
         ).messages
 
         // Get available tools (Tavily web search on iOS)
@@ -849,6 +849,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
                             let continuationMessages = ChatTurnRequestPlan.toolContinuationMessages(
                                 conversationMessages: convWithAssistant.messages,
+                                excludingAssistantPlaceholderId: continuationAssistantMessage.id,
                                 toolResult: ChatTurnRequestPlan.ToolResult(
                                     toolCallId: toolCallId,
                                     toolName: toolName,
@@ -928,7 +929,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         let messagesToSend = ChatTurnRequestPlan(
             conversation: updatedConversation,
             systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
-            excludingTrailingPlaceholder: true
+            excludingAssistantPlaceholderId: assistantMessage.id
         ).messages
 
         // Get available tools and use helper method
@@ -966,7 +967,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         let messagesToSend = ChatTurnRequestPlan(
             conversation: refreshed,
             systemPrompt: conversationManager.effectiveSystemPrompt(for: refreshed),
-            excludingTrailingPlaceholder: true
+            excludingAssistantPlaceholderId: assistantMessage.id
         ).messages
 
         let tools = aiService.getAllAvailableTools()
@@ -1025,7 +1026,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         let messagesToSend = ChatTurnRequestPlan(
             conversation: updatedConversation,
             systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
-            excludingTrailingPlaceholder: true
+            excludingAssistantPlaceholderId: assistantMessage.id
         ).messages
 
         // Get available tools and use helper method

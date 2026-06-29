@@ -120,8 +120,12 @@
                 return
             }
 
-            // Convert to Message array for API
-            let messagesForAPI = updatedConversation.messages.dropLast().map { $0.toMessage() }
+            // Convert to Message array for API, excluding the UI-only assistant placeholder
+            let messagesForAPI = ChatTurnRequestPlan.messages(
+                from: updatedConversation.messages.map { $0.toMessage() },
+                systemPrompt: nil,
+                excludingAssistantPlaceholderId: assistantMessage.id
+            )
 
             // Get model from settings or conversation, but validate it's usable on watchOS
             var model = connectivityService.selectedModel.isEmpty
@@ -399,13 +403,17 @@
                             }
 
                             // Build continuation messages (tool message is now in the store)
-                            let continuationMessages = updatedConv.messages.dropLast().map { $0.toMessage() }
+                            let continuationMessages = ChatTurnRequestPlan.messages(
+                                from: updatedConv.messages.map { $0.toMessage() },
+                                systemPrompt: nil,
+                                excludingAssistantPlaceholderId: newAssistantMessage.id
+                            )
 
                             self.streamingContent = ""
                             self.pendingContent = ""
 
                             self.sendMessageWithToolSupport(
-                                messages: Array(continuationMessages),
+                                messages: continuationMessages,
                                 model: model,
                                 conversationId: conversationId,
                                 tools: tools,

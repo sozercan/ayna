@@ -1166,6 +1166,7 @@ struct MacChatView: View {
                                     arguments: argumentsWrapper.value,
                                     result: result,
                                     isWebSearch: isWebSearch,
+                                    continuationAssistantMessageId: continuationAssistantMessage.id,
                                     systemPrompt: buildFullSystemPrompt(for: convWithAssistant)
                                 )
 

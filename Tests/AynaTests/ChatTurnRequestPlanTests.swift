@@ -34,7 +34,7 @@ struct ChatTurnRequestPlanTests {
         let plan = ChatTurnRequestPlan(
             conversation: conversation,
             systemPrompt: nil,
-            excludingTrailingPlaceholder: true
+            excludingAssistantPlaceholderId: placeholder.id
         )
 
         #expect(plan.messages == [user])
@@ -59,7 +59,47 @@ struct ChatTurnRequestPlanTests {
     }
 
     #if !os(watchOS)
-        @Test("Tool continuation drops UI placeholder and appends synthetic tool result for web search")
+
+
+    @Test("Plan excludes only the assistant placeholder with the matching identity")
+    func excludesOnlyMatchingAssistantPlaceholderIdentity() {
+        let user = Message(role: .user, content: "Hello")
+        let earlierAssistant = Message(role: .assistant, content: "Earlier")
+        let placeholder = Message(role: .assistant, content: "")
+        let conversation = Conversation(messages: [user, earlierAssistant, placeholder])
+
+        let plan = ChatTurnRequestPlan(
+            conversation: conversation,
+            systemPrompt: nil,
+            excludingAssistantPlaceholderId: placeholder.id
+        )
+
+        #expect(plan.messages == [user, earlierAssistant])
+    }
+
+    @Test("Plan does not drop trailing user when placeholder identity is missing or not an assistant")
+    func doesNotDropTrailingUserWhenPlaceholderIdentityIsMissingOrNotAssistant() {
+        let assistant = Message(role: .assistant, content: "Response")
+        let user = Message(role: .user, content: "Follow up")
+        let conversation = Conversation(messages: [assistant, user])
+
+        let noPlaceholderPlan = ChatTurnRequestPlan(
+            conversation: conversation,
+            systemPrompt: nil,
+            excludingAssistantPlaceholderId: nil
+        )
+        let userIdPlan = ChatTurnRequestPlan(
+            conversation: conversation,
+            systemPrompt: nil,
+            excludingAssistantPlaceholderId: user.id
+        )
+
+        #expect(noPlaceholderPlan.messages == [assistant, user])
+        #expect(userIdPlan.messages == [assistant, user])
+    }
+
+
+    @Test("Tool continuation drops UI placeholder and appends synthetic tool result for web search")
         func toolContinuationDropsPlaceholderAndAppendsSyntheticToolResult() throws {
             let user = Message(role: .user, content: "Search")
             let assistantToolCall = Message(role: .assistant, content: "")
@@ -74,6 +114,7 @@ struct ChatTurnRequestPlanTests {
 
             let messages = ChatTurnRequestPlan.toolContinuationMessages(
                 conversationMessages: [user, assistantToolCall, continuationPlaceholder],
+                excludingAssistantPlaceholderId: continuationPlaceholder.id,
                 toolResult: toolResult,
                 systemPrompt: "System"
             )
@@ -103,6 +144,7 @@ struct ChatTurnRequestPlanTests {
 
             let messages = ChatTurnRequestPlan.toolContinuationMessages(
                 conversationMessages: [user, storedTool, continuationPlaceholder],
+                excludingAssistantPlaceholderId: continuationPlaceholder.id,
                 toolResult: toolResult,
                 systemPrompt: nil
             )

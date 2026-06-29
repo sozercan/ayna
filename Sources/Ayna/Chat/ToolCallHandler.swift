@@ -89,10 +89,12 @@ final class ToolCallHandler {
         arguments: [String: Any],
         result: String,
         isWebSearch: Bool,
+        continuationAssistantMessageId: UUID?,
         systemPrompt: String?
     ) -> [Message] {
         ChatTurnRequestPlan.toolContinuationMessages(
             conversationMessages: conversationMessages,
+            excludingAssistantPlaceholderId: continuationAssistantMessageId,
             toolResult: ChatTurnRequestPlan.ToolResult(
                 toolCallId: toolCallId,
                 toolName: toolName,
