@@ -1521,9 +1521,7 @@ extension IOSChatViewModel {
             conversationManager.addMessage(to: conversation, message: placeholderMessage)
         }
 
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         final class CompletionTracker: @unchecked Sendable {
             var count = 0
@@ -1623,7 +1621,12 @@ extension IOSChatViewModel {
             }
         }
 
-        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .completed
+        )
 
         completedCount += 1
         if completedCount >= totalCount {
@@ -1648,7 +1651,12 @@ extension IOSChatViewModel {
             metadata: ["model": model]
         )
 
-        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .failed
+        )
 
         conversationManager.updateMessage(conversationId: conversationId, messageId: messageId) { message in
             message.content = "Image generation failed: \(error.localizedDescription)"
@@ -1657,16 +1665,6 @@ extension IOSChatViewModel {
         completedCount += 1
         if completedCount >= totalCount {
             finalizeImageGenerationBatch(conversationId: conversationId)
-        }
-    }
-
-    /// Updates the status of a response in a response group for image generation
-    func updateImageResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = status
         }
     }
 

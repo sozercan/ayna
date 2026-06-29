@@ -416,24 +416,6 @@ struct MacNewChatView: View {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
     }
 
-    func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
-        }
-    }
-
-    func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId)
-        {
-            group.updateStatus(for: messageId, status: status)
-            conversationManager.conversations[ci].updateResponseGroup(group)
-        }
-    }
-
     func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
         // Save image to disk off MainActor to avoid blocking the UI
         Task {
@@ -692,9 +674,7 @@ struct MacNewChatView: View {
         }
 
         // Add response group to conversation
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = messageIds
 
@@ -711,7 +691,12 @@ struct MacNewChatView: View {
                 onComplete: { imageData in
                     Task { @MainActor in
                         saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
-                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .completed
+                        )
                         counter.increment()
                         if counter.isComplete { isGenerating = false; selectedConversationId = conversation.id }
                     }
@@ -724,7 +709,12 @@ struct MacNewChatView: View {
                             metadata: ["model": model]
                         )
 
-                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .failed
+                        )
 
                         // Update message with error
                         conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
@@ -808,7 +798,12 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIdsByModel[model] else { return }
 
-                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .completed
+                    )
                     logNewChat("✅ Model completed in multi-model", level: .info, metadata: ["model": model])
                 }
             },
@@ -832,7 +827,12 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIdsByModel[model] else { return }
 
-                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .failed
+                    )
                     logNewChat("❌ Model failed in multi-model", level: .error, metadata: ["model": model, "error": error.localizedDescription])
 
                     if errorMessage == nil {

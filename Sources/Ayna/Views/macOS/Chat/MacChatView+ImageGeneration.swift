@@ -157,9 +157,7 @@ extension MacChatView {
         }
 
         // Add response group to conversation
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = messageIds
 
@@ -203,12 +201,12 @@ extension MacChatView {
                         }
 
                         // Update response group status
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .completed
-                        }
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .completed
+                        )
 
                         counter.increment()
                         if counter.isComplete {
@@ -226,12 +224,12 @@ extension MacChatView {
                         )
 
                         // Update response group status to failed
-                        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-                           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-                           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-                        {
-                            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = .failed
-                        }
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .failed
+                        )
 
                         // Update message with error
                         conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
@@ -337,14 +335,12 @@ extension MacChatView {
                     guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .completed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .completed
+                    )
 
                     logChat(
                         "✅ Model completed in multi-model",
@@ -371,14 +367,12 @@ extension MacChatView {
                     guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status to failed
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .failed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .failed
+                    )
 
                     logChat(
                         "❌ Model failed in multi-model",

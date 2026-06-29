@@ -455,8 +455,7 @@ final class ConversationManager: ObservableObject {
             var message = conversations[convIndex].messages[msgIndex]
             update(&message)
             conversations[convIndex].messages[msgIndex] = message
-            conversations[convIndex].updatedAt = Date()
-            save(conversations[convIndex])
+            persistTerminalMutation(at: convIndex)
         }
     }
 
@@ -485,8 +484,17 @@ final class ConversationManager: ObservableObject {
         var message = conversations[convIndex].messages[msgIndex]
         update(&message)
         conversations[convIndex].messages[msgIndex] = message
-        conversations[convIndex].updatedAt = Date()
+        persistTerminalMutation(at: convIndex)
         return true
+    }
+
+    /// Persists a completed conversation mutation that should survive reloads.
+    ///
+    /// Streaming writes intentionally bypass this path so callers can batch chunks
+    /// and choose an explicit save point instead of persisting every token.
+    private func persistTerminalMutation(at conversationIndex: Int) {
+        conversations[conversationIndex].updatedAt = Date()
+        save(conversations[conversationIndex])
     }
 
     /// Safely append content to a message. Returns true if update succeeded.
@@ -517,7 +525,7 @@ final class ConversationManager: ObservableObject {
             return false
         }
         conversations[convIndex].messages.remove(at: msgIndex)
-        conversations[convIndex].updatedAt = Date()
+        persistTerminalMutation(at: convIndex)
         return true
     }
 
@@ -530,12 +538,14 @@ final class ConversationManager: ObservableObject {
         status: ResponseGroupStatus
     ) -> Bool {
         guard let convIndex = getConversationIndex(for: conversationId),
-              var group = conversations[convIndex].getResponseGroup(responseGroupId)
+              var group = conversations[convIndex].getResponseGroup(responseGroupId),
+              group.responses.contains(where: { $0.id == messageId })
         else {
             return false
         }
         group.updateStatus(for: messageId, status: status)
         conversations[convIndex].updateResponseGroup(group)
+        persistTerminalMutation(at: convIndex)
         return true
     }
 
