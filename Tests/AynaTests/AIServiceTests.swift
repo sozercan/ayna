@@ -256,6 +256,31 @@ struct AIServiceTests {
         #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
     }
 
+    #if os(macOS)
+        @Test("Project root switches between active project and fallback root")
+        func projectRootSwitchesBetweenActiveProjectAndFallbackRoot() {
+            let service = makeService()
+            let fallbackRoot = URL(fileURLWithPath: "/tmp/fallback-root")
+            let firstProjectRoot = URL(fileURLWithPath: "/tmp/project-a")
+            let secondProjectRoot = URL(fileURLWithPath: "/tmp/project-b")
+
+            var settings = AgentSettings.default
+            settings.projectRootPath = fallbackRoot.path
+            service.applyAgentSettings(settings)
+
+            #expect(service.builtinToolService?.projectRoot?.path == fallbackRoot.path)
+
+            service.configureProjectRoot(firstProjectRoot)
+            #expect(service.builtinToolService?.projectRoot?.path == firstProjectRoot.path)
+
+            service.configureProjectRoot(secondProjectRoot)
+            #expect(service.builtinToolService?.projectRoot?.path == secondProjectRoot.path)
+
+            service.configureProjectRoot(nil)
+            #expect(service.builtinToolService?.projectRoot?.path == fallbackRoot.path)
+        }
+    #endif
+
     // MARK: - Anthropic Integration Tests
 
     private func makeAnthropicService() -> AIService {

@@ -73,6 +73,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
     var createdAt: Date
     var updatedAt: Date
     var model: String
+    var projectId: UUID?
     var systemPromptMode: SystemPromptMode
     var temperature: Double
 
@@ -92,6 +93,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         model: String = "gpt-4o",
+        projectId: UUID? = nil,
         systemPromptMode: SystemPromptMode = .inheritGlobal,
         temperature: Double = 0.7,
         multiModelEnabled: Bool = false,
@@ -104,6 +106,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.model = model
+        self.projectId = projectId
         self.systemPromptMode = systemPromptMode
         self.temperature = temperature
         self.multiModelEnabled = multiModelEnabled
@@ -115,6 +118,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, messages, createdAt, updatedAt, model
+        case projectId
         case systemPromptMode, temperature
         case multiModelEnabled, activeModels, responseGroups
     }
@@ -127,6 +131,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         model = try container.decode(String.self, forKey: .model)
+        projectId = try container.decodeIfPresent(UUID.self, forKey: .projectId)
         systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
         temperature = try container.decode(Double.self, forKey: .temperature)
         // Provide defaults for new multi-model fields (backward compatibility)

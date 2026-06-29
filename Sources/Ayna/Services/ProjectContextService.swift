@@ -13,6 +13,8 @@ import os.log
     /// Detects project type and provides project-specific context
     @Observable @MainActor
     final class ProjectContextService {
+        static let shared = ProjectContextService()
+
         /// The detected project root
         private(set) var projectRoot: URL?
 
@@ -24,6 +26,22 @@ import os.log
 
         /// Cached context content
         private(set) var contextContent: String?
+
+        private struct CachedProjectContext: Sendable {
+            let projectRoot: URL
+            let projectType: ProjectType
+            let contextFiles: [URL]
+            let contextFileMetadata: [ContextFileMetadata]
+            let contextContent: String?
+        }
+
+        private struct ContextFileMetadata: Equatable, Sendable {
+            let path: String
+            let size: Int
+            let modificationDate: Date?
+        }
+
+        private var cachedContexts: [String: CachedProjectContext] = [:]
 
         // MARK: - Project Types
 
@@ -88,29 +106,63 @@ import os.log
         /// Detects project from a given path
         func detectProject(from path: URL) async {
             // Find project root by walking up from path
-            projectRoot = await findProjectRoot(from: path)
-
-            guard let root = projectRoot else {
-                projectType = .unknown
-                contextFiles = []
-                contextContent = nil
+            guard let root = await findProjectRoot(from: path) else {
+                clearCurrentProject()
                 return
             }
+            guard !Task.isCancelled else { return }
+
+            let canonicalRoot = root.resolvingSymlinksInPath().standardized
+            let cacheKey = canonicalRoot.path
 
             // Detect project type
-            projectType = await detectProjectType(at: root)
+            let detectedProjectType = await detectProjectType(at: canonicalRoot)
+            guard !Task.isCancelled else { return }
 
             // Find context files
-            contextFiles = await findContextFiles(in: root)
+            let detectedContextFiles = await findContextFiles(in: canonicalRoot)
+            let detectedContextMetadata = contextFileMetadata(for: detectedContextFiles)
+
+            if let cached = cachedContexts[cacheKey],
+               cached.projectType == detectedProjectType,
+               cached.contextFileMetadata == detectedContextMetadata
+            {
+                apply(cached)
+                log(.info, "Loaded project context from cache", metadata: [
+                    "root": canonicalRoot.path,
+                    "type": cached.projectType.rawValue,
+                    "contextFiles": "\(cached.contextFiles.count)"
+                ])
+                return
+            }
+            guard !Task.isCancelled else { return }
 
             // Load context content
-            contextContent = await loadContextContent()
+            let detectedContextContent = await loadContextContent(for: detectedContextFiles)
+            guard !Task.isCancelled else { return }
+
+            let cachedContext = CachedProjectContext(
+                projectRoot: canonicalRoot,
+                projectType: detectedProjectType,
+                contextFiles: detectedContextFiles,
+                contextFileMetadata: detectedContextMetadata,
+                contextContent: detectedContextContent
+            )
+            cachedContexts[cacheKey] = cachedContext
+            apply(cachedContext)
 
             log(.info, "Project detected", metadata: [
-                "root": root.path,
-                "type": projectType.rawValue,
-                "contextFiles": "\(contextFiles.count)"
+                "root": canonicalRoot.path,
+                "type": detectedProjectType.rawValue,
+                "contextFiles": "\(detectedContextFiles.count)"
             ])
+        }
+
+        func clearCurrentProject() {
+            projectRoot = nil
+            projectType = .unknown
+            contextFiles = []
+            contextContent = nil
         }
 
         /// Returns the context to inject into system prompts
@@ -274,7 +326,7 @@ import os.log
             return found
         }
 
-        private func loadContextContent() async -> String? {
+        private func loadContextContent(for contextFiles: [URL]) async -> String? {
             guard !contextFiles.isEmpty else { return nil }
 
             var content = ""
@@ -307,6 +359,29 @@ import os.log
             }
 
             return content.isEmpty ? nil : content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        private func apply(_ cachedContext: CachedProjectContext) {
+            projectRoot = cachedContext.projectRoot
+            projectType = cachedContext.projectType
+            contextFiles = cachedContext.contextFiles
+            contextContent = cachedContext.contextContent
+        }
+
+        private func contextFileMetadata(for contextFiles: [URL]) -> [ContextFileMetadata] {
+            contextFiles
+                .map { url in
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    let size = (attributes?[.size] as? Int) ?? 0
+                    let modificationDate = attributes?[.modificationDate] as? Date
+
+                    return ContextFileMetadata(
+                        path: url.path,
+                        size: size,
+                        modificationDate: modificationDate
+                    )
+                }
+                .sorted { $0.path < $1.path }
         }
 
         private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

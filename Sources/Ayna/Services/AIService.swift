@@ -94,6 +94,10 @@ class AIService: ObservableObject {
     #if os(macOS)
         private(set) var builtinToolService: BuiltinToolService?
         private(set) var permissionService: PermissionService?
+        private let projectContextService = ProjectContextService.shared
+        private var activeProjectRootURL: URL?
+        private var fallbackProjectRootURL: URL?
+        private var projectContextTask: Task<Void, Never>?
     #endif
 
     @Published var customModels: [String] {
@@ -361,10 +365,7 @@ class AIService: ObservableObject {
         #if os(macOS)
             let permService = PermissionService()
             self.permissionService = permService
-            self.builtinToolService = BuiltinToolService(
-                permissionService: permService,
-                projectRoot: nil // Will be set via configureProjectRoot()
-            )
+            self.builtinToolService = BuiltinToolService(permissionService: permService)
             // Trigger AgentSettingsStore initialization to apply saved settings
             _ = AgentSettingsStore.shared
         #endif
@@ -373,11 +374,51 @@ class AIService: ObservableObject {
     // Configures the project root for agentic tools (macOS only)
     #if os(macOS)
         func configureProjectRoot(_ url: URL?) {
+            activeProjectRootURL = url?.resolvingSymlinksInPath().standardized
+            rebuildBuiltinToolService()
+            updateProjectContext()
+        }
+
+        func applyAgentSettings(_ settings: AgentSettings) {
+            fallbackProjectRootURL = settings.projectRootPath.map {
+                URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardized
+            }
+
+            rebuildBuiltinToolService()
+
+            permissionService?.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
+            permissionService?.persistApprovalsAcrossSessions = settings.persistApprovals
+
+            builtinToolService?.isEnabled = settings.isEnabled
+            builtinToolService?.commandTimeoutSeconds = settings.commandTimeoutSeconds
+
+            WebFetchService.shared.isEnabled = settings.isEnabled
+            WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
+            updateProjectContext()
+        }
+
+        private func rebuildBuiltinToolService() {
             guard let permService = permissionService else { return }
+
             builtinToolService = BuiltinToolService(
                 permissionService: permService,
-                projectRoot: url
+                projectRoot: activeProjectRootURL ?? fallbackProjectRootURL
             )
+        }
+
+        private func updateProjectContext() {
+            let effectiveRoot = activeProjectRootURL ?? fallbackProjectRootURL
+            projectContextTask?.cancel()
+
+            guard let effectiveRoot else {
+                projectContextTask = nil
+                projectContextService.clearCurrentProject()
+                return
+            }
+
+            projectContextTask = Task { @MainActor in
+                await projectContextService.detectProject(from: effectiveRoot)
+            }
         }
     #endif
 
@@ -2482,6 +2523,10 @@ extension AIService {
         #if os(macOS)
             if let builtinContext = builtinToolService?.systemPromptContext() {
                 contexts.append(builtinContext)
+            }
+
+            if let projectContext = projectContextService.systemPromptContext() {
+                contexts.append(projectContext)
             }
         #endif
 
