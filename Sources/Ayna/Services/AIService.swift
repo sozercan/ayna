@@ -39,7 +39,7 @@ enum APIEndpointType: String, CaseIterable, Codable {
 @MainActor
 class AIService: ObservableObject {
     static let shared = AIService()
-    static var keychain: KeychainStoring = KeychainStorage.shared
+    static var keychain: KeychainStoring = KeychainStorage.standard
 
     private enum KeychainKeys {
         static let modelAPIKeys = "model_api_keys"

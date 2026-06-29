@@ -18,7 +18,7 @@ private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 @main
 struct AynaIOSApp: App {
     @StateObject private var conversationManager: ConversationManager
-    @StateObject private var aiService = AIService.shared
+    @StateObject private var aiService: AIService
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -33,6 +33,8 @@ struct AynaIOSApp: App {
         Message.attachmentAsyncLoader = { path in
             await AttachmentStorage.shared.loadData(path: path)
         }
+
+        _aiService = StateObject(wrappedValue: AIService.shared)
 
         // Initialize conversation manager (use test store in UI test mode)
         let manager: ConversationManager = if UITestEnvironment.isEnabled {

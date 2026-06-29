@@ -788,10 +788,9 @@ struct MacNewChatView: View {
         var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
 
         // Create placeholder messages for each model
-        var messageIds: [String: UUID] = [:]
+        let messageIds = Dictionary(uniqueKeysWithValues: models.map { ($0, UUID()) })
         for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
+            guard let messageId = messageIds[model] else { continue }
             responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
 
             let placeholderMessage = Message(

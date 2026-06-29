@@ -209,8 +209,8 @@ enum GitHubAuthError: LocalizedError {
 class GitHubOAuthService: NSObject, ObservableObject {
     static let shared = GitHubOAuthService()
 
-    /// Injectable for tests. Defaults to the system keychain.
-    static var keychain: KeychainStoring = KeychainStorage.shared
+    /// Injectable for tests. Defaults to standard app keychain storage (in-memory during tests).
+    static var keychain: KeychainStoring = KeychainStorage.standard
 
     // Configuration
     private let clientId = "Iv23liyO8rlOYBXFGZXW"
