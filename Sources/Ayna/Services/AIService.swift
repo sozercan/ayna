@@ -917,6 +917,7 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
+                tools: tools,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
@@ -1257,6 +1258,7 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
+        tools: [[String: Any]]?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
@@ -1287,9 +1289,9 @@ class AIService: ObservableObject {
             return
         }
 
-        // Get available tools for the Responses API
-        let tools = getAllAvailableTools()
-
+        // Use caller-provided tools for the Responses API. A nil value means tools
+        // are intentionally disabled for this request (for example on watchOS).
+        let toolsWrapper = UncheckedSendableWrapper(tools)
         if let tools, !tools.isEmpty {
             DiagnosticsLogger.log(
                 .aiService,
@@ -1356,6 +1358,7 @@ class AIService: ObservableObject {
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
+                                tools: toolsWrapper.value,
                                 onToolCallRequested: onToolCallRequested,
                                 onReasoning: onReasoning,
                                 attempt: attempt + 1

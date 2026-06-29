@@ -580,6 +580,116 @@ struct AIServiceTests {
         #expect(imageData.value == Data("image".utf8))
     }
 
+    @Test("Responses API request omits tools when caller passes nil", .timeLimit(.minutes(1)))
+    func responsesAPIRequestOmitsToolsWhenCallerPassesNil() async throws {
+        let service = makeService()
+        service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
+        service.modelEndpointTypes["gpt-4o"] = .responses
+
+        MockURLProtocol.requestHandler = { request in
+            MockURLProtocol.lastRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = Data("""
+                {"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}
+            """.utf8)
+            return (response, body)
+        }
+
+        await confirmation("Responses request completes") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hi")],
+                model: "gpt-4o",
+                temperature: nil,
+                stream: false,
+                tools: nil,
+                conversationId: nil,
+                onChunk: { _ in },
+                onComplete: { completed() },
+                onError: { error in Issue.record("Unexpected error: \(error)") },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let body = try requestBodyJSON()
+        #expect(body["tools"] == nil)
+        #expect(body["tool_choice"] == nil)
+    }
+
+    @Test("Responses API request includes explicit tools", .timeLimit(.minutes(1)))
+    func responsesAPIRequestIncludesExplicitTools() async throws {
+        let service = makeService()
+        service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
+        service.modelEndpointTypes["gpt-4o"] = .responses
+        let tools: [[String: Any]] = [[
+            "type": "function",
+            "function": [
+                "name": "web_fetch",
+                "description": "Fetch a URL",
+                "parameters": ["type": "object", "properties": [:]]
+            ]
+        ]]
+
+        MockURLProtocol.requestHandler = { request in
+            MockURLProtocol.lastRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = Data("""
+                {"output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}
+            """.utf8)
+            return (response, body)
+        }
+
+        await confirmation("Responses request completes") { completed in
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Hi")],
+                model: "gpt-4o",
+                temperature: nil,
+                stream: false,
+                tools: tools,
+                conversationId: nil,
+                onChunk: { _ in },
+                onComplete: { completed() },
+                onError: { error in Issue.record("Unexpected error: \(error)") },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil
+            )
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let body = try requestBodyJSON()
+        let responseTools = try #require(body["tools"] as? [[String: Any]])
+        #expect(!responseTools.isEmpty)
+        #expect(body["tool_choice"] as? String == "auto")
+    }
+
+    private func requestBodyJSON() throws -> [String: Any] {
+        let request = try #require(MockURLProtocol.lastRequest)
+        var bodyData = request.httpBody
+        if bodyData == nil, let stream = request.httpBodyStream {
+            stream.open()
+            var data = Data()
+            let bufferSize = 1024
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: bufferSize)
+                if read > 0 {
+                    data.append(buffer, count: read)
+                } else {
+                    break
+                }
+            }
+            stream.close()
+            bodyData = data
+        }
+        let body = try #require(bodyData)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    }
+
+
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {

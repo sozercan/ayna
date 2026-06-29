@@ -160,8 +160,9 @@
                 return
             }
 
-            // Get available tools (Tavily web search if configured)
-            let tools = aiService.getAllAvailableTools()
+            // watchOS messages cannot carry tool_calls/tool_call_id metadata, so tools are
+            // disabled until a watch-compatible tool continuation representation exists.
+            let tools: [[String: Any]]? = nil
 
             sendMessageWithToolSupport(
                 messages: Array(messagesForAPI),
@@ -341,96 +342,7 @@
                     }
                 },
                 onToolCall: nil,
-                onToolCallRequested: { [weak self] _, toolName, arguments in
-                    nonisolated(unsafe) let arguments = arguments
-                    let toolNameCopy = toolName
-                    Task { @MainActor in
-                        guard let self else { return }
-                        // Set currentToolName first thing to prevent race condition with onComplete
-                        // checking if tool call is pending. The stream may send [DONE] immediately
-                        // after finish_reason: "tool_calls".
-                        self.currentToolName = toolNameCopy
-
-                        // Check depth limit
-                        guard self.toolCallDepth < self.maxToolCallDepth else {
-                            DiagnosticsLogger.log(
-                                .chatView,
-                                level: .error,
-                                message: "⌚ Max tool call depth reached"
-                            )
-                            self.isLoading = false
-                            self.isStreaming = false
-                            self.currentToolName = nil
-                            self.playHaptic(.failure)
-                            return
-                        }
-
-                        self.toolCallDepth += 1
-
-                        // Play haptic for tool execution
-                        self.playHaptic(.click)
-
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "⌚ Tool call requested: \(toolName)",
-                            metadata: ["toolName": toolName]
-                        )
-
-                        // Execute the tool
-                        Task { @MainActor in
-                            let result: String = if self.aiService.isBuiltInTool(toolName) {
-                                await self.aiService.executeBuiltInTool(name: toolName, arguments: arguments)
-                            } else {
-                                "Tool not available on Apple Watch"
-                            }
-
-                            // Add tool result message to local store for history consistency
-                            let toolMessage = WatchMessage(
-                                from: Message(role: .tool, content: result)
-                            )
-                            self.conversationStore.addMessage(toolMessage, to: conversationId)
-                            // Sync tool message to iPhone to maintain conversation parity
-                            self.connectivityService.sendMessage(toolMessage, conversationId: conversationId)
-
-                            // Add new assistant message placeholder
-                            let newAssistantMessage = WatchMessage(
-                                from: Message(role: .assistant, content: "")
-                            )
-                            self.conversationStore.addMessage(newAssistantMessage, to: conversationId)
-
-                            // Get updated messages
-                            guard let updatedConv = self.conversationStore.conversation(for: conversationId) else {
-                                self.isLoading = false
-                                self.isStreaming = false
-                                self.currentToolName = nil
-                                return
-                            }
-
-                            // Build continuation messages (tool message is now in the store)
-                            let continuationMessages = ChatTurnRequestPlan.messages(
-                                from: updatedConv.messages.map { $0.toMessage() },
-                                systemPrompt: nil,
-                                excludingAssistantPlaceholderId: newAssistantMessage.id
-                            )
-
-                            self.streamingContent = ""
-                            self.pendingContent = ""
-
-                            self.sendMessageWithToolSupport(
-                                messages: continuationMessages,
-                                model: model,
-                                conversationId: conversationId,
-                                tools: tools,
-                                isFirstMessage: false,
-                                userContent: userContent,
-                                failedUserMessageId: nil,
-                                assistantPlaceholderId: newAssistantMessage.id,
-                                failedUserMessagePolicy: .preserve
-                            )
-                        }
-                    }
-                },
+                onToolCallRequested: nil,
                 onReasoning: nil
             )
         }
