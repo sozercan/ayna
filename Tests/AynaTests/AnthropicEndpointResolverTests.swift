@@ -76,6 +76,12 @@ struct AnthropicEndpointResolverTests {
         #expect(url.absoluteString == "http://127.0.0.1:8080/v1/messages")
     }
 
+    @Test("HTTP IPv6 loopback is allowed for development")
+    func httpIPv6LoopbackAddressIsAllowedForDevelopment() throws {
+        let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "http://[::1]:8080")
+        #expect(url.absoluteString == "http://[::1]:8080/v1/messages")
+    }
+
     @Test("HTTPS localhost is allowed")
     func httpsLocalhostIsAllowed() throws {
         let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "https://localhost:8080")
@@ -84,10 +90,11 @@ struct AnthropicEndpointResolverTests {
 
     // MARK: - Error Cases
 
-    @Test("HTTP non-localhost is allowed")
-    func httpNonLocalhostIsAllowed() throws {
-        let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "http://insecure.com")
-        #expect(url.absoluteString == "http://insecure.com/v1/messages")
+    @Test("HTTP non-localhost is rejected")
+    func httpNonLocalhostIsRejected() {
+        #expect(throws: AynaError.self) {
+            _ = try AnthropicEndpointResolver.messagesURL(customEndpoint: "http://insecure.com")
+        }
     }
 
     @Test("Malformed URL throws error")

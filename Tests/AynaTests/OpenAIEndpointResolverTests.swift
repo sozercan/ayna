@@ -61,16 +61,29 @@ struct OpenAIEndpointResolverTests {
         #expect(url == "http://127.0.0.1:8000/v1/chat/completions")
     }
 
-    @Test("HTTP non-localhost endpoint is allowed")
-    func httpNonLocalhostEndpointIsAllowed() throws {
+    @Test("HTTP IPv6 loopback endpoint is allowed for development")
+    func httpIPv6LoopbackEndpointIsAllowedForDevelopment() throws {
+        let config = OpenAIEndpointResolver.EndpointConfig(
+            modelName: "gpt-5",
+            provider: .openai,
+            customEndpoint: "http://[::1]:8000"
+        )
+
+        let url = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
+
+        #expect(url == "http://[::1]:8000/v1/chat/completions")
+    }
+
+    @Test("HTTP non-localhost endpoint is rejected")
+    func httpNonLocalhostEndpointIsRejected() {
         let config = OpenAIEndpointResolver.EndpointConfig(
             modelName: "gpt-5",
             provider: .openai,
             customEndpoint: "http://insecure.example.com"
         )
 
-        let url = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
-
-        #expect(url == "http://insecure.example.com/v1/chat/completions")
+        #expect(throws: AynaError.self) {
+            _ = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
+        }
     }
 }

@@ -718,12 +718,14 @@ struct MacNewChatView: View {
             conversationManager.conversations[index].responseGroups.append(responseGroup)
         }
 
+        let messageIdsByModel = messageIds
+
         // Track completion state with actor-isolated counter
         let counter = MainActorCompletionCounter(total: models.count)
 
         // Generate images in parallel
         for model in models {
-            guard let messageId = messageIds[model] else { continue }
+            guard let messageId = messageIdsByModel[model] else { continue }
 
             aiService.generateImage(
                 prompt: prompt,
@@ -806,6 +808,8 @@ struct MacNewChatView: View {
         // Add response group to conversation
         conversationManager.addResponseGroup(to: updatedConversation, group: responseGroup)
 
+        let messageIdsByModel = messageIds
+
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
@@ -820,7 +824,7 @@ struct MacNewChatView: View {
             temperature: temperature,
             onChunk: { model, chunk in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model],
+                    guard let messageId = messageIdsByModel[model],
                           let convIndex = conversationManager.conversations.firstIndex(where: {
                               $0.id == conversationId
                           }),
@@ -836,7 +840,7 @@ struct MacNewChatView: View {
             },
             onModelComplete: { model in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model] else { return }
+                    guard let messageId = messageIdsByModel[model] else { return }
 
                     updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
                     logNewChat("✅ Model completed in multi-model", level: .info, metadata: ["model": model])
@@ -860,7 +864,7 @@ struct MacNewChatView: View {
             },
             onError: { model, error in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model] else { return }
+                    guard let messageId = messageIdsByModel[model] else { return }
 
                     updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
                     logNewChat("❌ Model failed in multi-model", level: .error, metadata: ["model": model, "error": error.localizedDescription])

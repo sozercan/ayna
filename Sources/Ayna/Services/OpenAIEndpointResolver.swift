@@ -190,11 +190,22 @@ enum OpenAIEndpointResolver {
             throw AynaError.invalidEndpoint(trimmed)
         }
 
+        let isLoopbackHTTP = scheme == "http" && isLoopbackHost(url.host)
+
+        if scheme == "http", !isLoopbackHTTP {
+            throw AynaError.invalidEndpoint("HTTP endpoints are not allowed (use HTTPS): \(trimmed)")
+        }
+
         if scheme != "http", scheme != "https" {
             throw AynaError.invalidEndpoint("Invalid URL scheme: \(scheme)")
         }
 
         return trimmed
+    }
+
+    private static func isLoopbackHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     private static func percentEncodedDeployment(_ deployment: String) -> String {

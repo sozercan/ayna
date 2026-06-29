@@ -183,6 +183,8 @@ extension MacChatView {
             conversationManager.conversations[index].responseGroups.append(responseGroup)
         }
 
+        let messageIdsByModel = messageIds
+
         // Track completion state with actor-isolated counter
         let counter = MainActorCompletionCounter(total: models.count)
 
@@ -201,7 +203,7 @@ extension MacChatView {
 
             // Generate/edit images in parallel
             for model in models {
-                guard let messageId = messageIds[model] else { continue }
+                guard let messageId = messageIdsByModel[model] else { continue }
 
                 let onComplete: @Sendable (Data) -> Void = { imageData in
                     Task { @MainActor in
@@ -331,6 +333,8 @@ extension MacChatView {
         // Add response group to conversation
         conversationManager.addResponseGroup(to: conversation, group: responseGroup)
 
+        let messageIdsByModel = messageIds
+
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
@@ -348,7 +352,7 @@ extension MacChatView {
             temperature: temperature,
             onChunk: { model, chunk in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model],
+                    guard let messageId = messageIdsByModel[model],
                           let convIndex = conversationManager.conversations.firstIndex(where: {
                               $0.id == conversationId
                           }),
@@ -364,7 +368,7 @@ extension MacChatView {
             },
             onModelComplete: { model in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model] else { return }
+                    guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
@@ -398,7 +402,7 @@ extension MacChatView {
             },
             onError: { model, error in
                 Task { @MainActor in
-                    guard let messageId = messageIds[model] else { return }
+                    guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status to failed
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
@@ -420,7 +424,7 @@ extension MacChatView {
             onPendingToolCall: { model, toolId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendableWrapper(arguments)
                 Task { @MainActor in
-                    guard let messageId = messageIds[model],
+                    guard let messageId = messageIdsByModel[model],
                           let convIndex = conversationManager.conversations.firstIndex(where: {
                               $0.id == conversationId
                           }),

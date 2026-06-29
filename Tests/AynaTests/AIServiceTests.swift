@@ -533,6 +533,53 @@ struct AIServiceTests {
         #expect(request.url?.absoluteString == "https://proxy.example.com/v1/chat/completions")
         #expect(receivedChunk.value == "Hello from proxy")
     }
+
+    @Test("Custom OpenAI-compatible image endpoint can send without API key", .timeLimit(.minutes(1)))
+    func customOpenAICompatibleImageEndpointCanSendWithoutAPIKey() async throws {
+        let service = makeService()
+        service.customModels = ["image-model"]
+        service.selectedModel = "image-model"
+        service.modelAPIKeys["image-model"] = ""
+        service.modelEndpoints["image-model"] = "https://proxy.example.com"
+        service.modelEndpointTypes["image-model"] = .imageGeneration
+
+        MockURLProtocol.requestHandler = { request in
+            MockURLProtocol.lastRequest = request
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = Data(
+                """
+                    {"data":[{"b64_json":"aW1hZ2U="}]}
+                """.utf8
+            )
+            return (response, body)
+        }
+
+        let imageData = DataHolder()
+
+        #expect(service.isModelConfigured("image-model") == true)
+
+        await confirmation("Custom image endpoint request completes") { completed in
+            service.generateImage(
+                prompt: "a glass sphere",
+                model: "image-model",
+                onComplete: { data in
+                    imageData.value = data
+                    completed()
+                },
+                onError: { error in
+                    Issue.record("Unexpected error: \(error)")
+                }
+            )
+
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        let request = try #require(MockURLProtocol.lastRequest)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.url?.absoluteString == "https://proxy.example.com/v1/images/generations")
+        #expect(imageData.value == Data("image".utf8))
+    }
+
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
@@ -574,6 +621,10 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
 final class ResultHolder: @unchecked Sendable {
     var value = ""
+}
+
+final class DataHolder: @unchecked Sendable {
+    var value = Data()
 }
 
 final class ErrorHolder: @unchecked Sendable {

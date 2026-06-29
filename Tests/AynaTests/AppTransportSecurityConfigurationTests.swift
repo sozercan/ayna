@@ -17,20 +17,24 @@ struct AppTransportSecurityConfigurationTests {
             .deletingLastPathComponent()
     }
 
-    @Test("Shared Info.plist allows insecure HTTP loads")
-    func sharedInfoPlistAllowsInsecureHTTPLoads() throws {
+    @Test("Shared Info.plist scopes insecure HTTP loads to loopback")
+    func sharedInfoPlistScopesInsecureHTTPLoadsToLoopback() throws {
         let plistURL = repositoryRootURL.appendingPathComponent("Sources/Ayna/Info.plist")
         let plist = try loadPlist(at: plistURL)
 
-        try assertAllowsArbitraryLoads(in: plist)
+        try assertScopesInsecureLoadsToLoopback(in: plist)
     }
 
-    @Test("macOS build script preserves insecure HTTP ATS setting")
-    func macOSBuildScriptPreservesInsecureHTTPATSSetting() throws {
+    @Test("macOS build script scopes insecure HTTP ATS setting")
+    func macOSBuildScriptScopesInsecureHTTPATSSetting() throws {
         let scriptURL = repositoryRootURL.appendingPathComponent("Scripts/build-app.sh")
         let contents = try String(contentsOf: scriptURL, encoding: .utf8)
 
-        #expect(contents.contains("<key>NSAllowsArbitraryLoads</key>\n        <true/>"))
+        #expect(!contents.contains("<key>NSAllowsArbitraryLoads</key>\n        <true/>"))
+        #expect(contents.contains("<key>localhost</key>"))
+        #expect(contents.contains("<key>127.0.0.1</key>"))
+        #expect(contents.contains("<key>::1</key>"))
+        #expect(contents.contains("<key>NSExceptionAllowsInsecureHTTPLoads</key>"))
     }
 
     @Test("Package manifest embeds shared Info plist for macOS builds")
@@ -56,7 +60,7 @@ struct AppTransportSecurityConfigurationTests {
         return dictionary
     }
 
-    private func assertAllowsArbitraryLoads(in plist: [String: Any]) throws {
+    private func assertScopesInsecureLoadsToLoopback(in plist: [String: Any]) throws {
         guard let ats = plist["NSAppTransportSecurity"] as? [String: Any] else {
             throw NSError(
                 domain: "AppTransportSecurityConfigurationTests",
@@ -65,6 +69,23 @@ struct AppTransportSecurityConfigurationTests {
             )
         }
 
-        #expect(ats["NSAllowsArbitraryLoads"] as? Bool == true)
+        #expect(ats["NSAllowsArbitraryLoads"] as? Bool != true)
+
+        guard let exceptionDomains = ats["NSExceptionDomains"] as? [String: Any] else {
+            throw NSError(
+                domain: "AppTransportSecurityConfigurationTests",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Missing NSExceptionDomains dictionary"]
+            )
+        }
+
+        #expect(loopbackDomain("localhost", in: exceptionDomains))
+        #expect(loopbackDomain("127.0.0.1", in: exceptionDomains))
+        #expect(loopbackDomain("::1", in: exceptionDomains))
+    }
+
+    private func loopbackDomain(_ domain: String, in exceptionDomains: [String: Any]) -> Bool {
+        guard let settings = exceptionDomains[domain] as? [String: Any] else { return false }
+        return settings["NSExceptionAllowsInsecureHTTPLoads"] as? Bool == true
     }
 }

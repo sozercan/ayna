@@ -20,7 +20,7 @@ enum AnthropicEndpointResolver {
     ///
     /// - Parameter customEndpoint: Optional custom endpoint URL.
     /// - Returns: The resolved URL for the messages endpoint.
-    /// - Throws: `AynaError.invalidEndpoint` if the URL is malformed or uses an unsupported scheme.
+    /// - Throws: `AynaError.invalidEndpoint` if the URL is malformed or uses HTTP (except localhost).
     static func messagesURL(customEndpoint: String?) throws -> URL {
         guard let customEndpoint, !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             guard let url = URL(string: defaultMessagesURL) else {
@@ -41,6 +41,13 @@ enum AnthropicEndpointResolver {
             throw AynaError.invalidEndpoint(trimmed)
         }
 
+        // Allow loopback HTTP for local development/testing only.
+        let isLoopbackHTTP = scheme == "http" && Self.isLoopbackHost(url.host)
+
+        if scheme == "http", !isLoopbackHTTP {
+            throw AynaError.invalidEndpoint("HTTP endpoints are not allowed (use HTTPS): \(trimmed)")
+        }
+
         if scheme != "http", scheme != "https" {
             throw AynaError.invalidEndpoint("Invalid URL scheme: \(scheme)")
         }
@@ -56,6 +63,11 @@ enum AnthropicEndpointResolver {
     }
 
     // MARK: - Private Helpers
+
+    private static func isLoopbackHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
 
     /// Sanitizes a base endpoint by trimming whitespace and trailing slashes.
     private static func sanitizedBaseEndpoint(_ endpoint: String) -> String {
