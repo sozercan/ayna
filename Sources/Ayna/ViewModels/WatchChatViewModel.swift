@@ -169,7 +169,10 @@
                 conversationId: conversationId,
                 tools: tools,
                 isFirstMessage: isFirstMessage,
-                userContent: userContent
+                userContent: userContent,
+                failedUserMessageId: userMessage.id,
+                assistantPlaceholderId: assistantMessage.id,
+                failedUserMessagePolicy: .removeForRetry
             )
         }
 
@@ -180,7 +183,10 @@
             conversationId: UUID,
             tools: [[String: Any]]?,
             isFirstMessage: Bool,
-            userContent: String
+            userContent: String,
+            failedUserMessageId: UUID?,
+            assistantPlaceholderId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             nonisolated(unsafe) let tools = tools
             aiService.sendMessage(
@@ -307,25 +313,24 @@
                         self.toolCallDepth = 0
                         self.errorMessage = ErrorPresenter.userMessage(for: error)
 
-                        // Store the failed message for retry
-                        self.failedMessage = userContent
+                        // Apply shared failure cleanup policy for this turn.
+                        self.pendingContent = ""
+                        if var conv = self.conversationStore.conversation(for: conversationId) {
+                            let plan = ChatTurnFailurePlan(
+                                messages: conv.messages.map { $0.toMessage() },
+                                failedUserMessageId: failedUserMessageId,
+                                assistantPlaceholderId: assistantPlaceholderId,
+                                failedUserMessagePolicy: failedUserMessagePolicy
+                            )
+                            self.failedMessage = plan.retryPrompt ?? userContent
+                            conv.messages = plan.messagesAfterFailure.map { WatchMessage(from: $0) }
+                            _ = self.conversationStore.replaceConversation(conv)
+                        } else {
+                            self.failedMessage = userContent
+                        }
 
                         // Play failure haptic
                         self.playHaptic(.failure)
-
-                        // Remove the empty assistant message and the user message
-                        self.pendingContent = ""
-                        if var conv = self.conversationStore.conversation(for: conversationId),
-                           !conv.messages.isEmpty
-                        {
-                            // Remove assistant placeholder
-                            conv.messages.removeLast()
-                            // Remove user message (will be re-added on retry)
-                            if !conv.messages.isEmpty {
-                                conv.messages.removeLast()
-                            }
-                            _ = self.conversationStore.replaceConversation(conv)
-                        }
 
                         DiagnosticsLogger.log(
                             .chatView,
@@ -418,7 +423,10 @@
                                 conversationId: conversationId,
                                 tools: tools,
                                 isFirstMessage: false,
-                                userContent: userContent
+                                userContent: userContent,
+                                failedUserMessageId: nil,
+                                assistantPlaceholderId: newAssistantMessage.id,
+                                failedUserMessagePolicy: .preserve
                             )
                         }
                     }

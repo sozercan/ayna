@@ -531,7 +531,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: updatedConversation.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: userMessage.id,
+            failedUserMessagePolicy: .removeForRetry
         )
     }
 
@@ -541,7 +543,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         model: String,
         conversationId: UUID,
         assistantMessageId: UUID,
-        tools: [[String: Any]]?
+        tools: [[String: Any]]?,
+        failedUserMessageId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let toolsWrapper = UncheckedSendable(tools)
 
@@ -678,15 +682,22 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     self.errorMessage = ErrorPresenter.userMessage(for: error)
                     self.errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
 
-                    // Store the failed message for retry
-                    self.failedMessage = self.pendingUserMessage
+                    // Apply shared failure cleanup policy and store retry text.
+                    if let current = self.conversationManager.conversation(byId: conversationId) {
+                        let plan = ChatTurnFailurePlan(
+                            messages: current.messages,
+                            failedUserMessageId: failedUserMessageId,
+                            assistantPlaceholderId: assistantMessageId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
+                        )
+                        var updatedConversation = current
+                        updatedConversation.messages = plan.messagesAfterFailure
+                        self.conversationManager.updateConversation(updatedConversation)
+                        self.failedMessage = plan.retryPrompt
+                    } else {
+                        self.failedMessage = self.pendingUserMessage
+                    }
                     self.pendingUserMessage = nil
-
-                    // Remove the empty assistant placeholder message since we show error in banner
-                    self.conversationManager.removeMessage(
-                        conversationId: conversationId,
-                        messageId: assistantMessageId
-                    )
 
                     // Still notify for navigation even on error if conversation was created
                     if self.isNewChatMode {
@@ -869,7 +880,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 model: model,
                                 conversationId: conversationId,
                                 assistantMessageId: continuationAssistantMessage.id,
-                                tools: toolsWrapper.value
+                                tools: toolsWrapper.value,
+                                failedUserMessageId: nil,
+                                failedUserMessagePolicy: .preserve
                             )
                         }
                     }
@@ -941,7 +954,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: updatedConversation.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -978,7 +993,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: refreshed.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -1039,7 +1056,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: newModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 

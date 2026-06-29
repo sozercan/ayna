@@ -370,7 +370,10 @@ struct MacChatView: View {
             model: currentConversation.model,
             temperature: currentConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: nil,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -826,7 +829,10 @@ struct MacChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: userMessage.id,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .removeForRetry
         )
     }
 
@@ -837,7 +843,10 @@ struct MacChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
-        isInitialRequest _: Bool
+        isInitialRequest _: Bool,
+        failedUserMessageId: UUID?,
+        assistantPlaceholderId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
@@ -981,17 +990,21 @@ struct MacChatView: View {
                         metadata: ["error": error.localizedDescription]
                     )
 
-                    // Remove the empty assistant placeholder message since we show error in banner
+                    // Apply shared failure cleanup policy for this turn.
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        let lastIndex = conversationManager.conversations[index].messages.count - 1
-                        if lastIndex >= 0,
-                           conversationManager.conversations[index].messages[lastIndex].role == .assistant,
-                           conversationManager.conversations[index].messages[lastIndex].content.isEmpty
-                        {
-                            conversationManager.conversations[index].messages.remove(at: lastIndex)
-                        }
+                        let current = conversationManager.conversations[index]
+                        let plan = ChatTurnFailurePlan(
+                            messages: current.messages,
+                            failedUserMessageId: failedUserMessageId,
+                            assistantPlaceholderId: assistantPlaceholderId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
+                        )
+                        conversationManager.conversations[index].messages = plan.messagesAfterFailure
+                        conversationManager.conversations[index].updatedAt = Date()
+                        conversationManager.save(conversationManager.conversations[index])
+                        failedMessage = plan.retryPrompt
                     }
 
                     // Only update UI state if we're viewing this conversation
@@ -1179,7 +1192,10 @@ struct MacChatView: View {
                                     model: model,
                                     temperature: temperature,
                                     tools: toolsWrapper.value,
-                                    isInitialRequest: false
+                                    isInitialRequest: false,
+                                    failedUserMessageId: nil,
+                                    assistantPlaceholderId: continuationAssistantMessage.id,
+                                    failedUserMessagePolicy: .preserve
                                 )
                             }
                         } catch {
