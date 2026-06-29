@@ -34,12 +34,24 @@ enum KeychainStorageError: LocalizedError {
 final class KeychainStorage: Sendable {
     nonisolated static let shared = KeychainStorage()
 
-    private let serviceIdentifier = "com.sertacozercan.ayna"
-    // Note: Keychain access groups require a paid Apple Developer account.
-    // For free accounts, keychain items are tied to the app's code signature
-    // and won't persist across rebuilds. See AIService for file-based fallback.
+    /// Default storage used by app services. Tests/UI tests use an in-memory store
+    /// so SwiftPM/XCTest helpers never prompt for access to the app's Keychain items.
+    nonisolated static let standard: KeychainStoring = {
+        if RuntimeEnvironment.isRunningUnitTests || RuntimeEnvironment.isUITesting {
+            return EphemeralKeychainStorage()
+        }
+        return KeychainStorage.shared
+    }()
 
-    private init() {}
+    private let serviceIdentifier: String
+    // Note: Keychain access groups require a paid Apple Developer account.
+    // For free accounts, keychain items are tied to the app's code signature.
+    // SwiftPM/dev helper tools use a stable, separate service identifier so they
+    // do not collide with credentials created by the signed app bundle.
+
+    private init(serviceIdentifier: String = RuntimeEnvironment.defaultKeychainServiceIdentifier) {
+        self.serviceIdentifier = serviceIdentifier
+    }
 
     private nonisolated func log(
         _ message: String,
@@ -239,8 +251,6 @@ final class KeychainStorage: Sendable {
             kSecAttrAccount as String: key,
         ]
     }
-
-
 }
 
 extension KeychainStorage: KeychainStoring {}

@@ -3,18 +3,10 @@ import os
 
 /// Handles deterministic configuration when the app is launched from UI tests.
 enum UITestEnvironment {
-    private static let flag = "AYNA_UI_TESTING"
-    private static let launchArgument = "--ui-testing"
-    private static let userDefaultsArgument = "-\(flag)"
     private static let defaultModel = "ui-test-model"
 
     static var isEnabled: Bool {
-        let processInfo = ProcessInfo.processInfo
-        if processInfo.environment[flag] == "1" { return true }
-        if processInfo.arguments.contains(launchArgument) { return true }
-        if processInfo.arguments.contains(userDefaultsArgument) { return true }
-        // Avoid persisting UI-test mode across launches via UserDefaults.
-        return false
+        RuntimeEnvironment.isUITesting
     }
 
     /// Call once during app initialization to swap out side-effectful dependencies.
@@ -61,7 +53,9 @@ enum UITestEnvironment {
 
     @MainActor
     private static func configureKeychain() {
-        AIService.keychain = EphemeralKeychainStorage()
+        let keychain = EphemeralKeychainStorage()
+        AIService.keychain = keychain
+        GitHubOAuthService.keychain = keychain
     }
 
     @MainActor

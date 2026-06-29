@@ -58,7 +58,7 @@ final class TavilyService: ObservableObject {
     // MARK: - Initialization
 
     init(keychain: KeychainStoring? = nil, urlSession: URLSession = .shared) {
-        let effectiveKeychain = keychain ?? KeychainStorage.shared
+        let effectiveKeychain = keychain ?? KeychainStorage.standard
         self.keychain = effectiveKeychain
         self.urlSession = urlSession
 
