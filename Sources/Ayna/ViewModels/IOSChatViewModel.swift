@@ -807,33 +807,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         )
 
                         await MainActor.run {
-                            let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
-                                result[pair.key] = AnyCodable(pair.value)
-                            }
-
-                            // For web_search, skip creating a tool message and attach citations to assistant
-                            let isWebSearch = toolName == "web_search"
-
-                            if !isWebSearch {
-                                // For non-web-search tools, create the tool message as before
-                                var toolMessage = Message(role: .tool, content: result)
-                                toolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
-                                    )
-                                ]
-                                guard let conv = self.conversationManager.conversation(byId: conversationId) else {
-                                    self.isGenerating = false
-                                    self.currentToolName = nil
-                                    self.toolCallDepth = 0
-                                    return
-                                }
-                                self.conversationManager.addMessage(to: conv, message: toolMessage)
-                            }
-
                             // Continue conversation with tool result
                             guard let updatedConv = self.conversationManager.conversation(byId: conversationId) else {
                                 self.isGenerating = false
@@ -842,34 +815,29 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 return
                             }
 
-                            // Add a new empty assistant message for the model's response
-                            // For web_search, attach citations to this message
-                            var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
-                            if isWebSearch, let citations {
-                                continuationAssistantMessage.citations = citations
-                            }
-                            self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
-
-                            // Get conversation again with new assistant message
-                            guard let convWithAssistant = self.conversationManager.conversation(byId: conversationId) else {
-                                self.isGenerating = false
-                                self.currentToolName = nil
-                                self.toolCallDepth = 0
-                                return
-                            }
-
-                            let continuationMessages = ChatTurnRequestPlan.toolContinuationMessages(
-                                conversationMessages: convWithAssistant.messages,
-                                excludingAssistantPlaceholderId: continuationAssistantMessage.id,
-                                toolResult: ChatTurnRequestPlan.ToolResult(
-                                    toolCallId: toolCallId,
-                                    toolName: toolName,
-                                    arguments: anyCodableArgs,
-                                    result: result,
-                                    shouldSynthesizeToolMessage: isWebSearch
-                                ),
-                                systemPrompt: self.conversationManager.effectiveSystemPrompt(for: convWithAssistant)
+                            let continuationPlan = ToolContinuationPlan(
+                                existingMessages: updatedConv.messages,
+                                toolCallId: toolCallId,
+                                toolName: toolName,
+                                arguments: argumentsWrapper.value,
+                                result: result,
+                                model: model,
+                                citations: citations,
+                                systemPrompt: self.conversationManager.effectiveSystemPrompt(for: updatedConv)
                             )
+
+                            if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                self.conversationManager.addMessage(to: updatedConv, message: visibleToolMessage)
+                            }
+
+                            let conversationForAssistant = self.conversationManager.conversation(byId: conversationId) ?? updatedConv
+                            self.conversationManager.addMessage(
+                                to: conversationForAssistant,
+                                message: continuationPlan.continuationAssistantMessage
+                            )
+
+                            let continuationMessages = continuationPlan.requestMessages
+                            let continuationAssistantMessage = continuationPlan.continuationAssistantMessage
 
                             // Clear tool name since tool execution is complete
                             // The continuation is now a regular API call

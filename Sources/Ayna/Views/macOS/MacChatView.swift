@@ -1121,23 +1121,7 @@ struct MacChatView: View {
                                 metadata: ["resultLength": "\(result.count)"]
                             )
 
-                            // For web_search, skip creating a visible tool message
-                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
-
-                            // Create a tool message with the result
                             await MainActor.run {
-                                if !isWebSearch {
-                                    // For non-web-search tools, create the tool message
-                                    let toolMessage = ToolCallHandler.createToolMessage(
-                                        toolCallId: toolCallId,
-                                        toolName: toolName,
-                                        arguments: argumentsWrapper.value,
-                                        result: result
-                                    )
-                                    conversationManager.addMessage(to: conversation, message: toolMessage)
-                                }
-
-                                // Get updated conversation with tool result
                                 guard
                                     let updatedConv = conversationManager.conversations.first(where: {
                                         $0.id == conversation.id
@@ -1154,34 +1138,31 @@ struct MacChatView: View {
                                     return
                                 }
 
-                                // Continue conversation with tool result
-                                // Add a new empty assistant message for the model's response
-                                let continuationAssistantMessage = ToolCallHandler.createContinuationMessage(
-                                    model: model,
-                                    citations: isWebSearch ? citations : nil
-                                )
-                                conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
-
-                                // Get the conversation again with the new assistant message
-                                guard
-                                    let convWithAssistant = conversationManager.conversations.first(where: {
-                                        $0.id == conversation.id
-                                    })
-                                else {
-                                    return
-                                }
-
-                                // Build messages for API using ToolCallHandler
-                                let continuationMessages = ToolCallHandler.buildContinuationMessages(
-                                    conversationMessages: convWithAssistant.messages,
+                                let continuationPlan = ToolContinuationPlan(
+                                    existingMessages: updatedConv.messages,
                                     toolCallId: toolCallId,
                                     toolName: toolName,
                                     arguments: argumentsWrapper.value,
                                     result: result,
-                                    isWebSearch: isWebSearch,
-                                    continuationAssistantMessageId: continuationAssistantMessage.id,
-                                    systemPrompt: buildFullSystemPrompt(for: convWithAssistant)
+                                    model: model,
+                                    citations: citations,
+                                    systemPrompt: buildFullSystemPrompt(for: updatedConv)
                                 )
+
+                                if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                    conversationManager.addMessage(to: updatedConv, message: visibleToolMessage)
+                                }
+
+                                let conversationForAssistant = conversationManager.conversations.first(where: {
+                                    $0.id == conversation.id
+                                }) ?? updatedConv
+                                conversationManager.addMessage(
+                                    to: conversationForAssistant,
+                                    message: continuationPlan.continuationAssistantMessage
+                                )
+
+                                let continuationMessages = continuationPlan.requestMessages
+                                let continuationAssistantMessage = continuationPlan.continuationAssistantMessage
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call

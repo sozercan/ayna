@@ -955,21 +955,7 @@ struct MacNewChatView: View {
                                 )
                             }
 
-                            // For web_search, skip creating a visible tool message
-                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
-
                             await MainActor.run {
-                                if !isWebSearch {
-                                    // For non-web-search tools, create the tool message
-                                    let toolMessage = ToolCallHandler.createToolMessage(
-                                        toolCallId: toolCallId,
-                                        toolName: toolName,
-                                        arguments: argumentsWrapper.value,
-                                        result: result
-                                    )
-                                    conversationManager.addMessage(to: conversation, message: toolMessage)
-                                }
-
                                 guard let updatedConversation = conversationManager.conversations
                                     .first(where: { $0.id == conversationId })
                                 else {
@@ -979,25 +965,27 @@ struct MacNewChatView: View {
                                     return
                                 }
 
-                                // For web_search, attach citations to the new assistant message
-                                let newAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                let continuationPlan = ToolContinuationPlan(
+                                    existingMessages: updatedConversation.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
                                     model: model,
-                                    citations: isWebSearch ? citations : nil
-                                )
-                                conversationManager.addMessage(
-                                    to: updatedConversation,
-                                    message: newAssistantMessage
+                                    citations: citations,
+                                    systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
                                 )
 
-                                // Re-fetch conversation AFTER adding the new assistant message
-                                guard let convWithAssistant = conversationManager.conversations
-                                    .first(where: { $0.id == conversationId })
-                                else {
-                                    currentToolName = nil
-                                    isGenerating = false
-                                    selectedConversationId = conversationId
-                                    return
+                                if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                    conversationManager.addMessage(to: updatedConversation, message: visibleToolMessage)
                                 }
+
+                                let conversationForAssistant = conversationManager.conversations
+                                    .first(where: { $0.id == conversationId }) ?? updatedConversation
+                                conversationManager.addMessage(
+                                    to: conversationForAssistant,
+                                    message: continuationPlan.continuationAssistantMessage
+                                )
 
                                 currentToolName = "Analyzing \(toolName) results"
 
@@ -1010,17 +998,8 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
-                                // Build messages for API using ToolCallHandler
-                                let messagesForAPI = ToolCallHandler.buildContinuationMessages(
-                                    conversationMessages: convWithAssistant.messages,
-                                    toolCallId: toolCallId,
-                                    toolName: toolName,
-                                    arguments: argumentsWrapper.value,
-                                    result: result,
-                                    isWebSearch: isWebSearch,
-                                    continuationAssistantMessageId: newAssistantMessage.id,
-                                    systemPrompt: conversationManager.effectiveSystemPrompt(for: convWithAssistant)
-                                )
+                                let messagesForAPI = continuationPlan.requestMessages
+                                let newAssistantMessage = continuationPlan.continuationAssistantMessage
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
