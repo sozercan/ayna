@@ -21,19 +21,12 @@
         @Published var isStreaming = false // True once first chunk received
         @Published var errorMessage: String?
         @Published var streamingContent = ""
-        @Published var currentToolName: String?
         @Published var failedMessage: String?
 
         private let conversationStore: WatchConversationStore
         private let connectivityService: WatchConnectivityService
         private let aiService: AIService
         private var currentConversationId: UUID?
-        private var toolCallDepth = 0
-
-        /// Maximum tool chain depth for watchOS.
-        /// Intentionally low (5) due to watchOS resource constraints (memory, battery, network).
-        /// Sufficient for simple tool operations while preventing resource exhaustion.
-        private let maxToolCallDepth = 5
 
         // Streaming throttle for performance
         private var lastUIUpdateTime: Date = .distantPast
@@ -55,8 +48,6 @@
             currentConversationId = id
             errorMessage = nil
             streamingContent = ""
-            currentToolName = nil
-            toolCallDepth = 0
             failedMessage = nil
             pendingContent = ""
         }
@@ -83,8 +74,6 @@
             isStreaming = false
             streamingContent = ""
             pendingContent = ""
-            currentToolName = nil
-            toolCallDepth = 0
             lastUIUpdateTime = .distantPast
 
             // Play haptic for message sent
@@ -160,15 +149,10 @@
                 return
             }
 
-            // watchOS messages cannot carry tool_calls/tool_call_id metadata, so tools are
-            // disabled until a watch-compatible tool continuation representation exists.
-            let tools: [[String: Any]]? = nil
-
-            sendMessageWithToolSupport(
+            sendStreamingMessage(
                 messages: Array(messagesForAPI),
                 model: model,
                 conversationId: conversationId,
-                tools: tools,
                 isFirstMessage: isFirstMessage,
                 userContent: userContent,
                 failedUserMessageId: userMessage.id,
@@ -177,24 +161,22 @@
             )
         }
 
-        /// Send message with tool support for recursive tool calling.
-        private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
+        /// Send a streaming message request.
+        private func sendStreamingMessage( // swiftlint:disable:this function_body_length
             messages: [Message],
             model: String,
             conversationId: UUID,
-            tools: [[String: Any]]?,
             isFirstMessage: Bool,
             userContent: String,
             failedUserMessageId: UUID?,
             assistantPlaceholderId: UUID?,
             failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
-            nonisolated(unsafe) let tools = tools
             aiService.sendMessage(
                 messages: messages,
                 model: model,
                 stream: true,
-                tools: tools,
+                tools: nil,
                 conversationId: conversationId,
                 onChunk: { [weak self] chunk in
                     Task { @MainActor in
@@ -218,26 +200,12 @@
                             self.lastUIUpdateTime = now
                         }
 
-                        // Clear tool indicator when we start receiving content
-                        if self.currentToolName != nil {
-                            self.currentToolName = nil
-                        }
                     }
                 },
                 onComplete: { [weak self] in
                     Task { @MainActor in
                         guard let self else { return }
 
-                        // Only complete if no tool call is pending
-                        guard self.currentToolName == nil else {
-                            DiagnosticsLogger.log(
-                                .chatView,
-                                level: .info,
-                                message: "⌚ onComplete: keeping isLoading TRUE (tool call pending)",
-                                metadata: ["toolName": self.currentToolName ?? "unknown"]
-                            )
-                            return
-                        }
 
                         // Flush any remaining pending content
                         if !self.pendingContent.isEmpty {
@@ -252,7 +220,6 @@
 
                         self.isLoading = false
                         self.isStreaming = false
-                        self.toolCallDepth = 0
 
                         // Play success haptic
                         self.playHaptic(.success)
@@ -302,16 +269,12 @@
                             self.conversationStore.persistCurrentState()
                             self.isLoading = false
                             self.isStreaming = false
-                            self.currentToolName = nil
-                            self.toolCallDepth = 0
                             self.pendingContent = ""
                             return
                         }
 
                         self.isLoading = false
                         self.isStreaming = false
-                        self.currentToolName = nil
-                        self.toolCallDepth = 0
                         self.errorMessage = ErrorPresenter.userMessage(for: error)
 
                         // Apply shared failure cleanup policy for this turn.
@@ -352,8 +315,6 @@
             aiService.cancelCurrentRequest()
             isLoading = false
             isStreaming = false
-            currentToolName = nil
-            toolCallDepth = 0
             playHaptic(.click)
         }
 

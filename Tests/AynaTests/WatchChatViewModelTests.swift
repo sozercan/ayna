@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 // Note: WatchChatViewModel is only available on watchOS. These tests verify the
-// AIService tool integration and the data flow patterns used by the watch.
+// tool policy and the data flow patterns used by the watch.
 // The actual WatchChatViewModel cannot be tested directly on macOS.
 
 @Suite("WatchChatViewModel Integration Tests", .serialized)
@@ -27,7 +27,7 @@ struct WatchChatViewModelIntegrationTests {
         WatchMockURLProtocol.reset()
     }
 
-    // MARK: - Tool Integration Tests
+    // MARK: - Tool Policy Tests
 
     @Test("OpenAI service includes Tavily tool when configured")
     func aiServiceIncludesTavilyToolWhenConfigured() {
@@ -155,25 +155,6 @@ struct WatchChatViewModelIntegrationTests {
         #expect(result.contains("Sources"))
     }
 
-    @Test("Tool call depth limit")
-    func toolCallDepthLimit() {
-        // The WatchChatViewModel has a maxToolCallDepth of 5
-        // This test verifies the concept of depth limiting
-        let maxDepth = 5
-        var currentDepth = 0
-
-        // Simulate recursive tool calls
-        for _ in 1 ... 10 {
-            guard currentDepth < maxDepth else {
-                break
-            }
-            currentDepth += 1
-        }
-
-        #expect(currentDepth == maxDepth, "Tool call depth should be limited to \(maxDepth)")
-    }
-
-    // MARK: - Model Filtering Tests
 
     @Test("WatchOS model filtering")
     func watchOSModelFiltering() {
@@ -247,26 +228,6 @@ struct WatchChatViewModelIntegrationTests {
         #expect(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
     }
 
-    @Test("Max tool call depth constant")
-    func maxToolCallDepthConstant() {
-        // The WatchChatViewModel should limit recursive tool calls
-        let maxToolCallDepth = 5
-
-        // Simulate checking depth limit
-        var currentDepth = 0
-        var reachedLimit = false
-
-        for _ in 1 ... 10 {
-            if currentDepth >= maxToolCallDepth {
-                reachedLimit = true
-                break
-            }
-            currentDepth += 1
-        }
-
-        #expect(reachedLimit, "Should reach tool call depth limit")
-        #expect(currentDepth == maxToolCallDepth)
-    }
 
     @Test("Watch conversation sync merge logic")
     func watchConversationSyncMergeLogic() {
