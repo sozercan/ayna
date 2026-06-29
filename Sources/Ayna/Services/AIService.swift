@@ -2517,22 +2517,14 @@ extension AIService {
     }
 
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
-    /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
+    /// Tool calls are disabled on watchOS because watch messages cannot represent tool-call ids/results.
     func getAllAvailableTools() -> [[String: Any]]? {
-        var tools: [[String: Any]] = []
-
-        // Add web search tool (Tavily if configured, else DuckDuckGo)
         #if os(watchOS)
-            // On watchOS, use synced settings
-            if webSearchEnabled {
-                tools.append(WebSearchCoordinator.shared.toolDefinition())
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .info,
-                    message: "🔧 Added web_search tool (watchOS)"
-                )
-            }
+            return nil
         #else
+            var tools: [[String: Any]] = []
+
+            // Add web search tool (Tavily if configured, else DuckDuckGo)
             if WebSearchCoordinator.shared.isAvailable {
                 tools.append(WebSearchCoordinator.shared.toolDefinition())
                 DiagnosticsLogger.log(
@@ -2541,9 +2533,8 @@ extension AIService {
                     message: "🔧 Added web_search tool (\(WebSearchCoordinator.shared.activeProvider))"
                 )
             }
-        #endif
 
-        // Add web_fetch tool (available on all platforms)
+        // Add web_fetch tool (available on non-watch platforms)
         if WebFetchService.shared.isEnabled {
             tools.append(WebFetchService.shared.toolDefinition())
             DiagnosticsLogger.log(
@@ -2604,6 +2595,7 @@ extension AIService {
         )
 
         return tools.isEmpty ? nil : tools
+        #endif
     }
 
     /// Checks if a tool call is for a built-in tool (like web_search) that we handle internally.

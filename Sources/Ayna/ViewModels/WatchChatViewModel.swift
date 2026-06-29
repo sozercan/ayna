@@ -286,11 +286,11 @@
                                 assistantPlaceholderId: assistantPlaceholderId,
                                 failedUserMessagePolicy: failedUserMessagePolicy
                             )
-                            self.failedMessage = plan.retryPrompt ?? userContent
+                            self.failedMessage = plan.retryPrompt
                             conv.messages = plan.messagesAfterFailure.map { WatchMessage(from: $0) }
                             _ = self.conversationStore.replaceConversation(conv)
                         } else {
-                            self.failedMessage = userContent
+                            self.failedMessage = nil
                         }
 
                         // Play failure haptic

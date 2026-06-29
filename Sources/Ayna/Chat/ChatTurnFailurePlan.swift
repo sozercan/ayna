@@ -31,7 +31,13 @@ struct ChatTurnFailurePlan: Equatable, Sendable {
             messages.first { $0.id == userId && $0.role == .user }
         }
         let canRecreateFailedUserFromText = failedUserMessage.map(Self.canRecreateFromTextOnly) ?? false
-        let shouldRemoveFailedUser = failedUserMessagePolicy == .removeForRetry && canRecreateFailedUserFromText
+        let assistantMessage = assistantPlaceholderId.flatMap { assistantId in
+            messages.first { $0.id == assistantId && $0.role == .assistant }
+        }
+        let canRemoveAssistant = assistantMessage.map { $0.content.isEmpty } ?? true
+        let shouldRemoveFailedUser = failedUserMessagePolicy == .removeForRetry
+            && canRecreateFailedUserFromText
+            && canRemoveAssistant
 
         retryPrompt = shouldRemoveFailedUser ? failedUserMessage?.content : nil
 

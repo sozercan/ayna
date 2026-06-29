@@ -53,8 +53,8 @@ struct ChatTurnFailurePlanTests {
         #expect(plan.retryPrompt == nil)
     }
 
-    @Test("Remove-for-retry policy removes partial assistant with failed user")
-    func removeForRetryPolicyRemovesPartialAssistantWithFailedUser() {
+    @Test("Remove-for-retry policy preserves partial assistant with failed user")
+    func removeForRetryPolicyPreservesPartialAssistantWithFailedUser() {
         let user = Message(role: .user, content: "Hello")
         let assistant = Message(role: .assistant, content: "Partial response")
 
@@ -65,8 +65,8 @@ struct ChatTurnFailurePlanTests {
             failedUserMessagePolicy: .removeForRetry
         )
 
-        #expect(plan.messagesAfterFailure.isEmpty)
-        #expect(plan.retryPrompt == "Hello")
+        #expect(plan.messagesAfterFailure == [user, assistant])
+        #expect(plan.retryPrompt == nil)
     }
 
     @Test("Plan ignores placeholder id when it belongs to a user message")
