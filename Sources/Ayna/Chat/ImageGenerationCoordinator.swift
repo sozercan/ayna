@@ -111,28 +111,12 @@ final class ImageGenerationCoordinator {
         onImageError: @escaping ImageErrorHandler,
         onAllComplete: @escaping CompletionHandler
     ) -> MultiModelResult {
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        // Create message IDs and response entries for each model
-        for model in config.models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
-        }
-
-        // Create response group
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
+        let responsePlan = MultiModelResponsePlan(
+            models: config.models,
             userMessageId: config.userMessageId,
-            responses: responseEntries
+            mediaType: .image
         )
+        let messageIds = responsePlan.messageIDsByModel
 
         // Track completion with thread-safe counter
         let remainingCount = AsyncCounter(total: config.models.count)
@@ -178,9 +162,9 @@ final class ImageGenerationCoordinator {
         }
 
         return MultiModelResult(
-            responseGroupId: responseGroupId,
+            responseGroupId: responsePlan.responseGroupId,
             messageIds: messageIds,
-            responseGroup: responseGroup
+            responseGroup: responsePlan.responseGroup
         )
     }
 

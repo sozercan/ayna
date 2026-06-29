@@ -142,45 +142,23 @@ extension MacChatView {
         // Find previous image path (cheap, no disk I/O)
         let previousImagePath = findPreviousImagePath()
 
-        // Create a response group for the multi-model comparison
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        // Create placeholder messages for each model
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId,
-                mediaType: .image
-            )
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
-        }
-
-        // Create response group
         let userMessageId = conversation.messages.first(where: { $0.role == .user })?.id
             ?? conversation.messages.last(where: { $0.role == .user })?.id ?? UUID()
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
+        let responsePlan = MultiModelResponsePlan(
+            models: models,
             userMessageId: userMessageId,
-            responses: responseEntries
+            mediaType: .image
         )
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
+
+        for placeholderMessage in responsePlan.placeholderMessages {
+            conversationManager.addMessage(to: conversation, message: placeholderMessage)
+        }
 
         // Add response group to conversation
         if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responseGroup)
+            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
         }
 
         let messageIdsByModel = messageIds
@@ -310,28 +288,16 @@ extension MacChatView {
             return
         }
 
-        // Create response group
-        let responseGroupId = UUID()
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
+        let responsePlan = MultiModelResponsePlan(models: models, userMessageId: userMessageId)
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
 
-        // Create placeholder messages for each model
-        let messageIds = Dictionary(uniqueKeysWithValues: models.map { ($0, UUID()) })
-        for model in models {
-            guard let messageId = messageIds[model] else { continue }
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId
-            )
+        for placeholderMessage in responsePlan.placeholderMessages {
             conversationManager.addMessage(to: conversation, message: placeholderMessage)
         }
 
         // Add response group to conversation
-        conversationManager.addResponseGroup(to: conversation, group: responseGroup)
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = messageIds
 
