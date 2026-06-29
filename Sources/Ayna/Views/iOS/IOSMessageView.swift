@@ -18,6 +18,7 @@ import UniformTypeIdentifiers
 
 struct IOSMessageView: View {
     let message: Message
+    let displayKind: ChatTranscriptDisplayKind?
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
     var onEdit: ((String) -> Void)?
@@ -34,12 +35,14 @@ struct IOSMessageView: View {
 
     init(
         message: Message,
+        displayKind: ChatTranscriptDisplayKind? = nil,
         onRetry: (() -> Void)? = nil,
         onSwitchModel: ((String) -> Void)? = nil,
         onEdit: ((String) -> Void)? = nil,
         availableModels: [String] = []
     ) {
         self.message = message
+        self.displayKind = displayKind
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
@@ -152,6 +155,18 @@ struct IOSMessageView: View {
         return String(content.prefix(100)) + (content.count > 100 ? "..." : "")
     }
 
+
+    private var shouldShowTypingIndicator: Bool {
+        if let displayKind {
+            return displayKind == .typingPlaceholder
+        }
+
+        return message.role == .assistant
+            && message.content.isEmpty
+            && message.mediaType != .image
+            && (message.toolCalls == nil || message.toolCalls?.isEmpty == true)
+    }
+
     // MARK: - Regular Message View
 
     /// Whether this message should be hidden (empty assistant message waiting for tool execution)
@@ -239,9 +254,7 @@ struct IOSMessageView: View {
 
                 // Show typing indicator for empty assistant messages (waiting for response)
                 // Don't show if the message has tool calls (it's waiting for tool execution)
-                if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
-                   message.toolCalls == nil || message.toolCalls?.isEmpty == true
-                {
+                if shouldShowTypingIndicator {
                     IOSTypingIndicatorView()
                 } else if contentBlocks.isEmpty {
                     if !message.content.isEmpty {

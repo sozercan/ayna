@@ -8,24 +8,9 @@
 
 import SwiftUI
 
-/// Represents either a single message or a group of parallel responses
-enum DisplayableItem: Identifiable {
-    case message(Message)
-    case responseGroup(groupId: UUID, responses: [Message])
-
-    var id: String {
-        switch self {
-        case let .message(msg):
-            msg.id.uuidString
-        case let .responseGroup(groupId, _):
-            "group-\(groupId.uuidString)"
-        }
-    }
-}
-
 /// The scrollable message list area showing conversation messages
 struct ChatMessageList: View {
-    let displayableItems: [DisplayableItem]
+    let displayableItems: [ChatTranscriptItem]
     let conversation: Conversation
     let isGenerating: Bool
     @Binding var isToolSectionExpanded: Bool
@@ -49,35 +34,7 @@ struct ChatMessageList: View {
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 0) {
                     ForEach(displayableItems) { item in
-                        switch item {
-                        case let .message(message):
-                            MacMessageView(
-                                message: message,
-                                modelName: message.model,
-                                onRetry: message.role == .assistant ? { onRetryMessage(message) } : nil,
-                                onSwitchModel: message.role == .assistant
-                                    ? { newModel in onSwitchModelAndRetry(message, newModel) }
-                                    : nil,
-                                onEdit: message.role == .user
-                                    ? { newContent in onEditMessage(message, newContent) }
-                                    : nil
-                            )
-                            .id(message.id)
-
-                        case let .responseGroup(groupId, responses):
-                            MultiModelResponseView(
-                                responseGroupId: groupId,
-                                responses: responses,
-                                conversation: conversation,
-                                onSelectResponse: { messageId in
-                                    onSelectResponse(groupId, messageId)
-                                },
-                                onRetry: { message in
-                                    onRetryMessage(message)
-                                }
-                            )
-                            .id(item.id)
-                        }
+                        transcriptItemView(item)
                     }
 
                     // Anchor for scroll position detection
@@ -131,6 +88,9 @@ struct ChatMessageList: View {
             .onChange(of: conversation.messages) { _, _ in
                 onMessagesChange()
             }
+            .onChange(of: conversation.responseGroups) { _, _ in
+                onMessagesChange()
+            }
             .onChange(of: conversation.messages.last?.content) { _, _ in
                 if isGenerating {
                     Task { @MainActor in
@@ -170,5 +130,48 @@ struct ChatMessageList: View {
             }
         }
     }
+    @ViewBuilder
+    private func transcriptItemView(_ item: ChatTranscriptItem) -> some View {
+        switch item {
+        case let .message(transcriptMessage):
+            messageView(for: transcriptMessage)
+                .id(transcriptMessage.message.id)
+        case let .responseGroup(group):
+            responseGroupView(for: group)
+                .id(item.id)
+        }
+    }
+
+    private func messageView(for transcriptMessage: ChatTranscriptMessage) -> some View {
+        let message = transcriptMessage.message
+        return MacMessageView(
+            message: message,
+            displayKind: transcriptMessage.displayKind,
+            modelName: message.model,
+            onRetry: message.role == .assistant ? { onRetryMessage(message) } : nil,
+            onSwitchModel: message.role == .assistant
+                ? { newModel in onSwitchModelAndRetry(message, newModel) }
+                : nil,
+            onEdit: message.role == .user
+                ? { newContent in onEditMessage(message, newContent) }
+                : nil
+        )
+    }
+
+    private func responseGroupView(for group: ChatTranscriptResponseGroup) -> some View {
+        MultiModelResponseView(
+            responseGroupId: group.id,
+            responses: group.messages,
+            conversation: conversation,
+            defaultCandidateId: group.defaultCandidateId,
+            onSelectResponse: { messageId in
+                onSelectResponse(group.id, messageId)
+            },
+            onRetry: { message in
+                onRetryMessage(message)
+            }
+        )
+    }
+
 }
 #endif

@@ -48,75 +48,13 @@ struct MacNewChatView: View {
 
     // MARK: - Multi-Model Display
 
-    /// Represents either a single message or a group of parallel responses
-    private enum DisplayableItem: Identifiable {
-        case message(Message)
-        case responseGroup(groupId: UUID, responses: [Message])
-
-        var id: String {
-            switch self {
-            case let .message(msg):
-                msg.id.uuidString
-            case let .responseGroup(groupId, _):
-                "group-\(groupId.uuidString)"
-            }
-        }
-    }
-
-    /// Get visible messages (filtering out system and tool messages)
-    private var visibleMessages: [Message] {
+    /// Converts the pending conversation into displayable transcript items.
+    private var displayableItems: [ChatTranscriptItem] {
         guard let conversation = currentConversation else { return [] }
-        return conversation.messages.filter { message in
-            if message.role == .system {
-                return false
-            }
-
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                return message.id == conversation.messages.last?.id && isGenerating
-            }
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
-        }
-    }
-
-    /// Converts visible messages into displayable items, grouping multi-model responses together
-    private var displayableItems: [DisplayableItem] {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        return items
+        return ChatTranscriptPlan(
+            conversation: conversation,
+            isGenerating: isGenerating
+        ).items
     }
 
     private var needsModelSetup: Bool {
@@ -182,9 +120,11 @@ struct MacNewChatView: View {
                             LazyVStack(spacing: 0) {
                                 ForEach(displayableItems) { item in
                                     switch item {
-                                    case let .message(message):
+                                    case let .message(item):
+                                        let message = item.message
                                         MacMessageView(
                                             message: message,
+                                            displayKind: item.displayKind,
                                             modelName: message.model,
                                             onRetry: nil,
                                             onSwitchModel: nil,
@@ -203,16 +143,17 @@ struct MacNewChatView: View {
                                                 } : nil
                                         )
                                         .id(message.id)
-                                    case let .responseGroup(groupId, responses):
+                                    case let .responseGroup(group):
                                         if let conversation = currentConversation {
                                             MultiModelResponseView(
-                                                responseGroupId: groupId,
-                                                responses: responses,
+                                                responseGroupId: group.id,
+                                                responses: group.messages,
                                                 conversation: conversation,
+                                                defaultCandidateId: group.defaultCandidateId,
                                                 onSelectResponse: { messageId in
                                                     conversationManager.selectResponse(
                                                         in: conversation,
-                                                        groupId: groupId,
+                                                        groupId: group.id,
                                                         messageId: messageId
                                                     )
                                                 },

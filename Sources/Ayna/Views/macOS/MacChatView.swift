@@ -64,9 +64,8 @@ struct MacChatView: View {
     // Performance optimizations
     @State private var pendingChunks: [String] = []
     @State private var batchUpdateTask: Task<Void, Never>?
-    @State private var visibleMessages: [Message] = []
     @State private var cachedConversationIndex: Int?
-    @State private var cachedDisplayableItems: [DisplayableItem] = []
+    @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
     /// Cache the current conversation to avoid repeated lookups
     var currentConversation: Conversation {
         if let index = getConversationIndex() {
@@ -100,76 +99,15 @@ struct MacChatView: View {
         DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
     }
 
-    /// Helper to filter visible messages
+    /// Helper to refresh visible transcript items.
     private func updateVisibleMessages() {
-        visibleMessages = currentConversation.messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-            // Always show tool messages when they have content (tool replies are the "first" assistant response)
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            // Always show assistant messages that have citations (from web search)
-            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                return true
-            }
-
-            // Show if: has content, has image data, or is generating image
-            // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == currentConversation.messages.last?.id && isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
-        }
-
-        // Update displayable items after visible messages change
-        updateDisplayableItems()
+        cachedDisplayableItems = ChatTranscriptPlan(
+            conversation: currentConversation,
+            isGenerating: isGenerating
+        ).items
     }
 
     // MARK: - Multi-Model Display
-
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
-    private func updateDisplayableItems() {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        cachedDisplayableItems = items
-    }
 
     private var normalizedSelectedModel: String {
         let explicitSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -247,6 +185,7 @@ struct MacChatView: View {
                     },
                     onModelChange: {
                         syncSelectedModelWithConversation()
+                        updateVisibleMessages()
                     },
                     onGeneratingChange: {
                         updateVisibleMessages()
@@ -606,30 +545,16 @@ struct MacChatView: View {
 
     /// Auto-select response if we are continuing from a multi-model state without selection
     private func autoSelectResponseIfNeeded() {
-        guard let lastMessage = currentConversation.messages.last,
-              let groupId = lastMessage.responseGroupId,
-              let group = currentConversation.getResponseGroup(groupId),
-              group.selectedResponseId == nil
-        else {
+        guard let candidate = ChatTranscriptPlan.autoSelectionCandidate(in: currentConversation) else {
             return
         }
 
-        let responses = currentConversation.messages.filter { $0.responseGroupId == groupId }
-        var candidateId: UUID?
-
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == currentConversation.model }) {
-            candidateId = match.id
-        }
-        // 2. Fallback: First model
-        else if let first = responses.first {
-            candidateId = first.id
-        }
-
-        if let id = candidateId {
-            logChat("🤖 Auto-selecting response before sending new message", metadata: ["messageId": id.uuidString])
-            conversationManager.selectResponse(in: currentConversation, groupId: groupId, messageId: id)
-        }
+        logChat("🤖 Auto-selecting response before sending new message", metadata: ["messageId": candidate.messageId.uuidString])
+        conversationManager.selectResponse(
+            in: currentConversation,
+            groupId: candidate.groupId,
+            messageId: candidate.messageId
+        )
     }
 
     // MARK: - Error Handling
