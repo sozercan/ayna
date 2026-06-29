@@ -68,8 +68,8 @@ class AIService: ObservableObject {
         private var appleIntelligenceTask: Task<Void, Never>?
     #endif
 
-    /// Holds the Anthropic provider during streaming to prevent deallocation
-    private var currentAnthropicProvider: AnthropicProvider?
+    /// Owns provider adapters for in-flight provider-backed requests.
+    private let inFlightProviderRequests = InFlightProviderRequests()
 
     @Published var provider: AIProvider {
         didSet {
@@ -634,9 +634,8 @@ class AIService: ObservableObject {
             )
         }
         multiModelStreamTasks.removeAll()
-        // Cancel Anthropic provider and clear reference to prevent memory leak
-        currentAnthropicProvider?.cancelRequest()
-        currentAnthropicProvider = nil
+        // Cancel provider adapters retained for in-flight provider-backed requests.
+        inFlightProviderRequests.cancelAll()
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -2209,23 +2208,24 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        // Get provider and send request
-        // Store provider to prevent deallocation during streaming
+        // Create a provider adapter for this request and retain it until completion/error.
+        // Provider adapters own their current stream task, so each concurrent request needs
+        // independent ownership instead of a shared singleton.
         let provider = AnthropicProvider(urlSession: urlSession)
-        currentAnthropicProvider = provider
+        let lease = inFlightProviderRequests.retain(provider)
 
-        // Wrap callbacks to clear provider reference on completion
+        // Wrap callbacks to release provider ownership exactly once on terminal callbacks.
         let wrappedCallbacks = AIProviderStreamCallbacks(
             onChunk: callbacks.onChunk,
-            onComplete: { [weak self] in
+            onComplete: {
                 Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
+                    lease.release()
                 }
                 callbacks.onComplete()
             },
-            onError: { [weak self] error in
+            onError: { error in
                 Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
+                    lease.release()
                 }
                 callbacks.onError(error)
             },
