@@ -86,4 +86,30 @@ struct OpenAIEndpointResolverTests {
             _ = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
         }
     }
+
+    @Test("Malformed custom endpoint throws error")
+    func malformedCustomEndpointThrowsError() {
+        let config = OpenAIEndpointResolver.EndpointConfig(
+            modelName: "gpt-5",
+            provider: .openai,
+            customEndpoint: "not-a-url"
+        )
+
+        #expect(throws: AynaError.self) {
+            _ = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
+        }
+    }
+
+    @Test("Custom endpoint with invalid scheme throws error")
+    func customEndpointWithInvalidSchemeThrowsError() {
+        let config = OpenAIEndpointResolver.EndpointConfig(
+            modelName: "gpt-5",
+            provider: .openai,
+            customEndpoint: "ftp://example.com"
+        )
+
+        #expect(throws: AynaError.self) {
+            _ = try OpenAIEndpointResolver.chatCompletionsURL(for: config)
+        }
+    }
 }
