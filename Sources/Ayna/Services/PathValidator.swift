@@ -21,6 +21,13 @@ struct PathValidator {
     let protectedPaths: [String]
     let sensitiveFilenames: Set<String>
 
+    private let projectRootComponents: [String]?
+
+    private static let environmentVariableRegex = try! NSRegularExpression(
+        pattern: #"\$([A-Za-z_][A-Za-z0-9_]*)"#,
+        options: []
+    )
+
     // MARK: - Default Protected Paths
 
     /// Paths that always require approval for any operation
@@ -67,6 +74,7 @@ struct PathValidator {
         self.projectRoot = projectRoot
         self.protectedPaths = protectedPaths
         self.sensitiveFilenames = sensitiveFilenames
+        self.projectRootComponents = projectRoot.map { Self.canonicalPathComponents(for: $0) }
     }
 
     // MARK: - Validation
@@ -85,7 +93,9 @@ struct PathValidator {
         case denied(reason: String) // Always blocked
 
         var isAllowed: Bool {
-            if case .allowed = self { return true }
+            if case .allowed = self {
+                return true
+            }
             return false
         }
     }
@@ -111,10 +121,10 @@ struct PathValidator {
 
         // Step 3: Standardize the path (removes . and ..)
         let canonicalURL = resolvedURL.standardized
-        let canonicalPath = canonicalURL.path
+        let pathComponents = canonicalURL.pathComponents
 
         // Step 4: Check for protected system paths
-        if let protectedReason = checkProtectedPaths(canonicalPath) {
+        if let protectedReason = checkProtectedPaths(pathComponents) {
             return .requiresApproval(reason: protectedReason)
         }
 
@@ -125,15 +135,14 @@ struct PathValidator {
         }
 
         // Also check if any path component matches sensitive filenames
-        let pathComponents = canonicalURL.pathComponents
         for component in pathComponents where sensitiveFilenames.contains(component.lowercased()) {
             return .requiresApproval(reason: "Path contains sensitive component: \(component)")
         }
 
         // Check for sensitive multi-component paths (e.g., .git/config)
         if pathComponents.count >= 2 {
-            for idx in 0..<(pathComponents.count - 1) {
-                if pathComponents[idx] == ".git" && pathComponents[idx + 1] == "config" {
+            for idx in 0 ..< (pathComponents.count - 1) {
+                if pathComponents[idx] == ".git", pathComponents[idx + 1] == "config" {
                     return .requiresApproval(reason: "Sensitive file: .git/config")
                 }
             }
@@ -142,7 +151,8 @@ struct PathValidator {
         // Step 6: For write/execute operations, check project boundary
         if operation == .write || operation == .execute {
             if requireApprovalOutsideProject, let projectRoot {
-                if !isPathWithinDirectory(canonicalURL, directory: projectRoot) {
+                let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
+                if !Self.pathComponents(pathComponents, startWith: rootComponents) {
                     return .requiresApproval(reason: "Path outside project directory")
                 }
             }
@@ -158,13 +168,7 @@ struct PathValidator {
     func canonicalize(_ path: String) -> URL? {
         let expandedPath = expandPath(path)
         let url = URL(fileURLWithPath: expandedPath)
-
-        do {
-            let resolved = try url.resolvingSymlinksInPath()
-            return resolved.standardized
-        } catch {
-            return nil
-        }
+        return url.resolvingSymlinksInPath().standardized
     }
 
     /// Checks if a path is within the project directory.
@@ -175,32 +179,34 @@ struct PathValidator {
         guard let projectRoot else { return false }
         guard let canonical = canonicalize(path) else { return false }
 
-        return isPathWithinDirectory(canonical, directory: projectRoot)
-    }
-
-    /// Checks if a URL is within a directory using path component comparison.
-    /// This is safer than string prefix matching (e.g., "/project-evil" won't match "/project").
-    ///
-    /// - Parameters:
-    ///   - path: The path URL to check
-    ///   - directory: The directory URL to check against
-    /// - Returns: true if path is within directory
-    private func isPathWithinDirectory(_ path: URL, directory: URL) -> Bool {
-        let pathComponents = path.standardized.pathComponents
-        let directoryComponents = directory.standardized.pathComponents
-
-        // Path must have at least as many components as directory
-        guard pathComponents.count >= directoryComponents.count else {
-            return false
-        }
-
-        // Check that all directory components match the start of path components
-        return pathComponents.starts(with: directoryComponents)
+        let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
+        return Self.pathComponents(canonical.pathComponents, startWith: rootComponents)
     }
 
     // MARK: - Private Helpers
 
     private func expandPath(_ path: String) -> String {
+        Self.expandPath(path)
+    }
+
+    private func checkProtectedPaths(_ pathComponents: [String]) -> String? {
+        for protectedPath in protectedPaths {
+            // Re-resolve protected boundaries on each validation. Protected directories
+            // may be created, removed, or retargeted as symlinks after service startup;
+            // using stale resolved components could bypass required approval.
+            let expandedProtectedPath = Self.expandPath(protectedPath)
+            let lexicalProtectedComponents = URL(fileURLWithPath: expandedProtectedPath).standardized.pathComponents
+            let resolvedProtectedComponents = Self.canonicalPathComponents(forPath: expandedProtectedPath)
+            if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents)
+                || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents)
+            {
+                return "Protected path: \(protectedPath)"
+            }
+        }
+        return nil
+    }
+
+    private static func expandPath(_ path: String) -> String {
         var expanded = path
 
         // Expand ~
@@ -209,18 +215,10 @@ struct PathValidator {
         }
 
         // Expand environment variables like $HOME, $USER, etc.
-        // Uses regex to find all $VAR patterns and replaces with actual values
-        guard let regex = try? NSRegularExpression(
-            pattern: "\\$([A-Za-z_][A-Za-z0-9_]*)",
-            options: []
-        ) else {
-            return expanded
-        }
-
+        // Uses a shared regex and replaces matches from the end to preserve indices.
         let range = NSRange(expanded.startIndex..., in: expanded)
-        let matches = regex.matches(in: expanded, options: [], range: range)
+        let matches = environmentVariableRegex.matches(in: expanded, options: [], range: range)
 
-        // Process matches in reverse order to preserve indices
         for match in matches.reversed() {
             guard let fullRange = Range(match.range, in: expanded),
                   let varNameRange = Range(match.range(at: 1), in: expanded)
@@ -236,18 +234,22 @@ struct PathValidator {
         return expanded
     }
 
-    private func checkProtectedPaths(_ canonicalPath: String) -> String? {
-        let pathURL = URL(fileURLWithPath: canonicalPath)
+    private static func canonicalPathComponents(forPath path: String) -> [String] {
+        canonicalPathComponents(for: URL(fileURLWithPath: path))
+    }
 
-        for protectedPath in protectedPaths {
-            let expandedProtected = expandPath(protectedPath)
-            let protectedURL = URL(fileURLWithPath: expandedProtected).resolvingSymlinksInPath()
+    private static func canonicalPathComponents(for url: URL) -> [String] {
+        url.resolvingSymlinksInPath().standardized.pathComponents
+    }
 
-            if isPathWithinDirectory(pathURL, directory: protectedURL) {
-                return "Protected path: \(protectedPath)"
-            }
+    private static func pathComponents(_ pathComponents: [String], startWith directoryComponents: [String]) -> Bool {
+        // Path must have at least as many components as directory
+        guard pathComponents.count >= directoryComponents.count else {
+            return false
         }
-        return nil
+
+        // Check that all directory components match the start of path components
+        return pathComponents.starts(with: directoryComponents)
     }
 }
 

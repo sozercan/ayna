@@ -34,8 +34,73 @@ final class EncryptedMemoryStore: Sendable {
 
     private let fileURL: URL
     private let summaryFileURL: URL
-    private let keyIdentifier: String
-    private let keychain: KeychainStoring
+    private let encryptionKeyCache: EncryptionKeyCache
+
+    private final class EncryptionKeyCache: @unchecked Sendable {
+        private let keyIdentifier: String
+        private let keychain: KeychainStoring
+        private let lock = NSLock()
+        private var cachedKeyData: Data?
+
+        init(keyIdentifier: String, keychain: KeychainStoring) {
+            self.keyIdentifier = keyIdentifier
+            self.keychain = keychain
+        }
+
+        func key() throws -> SymmetricKey {
+            if let cached = keyData() {
+                return SymmetricKey(data: cached)
+            }
+            return try loadOrCreateKey()
+        }
+
+        private func keyData() -> Data? {
+            lock.lock()
+            defer { lock.unlock() }
+            return cachedKeyData
+        }
+
+        private func loadOrCreateKey() throws -> SymmetricKey {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let cachedKeyData {
+                return SymmetricKey(data: cachedKeyData)
+            }
+
+            let flagKey = "\(keyIdentifier)_initialized"
+
+            if let existing = try keychain.data(for: keyIdentifier) {
+                cachedKeyData = existing
+                return SymmetricKey(data: existing)
+            }
+
+            // Check if we previously had a key (flag exists but key is missing)
+            if (try? keychain.string(for: flagKey)) != nil {
+                DiagnosticsLogger.log(
+                    .encryptedStore,
+                    level: .error,
+                    message: "❌ Memory encryption key missing but initialization flag exists"
+                )
+                throw EncryptedMemoryStoreError.keyLost
+            }
+
+            // First-time setup: generate new key and set initialization flag
+            let newKey = SymmetricKey(size: .bits256)
+            let keyData = newKey.withUnsafeBytes { Data($0) }
+            try keychain.setData(keyData, for: keyIdentifier)
+            try keychain.setString("1", for: flagKey)
+            cachedKeyData = keyData
+
+            DiagnosticsLogger.log(
+                .encryptedStore,
+                level: .info,
+                message: "🔑 Generated new memory encryption key"
+            )
+
+            return newKey
+        }
+    }
 
     init(
         directoryURL: URL? = nil,
@@ -60,21 +125,20 @@ final class EncryptedMemoryStore: Sendable {
 
         fileURL = memoryDirectory.appendingPathComponent("memory.enc")
         summaryFileURL = memoryDirectory.appendingPathComponent("summaries.enc")
-        self.keyIdentifier = keyIdentifier
-        self.keychain = keychain
+        encryptionKeyCache = EncryptionKeyCache(keyIdentifier: keyIdentifier, keychain: keychain)
     }
 
     // MARK: - User Memory Operations
 
     /// Loads the user memory store from encrypted storage.
     func loadMemory() async throws -> UserMemoryStore {
-        try await Task.detached(priority: .userInitiated) { [fileURL, keyIdentifier, keychain] in
+        try await Task.detached(priority: .userInitiated) { [fileURL, encryptionKeyCache] in
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 return UserMemoryStore()
             }
 
             let encryptedData = try Data(contentsOf: fileURL)
-            let key = try Self.getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+            let key = try encryptionKeyCache.key()
             let box = try AES.GCM.SealedBox(combined: encryptedData)
             let plaintext = try AES.GCM.open(box, using: key)
             return try JSONDecoder().decode(UserMemoryStore.self, from: plaintext)
@@ -84,12 +148,11 @@ final class EncryptedMemoryStore: Sendable {
     /// Saves the user memory store to encrypted storage.
     func saveMemory(_ store: UserMemoryStore) async throws {
         let fileURL = fileURL
-        let keyIdentifier = keyIdentifier
-        let keychain = keychain
+        let encryptionKeyCache = encryptionKeyCache
 
         try await Task.detached(priority: .userInitiated) {
             let encoded = try JSONEncoder().encode(store)
-            let key = try Self.getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+            let key = try encryptionKeyCache.key()
             let sealed = try AES.GCM.seal(encoded, using: key)
 
             guard let combined = sealed.combined else {
@@ -126,13 +189,13 @@ final class EncryptedMemoryStore: Sendable {
 
     /// Loads the conversation summaries digest from encrypted storage.
     func loadSummaries() async throws -> RecentConversationsDigest {
-        try await Task.detached(priority: .userInitiated) { [summaryFileURL, keyIdentifier, keychain] in
+        try await Task.detached(priority: .userInitiated) { [summaryFileURL, encryptionKeyCache] in
             guard FileManager.default.fileExists(atPath: summaryFileURL.path) else {
                 return RecentConversationsDigest()
             }
 
             let encryptedData = try Data(contentsOf: summaryFileURL)
-            let key = try Self.getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+            let key = try encryptionKeyCache.key()
             let box = try AES.GCM.SealedBox(combined: encryptedData)
             let plaintext = try AES.GCM.open(box, using: key)
             return try JSONDecoder().decode(RecentConversationsDigest.self, from: plaintext)
@@ -142,12 +205,11 @@ final class EncryptedMemoryStore: Sendable {
     /// Saves the conversation summaries digest to encrypted storage.
     func saveSummaries(_ digest: RecentConversationsDigest) async throws {
         let summaryFileURL = summaryFileURL
-        let keyIdentifier = keyIdentifier
-        let keychain = keychain
+        let encryptionKeyCache = encryptionKeyCache
 
         try await Task.detached(priority: .userInitiated) {
             let encoded = try JSONEncoder().encode(digest)
-            let key = try Self.getEncryptionKey(keyIdentifier: keyIdentifier, keychain: keychain)
+            let key = try encryptionKeyCache.key()
             let sealed = try AES.GCM.seal(encoded, using: key)
 
             guard let combined = sealed.combined else {
@@ -175,41 +237,5 @@ final class EncryptedMemoryStore: Sendable {
             level: .info,
             message: "🧹 Cleared conversation summaries"
         )
-    }
-
-    // MARK: - Helpers
-
-    private nonisolated static func getEncryptionKey(keyIdentifier: String, keychain: KeychainStoring) throws
-        -> SymmetricKey
-    {
-        let flagKey = "\(keyIdentifier)_initialized"
-
-        if let existing = try keychain.data(for: keyIdentifier) {
-            return SymmetricKey(data: existing)
-        }
-
-        // Check if we previously had a key (flag exists but key is missing)
-        if (try? keychain.string(for: flagKey)) != nil {
-            DiagnosticsLogger.log(
-                .encryptedStore,
-                level: .error,
-                message: "❌ Memory encryption key missing but initialization flag exists"
-            )
-            throw EncryptedMemoryStoreError.keyLost
-        }
-
-        // First-time setup: generate new key and set initialization flag
-        let newKey = SymmetricKey(size: .bits256)
-        let keyData = newKey.withUnsafeBytes { Data($0) }
-        try keychain.setData(keyData, for: keyIdentifier)
-        try keychain.setString("1", for: flagKey)
-
-        DiagnosticsLogger.log(
-            .encryptedStore,
-            level: .info,
-            message: "🔑 Generated new memory encryption key"
-        )
-
-        return newKey
     }
 }

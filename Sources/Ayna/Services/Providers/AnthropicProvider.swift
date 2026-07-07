@@ -255,7 +255,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             }
         )
 
-        var errorOccurred: Bool { errorFlag.value }
+        var errorOccurred: Bool {
+            errorFlag.value
+        }
         var buffer = Data(capacity: 4096)
         var contentBuffer = ""
         var reasoningBuffer = ""
@@ -276,22 +278,21 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             }
 
             if byte == 0x0A {
-                if let line = String(data: buffer, encoding: .utf8) {
-                    let completed = await processSSELine(
-                        line: line,
-                        parser: parser,
-                        contentBuffer: &contentBuffer,
-                        reasoningBuffer: &reasoningBuffer,
-                        lastUpdateTime: &lastUpdateTime,
-                        callbacks: callbacks
+                let completed = await processSSELine(
+                    lineData: buffer,
+                    parser: parser,
+                    contentBuffer: &contentBuffer,
+                    reasoningBuffer: &reasoningBuffer,
+                    lastUpdateTime: &lastUpdateTime,
+                    callbacks: callbacks
+                )
+                if completed {
+                    return StreamProcessingResult(
+                        hasReceivedData: hasReceivedData,
+                        shouldComplete: !errorOccurred
                     )
-                    if completed {
-                        return StreamProcessingResult(
-                            hasReceivedData: hasReceivedData,
-                            shouldComplete: !errorOccurred
-                        )
-                    }
                 }
+
                 buffer.removeAll(keepingCapacity: true)
             }
         }
@@ -304,16 +305,20 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     private nonisolated func processSSELine(
-        line: String,
+        lineData: Data,
         parser: AnthropicStreamParser,
         contentBuffer: inout String,
         reasoningBuffer: inout String,
         lastUpdateTime: inout CFAbsoluteTime,
         callbacks: AIProviderStreamCallbacks
     ) async -> Bool {
-        let result = parser.processLine(line)
-        if let content = result.content { contentBuffer += content }
-        if let reasoning = result.reasoning { reasoningBuffer += reasoning }
+        let result = parser.processLine(lineData)
+        if let content = result.content {
+            contentBuffer += content
+        }
+        if let reasoning = result.reasoning {
+            reasoningBuffer += reasoning
+        }
         if let toolCall = result.toolCall {
             let anyInput = toolCall.input.mapValues { $0.value }
             await MainActor.run {
@@ -503,7 +508,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         do {
             for try await byte in bytes {
                 errorData.append(byte)
-                if errorData.count > 4096 { break }
+                if errorData.count > 4096 {
+                    break
+                }
             }
         } catch {
             // Ignore errors reading error body
@@ -598,8 +605,12 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks
     ) async {
         await MainActor.run {
-            if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
-            if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
+            if !contentBuffer.isEmpty {
+                callbacks.onChunk(contentBuffer)
+            }
+            if !reasoningBuffer.isEmpty {
+                callbacks.onReasoning?(reasoningBuffer)
+            }
         }
     }
 

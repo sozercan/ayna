@@ -146,29 +146,15 @@ struct MacChatView: View {
 
     /// Updates cached displayable items. Call when messages change or isGenerating changes.
     private func updateDisplayableItems() {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
+        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
                 // Always show response groups as a group, even if only one response is currently visible
                 // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        cachedDisplayableItems = items
+        )
     }
 
     private var normalizedSelectedModel: String {
@@ -406,7 +392,7 @@ struct MacChatView: View {
 
     /// Sends the last user message in the conversation (used for Work with Apps)
     private func sendPendingUserMessage() {
-        guard let lastUserMessage = currentConversation.messages.last(where: { $0.role == .user }) else {
+        guard currentConversation.messages.contains(where: { $0.role == .user }) else {
             return
         }
 

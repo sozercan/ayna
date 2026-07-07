@@ -22,6 +22,26 @@ struct ShellSandbox {
     let allowUnlistedCommands: Bool
     let restrictToProjectDirectory: Bool
 
+    private let blockedPatternRules: [BlockedPatternRule]
+    private let projectRootComponents: [String]?
+
+    private struct BlockedPatternRule {
+        let pattern: String
+        let lowercasedPattern: String
+        let regex: NSRegularExpression?
+
+        init(pattern: String) {
+            self.pattern = pattern
+            self.lowercasedPattern = pattern.lowercased()
+
+            if pattern.contains(".*") || pattern.contains("[") {
+                self.regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+            } else {
+                self.regex = nil
+            }
+        }
+    }
+
     // MARK: - Default Configuration
 
     /// Commands that execute without approval (read-only, safe operations)
@@ -121,6 +141,8 @@ struct ShellSandbox {
         self.projectRoot = projectRoot
         self.allowUnlistedCommands = allowUnlistedCommands
         self.restrictToProjectDirectory = restrictToProjectDirectory
+        self.blockedPatternRules = blockedPatterns.map(BlockedPatternRule.init)
+        self.projectRootComponents = projectRoot.map { Self.canonicalPathComponents(for: $0) }
     }
 
     // MARK: - Validation
@@ -194,16 +216,10 @@ struct ShellSandbox {
             return true
         }
 
-        let pathComponents = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.pathComponents
-        let projectComponents = projectRoot.resolvingSymlinksInPath().standardized.pathComponents
+        let pathComponents = Self.canonicalPathComponents(forPath: path)
+        let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
 
-        // Path must have at least as many components as project root
-        guard pathComponents.count >= projectComponents.count else {
-            return false
-        }
-
-        // Check that all project components match the start of path components
-        return pathComponents.starts(with: projectComponents)
+        return Self.pathComponents(pathComponents, startWith: rootComponents)
     }
 
     /// Extracts the base command name from a command string.
@@ -214,15 +230,13 @@ struct ShellSandbox {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Handle commands that start with environment variable assignments
-        var words = trimmed.components(separatedBy: .whitespaces)
-            .filter { !$0.isEmpty }
-
-        // Skip environment variable assignments (KEY=value)
-        while let first = words.first, first.contains("="), !first.hasPrefix("-") {
-            words.removeFirst()
+        let firstCommandWord = trimmed.split(whereSeparator: { $0.isWhitespace }).first { word in
+            // Skip environment variable assignments (KEY=value)
+            !(word.contains("=") && !word.hasPrefix("-"))
         }
 
-        guard let firstWord = words.first else { return nil }
+        guard let firstCommandWord else { return nil }
+        let firstWord = String(firstCommandWord)
 
         // Handle path-qualified commands like /usr/bin/git
         if firstWord.contains("/") {
@@ -237,19 +251,17 @@ struct ShellSandbox {
     private func checkBlockedPatterns(_ command: String) -> String? {
         let lowercased = command.lowercased()
 
-        for pattern in blockedPatterns {
+        for rule in blockedPatternRules {
             // Check exact match or contains
-            if lowercased.contains(pattern.lowercased()) {
-                return "Blocked pattern: \(pattern)"
+            if lowercased.contains(rule.lowercasedPattern) {
+                return "Blocked pattern: \(rule.pattern)"
             }
 
             // Check regex patterns
-            if pattern.contains(".*") || pattern.contains("[") {
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                    let range = NSRange(command.startIndex..., in: command)
-                    if regex.firstMatch(in: command, options: [], range: range) != nil {
-                        return "Blocked pattern: \(pattern)"
-                    }
+            if let regex = rule.regex {
+                let range = NSRange(command.startIndex..., in: command)
+                if regex.firstMatch(in: command, options: [], range: range) != nil {
+                    return "Blocked pattern: \(rule.pattern)"
                 }
             }
         }
@@ -483,6 +495,24 @@ struct ShellSandbox {
         default:
             return false
         }
+    }
+
+    private static func canonicalPathComponents(forPath path: String) -> [String] {
+        canonicalPathComponents(for: URL(fileURLWithPath: path))
+    }
+
+    private static func canonicalPathComponents(for url: URL) -> [String] {
+        url.resolvingSymlinksInPath().standardized.pathComponents
+    }
+
+    private static func pathComponents(_ pathComponents: [String], startWith directoryComponents: [String]) -> Bool {
+        // Path must have at least as many components as directory
+        guard pathComponents.count >= directoryComponents.count else {
+            return false
+        }
+
+        // Check that all directory components match the start of path components
+        return pathComponents.starts(with: directoryComponents)
     }
 }
 

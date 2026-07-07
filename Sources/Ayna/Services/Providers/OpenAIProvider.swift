@@ -193,52 +193,51 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                         }
 
                         if byte == 0x0A {
-                            if let line = String(data: buffer, encoding: .utf8) {
-                                let result = await OpenAIStreamParser.processStreamLine(
-                                    line,
-                                    toolCallBuffers: currentToolCallBuffers,
-                                    toolCallIds: toolCallIds,
-                                    onToolCall: onToolCall,
-                                    onToolCallRequested: onToolCallRequested
+                            let result = await OpenAIStreamParser.processStreamLine(
+                                buffer,
+                                toolCallBuffers: currentToolCallBuffers,
+                                toolCallIds: toolCallIds,
+                                onToolCall: onToolCall,
+                                onToolCallRequested: onToolCallRequested
+                            )
+                            currentToolCallBuffers = result.toolCallBuffers
+                            toolCallIds = result.toolCallIds
+
+                            if let content = result.content {
+                                contentBuffer += content
+                            }
+                            if let reasoning = result.reasoning {
+                                reasoningBuffer += reasoning
+                            }
+
+                            if result.shouldComplete {
+                                await self.flushBuffers(
+                                    contentBuffer: contentBuffer,
+                                    reasoningBuffer: reasoningBuffer,
+                                    callbacks: callbacks
                                 )
-                                currentToolCallBuffers = result.toolCallBuffers
-                                toolCallIds = result.toolCallIds
-
-                                if let content = result.content {
-                                    contentBuffer += content
+                                await MainActor.run {
+                                    self.currentStreamTask = nil
+                                    callbacks.onComplete()
                                 }
-                                if let reasoning = result.reasoning {
-                                    reasoningBuffer += reasoning
-                                }
+                                return
+                            }
 
-                                if result.shouldComplete {
+                            // Batch updates
+                            if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+                                let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
+                                if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
                                     await self.flushBuffers(
                                         contentBuffer: contentBuffer,
                                         reasoningBuffer: reasoningBuffer,
                                         callbacks: callbacks
                                     )
-                                    await MainActor.run {
-                                        self.currentStreamTask = nil
-                                        callbacks.onComplete()
-                                    }
-                                    return
-                                }
-
-                                // Batch updates
-                                if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
-                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
-                                        await self.flushBuffers(
-                                            contentBuffer: contentBuffer,
-                                            reasoningBuffer: reasoningBuffer,
-                                            callbacks: callbacks
-                                        )
-                                        contentBuffer = ""
-                                        reasoningBuffer = ""
-                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
-                                    }
+                                    contentBuffer = ""
+                                    reasoningBuffer = ""
+                                    lastUpdateTime = CFAbsoluteTimeGetCurrent()
                                 }
                             }
+
                             buffer.removeAll(keepingCapacity: true)
                         }
                     }
@@ -392,7 +391,9 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         do {
             for try await byte in bytes {
                 errorData.append(byte)
-                if errorData.count > 4096 { break }
+                if errorData.count > 4096 {
+                    break
+                }
             }
         } catch {
             // Ignore errors reading error body
@@ -492,8 +493,12 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks
     ) async {
         await MainActor.run {
-            if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
-            if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
+            if !contentBuffer.isEmpty {
+                callbacks.onChunk(contentBuffer)
+            }
+            if !reasoningBuffer.isEmpty {
+                callbacks.onReasoning?(reasoningBuffer)
+            }
         }
     }
 

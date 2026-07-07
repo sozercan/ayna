@@ -36,14 +36,12 @@ struct ConversationSummary: Identifiable, Codable, Sendable {
     /// Maximum length of each snippet
     static let maxSnippetLength = 100
 
+    private static let contextDateStyle = Date.FormatStyle(date: .abbreviated, time: .omitted)
+
     /// Formats the summary for display in the context.
     /// Uses ChatGPT-style |||| delimiters for user messages.
     func formattedForContext() -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .none
-
-        var lines = ["\(dateFormatter.string(from: timestamp)): \(title)"]
+        var lines = ["\(timestamp.formatted(Self.contextDateStyle)): \(title)"]
 
         for snippet in userMessageSnippets {
             lines.append("   |||| \(snippet) ||||")

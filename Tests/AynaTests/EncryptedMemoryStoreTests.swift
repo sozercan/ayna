@@ -11,6 +11,52 @@ import Testing
 
 @Suite("EncryptedMemoryStore Tests")
 struct EncryptedMemoryStoreTests {
+    private final class CountingKeychainStorage: KeychainStoring, @unchecked Sendable {
+        private var storage: [String: Data] = [:]
+        private let lock = NSLock()
+        private var dataReads = 0
+        private var stringReads = 0
+
+        func setString(_ value: String, for key: String) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            storage[key] = Data(value.utf8)
+        }
+
+        func string(for key: String) throws -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            stringReads += 1
+            guard let data = storage[key] else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+
+        func setData(_ data: Data, for key: String) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            storage[key] = data
+        }
+
+        func data(for key: String) throws -> Data? {
+            lock.lock()
+            defer { lock.unlock() }
+            dataReads += 1
+            return storage[key]
+        }
+
+        func removeValue(for key: String) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            storage[key] = nil
+        }
+
+        func readCounts() -> (dataReads: Int, stringReads: Int) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (dataReads, stringReads)
+        }
+    }
+
     // MARK: - User Memory Round-Trip
 
     @Test("Save and load memory preserves facts")
@@ -174,6 +220,38 @@ struct EncryptedMemoryStoreTests {
         #expect(keyAfter?.count == 32) // 256 bits = 32 bytes
     }
 
+    @Test("Encryption key is cached across repeated memory and summary operations")
+    func encryptionKeyIsCachedAcrossRepeatedMemoryAndSummaryOperations() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let keychain = CountingKeychainStorage()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: "test_cached_memory_key",
+            keychain: keychain
+        )
+
+        let memoryStore = UserMemoryStore(facts: [UserMemoryFact(content: "First")])
+        try await store.saveMemory(memoryStore)
+        _ = try await store.loadMemory()
+
+        let digest = RecentConversationsDigest(summaries: [
+            ConversationSummary(
+                id: UUID(),
+                title: "Cached",
+                userMessageSnippets: ["memory"],
+                topics: ["perf"]
+            )
+        ])
+        try await store.saveSummaries(digest)
+        _ = try await store.loadSummaries()
+
+        let counts = keychain.readCounts()
+        #expect(counts.dataReads == 1)
+        #expect(counts.stringReads == 1)
+    }
+
     @Test("Same key is reused across operations")
     func sameKeyIsReusedAcrossOperations() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
@@ -224,9 +302,14 @@ struct EncryptedMemoryStoreTests {
         // Simulate key loss by removing the key but keeping the flag
         try keychain.removeValue(for: keyIdentifier)
 
-        // Attempt to load should fail with keyLost error
+        // A fresh store (matching app relaunch) should fail with keyLost error.
+        let relaunchedStore = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: keyIdentifier,
+            keychain: keychain
+        )
         await #expect(throws: EncryptedMemoryStoreError.keyLost) {
-            _ = try await store.loadMemory()
+            _ = try await relaunchedStore.loadMemory()
         }
     }
 }

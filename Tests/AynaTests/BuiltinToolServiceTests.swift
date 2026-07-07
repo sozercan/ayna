@@ -159,6 +159,61 @@
             }
         }
 
+        // MARK: - Formatting and Search Performance Checks
+
+        @Suite("Formatting and Search Performance Checks")
+        @MainActor
+        struct FormattingAndSearchPerformanceTests {
+            @Test("File size formatting is stable across repeated calls")
+            func fileSizeFormattingStableAcrossRepeatedCalls() {
+                let permissionService = PermissionService()
+                let sut = BuiltinToolService(permissionService: permissionService)
+                let expected = sut.formatFileSize(1_048_576)
+
+                let iterations = 200
+                let start = Date()
+                for _ in 0..<iterations {
+                    #expect(sut.formatFileSize(1_048_576) == expected)
+                }
+                let elapsed = Date().timeIntervalSince(start)
+
+                print("BENCH BuiltinToolService formatFileSize: \(iterations) in \(String(format: "%.4f", elapsed))s")
+            }
+
+            @Test("Search files handles bulk text tree")
+            func searchFilesHandlesBulkTextTree() async throws {
+                // Use /tmp explicitly; FileManager.temporaryDirectory may resolve under /var/folders,
+                // which is intentionally protected by PathValidator and would require approval.
+                let root = URL(fileURLWithPath: "/tmp").appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+
+                let fileCount = 80
+                for index in 0..<fileCount {
+                    let subdirectory = root.appendingPathComponent("dir\(index % 8)")
+                    try FileManager.default.createDirectory(at: subdirectory, withIntermediateDirectories: true)
+
+                    let containsNeedle = index % 4 == 0
+                    let content = containsNeedle
+                        ? "first line\nneedle match \(index)\nlast line\n"
+                        : "first line\nordinary content \(index)\nlast line\n"
+                    let fileURL = subdirectory.appendingPathComponent("file\(index).txt")
+                    try content.write(to: fileURL, atomically: true, encoding: .utf8)
+                }
+
+                let permissionService = PermissionService()
+                let sut = BuiltinToolService(permissionService: permissionService)
+
+                let start = Date()
+                let results = try await sut.searchFiles(pattern: "needle", path: root.path, conversationId: UUID())
+                let elapsed = Date().timeIntervalSince(start)
+
+                #expect(results.count == fileCount / 4)
+                #expect(results.allSatisfy { $0.content.contains("needle") })
+                print("BENCH BuiltinToolService searchFiles: \(fileCount) files in \(String(format: "%.4f", elapsed))s")
+            }
+        }
+
         // MARK: - Tool Name Constants
 
         @Suite("Tool Name Constants")

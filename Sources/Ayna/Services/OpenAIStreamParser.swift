@@ -84,41 +84,72 @@ enum OpenAIStreamParser {
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
         onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
-        var updatedToolCallBuffers = toolCallBuffers
-        var updatedToolCallIds = toolCallIds
-        var extractedContent: String?
-        var extractedReasoning: String?
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Log all non-empty lines to track what we receive
-        if !trimmedLine.isEmpty {
-            DiagnosticsLogger.logThrottled(
-                .aiService,
-                level: .debug,
-                throttleKey: "stream.parser.processingLine",
-                interval: 2.0,
-                message: "📍 Parser: Processing line",
-                metadata: [
-                    "lineLength": String(trimmedLine.count),
-                    "hasDataPrefix": String(trimmedLine.hasPrefix("data: "))
-                ]
-            )
-        }
 
         guard trimmedLine.hasPrefix("data: ") else {
             return StreamLineResult(
                 shouldComplete: false,
-                toolCallBuffers: updatedToolCallBuffers,
-                toolCallIds: updatedToolCallIds,
+                toolCallBuffers: toolCallBuffers,
+                toolCallIds: toolCallIds,
                 content: nil,
                 reasoning: nil
             )
         }
 
-        let jsonString = String(trimmedLine.dropFirst(6))
+        return await processDataLine(
+            Data(trimmedLine.dropFirst(6).utf8),
+            toolCallBuffers: toolCallBuffers,
+            toolCallIds: toolCallIds,
+            onToolCall: onToolCall,
+            onToolCallRequested: onToolCallRequested
+        )
+    }
 
-        // Check for stream completion marker
-        if jsonString == "[DONE]" {
+    /// Process a single UTF-8 SSE line without converting the full line to `String`.
+    ///
+    /// This preserves the string-based API while giving byte-oriented stream readers a
+    /// fast path that avoids `Data -> String -> Data` round trips for each content line.
+    static func processStreamLine(
+        _ lineData: Data,
+        toolCallBuffers: [Int: [String: Any]],
+        toolCallIds: [Int: String],
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+        onReasoning _: (@Sendable (String) -> Void)? = nil
+    ) async -> StreamLineResult {
+        guard let jsonData = dataPayload(in: lineData) else {
+            return StreamLineResult(
+                shouldComplete: false,
+                toolCallBuffers: toolCallBuffers,
+                toolCallIds: toolCallIds,
+                content: nil,
+                reasoning: nil
+            )
+        }
+
+        return await processDataLine(
+            jsonData,
+            toolCallBuffers: toolCallBuffers,
+            toolCallIds: toolCallIds,
+            onToolCall: onToolCall,
+            onToolCallRequested: onToolCallRequested
+        )
+    }
+
+    private static func processDataLine(
+        _ jsonData: Data,
+        toolCallBuffers: [Int: [String: Any]],
+        toolCallIds: [Int: String],
+        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
+    ) async -> StreamLineResult {
+        var updatedToolCallBuffers = toolCallBuffers
+        var updatedToolCallIds = toolCallIds
+        var extractedContent: String?
+        var extractedReasoning: String?
+
+        // Check for stream completion marker before attempting JSON parsing.
+        if jsonData == doneMarkerData {
             DiagnosticsLogger.log(
                 .aiService,
                 level: .debug,
@@ -133,22 +164,23 @@ enum OpenAIStreamParser {
             )
         }
 
-        // Parse JSON payload
-        guard let jsonData = jsonString.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+        // Parse JSON payload directly from the SSE data bytes.
+        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let firstChoice = choices.first,
               let delta = firstChoice["delta"] as? [String: Any]
         else {
-            // Log unparseable lines for debugging
-            if !jsonString.isEmpty, jsonString != "[DONE]" {
+            // Keep diagnostics on malformed payloads, but avoid per-line diagnostics for
+            // the normal content path.
+            if !jsonData.isEmpty {
+                let linePreview = String(data: jsonData.prefix(100), encoding: .utf8) ?? ""
                 DiagnosticsLogger.logThrottled(
                     .aiService,
                     level: .debug,
                     throttleKey: "stream.parser.unparseable",
                     interval: 2.0,
                     message: "📍 Parser: Could not parse line",
-                    metadata: ["linePreview": String(jsonString.prefix(100))]
+                    metadata: ["linePreview": linePreview]
                 )
             }
             return StreamLineResult(
@@ -160,8 +192,11 @@ enum OpenAIStreamParser {
             )
         }
 
-        // Handle regular content
-        if let contentField = delta["content"], !(contentField is NSNull) {
+        // Handle regular content. The common text-delta path avoids array allocation,
+        // joining, and throttled diagnostic metadata construction.
+        if let stringContent = delta["content"] as? String {
+            extractedContent = stringContent
+        } else if let contentField = delta["content"], !(contentField is NSNull) {
             let textSegments = extractTextSegments(
                 from: contentField,
                 source: "stream.chat",
@@ -170,14 +205,6 @@ enum OpenAIStreamParser {
 
             if !textSegments.isEmpty {
                 extractedContent = textSegments.joined()
-                DiagnosticsLogger.logThrottled(
-                    .aiService,
-                    level: .debug,
-                    throttleKey: "stream.parser.extractedContent",
-                    interval: 1.0,
-                    message: "📍 Parser: Extracted content chunk",
-                    metadata: ["chunkLength": String(extractedContent?.count ?? 0)]
-                )
             }
         }
 
@@ -198,18 +225,20 @@ enum OpenAIStreamParser {
             currentIds: updatedToolCallIds
         )
 
-        // Check if tool call is complete and execute
-        let toolResult = await handleToolCallCompletion(
-            firstChoice: firstChoice,
-            toolCallBuffers: updatedToolCallBuffers,
-            toolCallIds: updatedToolCallIds,
-            extractedContent: extractedContent,
-            onToolCall: onToolCall,
-            onToolCallRequested: onToolCallRequested
-        )
-        updatedToolCallBuffers = toolResult.buffers
-        updatedToolCallIds = toolResult.ids
-        extractedContent = toolResult.content
+        // Check if tool call is complete and execute only on the completion chunk.
+        if firstChoice["finish_reason"] as? String == "tool_calls" {
+            let toolResult = await handleToolCallCompletion(
+                firstChoice: firstChoice,
+                toolCallBuffers: updatedToolCallBuffers,
+                toolCallIds: updatedToolCallIds,
+                extractedContent: extractedContent,
+                onToolCall: onToolCall,
+                onToolCallRequested: onToolCallRequested
+            )
+            updatedToolCallBuffers = toolResult.buffers
+            updatedToolCallIds = toolResult.ids
+            extractedContent = toolResult.content
+        }
 
         return StreamLineResult(
             shouldComplete: false,
@@ -218,6 +247,58 @@ enum OpenAIStreamParser {
             content: extractedContent,
             reasoning: extractedReasoning
         )
+    }
+
+    private static let dataLinePrefix: [UInt8] = Array("data: ".utf8)
+    private static let doneMarkerData = Data("[DONE]".utf8)
+
+    private static func dataPayload(in lineData: Data) -> Data? {
+        guard let trimmedRange = asciiTrimmedRange(in: lineData),
+              hasPrefix(dataLinePrefix, in: lineData, range: trimmedRange)
+        else {
+            return nil
+        }
+
+        let payloadStart = trimmedRange.lowerBound + dataLinePrefix.count
+        return lineData[payloadStart ..< trimmedRange.upperBound]
+    }
+
+    private static func asciiTrimmedRange(in data: Data) -> Range<Data.Index>? {
+        var start = data.startIndex
+        var end = data.endIndex
+
+        while start < end, isASCIIWhitespace(data[start]) {
+            start = data.index(after: start)
+        }
+        while start < end {
+            let previous = data.index(before: end)
+            if !isASCIIWhitespace(data[previous]) {
+                break
+            }
+            end = previous
+        }
+
+        return start < end ? start ..< end : nil
+    }
+
+    private static func hasPrefix(_ prefix: [UInt8], in data: Data, range: Range<Data.Index>) -> Bool {
+        guard data.distance(from: range.lowerBound, to: range.upperBound) >= prefix.count else {
+            return false
+        }
+
+        for (offset, byte) in prefix.enumerated() where data[range.lowerBound + offset] != byte {
+            return false
+        }
+        return true
+    }
+
+    private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+        switch byte {
+        case 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20:
+            true
+        default:
+            false
+        }
     }
 
     // MARK: - Tool Call Helpers

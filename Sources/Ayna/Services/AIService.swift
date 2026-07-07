@@ -1557,7 +1557,9 @@ class AIService: ObservableObject {
                             for try await byte in bytes {
                                 errorData.append(byte)
                                 // Limit error body size to prevent memory issues
-                                if errorData.count > 4096 { break }
+                                if errorData.count > 4096 {
+                                    break
+                                }
                             }
                         } catch {
                             // Ignore errors reading error body
@@ -1654,54 +1656,61 @@ class AIService: ObservableObject {
 
                         // Check if we have a newline (UTF-8: 0x0A)
                         if byte == 0x0A {
-                            if let line = String(data: buffer, encoding: .utf8) {
-                                let result = await OpenAIStreamParser.processStreamLine(
-                                    line,
-                                    toolCallBuffers: currentToolCallBuffers,
-                                    toolCallIds: toolCallIds,
-                                    onToolCall: callbacks.onToolCall,
-                                    onToolCallRequested: callbacks.onToolCallRequested
-                                )
-                                currentToolCallBuffers = result.toolCallBuffers
-                                toolCallIds = result.toolCallIds
+                            let result = await OpenAIStreamParser.processStreamLine(
+                                buffer,
+                                toolCallBuffers: currentToolCallBuffers,
+                                toolCallIds: toolCallIds,
+                                onToolCall: callbacks.onToolCall,
+                                onToolCallRequested: callbacks.onToolCallRequested
+                            )
+                            currentToolCallBuffers = result.toolCallBuffers
+                            toolCallIds = result.toolCallIds
 
-                                if let content = result.content {
-                                    contentBuffer += content
-                                }
-                                if let reasoning = result.reasoning {
-                                    reasoningBuffer += reasoning
-                                }
+                            if let content = result.content {
+                                contentBuffer += content
+                            }
+                            if let reasoning = result.reasoning {
+                                reasoningBuffer += reasoning
+                            }
 
-                                if result.shouldComplete {
-                                    // Flush remaining buffers
+                            if result.shouldComplete {
+                                // Flush remaining buffers
+                                let contentToSend = contentBuffer
+                                let reasoningToSend = reasoningBuffer
+                                await MainActor.run {
+                                    if !contentToSend.isEmpty {
+                                        callbacks.onChunk(contentToSend)
+                                    }
+                                    if !reasoningToSend.isEmpty {
+                                        callbacks.onReasoning?(reasoningToSend)
+                                    }
+                                    self.currentStreamTask = nil
+                                    callbacks.onComplete()
+                                }
+                                return
+                            }
+
+                            // Check if we should dispatch batch
+                            if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+                                let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
+                                if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
                                     let contentToSend = contentBuffer
                                     let reasoningToSend = reasoningBuffer
                                     await MainActor.run {
-                                        if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
-                                        if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
-                                        self.currentStreamTask = nil
-                                        callbacks.onComplete()
-                                    }
-                                    return
-                                }
-
-                                // Check if we should dispatch batch
-                                if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
-                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
-                                        let contentToSend = contentBuffer
-                                        let reasoningToSend = reasoningBuffer
-                                        await MainActor.run {
-                                            if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
-                                            if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                                        if !contentToSend.isEmpty {
+                                            callbacks.onChunk(contentToSend)
                                         }
-                                        contentBuffer = ""
-                                        reasoningBuffer = ""
-                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
+                                        if !reasoningToSend.isEmpty {
+                                            callbacks.onReasoning?(reasoningToSend)
+                                        }
                                     }
+                                    contentBuffer = ""
+                                    reasoningBuffer = ""
+                                    lastUpdateTime = CFAbsoluteTimeGetCurrent()
                                 }
                             }
-                            buffer.removeAll()
+
+                            buffer.removeAll(keepingCapacity: true)
                         }
                     }
 
@@ -1723,8 +1732,12 @@ class AIService: ObservableObject {
                             ]
                         )
 
-                        if !contentToSend.isEmpty { callbacks.onChunk(contentToSend) }
-                        if !reasoningToSend.isEmpty { callbacks.onReasoning?(reasoningToSend) }
+                        if !contentToSend.isEmpty {
+                            callbacks.onChunk(contentToSend)
+                        }
+                        if !reasoningToSend.isEmpty {
+                            callbacks.onReasoning?(reasoningToSend)
+                        }
                         self.currentStreamTask = nil
 
                         // Log warning if no data was received but no error occurred

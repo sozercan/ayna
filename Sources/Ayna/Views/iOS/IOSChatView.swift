@@ -60,9 +60,6 @@ struct IOSChatView: View {
             return
         }
 
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
         let visibleMessages = conversation.messages.filter { message in
             // Hide system messages entirely
             if message.role == .system {
@@ -93,20 +90,14 @@ struct IOSChatView: View {
             return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
 
-        for message in visibleMessages {
-            if let groupId = message.responseGroupId {
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
+        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
                 // Always show response groups as multi-model view to prevent UI jumping
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                items.append(.message(message))
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        cachedDisplayableItems = items
+        )
     }
 
     var body: some View {
