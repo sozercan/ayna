@@ -117,6 +117,19 @@ struct DuckDuckGoSearchServiceTests {
         }
     }
 
+    // MARK: - Bounded Response Reader Tests
+
+    @Test("bounded response reader stops at byte limit without consuming the rest")
+    func boundedResponseReaderStopsAtLimit() async throws {
+        let counter = ByteReadCounter()
+        let bytes = CountingAsyncBytes(totalBytes: 32, counter: counter)
+
+        let data = try await DuckDuckGoResponseReader.read(bytes, maxBytes: 8)
+
+        #expect(data == Data(repeating: 65, count: 8))
+        #expect(await counter.value == 8)
+    }
+
     // MARK: - HTML Parsing Tests
 
     @Test("parseDDGResults extracts links and snippets")
@@ -248,6 +261,39 @@ private enum DDGHTMLFixtures {
     </body>
     </html>
     """
+}
+
+// MARK: - Counting Async Bytes
+
+private actor ByteReadCounter {
+    private(set) var value = 0
+
+    func increment() {
+        value += 1
+    }
+}
+
+private struct CountingAsyncBytes: AsyncSequence, Sendable {
+    typealias Element = UInt8
+
+    let totalBytes: Int
+    let counter: ByteReadCounter
+
+    func makeAsyncIterator() -> Iterator {
+        Iterator(remainingBytes: totalBytes, counter: counter)
+    }
+
+    struct Iterator: AsyncIteratorProtocol, Sendable {
+        var remainingBytes: Int
+        let counter: ByteReadCounter
+
+        mutating func next() async -> UInt8? {
+            guard remainingBytes > 0 else { return nil }
+            remainingBytes -= 1
+            await counter.increment()
+            return 65
+        }
+    }
 }
 
 // MARK: - Mock URL Protocol

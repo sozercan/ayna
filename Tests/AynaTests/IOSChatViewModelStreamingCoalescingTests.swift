@@ -6,6 +6,16 @@ import Testing
     @Suite("IOSChatViewModel Streaming Coalescing Tests", .tags(.viewModel, .async))
     @MainActor
     struct IOSChatViewModelStreamingCoalescingTests {
+        private struct Fixture {
+            let viewModel: IOSChatViewModel
+            let manager: ConversationManager
+            let conversationId: UUID
+            let messageId: UUID
+            let responseGroupId: UUID
+            let model: String
+            let messageIds: [String: UUID]
+        }
+
         private let defaults: UserDefaults
 
         init() {
@@ -66,15 +76,7 @@ import Testing
             #expect(fixture.manager.conversations.first?.responseGroups.first?.responses.first?.status == .completed)
         }
 
-        private func makeFixture() async throws -> (
-            viewModel: IOSChatViewModel,
-            manager: ConversationManager,
-            conversationId: UUID,
-            messageId: UUID,
-            responseGroupId: UUID,
-            model: String,
-            messageIds: [String: UUID]
-        ) {
+        private func makeFixture() async throws -> Fixture {
             let directory = try TestHelpers.makeTemporaryDirectory()
             let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
             let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
@@ -110,14 +112,14 @@ import Testing
                 aiService: service
             )
 
-            return (
-                viewModel,
-                manager,
-                conversationId,
-                messageId,
-                responseGroupId,
-                model,
-                [model: messageId]
+            return Fixture(
+                viewModel: viewModel,
+                manager: manager,
+                conversationId: conversationId,
+                messageId: messageId,
+                responseGroupId: responseGroupId,
+                model: model,
+                messageIds: [model: messageId]
             )
         }
     }

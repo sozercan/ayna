@@ -109,7 +109,7 @@ final class DuckDuckGoSearchService {
         request.httpBody = formComponents.percentEncodedQuery?.data(using: .utf8)
 
         do {
-            let (data, response) = try await urlSession.data(for: request)
+            let (bytes, response) = try await urlSession.bytes(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw DuckDuckGoSearchError.networkError(
@@ -126,11 +126,13 @@ final class DuckDuckGoSearchService {
                 )
             }
 
+            let data = try await DuckDuckGoResponseReader.read(
+                bytes,
+                maxBytes: Constants.maxResponseBytes
+            )
             NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
-            // Cap response at 1 MB
-            let cappedData = data.prefix(Constants.maxResponseBytes)
-            guard let html = String(data: cappedData, encoding: .utf8) else {
+            guard let html = String(data: data, encoding: .utf8) else {
                 throw DuckDuckGoSearchError.parsingError
             }
 
@@ -256,5 +258,34 @@ final class DuckDuckGoSearchService {
 
     private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.aiService, level: level, message: message, metadata: metadata)
+    }
+}
+
+// MARK: - Bounded Response Reading
+
+enum DuckDuckGoResponseReader {
+    /// Reads response bytes incrementally and stops once `maxBytes` has been reached.
+    ///
+    /// This preserves the previous 1 MB prefix behavior without first materializing an
+    /// arbitrarily large response body in memory.
+    static func read<Bytes: AsyncSequence>(
+        _ bytes: Bytes,
+        maxBytes: Int
+    ) async throws -> Data where Bytes.Element == UInt8 {
+        guard maxBytes > 0 else { return Data() }
+
+        var data = Data()
+        data.reserveCapacity(min(maxBytes, 64 * 1024))
+
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            data.append(byte)
+
+            if data.count >= maxBytes {
+                break
+            }
+        }
+
+        return data
     }
 }
