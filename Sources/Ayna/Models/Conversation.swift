@@ -85,6 +85,9 @@ struct Conversation: Identifiable, Equatable, Sendable {
     /// When set, the chat view should auto-send this prompt on load
     var pendingAutoSendPrompt: String?
 
+    /// Lightweight list preview from metadata sidecars. Transient, not persisted.
+    var metadataPreview: String?
+
     init(
         id: UUID = UUID(),
         title: String = "New Conversation",
@@ -96,7 +99,8 @@ struct Conversation: Identifiable, Equatable, Sendable {
         temperature: Double = 0.7,
         multiModelEnabled: Bool = false,
         activeModels: [String] = [],
-        responseGroups: [ResponseGroup] = []
+        responseGroups: [ResponseGroup] = [],
+        metadataPreview: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -109,6 +113,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         self.multiModelEnabled = multiModelEnabled
         self.activeModels = activeModels
         self.responseGroups = responseGroups
+        self.metadataPreview = metadataPreview
     }
 
     // MARK: - Codable
@@ -133,6 +138,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
         activeModels = try container.decodeIfPresent([String].self, forKey: .activeModels) ?? []
         responseGroups = try container.decodeIfPresent([ResponseGroup].self, forKey: .responseGroups) ?? []
+        metadataPreview = nil
     }
 
     mutating func addMessage(_ message: Message) {

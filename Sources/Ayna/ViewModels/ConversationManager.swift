@@ -19,7 +19,12 @@ import SwiftUI
 @MainActor
 final class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
-    @Published var selectedConversationId: UUID?
+    @Published var selectedConversationId: UUID? {
+        didSet {
+            guard selectedConversationId != oldValue, let selectedConversationId else { return }
+            scheduleFullConversationLoadIfNeeded(selectedConversationId)
+        }
+    }
 
     static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
@@ -31,6 +36,11 @@ final class ConversationManager: ObservableObject {
 
     // Performance: O(1) conversation index lookup cache
     private var conversationIndexCache: [UUID: Int] = [:]
+
+    // Conversations represented by lightweight metadata only until selected/opened.
+    private var metadataOnlyConversationIds: Set<UUID> = []
+    private var metadataSearchTextById: [UUID: String] = [:]
+    private var fullConversationLoadTasks: [UUID: Task<Void, Never>] = [:]
 
     // Performance: Spotlight indexing debounce (3 seconds per conversation)
     private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
@@ -135,30 +145,48 @@ final class ConversationManager: ObservableObject {
     // MARK: - Persistence
 
     func save(_ conversation: Conversation) {
+        let isMetadataBackedSnapshot = isMetadataBackedSnapshot(conversation)
+
         // Delegate to the actor for thread-safe, debounced persistence
         Task {
             if !isLoaded {
                 _ = await loadingTask?.value
             }
 
-            await persistenceCoordinator.enqueueSave(conversation)
+            guard let conversationToSave = await conversationPreparedForPersistence(
+                conversation,
+                isMetadataBackedSnapshot: isMetadataBackedSnapshot
+            ) else {
+                return
+            }
+
+            await persistenceCoordinator.enqueueSave(conversationToSave)
             #if !os(watchOS)
-                indexConversation(conversation)
+                indexConversation(conversationToSave)
             #endif
         }
     }
 
     @discardableResult
     func saveImmediately(_ conversation: Conversation) -> Task<Void, Never> {
-        Task {
+        let isMetadataBackedSnapshot = isMetadataBackedSnapshot(conversation)
+
+        return Task {
             if !isLoaded {
                 _ = await loadingTask?.value
             }
 
+            guard let conversationToSave = await conversationPreparedForPersistence(
+                conversation,
+                isMetadataBackedSnapshot: isMetadataBackedSnapshot
+            ) else {
+                return
+            }
+
             do {
-                try await persistenceCoordinator.saveImmediately(conversation)
+                try await persistenceCoordinator.saveImmediately(conversationToSave)
                 #if !os(watchOS)
-                    indexConversation(conversation)
+                    indexConversation(conversationToSave)
                 #endif
             } catch {
                 logManager(
@@ -174,6 +202,10 @@ final class ConversationManager: ObservableObject {
     /// Call on app termination to prevent data loss.
     func flushPendingSaves() async {
         await persistenceCoordinator.flushPendingSaves()
+    }
+
+    private func isMetadataBackedSnapshot(_ conversation: Conversation) -> Bool {
+        metadataOnlyConversationIds.contains(conversation.id) || conversation.metadataPreview != nil
     }
 
     func delete(_ conversationId: UUID) {
@@ -197,58 +229,43 @@ final class ConversationManager: ObservableObject {
 
     private func loadConversations() async {
         do {
-            var decodedFromDisk = try await store.loadConversations()
+            let metadataFromDisk = try await store.loadConversationMetadata()
 
-            // Validate and fix models that no longer exist
+            // Validate and fix models that no longer exist for the in-memory list.
             let availableModels = AIService.shared.customModels
             let defaultModel = AIService.shared.selectedModel
 
-            for index in decodedFromDisk.indices where !availableModels.contains(decodedFromDisk[index].model) {
-                // Model no longer exists, update to default
-                decodedFromDisk[index].model = defaultModel
-                let conversationToSave = decodedFromDisk[index]
-                Task {
-                    do {
-                        try await store.save(conversationToSave)
-                    } catch {
-                        DiagnosticsLogger.log(
-                            .conversationManager,
-                            level: .error,
-                            message: "Failed to save conversation",
-                            metadata: ["error": "\(error)"]
-                        )
-                    }
-                }
-            }
-
-            // Dirty-wins reconciliation:
-            // - Disk is the authoritative snapshot for non-dirty conversations
-            // - In-memory wins for conversations that have pending saves queued
             let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { _, new in
                 DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID in memory", metadata: ["id": "\(new.id)"])
-                return new
-            })
-            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
-                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID on disk", metadata: ["id": "\(new.id)"])
                 return new
             })
 
             var reconciled: [Conversation] = []
-            reconciled.reserveCapacity(max(memoryById.count, diskById.count))
+            reconciled.reserveCapacity(max(memoryById.count, metadataFromDisk.count))
+            var nextMetadataOnlyIds: Set<UUID> = []
+            var metadataIds: Set<UUID> = []
+            metadataIds.reserveCapacity(metadataFromDisk.count)
 
-            // Start from disk snapshot
-            for diskConversation in decodedFromDisk {
-                if dirtyIds.contains(diskConversation.id), let memoryConversation = memoryById[diskConversation.id] {
+            for metadata in metadataFromDisk {
+                metadataIds.insert(metadata.id)
+
+                if dirtyIds.contains(metadata.id), let memoryConversation = memoryById[metadata.id] {
                     reconciled.append(memoryConversation)
-                } else {
-                    reconciled.append(diskConversation)
+                    continue
                 }
+
+                var placeholder = placeholderConversation(from: metadata)
+                if !availableModels.contains(placeholder.model) {
+                    placeholder.model = defaultModel
+                }
+                reconciled.append(placeholder)
+                nextMetadataOnlyIds.insert(metadata.id)
             }
 
             // Add any dirty in-memory conversations not present on disk yet (e.g., newly created)
             for dirtyId in dirtyIds {
-                if diskById[dirtyId] == nil, let memoryConversation = memoryById[dirtyId] {
+                if !metadataIds.contains(dirtyId), let memoryConversation = memoryById[dirtyId] {
                     reconciled.append(memoryConversation)
                 }
             }
@@ -257,12 +274,18 @@ final class ConversationManager: ObservableObject {
             reconciled.sort { $0.updatedAt > $1.updatedAt }
 
             conversations = reconciled
+            metadataOnlyConversationIds = nextMetadataOnlyIds
+            metadataSearchTextById = Dictionary(
+                uniqueKeysWithValues: metadataFromDisk.map { ($0.id, $0.searchableText) }
+            )
 
             // If selected conversation no longer exists, clear selection
             if let selectedId = selectedConversationId,
                !conversations.contains(where: { $0.id == selectedId })
             {
                 selectedConversationId = nil
+            } else if let selectedId = selectedConversationId {
+                scheduleFullConversationLoadIfNeeded(selectedId)
             }
 
             // Rebuild the index cache after loading and sorting
@@ -271,12 +294,13 @@ final class ConversationManager: ObservableObject {
             isLoaded = true
 
             logManager(
-                "✅ Loaded \(conversations.count) conversations",
+                "✅ Loaded \(conversations.count) conversation metadata records",
                 level: .info,
                 metadata: ["count": "\(conversations.count)"]
             )
 
-            // Index all conversations for Spotlight
+            // Index loaded full conversations for Spotlight; avoid replacing a rich existing
+            // index with title-only metadata placeholders.
             #if !os(watchOS)
                 indexAllConversations()
             #endif
@@ -288,9 +312,200 @@ final class ConversationManager: ObservableObject {
             )
             if conversations.isEmpty {
                 conversations = []
+                metadataOnlyConversationIds.removeAll()
+                metadataSearchTextById.removeAll()
                 conversationIndexCache.removeAll()
             }
             isLoaded = true
+        }
+    }
+
+    private func placeholderConversation(from metadata: ConversationMetadata) -> Conversation {
+        Conversation(
+            id: metadata.id,
+            title: metadata.title,
+            messages: [],
+            createdAt: metadata.createdAt,
+            updatedAt: metadata.updatedAt,
+            model: metadata.model,
+            systemPromptMode: metadata.systemPromptMode,
+            temperature: metadata.temperature,
+            multiModelEnabled: metadata.multiModelEnabled,
+            activeModels: metadata.activeModels,
+            responseGroups: [],
+            metadataPreview: metadata.lastMessagePreview.isEmpty ? nil : metadata.lastMessagePreview
+        )
+    }
+
+    private func conversationPreparedForPersistence(
+        _ proposedConversation: Conversation,
+        isMetadataBackedSnapshot: Bool
+    ) async -> Conversation? {
+        guard isMetadataBackedSnapshot else {
+            return proposedConversation
+        }
+
+        do {
+            guard let loadedConversation = try await store.loadConversation(id: proposedConversation.id) else {
+                logManager(
+                    "⚠️ Skipping save for metadata-only conversation missing full store record",
+                    level: .error,
+                    metadata: ["id": proposedConversation.id.uuidString]
+                )
+                return nil
+            }
+
+            let dirtyIds = await persistenceCoordinator.pendingConversationIds()
+            guard !dirtyIds.contains(proposedConversation.id) else {
+                logManager(
+                    "⚠️ Skipping metadata-only save while a newer dirty snapshot is pending",
+                    level: .info,
+                    metadata: ["id": proposedConversation.id.uuidString]
+                )
+                return nil
+            }
+
+            guard let index = getConversationIndex(for: proposedConversation.id) else {
+                return loadedConversation
+            }
+
+            let latestConversation = conversations[index]
+            guard metadataOnlyConversationIds.contains(proposedConversation.id)
+                || latestConversation.metadataPreview != nil
+            else {
+                return latestConversation
+            }
+
+            let proposedIsAtLeastAsRecent = proposedConversation.updatedAt >= latestConversation.updatedAt
+            let metadataSource = proposedIsAtLeastAsRecent ? proposedConversation : latestConversation
+            let mergedConversation = mergeMetadataBackedChanges(
+                from: metadataSource,
+                into: loadedConversation
+            )
+
+            conversations[index] = mergedConversation
+            metadataOnlyConversationIds.remove(proposedConversation.id)
+            metadataSearchTextById.removeValue(forKey: proposedConversation.id)
+
+            return mergedConversation
+        } catch {
+            logManager(
+                "❌ Failed to load metadata-only conversation before save",
+                level: .error,
+                metadata: ["id": proposedConversation.id.uuidString, "error": error.localizedDescription]
+            )
+            return nil
+        }
+    }
+
+    private func mergeMetadataBackedChanges(
+        from proposedConversation: Conversation,
+        into loadedConversation: Conversation
+    ) -> Conversation {
+        var mergedConversation = loadedConversation
+        let proposedIsAtLeastAsRecent = proposedConversation.updatedAt >= loadedConversation.updatedAt
+
+        if proposedIsAtLeastAsRecent {
+            mergedConversation.title = proposedConversation.title
+            mergedConversation.createdAt = proposedConversation.createdAt
+            mergedConversation.model = proposedConversation.model
+            mergedConversation.systemPromptMode = proposedConversation.systemPromptMode
+            mergedConversation.temperature = proposedConversation.temperature
+            mergedConversation.multiModelEnabled = proposedConversation.multiModelEnabled
+            mergedConversation.activeModels = proposedConversation.activeModels
+            mergedConversation.pendingAutoSendPrompt = proposedConversation.pendingAutoSendPrompt
+
+            var existingMessageIds = Set(mergedConversation.messages.map(\.id))
+            for message in proposedConversation.messages where !existingMessageIds.contains(message.id) {
+                mergedConversation.messages.append(message)
+                existingMessageIds.insert(message.id)
+            }
+
+            var existingResponseGroupIds = Set(mergedConversation.responseGroups.map(\.id))
+            for responseGroup in proposedConversation.responseGroups where !existingResponseGroupIds.contains(responseGroup.id) {
+                mergedConversation.responseGroups.append(responseGroup)
+                existingResponseGroupIds.insert(responseGroup.id)
+            }
+
+            if proposedConversation.updatedAt > mergedConversation.updatedAt {
+                mergedConversation.updatedAt = proposedConversation.updatedAt
+            }
+        }
+
+        mergedConversation.metadataPreview = nil
+        return mergedConversation
+    }
+
+    private func scheduleFullConversationLoadIfNeeded(_ conversationId: UUID) {
+        guard metadataOnlyConversationIds.contains(conversationId),
+              fullConversationLoadTasks[conversationId] == nil
+        else {
+            return
+        }
+
+        fullConversationLoadTasks[conversationId] = Task { [weak self] in
+            await self?.ensureConversationLoaded(conversationId)
+        }
+    }
+
+    func isMetadataOnlyConversation(_ conversationId: UUID) -> Bool {
+        metadataOnlyConversationIds.contains(conversationId)
+    }
+
+    /// Loads a metadata-backed conversation's full message history if needed.
+    @discardableResult
+    func ensureConversationLoaded(_ conversationId: UUID) async -> Conversation? {
+        defer {
+            fullConversationLoadTasks.removeValue(forKey: conversationId)
+        }
+
+        guard metadataOnlyConversationIds.contains(conversationId) else {
+            return conversation(byId: conversationId)
+        }
+
+        do {
+            guard var loadedConversation = try await store.loadConversation(id: conversationId) else {
+                return nil
+            }
+
+            let availableModels = AIService.shared.customModels
+            if !availableModels.contains(loadedConversation.model) {
+                loadedConversation.model = AIService.shared.selectedModel
+                try? await store.save(loadedConversation)
+            }
+
+            let dirtyIds = await persistenceCoordinator.pendingConversationIds()
+            guard !dirtyIds.contains(conversationId) else {
+                return conversation(byId: conversationId)
+            }
+
+            if let index = getConversationIndex(for: conversationId) {
+                let currentConversation = conversations[index]
+                guard metadataOnlyConversationIds.contains(conversationId) else {
+                    return currentConversation
+                }
+
+                let mergedConversation = mergeMetadataBackedChanges(
+                    from: currentConversation,
+                    into: loadedConversation
+                )
+                conversations[index] = mergedConversation
+                metadataOnlyConversationIds.remove(conversationId)
+                metadataSearchTextById.removeValue(forKey: conversationId)
+                #if !os(watchOS)
+                    indexConversation(mergedConversation)
+                #endif
+                return mergedConversation
+            }
+
+            return loadedConversation
+        } catch {
+            logManager(
+                "❌ Failed to lazy-load conversation",
+                level: .error,
+                metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
+            )
+            return nil
         }
     }
 
@@ -303,6 +518,8 @@ final class ConversationManager: ObservableObject {
 
     func clearAllConversations() {
         conversations.removeAll()
+        metadataOnlyConversationIds.removeAll()
+        metadataSearchTextById.removeAll()
         conversationIndexCache.removeAll()
         Task {
             // Cancel all pending saves in the coordinator
@@ -394,6 +611,8 @@ final class ConversationManager: ObservableObject {
         if let index = getConversationIndex(for: conversation.id) {
             let id = conversation.id
             conversations.remove(at: index)
+            metadataOnlyConversationIds.remove(id)
+            metadataSearchTextById.removeValue(forKey: id)
             updateCacheForRemoval(id: id, at: index)
             MemoryContextProvider.shared.removeConversationSummary(for: id)
             Task {
@@ -464,6 +683,10 @@ final class ConversationManager: ObservableObject {
 
     /// Safely get a conversation by ID. Returns nil if not found.
     func conversation(byId id: UUID) -> Conversation? {
+        if metadataOnlyConversationIds.contains(id) {
+            scheduleFullConversationLoadIfNeeded(id)
+        }
+
         if let index = getConversationIndex(for: id) {
             return conversations[index]
         }
@@ -970,16 +1193,24 @@ final class ConversationManager: ObservableObject {
         }
 
         private func indexAllConversations() {
-            let conversationsToIndex = conversations
+            let metadataOnlyIds = metadataOnlyConversationIds
+            let conversationsToIndex = conversations.filter { !metadataOnlyIds.contains($0.id) }
+            let shouldResetIndex = metadataOnlyIds.isEmpty
 
             Task.detached(priority: .utility) {
                 do {
-                    // Clear existing index first to ensure clean state
-                    try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
-                        "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
-                    ])
+                    if shouldResetIndex {
+                        // Clear existing index only when every visible conversation is fully loaded.
+                        // Metadata-only startup must not replace a rich existing index with title-only items.
+                        try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
+                            "co.ayna.conversations", "com.sertacozercan.ayna.conversation",
+                        ])
+                    }
 
-                    // Proceed with indexing
+                    guard !conversationsToIndex.isEmpty else {
+                        return
+                    }
+
                     let items = conversationsToIndex.map { ConversationManager.createSearchableItem(for: $0) }
                     try await CSSearchableIndex.default().indexSearchableItems(items)
 
@@ -1021,15 +1252,17 @@ final class ConversationManager: ObservableObject {
 
     // MARK: - Search and Filter
 
-    nonisolated func searchConversationsAsync(query: String, conversations: [Conversation]) async
+    func searchConversationsAsync(query: String, conversations: [Conversation]) async
         -> [Conversation]
     {
         guard !query.isEmpty else { return conversations }
+        let metadataSearchTextById = metadataSearchTextById
 
         #if os(watchOS)
             // watchOS doesn't have CoreSpotlight, use manual search
             return conversations.filter { conversation in
                 conversation.title.localizedCaseInsensitiveContains(query)
+                    || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
                     || conversation.messages.contains { message in
                         message.content.localizedCaseInsensitiveContains(query)
                     }
@@ -1054,6 +1287,7 @@ final class ConversationManager: ObservableObject {
                         // Fallback to manual search if Spotlight fails
                         let manualResults = conversations.filter { conversation in
                             conversation.title.localizedCaseInsensitiveContains(query)
+                                || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
                                 || conversation.messages.contains { message in
                                     message.content.localizedCaseInsensitiveContains(query)
                                 }
@@ -1063,8 +1297,12 @@ final class ConversationManager: ObservableObject {
                     }
 
                     let ids = Set(foundIds.compactMap { UUID(uuidString: $0) })
-                    // Filter the provided conversations list to ensure we only return what's currently loaded/valid
-                    let results = conversations.filter { ids.contains($0.id) }
+                    // Filter the provided conversations list to ensure we only return what's currently loaded/valid.
+                    // Also include metadata-only manual matches because they are intentionally not full-content indexed.
+                    let results = conversations.filter { conversation in
+                        ids.contains(conversation.id)
+                            || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
+                    }
                     continuation.resume(returning: results)
                 }
 
@@ -1078,6 +1316,7 @@ final class ConversationManager: ObservableObject {
 
         return conversations.filter { conversation in
             conversation.title.localizedCaseInsensitiveContains(query) ||
+                (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false) ||
                 conversation.messages.contains { message in
                     message.content.localizedCaseInsensitiveContains(query)
                 }

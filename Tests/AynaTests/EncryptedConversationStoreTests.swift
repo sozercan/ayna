@@ -239,6 +239,58 @@ struct EncryptedConversationStoreTests {
         #expect(metadata.first?.messageCount == conversation.messages.count)
     }
 
+    @Test("Legacy metadata without preview fields requires backfill")
+    func legacyMetadataWithoutPreviewFieldsRequiresBackfill() throws {
+        let id = UUID()
+        let json = """
+        {
+          "id": "\(id.uuidString)",
+          "title": "Legacy Metadata",
+          "createdAt": 100,
+          "updatedAt": 200,
+          "model": "gpt-4o",
+          "systemPromptMode": { "type": "inheritGlobal" },
+          "temperature": 0.7,
+          "multiModelEnabled": false,
+          "activeModels": [],
+          "messageCount": 2,
+          "responseGroupCount": 0
+        }
+        """
+        let metadata = try JSONDecoder().decode(ConversationMetadata.self, from: Data(json.utf8))
+
+        #expect(metadata.requiresBackfill == true)
+        #expect(metadata.lastMessagePreview == "")
+        #expect(metadata.searchableText == "Legacy Metadata")
+    }
+
+    @Test("Metadata searchable text includes older messages up to cap")
+    func metadataSearchableTextIncludesOlderMessagesUpToCap() {
+        var conversation = Conversation(title: "Searchable")
+        for index in 0 ..< 25 {
+            let content = index == 0 ? "needle-in-first-message" : "message \(index)"
+            conversation.addMessage(Message(role: .user, content: content))
+        }
+
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.searchableText.contains("needle-in-first-message"))
+        #expect(metadata.messageCount == 25)
+    }
+
+    @Test("Metadata searchable text includes recent tail beyond cap")
+    func metadataSearchableTextIncludesRecentTailBeyondCap() {
+        var conversation = Conversation(title: "Long Searchable")
+        conversation.addMessage(Message(role: .user, content: String(repeating: "early ", count: 3000)))
+        conversation.addMessage(Message(role: .assistant, content: "recent-tail-needle"))
+
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.searchableText.contains("early"))
+        #expect(metadata.searchableText.contains("recent-tail-needle"))
+        #expect(metadata.searchableText.count <= 12003)
+    }
+
     @Test("Load conversation by id returns full conversation when present")
     func loadConversationByIdReturnsFullConversation() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()

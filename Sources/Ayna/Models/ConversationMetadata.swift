@@ -19,6 +19,9 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     var activeModels: [String]
     var messageCount: Int
     var responseGroupCount: Int
+    var lastMessagePreview: String
+    var searchableText: String
+    var requiresBackfill: Bool
 
     init(
         id: UUID,
@@ -31,7 +34,10 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         multiModelEnabled: Bool,
         activeModels: [String],
         messageCount: Int,
-        responseGroupCount: Int
+        responseGroupCount: Int,
+        lastMessagePreview: String = "",
+        searchableText: String = "",
+        requiresBackfill: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -44,6 +50,9 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         self.activeModels = activeModels
         self.messageCount = messageCount
         self.responseGroupCount = responseGroupCount
+        self.lastMessagePreview = lastMessagePreview
+        self.searchableText = searchableText
+        self.requiresBackfill = requiresBackfill
     }
 
     init(conversation: Conversation) {
@@ -58,7 +67,72 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
             multiModelEnabled: conversation.multiModelEnabled,
             activeModels: conversation.activeModels,
             messageCount: conversation.messages.count,
-            responseGroupCount: conversation.responseGroups.count
+            responseGroupCount: conversation.responseGroups.count,
+            lastMessagePreview: Self.previewText(from: conversation),
+            searchableText: Self.searchText(from: conversation)
         )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, createdAt, updatedAt, model
+        case systemPromptMode, temperature, multiModelEnabled, activeModels
+        case messageCount, responseGroupCount, lastMessagePreview, searchableText
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        model = try container.decode(String.self, forKey: .model)
+        systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
+        temperature = try container.decode(Double.self, forKey: .temperature)
+        multiModelEnabled = try container.decode(Bool.self, forKey: .multiModelEnabled)
+        activeModels = try container.decode([String].self, forKey: .activeModels)
+        messageCount = try container.decode(Int.self, forKey: .messageCount)
+        responseGroupCount = try container.decode(Int.self, forKey: .responseGroupCount)
+        let decodedPreview = try container.decodeIfPresent(String.self, forKey: .lastMessagePreview)
+        let decodedSearchText = try container.decodeIfPresent(String.self, forKey: .searchableText)
+        lastMessagePreview = decodedPreview ?? ""
+        searchableText = decodedSearchText ?? title
+        requiresBackfill = messageCount > 0 && (decodedPreview == nil || decodedSearchText == nil)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(model, forKey: .model)
+        try container.encode(systemPromptMode, forKey: .systemPromptMode)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(multiModelEnabled, forKey: .multiModelEnabled)
+        try container.encode(activeModels, forKey: .activeModels)
+        try container.encode(messageCount, forKey: .messageCount)
+        try container.encode(responseGroupCount, forKey: .responseGroupCount)
+        try container.encode(lastMessagePreview, forKey: .lastMessagePreview)
+        try container.encode(searchableText, forKey: .searchableText)
+    }
+
+    private static func previewText(from conversation: Conversation) -> String {
+        let previewSource = conversation.messages.last
+        guard let content = previewSource?.content, !content.isEmpty else { return "" }
+        return String(content.prefix(240))
+    }
+
+    private static func searchText(from conversation: Conversation) -> String {
+        var parts = [conversation.title]
+        parts.append(contentsOf: conversation.messages.map(\.content))
+        let fullText = parts.joined(separator: "\n")
+        let maxSearchTextLength = 12000
+        guard fullText.count > maxSearchTextLength else { return fullText }
+
+        let headCount = maxSearchTextLength / 2
+        let tailCount = maxSearchTextLength - headCount
+        let headEnd = fullText.index(fullText.startIndex, offsetBy: headCount)
+        let tailStart = fullText.index(fullText.endIndex, offsetBy: -tailCount)
+        return "\(fullText[..<headEnd])\n…\n\(fullText[tailStart...])"
     }
 }

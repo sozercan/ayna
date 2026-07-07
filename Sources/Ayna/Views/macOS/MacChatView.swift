@@ -702,6 +702,15 @@ struct MacChatView: View {
             return
         }
 
+        if conversationManager.isMetadataOnlyConversation(conversation.id) {
+            guard await conversationManager.ensureConversationLoaded(conversation.id) != nil else {
+                logChat("❌ Cannot send message: failed to load conversation history", level: .error)
+                errorMessage = "Could not load this conversation. Please try again."
+                return
+            }
+            cachedConversationIndex = nil
+        }
+
         // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
@@ -880,6 +889,15 @@ struct MacChatView: View {
                     errorMessage = "Tool execution timed out after 60 seconds"
                 }
             }
+        }
+
+        if conversationManager.isMetadataOnlyConversation(conversation.id) {
+            guard await conversationManager.ensureConversationLoaded(conversation.id) != nil else {
+                logChat("❌ Cannot send message: failed to load conversation history", level: .error)
+                errorMessage = "Could not load this conversation. Please try again."
+                return
+            }
+            cachedConversationIndex = nil
         }
 
         // Auto-select response if we are continuing from a multi-model state without selection

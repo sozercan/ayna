@@ -244,7 +244,7 @@ struct ConversationRow: View {
     }()
 
     private var lastMessagePreview: String {
-        conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
+        conversation.metadataPreview ?? conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
     }
 
     private var timeString: String {

@@ -253,8 +253,9 @@ final class EncryptedConversationStore: Sendable {
 
             let staleMetadataIds = Set<UUID>(validMetadataFileURLsById.compactMap { id, metadataURL in
                 guard let conversationURL = conversationFileURLsById[id],
-                      sidecarMetadata[id] != nil,
-                      Self.metadataSidecarIsOlderThanConversation(
+                      let metadata = sidecarMetadata[id],
+                      metadata.requiresBackfill
+                      || Self.metadataSidecarIsOlderThanConversation(
                           metadataURL: metadataURL,
                           conversationURL: conversationURL
                       )

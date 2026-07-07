@@ -366,6 +366,18 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             return
         }
 
+        if let existing = conversation, conversationManager.isMetadataOnlyConversation(existing.id) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard await self.conversationManager.ensureConversationLoaded(existing.id) != nil else {
+                    self.errorMessage = "Could not load this conversation. Please try again."
+                    return
+                }
+                self.sendMessage()
+            }
+            return
+        }
+
         // Check for multi-model mode
         if selectedModels.count >= 2 {
             sendToMultipleModels()
@@ -1121,6 +1133,18 @@ extension IOSChatViewModel {
 
         guard let targetConversation = getOrCreateConversationForMultiModel() else { return }
         let conversationId = targetConversation.id
+
+        if conversationManager.isMetadataOnlyConversation(conversationId) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard await self.conversationManager.ensureConversationLoaded(conversationId) != nil else {
+                    self.errorMessage = "Could not load this conversation. Please try again."
+                    return
+                }
+                self.sendToMultipleModels()
+            }
+            return
+        }
 
         // Check for image generation and route accordingly
         if let firstModel = selectedModels.sorted().first,

@@ -69,6 +69,7 @@ private enum WatchMessageKeys {
         private var session: WCSession?
         private var conversationManager: ConversationManager?
         private var cancellables = Set<AnyCancellable>()
+        private var syncGeneration = 0
 
         override private init() {
             super.init()
@@ -118,7 +119,30 @@ private enum WatchMessageKeys {
 
             // Only sync the 10 most recent conversations
             let recentConversations = Array(conversations.prefix(10))
-            let watchConversations = recentConversations.map { WatchConversation(from: $0) }
+            syncGeneration += 1
+            let generation = syncGeneration
+            Task { @MainActor [weak self] in
+                guard let self, self.syncGeneration == generation else { return }
+                var conversationsForSync: [Conversation] = []
+                conversationsForSync.reserveCapacity(recentConversations.count)
+
+                for conversation in recentConversations {
+                    if self.conversationManager?.isMetadataOnlyConversation(conversation.id) == true,
+                       let hydrated = await self.conversationManager?.ensureConversationLoaded(conversation.id)
+                    {
+                        conversationsForSync.append(hydrated)
+                    } else {
+                        conversationsForSync.append(conversation)
+                    }
+                }
+
+                guard self.syncGeneration == generation else { return }
+                self.sendWatchConversations(conversationsForSync, using: session)
+            }
+        }
+
+        private func sendWatchConversations(_ conversations: [Conversation], using session: WCSession) {
+            let watchConversations = conversations.map { WatchConversation(from: $0) }
 
             do {
                 let encoder = JSONEncoder()
