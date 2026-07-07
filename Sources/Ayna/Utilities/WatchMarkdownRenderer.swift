@@ -14,14 +14,20 @@
     /// Only handles inline formatting (bold, italic, code, links)
     /// Complex elements like code blocks and tables are rendered as plain text
     enum WatchMarkdownRenderer {
+        private static let inlineMarkdownOptions: AttributedString.MarkdownParsingOptions = {
+            var options = AttributedString.MarkdownParsingOptions()
+            options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+            return options
+        }()
+
+        private static let linkRegex = try! NSRegularExpression(pattern: #"\[([^\]]+)\]\([^\)]+\)"#)
+
         /// Render markdown string to AttributedString for Watch display
         /// Uses system AttributedString markdown support for inline elements only
         static func render(_ text: String) -> AttributedString {
             // Try to parse as inline markdown
             do {
-                var options = AttributedString.MarkdownParsingOptions()
-                options.interpretedSyntax = .inlineOnlyPreservingWhitespace
-                return try AttributedString(markdown: text, options: options)
+                return try AttributedString(markdown: text, options: inlineMarkdownOptions)
             } catch {
                 // Fall back to plain text
                 return AttributedString(text)
@@ -59,15 +65,12 @@
             result = result.replacingOccurrences(of: "`", with: "")
 
             // Remove link syntax [text](url) -> text
-            let linkPattern = #"\[([^\]]+)\]\([^\)]+\)"#
-            if let regex = try? NSRegularExpression(pattern: linkPattern) {
-                let range = NSRange(result.startIndex..., in: result)
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: range,
-                    withTemplate: "$1"
-                )
-            }
+            let range = NSRange(result.startIndex..., in: result)
+            result = linkRegex.stringByReplacingMatches(
+                in: result,
+                range: range,
+                withTemplate: "$1"
+            )
 
             // Remove headers
             result = result.replacingOccurrences(of: "### ", with: "")

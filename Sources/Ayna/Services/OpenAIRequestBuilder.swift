@@ -10,6 +10,53 @@ struct ToolCallInfo: @unchecked Sendable {
     let arguments: [String: Any]
 }
 
+/// Unchecked wrapper for JSON-like tool definitions that use `Any`.
+///
+/// Tool definitions are built from immutable JSON-compatible values, but Swift
+/// cannot prove `[String: Any]` is Sendable. The async request builders accept
+/// this wrapper so large request construction can leave the MainActor without
+/// weakening strict concurrency at every call site.
+struct RequestBuilderToolDefinitions: @unchecked Sendable {
+    static let none = RequestBuilderToolDefinitions(nil)
+
+    let value: [[String: Any]]?
+
+    init(_ value: [[String: Any]]?) {
+        self.value = value
+    }
+}
+
+/// Resolves request-builder attachment data without forcing body construction
+/// to use `@MainActor` synchronous attachment loaders.
+enum RequestBuilderAttachmentResolver {
+    static func resolvingImageAttachmentData(in messages: [Message]) async -> [Message] {
+        var resolvedMessages = messages
+
+        for messageIndex in resolvedMessages.indices {
+            guard var attachments = resolvedMessages[messageIndex].attachments else { continue }
+
+            var didUpdateAttachments = false
+            for attachmentIndex in attachments.indices {
+                guard attachments[attachmentIndex].mimeType.starts(with: "image/"),
+                      attachments[attachmentIndex].data == nil,
+                      attachments[attachmentIndex].localPath != nil
+                else {
+                    continue
+                }
+
+                attachments[attachmentIndex].data = await attachments[attachmentIndex].loadContent()
+                didUpdateAttachments = true
+            }
+
+            if didUpdateAttachments {
+                resolvedMessages[messageIndex].attachments = attachments
+            }
+        }
+
+        return resolvedMessages
+    }
+}
+
 /// Builder for constructing OpenAI API requests.
 ///
 /// Handles:
@@ -17,7 +64,6 @@ struct ToolCallInfo: @unchecked Sendable {
 /// - Responses API input/output formats
 /// - Request header configuration
 /// - Authentication (Bearer token, Azure api-key)
-@MainActor
 enum OpenAIRequestBuilder {
     // MARK: - Chat Completions API
 
@@ -105,7 +151,7 @@ enum OpenAIRequestBuilder {
 
             // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                if let data = attachment.content {
+                if let data = attachment.data {
                     let base64Image = data.base64EncodedString()
                     contentArray.append([
                         "type": "image_url",
@@ -181,7 +227,8 @@ enum OpenAIRequestBuilder {
                             let prevMessage = messages[prevIdx]
                             if prevMessage.role == .assistant {
                                 if let toolCalls = prevMessage.toolCalls,
-                                   toolCalls.contains(where: { $0.id == toolCallId }) {
+                                   toolCalls.contains(where: { $0.id == toolCallId })
+                                {
                                     foundAssistant = true
                                 }
                                 break
@@ -363,7 +410,7 @@ enum OpenAIRequestBuilder {
             // Add image attachments for user messages
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                    if let data = attachment.content {
+                    if let data = attachment.data {
                         let base64Data = data.base64EncodedString()
                         contentArray.append([
                             "type": "input_image",
@@ -590,6 +637,34 @@ enum OpenAIRequestBuilder {
         }
     }
 
+    /// Create a configured URLRequest for the Chat Completions API off the MainActor.
+    ///
+    /// This async entry point resolves image attachment data, builds the JSON
+    /// body, and serializes it from a non-actor-isolated executor when awaited
+    /// by MainActor provider code.
+    static func createChatCompletionsRequestAsync(
+        url: URL,
+        messages: [Message],
+        model: String,
+        stream: Bool,
+        tools: RequestBuilderToolDefinitions = .none,
+        apiKey: String,
+        isAzure: Bool,
+        isGitHubModels: Bool = false
+    ) async -> URLRequest? {
+        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        return createChatCompletionsRequest(
+            url: url,
+            messages: resolvedMessages,
+            model: model,
+            stream: stream,
+            tools: tools.value,
+            apiKey: apiKey,
+            isAzure: isAzure,
+            isGitHubModels: isGitHubModels
+        )
+    }
+
     /// Create a configured URLRequest for the Chat Completions API.
     ///
     /// - Parameters:
@@ -628,6 +703,30 @@ enum OpenAIRequestBuilder {
 
         request.httpBody = bodyData
         return request
+    }
+
+    /// Create a configured URLRequest for the Responses API off the MainActor.
+    ///
+    /// This async entry point resolves image attachment data, builds the JSON
+    /// body, and serializes it from a non-actor-isolated executor when awaited
+    /// by MainActor provider code.
+    static func createResponsesRequestAsync(
+        url: URL,
+        messages: [Message],
+        model: String,
+        tools: RequestBuilderToolDefinitions = .none,
+        apiKey: String,
+        isAzure: Bool
+    ) async -> URLRequest? {
+        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        return createResponsesRequest(
+            url: url,
+            messages: resolvedMessages,
+            model: model,
+            tools: tools.value,
+            apiKey: apiKey,
+            isAzure: isAzure
+        )
     }
 
     /// Create a configured URLRequest for the Responses API.

@@ -60,6 +60,7 @@ class AIService: ObservableObject {
 
     // Track current task for cancellation
     private var currentTask: URLSessionDataTask?
+    private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var multiModelTask: Task<Void, Never>?
     /// Tracks individual stream tasks for each model in multi-model mode
@@ -619,6 +620,8 @@ class AIService: ObservableObject {
         )
         currentTask?.cancel()
         currentTask = nil
+        currentRequestBuildTask?.cancel()
+        currentRequestBuildTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
         multiModelTask?.cancel()
@@ -971,53 +974,85 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        guard
-            let request = OpenAIRequestBuilder.createChatCompletionsRequest(
-                url: url,
-                messages: messagesWithMemory,
-                model: requestModel,
-                stream: stream,
-                tools: tools,
-                apiKey: needsAuth ? modelAPIKey : "",
-                isAzure: usesAzureEndpoint,
-                isGitHubModels: isGitHubModels
-            )
-        else {
-            DiagnosticsLogger.log(
-                .aiService,
-                level: .error,
-                message: "❌ Failed to create request"
-            )
-            onError(AIError.invalidRequest)
-            return
+        if isMultiModelRequest {
+            multiModelStreamTasks[requestModel]?.cancel()
+        } else {
+            currentRequestBuildTask?.cancel()
+            if stream {
+                currentStreamTask?.cancel()
+            }
         }
 
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🌐 Starting stream request",
-            metadata: [
-                "url": url.absoluteString,
-                "model": requestModel,
-                "stream": "\(stream)"
-            ]
-        )
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
 
-        if stream {
-            let callbacks = StreamCallbacks(
-                onChunk: onChunk,
-                onComplete: onComplete,
-                onError: onError,
-                onToolCall: onToolCall,
-                onToolCallRequested: onToolCallRequested,
-                onReasoning: onReasoning
+            guard
+                let request = await OpenAIRequestBuilder.createChatCompletionsRequestAsync(
+                    url: url,
+                    messages: messagesWithMemory,
+                    model: requestModel,
+                    stream: stream,
+                    tools: toolDefinitions,
+                    apiKey: needsAuth ? modelAPIKey : "",
+                    isAzure: usesAzureEndpoint,
+                    isGitHubModels: isGitHubModels
+                )
+            else {
+                guard !Task.isCancelled else { return }
+                if isMultiModelRequest {
+                    self.multiModelStreamTasks.removeValue(forKey: requestModel)
+                } else {
+                    self.currentRequestBuildTask = nil
+                }
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "❌ Failed to create request"
+                )
+                onError(AIError.invalidRequest)
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            if isMultiModelRequest {
+                self.multiModelStreamTasks.removeValue(forKey: requestModel)
+            } else {
+                self.currentRequestBuildTask = nil
+            }
+
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🌐 Starting stream request",
+                metadata: [
+                    "url": url.absoluteString,
+                    "model": requestModel,
+                    "stream": "\(stream)"
+                ]
             )
-            streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest, modelName: requestModel)
+
+            if stream {
+                let callbacks = StreamCallbacks(
+                    onChunk: onChunk,
+                    onComplete: onComplete,
+                    onError: onError,
+                    onToolCall: onToolCall,
+                    onToolCallRequested: onToolCallRequested,
+                    onReasoning: onReasoning
+                )
+                self.streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest, modelName: requestModel)
+            } else {
+                self.nonStreamResponse(
+                    request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
+                    onToolCall: onToolCall, onReasoning: onReasoning
+                )
+            }
+        }
+        if isMultiModelRequest {
+            multiModelStreamTasks[requestModel] = buildTask
         } else {
-            nonStreamResponse(
-                request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                onToolCall: onToolCall, onReasoning: onReasoning
-            )
+            currentRequestBuildTask = buildTask
         }
     }
 
@@ -1312,106 +1347,119 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        guard
-            let request = OpenAIRequestBuilder.createResponsesRequest(
-                url: url,
-                messages: messagesWithMemory,
-                model: model,
-                tools: tools,
-                apiKey: modelAPIKey,
-                isAzure: usesAzureEndpoint
-            )
-        else {
-            onError(AIError.invalidRequest)
-            return
-        }
+        currentRequestBuildTask?.cancel()
 
-        let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
-            let selfRef = self
-            Task { @MainActor in
-                guard let self = selfRef else { return }
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
 
-                // Clear the task reference
-                self.currentTask = nil
+            guard
+                let request = await OpenAIRequestBuilder.createResponsesRequestAsync(
+                    url: url,
+                    messages: messagesWithMemory,
+                    model: model,
+                    tools: toolDefinitions,
+                    apiKey: modelAPIKey,
+                    isAzure: usesAzureEndpoint
+                )
+            else {
+                guard !Task.isCancelled else { return }
+                self.currentRequestBuildTask = nil
+                onError(AIError.invalidRequest)
+                return
+            }
 
-                if let error {
-                    // Don't report error if it was cancelled
-                    if (error as NSError).code == NSURLErrorCancelled {
-                        return
-                    }
+            guard !Task.isCancelled else { return }
+            self.currentRequestBuildTask = nil
 
-                    if self.shouldRetry(error: error, attempt: attempt) {
-                        DiagnosticsLogger.log(
-                            .aiService,
-                            level: .info,
-                            message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
-                            metadata: ["error": error.localizedDescription]
-                        )
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            await self.delay(for: attempt)
-                            self.responsesAPIRequest(
-                                messages: messages,
-                                model: model,
-                                conversationId: conversationId,
-                                onChunk: onChunk,
-                                onComplete: onComplete,
-                                onError: onError,
-                                onToolCallRequested: onToolCallRequested,
-                                onReasoning: onReasoning,
-                                attempt: attempt + 1
-                            )
+            let task = self.urlSession.dataTask(with: request) { [weak self] data, _, error in
+                let selfRef = self
+                Task { @MainActor in
+                    guard let self = selfRef else { return }
+
+                    // Clear the task reference
+                    self.currentTask = nil
+
+                    if let error {
+                        // Don't report error if it was cancelled
+                        if (error as NSError).code == NSURLErrorCancelled {
+                            return
                         }
-                        return
-                    }
 
-                    onError(error)
-                    return
-                }
-
-                guard let data else {
-                    onError(AIError.noData)
-                    return
-                }
-
-                do {
-                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-
-                    if let errorDict = json?["error"] as? [String: Any],
-                       let message = errorDict["message"] as? String
-                    {
-                        onError(AIError.apiError(message))
-                        return
-                    }
-
-                    if let outputArray = json?["output"] as? [[String: Any]] {
-                        let result = OpenAIRequestBuilder.deliverResponsesOutput(
-                            outputArray,
-                            onChunk: onChunk,
-                            onReasoning: onReasoning,
-                            onToolCallRequested: onToolCallRequested
-                        )
-
-                        if result.hasToolCalls {
+                        if self.shouldRetry(error: error, attempt: attempt) {
                             DiagnosticsLogger.log(
                                 .aiService,
                                 level: .info,
-                                message: "🔧 Responses API: Tool calls detected",
-                                metadata: ["count": "\(result.toolCalls.count)"]
+                                message: "⚠️ Retrying responses API request (attempt \(attempt + 1))",
+                                metadata: ["error": error.localizedDescription]
                             )
+                            Task { @MainActor [weak self] in
+                                guard let self else { return }
+                                await self.delay(for: attempt)
+                                self.responsesAPIRequest(
+                                    messages: messages,
+                                    model: model,
+                                    conversationId: conversationId,
+                                    onChunk: onChunk,
+                                    onComplete: onComplete,
+                                    onError: onError,
+                                    onToolCallRequested: onToolCallRequested,
+                                    onReasoning: onReasoning,
+                                    attempt: attempt + 1
+                                )
+                            }
+                            return
                         }
+
+                        onError(error)
+                        return
                     }
 
-                    onComplete()
-                } catch {
-                    onError(error)
+                    guard let data else {
+                        onError(AIError.noData)
+                        return
+                    }
+
+                    do {
+                        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+                        if let errorDict = json?["error"] as? [String: Any],
+                           let message = errorDict["message"] as? String
+                        {
+                            onError(AIError.apiError(message))
+                            return
+                        }
+
+                        if let outputArray = json?["output"] as? [[String: Any]] {
+                            let result = OpenAIRequestBuilder.deliverResponsesOutput(
+                                outputArray,
+                                onChunk: onChunk,
+                                onReasoning: onReasoning,
+                                onToolCallRequested: onToolCallRequested
+                            )
+
+                            if result.hasToolCalls {
+                                DiagnosticsLogger.log(
+                                    .aiService,
+                                    level: .info,
+                                    message: "🔧 Responses API: Tool calls detected",
+                                    metadata: ["count": "\(result.toolCalls.count)"]
+                                )
+                            }
+                        }
+
+                        onComplete()
+                    } catch {
+                        onError(error)
+                    }
                 }
             }
-        }
 
-        // Store and start the task
-        currentTask = task
-        task.resume()
+            // Store and start the task
+            self.currentTask = task
+            task.resume()
+        }
+        currentRequestBuildTask = buildTask
     }
 
     // swiftlint:enable superfluous_disable_command

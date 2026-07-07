@@ -20,6 +20,7 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
     let requiresAPIKey: Bool = true
 
     private let urlSession: URLSession
+    private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentNonStreamTask: URLSessionDataTask?
 
@@ -58,39 +59,57 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        guard let request = OpenAIRequestBuilder.createChatCompletionsRequest(
-            url: url,
-            messages: messages,
-            model: config.model,
-            stream: stream,
-            tools: tools,
-            apiKey: config.apiKey,
-            isAzure: false,
-            isGitHubModels: true
-        ) else {
-            callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
-            return
-        }
-
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🌐 GitHubModelsProvider: Starting request",
-            metadata: [
-                "url": url.absoluteString,
-                "model": config.model,
-                "stream": "\(stream)"
-            ]
-        )
-
+        currentRequestBuildTask?.cancel()
         if stream {
-            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
-        } else {
-            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
+            currentStreamTask?.cancel()
         }
+
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
+
+            guard let request = await OpenAIRequestBuilder.createChatCompletionsRequestAsync(
+                url: url,
+                messages: messages,
+                model: config.model,
+                stream: stream,
+                tools: toolDefinitions,
+                apiKey: config.apiKey,
+                isAzure: false,
+                isGitHubModels: true
+            ) else {
+                guard !Task.isCancelled else { return }
+                self.currentRequestBuildTask = nil
+                callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            self.currentRequestBuildTask = nil
+
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🌐 GitHubModelsProvider: Starting request",
+                metadata: [
+                    "url": url.absoluteString,
+                    "model": config.model,
+                    "stream": "\(stream)"
+                ]
+            )
+
+            if stream {
+                self.streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
+            } else {
+                self.nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, accessToken: config.apiKey)
+            }
+        }
+        currentRequestBuildTask = buildTask
     }
 
     func cancelRequest() {
+        currentRequestBuildTask?.cancel()
+        currentRequestBuildTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
         currentNonStreamTask?.cancel()

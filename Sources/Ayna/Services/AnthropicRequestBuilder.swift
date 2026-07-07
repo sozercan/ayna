@@ -46,7 +46,6 @@ struct AnthropicRequestConfig: Sendable {
 /// - Tool conversion (function -> input_schema)
 /// - Image attachment conversion with validation
 /// - Required headers and authentication
-@MainActor
 enum AnthropicRequestBuilder {
     // MARK: - Constants
 
@@ -63,6 +62,28 @@ enum AnthropicRequestBuilder {
     static let apiVersion = "2023-06-01"
 
     // MARK: - Public API
+
+    /// Create a configured URLRequest for the Anthropic Messages API off the MainActor.
+    ///
+    /// This async entry point resolves image attachment data, builds the JSON
+    /// body, and serializes it from a non-actor-isolated executor when awaited
+    /// by MainActor provider code.
+    static func createMessagesRequestAsync(
+        url: URL,
+        messages: [Message],
+        config: AnthropicRequestConfig,
+        stream: Bool,
+        tools: RequestBuilderToolDefinitions = .none
+    ) async throws -> URLRequest {
+        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        return try createMessagesRequest(
+            url: url,
+            messages: resolvedMessages,
+            config: config,
+            stream: stream,
+            tools: tools.value
+        )
+    }
 
     /// Create a configured URLRequest for the Anthropic Messages API.
     ///
@@ -212,13 +233,16 @@ enum AnthropicRequestBuilder {
                     }
 
                     // Verify a preceding assistant message has matching tool_call
-                    if index == 0 { continue }
+                    if index == 0 {
+                        continue
+                    }
                     var foundAssistant = false
                     for prevIdx in stride(from: index - 1, through: 0, by: -1) {
                         let prevMessage = messages[prevIdx]
                         if prevMessage.role == .assistant {
                             if let toolCalls = prevMessage.toolCalls,
-                               toolCalls.contains(where: { $0.id == toolCallId }) {
+                               toolCalls.contains(where: { $0.id == toolCallId })
+                            {
                                 foundAssistant = true
                             }
                             break
@@ -228,7 +252,9 @@ enum AnthropicRequestBuilder {
                             break
                         }
                     }
-                    if !foundAssistant { continue } // Skip orphaned tool message
+                    if !foundAssistant {
+                        continue
+                    } // Skip orphaned tool message
 
                     // Convert to Anthropic tool_result format (user role with tool_result content)
                     let toolResultBlock = buildToolResultContent(
@@ -325,7 +351,7 @@ enum AnthropicRequestBuilder {
 
             // Add images first
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                guard let data = attachment.content else { continue }
+                guard let data = attachment.data else { continue }
 
                 // Validate image
                 let imageBlock = try validateAndBuildImageBlock(data: data, fileName: attachment.fileName)

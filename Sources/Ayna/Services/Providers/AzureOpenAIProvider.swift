@@ -23,6 +23,7 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
     let requiresAPIKey: Bool = true
 
     private let urlSession: URLSession
+    private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentNonStreamTask: URLSessionDataTask?
 
@@ -63,20 +64,6 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        guard let request = OpenAIRequestBuilder.createChatCompletionsRequest(
-            url: url,
-            messages: messages,
-            model: config.model,
-            stream: stream,
-            tools: tools,
-            apiKey: config.apiKey,
-            isAzure: true,
-            isGitHubModels: false
-        ) else {
-            callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
-            return
-        }
-
         let circuitKey = NetworkCircuitBreaker.key(for: url, label: "azure.chat")
         let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
         if !circuitGate.allowed {
@@ -88,25 +75,57 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🌐 AzureOpenAIProvider: Starting request",
-            metadata: [
-                "url": url.absoluteString,
-                "model": config.model,
-                "stream": "\(stream)"
-            ]
-        )
-
+        currentRequestBuildTask?.cancel()
         if stream {
-            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
-        } else {
-            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            currentStreamTask?.cancel()
         }
+
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
+
+            guard let request = await OpenAIRequestBuilder.createChatCompletionsRequestAsync(
+                url: url,
+                messages: messages,
+                model: config.model,
+                stream: stream,
+                tools: toolDefinitions,
+                apiKey: config.apiKey,
+                isAzure: true,
+                isGitHubModels: false
+            ) else {
+                guard !Task.isCancelled else { return }
+                self.currentRequestBuildTask = nil
+                callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            self.currentRequestBuildTask = nil
+
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🌐 AzureOpenAIProvider: Starting request",
+                metadata: [
+                    "url": url.absoluteString,
+                    "model": config.model,
+                    "stream": "\(stream)"
+                ]
+            )
+
+            if stream {
+                self.streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            } else {
+                self.nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            }
+        }
+        currentRequestBuildTask = buildTask
     }
 
     func cancelRequest() {
+        currentRequestBuildTask?.cancel()
+        currentRequestBuildTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
         currentNonStreamTask?.cancel()

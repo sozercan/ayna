@@ -27,6 +27,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     let requiresAPIKey: Bool = true
 
     private let urlSession: URLSession
+    private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentDataTask: URLSessionDataTask?
 
@@ -40,6 +41,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     deinit {
+        currentRequestBuildTask?.cancel()
         currentStreamTask?.cancel()
         currentDataTask?.cancel()
     }
@@ -97,49 +99,66 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             betaHeaders: betaHeaders
         )
 
-        // Build request
-        var request: URLRequest
-        do {
-            request = try AnthropicRequestBuilder.createMessagesRequest(
-                url: url,
-                messages: messages,
-                config: requestConfig,
-                stream: stream,
-                tools: tools
-            )
-        } catch {
+        currentRequestBuildTask?.cancel()
+        if stream {
+            currentStreamTask?.cancel()
+        }
+
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
+
+            let request: URLRequest
+            do {
+                request = try await AnthropicRequestBuilder.createMessagesRequestAsync(
+                    url: url,
+                    messages: messages,
+                    config: requestConfig,
+                    stream: stream,
+                    tools: toolDefinitions
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.currentRequestBuildTask = nil
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "❌ Failed to build Anthropic request",
+                    metadata: ["error": error.localizedDescription]
+                )
+                callbacks.onError(error)
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            self.currentRequestBuildTask = nil
+
+            var timedRequest = request
+            timedRequest.timeoutInterval = 120
+
             DiagnosticsLogger.log(
                 .aiService,
-                level: .error,
-                message: "❌ Failed to build Anthropic request",
-                metadata: ["error": error.localizedDescription]
+                level: .info,
+                message: "🌐 AnthropicProvider: Starting request",
+                metadata: [
+                    "url": url.absoluteString,
+                    "model": config.model,
+                    "stream": "\(stream)"
+                ]
             )
-            callbacks.onError(error)
-            return
+
+            if stream {
+                self.streamResponse(request: timedRequest, callbacks: callbacks, circuitKey: circuitKey)
+            } else {
+                self.nonStreamResponse(request: timedRequest, callbacks: callbacks, circuitKey: circuitKey)
+            }
         }
-
-        // Set timeout
-        request.timeoutInterval = 120
-
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🌐 AnthropicProvider: Starting request",
-            metadata: [
-                "url": url.absoluteString,
-                "model": config.model,
-                "stream": "\(stream)"
-            ]
-        )
-
-        if stream {
-            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
-        } else {
-            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
-        }
+        currentRequestBuildTask = buildTask
     }
 
     func cancelRequest() {
+        currentRequestBuildTask?.cancel()
+        currentRequestBuildTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
         currentDataTask?.cancel()

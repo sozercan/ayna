@@ -24,6 +24,8 @@
 
         private let persistenceKey = "com.sertacozercan.ayna.watch.conversations"
         private let maxPersistedConversations = 20
+        private let streamingSaveDebounceDuration: Duration = .seconds(1)
+        private var pendingStreamingSaveTask: Task<Void, Never>?
 
         private init() {
             // Don't load from disk in init - wait for WCSession to activate first
@@ -92,7 +94,23 @@
 
         /// Persist the current in-memory conversation state.
         func persistCurrentState() {
+            pendingStreamingSaveTask?.cancel()
+            pendingStreamingSaveTask = nil
             saveToDisk()
+        }
+
+        /// Schedule a debounced persistence pass for high-frequency streaming updates.
+        private func scheduleStreamingSave() {
+            pendingStreamingSaveTask?.cancel()
+            pendingStreamingSaveTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: self?.streamingSaveDebounceDuration ?? .seconds(1))
+                } catch {
+                    return
+                }
+
+                await self?.persistCurrentState()
+            }
         }
 
         /// Replace an existing conversation in-place.
@@ -220,7 +238,7 @@
                     message: "⌚ updateLastMessage: index=\(lastIndex) role='\(role)' content='\(content.prefix(20))...'"
                 )
                 conversations[convIndex].messages[lastIndex].content = content
-                saveToDisk()
+                scheduleStreamingSave()
             }
         }
 

@@ -94,3 +94,95 @@ struct ParserPerformanceBenchmarkTests {
         #expect(contentLength == Self.lineCount)
     }
 }
+
+@Suite("Persistence Cold-Load Benchmarks", .tags(.persistence, .slow), .serialized)
+struct PersistenceColdLoadBenchmarkTests {
+    private static let conversationCount = 180
+    private static let messagesPerConversation = 50
+    private static let messagePayloadBytes = 4096
+
+    private struct Fixture {
+        let directory: URL
+        let keyIdentifier: String
+        let keychain: InMemoryKeychainStorage
+    }
+
+    @Test("Encrypted store loads many full conversations", .timeLimit(.minutes(1)))
+    func encryptedStoreLoadsManyFullConversations() async throws {
+        let fixture = try await Self.makeFixture()
+        let coldStore = TestHelpers.makeTestStore(
+            directory: fixture.directory,
+            keyIdentifier: fixture.keyIdentifier,
+            keychain: fixture.keychain
+        )
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let loaded = try await coldStore.loadConversations()
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        print(
+            "BENCH persistence.conversations.fullLoad.\(Self.conversationCount)x\(Self.messagesPerConversation) seconds=\(elapsed)"
+        )
+        #expect(loaded.count == Self.conversationCount)
+        #expect(loaded.reduce(0) { $0 + $1.messages.count } == Self.conversationCount * Self.messagesPerConversation)
+    }
+
+    @Test("Encrypted store loads many conversation metadata sidecars", .timeLimit(.minutes(1)))
+    func encryptedStoreLoadsManyConversationMetadataSidecars() async throws {
+        let fixture = try await Self.makeFixture()
+        let coldStore = TestHelpers.makeTestStore(
+            directory: fixture.directory,
+            keyIdentifier: fixture.keyIdentifier,
+            keychain: fixture.keychain
+        )
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let metadata = try await coldStore.loadConversationMetadata()
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        print(
+            "BENCH persistence.conversations.metadataLoad.\(Self.conversationCount)x\(Self.messagesPerConversation) seconds=\(elapsed)"
+        )
+        #expect(metadata.count == Self.conversationCount)
+        #expect(metadata.reduce(0) { $0 + $1.messageCount } == Self.conversationCount * Self.messagesPerConversation)
+    }
+
+    private static func makeFixture() async throws -> Fixture {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keyIdentifier = UUID().uuidString
+        let keychain = InMemoryKeychainStorage()
+        let store = TestHelpers.makeTestStore(
+            directory: directory,
+            keyIdentifier: keyIdentifier,
+            keychain: keychain
+        )
+
+        for conversation in Self.benchmarkConversations() {
+            try await store.save(conversation)
+        }
+
+        return Fixture(directory: directory, keyIdentifier: keyIdentifier, keychain: keychain)
+    }
+
+    private static func benchmarkConversations() -> [Conversation] {
+        (0 ..< conversationCount).map { index in
+            let updatedAt = Date(timeIntervalSinceReferenceDate: 1_700_000_000 + Double(index))
+            let payload = String(repeating: "x", count: messagePayloadBytes)
+            let messages = (0 ..< messagesPerConversation).map { messageIndex in
+                Message(
+                    role: messageIndex.isMultiple(of: 2) ? .user : .assistant,
+                    content: "conversation=\(index) message=\(messageIndex) \(payload)",
+                    timestamp: updatedAt.addingTimeInterval(Double(messageIndex))
+                )
+            }
+
+            return Conversation(
+                title: "Benchmark Conversation \(index)",
+                messages: messages,
+                createdAt: updatedAt.addingTimeInterval(-3600),
+                updatedAt: updatedAt,
+                model: "gpt-4o"
+            )
+        }
+    }
+}
