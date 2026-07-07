@@ -62,6 +62,21 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Stores the pending user message text for retry on failure
     private var pendingUserMessage: String?
 
+    private struct StreamingChunkKey: Hashable, Sendable {
+        let conversationId: UUID
+        let messageId: UUID
+        let model: String?
+    }
+
+    private struct PendingChunkBuffer {
+        var chunks: [String] = []
+        var flushTask: Task<Void, Never>?
+    }
+
+    private var pendingChunkBuffers: [StreamingChunkKey: PendingChunkBuffer] = [:]
+    private let streamingChunkFlushInterval: Duration = .milliseconds(75)
+    private let streamingChunkImmediateFlushThreshold = 256
+
     // MARK: - Configuration
 
     /// The conversation ID this view model is managing.
@@ -165,6 +180,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        discardAllStreamingChunks()
         cleanupAttachedFiles()
         attachedImages.removeAll()
         selectedModel = aiService.selectedModel
@@ -325,6 +341,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             metadata: logMetadata
         )
         aiService.cancelCurrentRequest()
+        flushAllStreamingChunks()
         isGenerating = false
         currentToolName = nil
         toolCallDepth = 0
@@ -594,10 +611,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     if self.currentToolName != nil {
                         self.currentToolName = nil
                     }
-                    self.updateAssistantMessage(
-                        assistantMessageId,
-                        appendingChunk: chunk,
-                        conversationId: conversationId
+                    self.enqueueStreamingChunk(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId,
+                        model: model,
+                        chunk: chunk
                     )
                 }
             },
@@ -614,6 +632,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             "currentToolName": self.currentToolName ?? "none",
                             "assistantMessageId": assistantMessageId.uuidString
                         ]
+                    )
+
+                    self.flushStreamingChunks(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId,
+                        model: model
                     )
 
                     // Only stop generating if no tool call is pending
@@ -665,6 +689,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             message: "Request cancelled",
                             metadata: ["assistantMessageId": assistantMessageId.uuidString]
                         )
+                        self.flushStreamingChunks(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId,
+                            model: model
+                        )
                         self.isGenerating = false
                         self.currentToolName = nil
                         self.toolCallDepth = 0
@@ -682,6 +711,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         ]
                     )
 
+                    self.flushStreamingChunks(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId,
+                        model: model
+                    )
                     self.isGenerating = false
 
                     // Play error sound
@@ -725,6 +759,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     // checking if tool call is pending. The stream may send [DONE] immediately
                     // after finish_reason: "tool_calls".
                     self.currentToolName = toolNameCopy
+                    self.flushStreamingChunks(
+                        conversationId: conversationId,
+                        messageId: assistantMessageId,
+                        model: model
+                    )
                     let arguments = argumentsWrapper.value
 
                     // Validate conversation still exists
@@ -1077,6 +1116,81 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     // MARK: - Private Methods
 
+    private func enqueueStreamingChunk(
+        conversationId: UUID,
+        messageId: UUID,
+        model: String? = nil,
+        chunk: String
+    ) {
+        guard !chunk.isEmpty else { return }
+
+        let key = StreamingChunkKey(conversationId: conversationId, messageId: messageId, model: model)
+        var buffer = pendingChunkBuffers[key] ?? PendingChunkBuffer()
+        buffer.chunks.append(chunk)
+
+        let pendingLength = buffer.chunks.reduce(0) { $0 + $1.count }
+        if buffer.flushTask == nil {
+            let interval = streamingChunkFlushInterval
+            buffer.flushTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: interval)
+                guard let self, !Task.isCancelled else { return }
+                self.flushStreamingChunks(for: key)
+            }
+        }
+
+        pendingChunkBuffers[key] = buffer
+
+        if pendingLength >= streamingChunkImmediateFlushThreshold {
+            flushStreamingChunks(for: key)
+        }
+    }
+
+    private func flushStreamingChunks(
+        conversationId: UUID,
+        messageId: UUID,
+        model: String? = nil
+    ) {
+        let key = StreamingChunkKey(conversationId: conversationId, messageId: messageId, model: model)
+        flushStreamingChunks(for: key)
+    }
+
+    private func flushStreamingChunks(for key: StreamingChunkKey) {
+        guard var buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
+        buffer.flushTask?.cancel()
+        let chunk = buffer.chunks.joined()
+        guard !chunk.isEmpty else { return }
+        updateAssistantMessage(key.messageId, appendingChunk: chunk, conversationId: key.conversationId)
+    }
+
+    private func discardStreamingChunks(
+        conversationId: UUID,
+        messageId: UUID,
+        model: String? = nil
+    ) {
+        let key = StreamingChunkKey(conversationId: conversationId, messageId: messageId, model: model)
+        guard var buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
+        buffer.flushTask?.cancel()
+    }
+
+    private func flushAllStreamingChunks(conversationId: UUID? = nil) {
+        let keys = pendingChunkBuffers.keys.filter { key in
+            conversationId.map { key.conversationId == $0 } ?? true
+        }
+        for key in keys {
+            flushStreamingChunks(for: key)
+        }
+    }
+
+    private func discardAllStreamingChunks() {
+        for key in Array(pendingChunkBuffers.keys) {
+            discardStreamingChunks(
+                conversationId: key.conversationId,
+                messageId: key.messageId,
+                model: key.model
+            )
+        }
+    }
+
     private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
         // Use safe ID-based append instead of index-based access
         let success = conversationManager.appendToMessage(
@@ -1221,6 +1335,7 @@ extension IOSChatViewModel {
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
+                    self.flushAllStreamingChunks(conversationId: conversationId)
                     self.isGenerating = false
                     if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
                         self.conversationManager.save(self.conversationManager.conversations[convIndex])
@@ -1307,20 +1422,12 @@ extension IOSChatViewModel {
             return
         }
 
-        let success = conversationManager.appendToMessage(
+        enqueueStreamingChunk(
             conversationId: conversationId,
             messageId: messageId,
+            model: model,
             chunk: chunk
         )
-
-        if !success {
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .error,
-                message: "❌ Failed to append chunk - conversation or message not found",
-                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
-            )
-        }
     }
 
     /// Processes completion for a specific model in multi-model mode
@@ -1331,6 +1438,7 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        flushStreamingChunks(conversationId: conversationId, messageId: messageId, model: model)
 
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,
@@ -1358,6 +1466,7 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        flushStreamingChunks(conversationId: conversationId, messageId: messageId, model: model)
 
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,

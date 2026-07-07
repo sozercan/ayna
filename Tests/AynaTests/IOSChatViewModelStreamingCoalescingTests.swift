@@ -1,0 +1,124 @@
+@testable import Ayna
+import Foundation
+import Testing
+
+#if os(iOS)
+    @Suite("IOSChatViewModel Streaming Coalescing Tests", .tags(.viewModel, .async))
+    @MainActor
+    struct IOSChatViewModelStreamingCoalescingTests {
+        private let defaults: UserDefaults
+
+        init() {
+            guard let suite = UserDefaults(suiteName: "IOSChatViewModelStreamingCoalescingTests") else {
+                fatalError("Failed to create UserDefaults suite for tests")
+            }
+            defaults = suite
+            defaults.removePersistentDomain(forName: "IOSChatViewModelStreamingCoalescingTests")
+            AppPreferences.use(defaults)
+            defaults.set(false, forKey: "autoGenerateTitle")
+            AIService.keychain = InMemoryKeychainStorage()
+        }
+
+        @Test("Multi-model chunks wait for coalescing interval before mutating conversation", .timeLimit(.minutes(1)))
+        func multiModelChunksAreCoalescedBeforeMutation() async throws {
+            let fixture = try await makeFixture()
+
+            fixture.viewModel.processMultiModelChunk(
+                model: fixture.model,
+                chunk: "Hel",
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId
+            )
+            fixture.viewModel.processMultiModelChunk(
+                model: fixture.model,
+                chunk: "lo",
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId
+            )
+
+            #expect(fixture.manager.conversations.first?.messages.first?.content == "")
+
+            try await Task.sleep(for: .milliseconds(120))
+
+            #expect(fixture.manager.conversations.first?.messages.first?.content == "Hello")
+        }
+
+        @Test("Model completion flushes pending chunks immediately", .timeLimit(.minutes(1)))
+        func modelCompletionFlushesPendingChunksImmediately() async throws {
+            let fixture = try await makeFixture()
+
+            fixture.viewModel.processMultiModelChunk(
+                model: fixture.model,
+                chunk: "Done",
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId
+            )
+            #expect(fixture.manager.conversations.first?.messages.first?.content == "")
+
+            fixture.viewModel.processMultiModelCompletion(
+                model: fixture.model,
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId,
+                responseGroupId: fixture.responseGroupId
+            )
+
+            #expect(fixture.manager.conversations.first?.messages.first?.content == "Done")
+            #expect(fixture.manager.conversations.first?.responseGroups.first?.responses.first?.status == .completed)
+        }
+
+        private func makeFixture() async throws -> (
+            viewModel: IOSChatViewModel,
+            manager: ConversationManager,
+            conversationId: UUID,
+            messageId: UUID,
+            responseGroupId: UUID,
+            model: String,
+            messageIds: [String: UUID]
+        ) {
+            let directory = try TestHelpers.makeTemporaryDirectory()
+            let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
+            let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+            _ = await manager.loadingTask?.value
+
+            let conversationId = UUID()
+            let messageId = UUID()
+            let responseGroupId = UUID()
+            let userMessageId = UUID()
+            let model = "test-model-a"
+            var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
+            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
+            let assistantMessage = Message(
+                id: messageId,
+                role: .assistant,
+                content: "",
+                model: model,
+                responseGroupId: responseGroupId
+            )
+            let conversation = Conversation(
+                id: conversationId,
+                title: "Streaming Coalescing",
+                messages: [assistantMessage],
+                model: model,
+                responseGroups: [responseGroup]
+            )
+            manager.conversations = [conversation]
+
+            let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+            let viewModel = IOSChatViewModel(
+                conversationId: conversationId,
+                conversationManager: manager,
+                aiService: service
+            )
+
+            return (
+                viewModel,
+                manager,
+                conversationId,
+                messageId,
+                responseGroupId,
+                model,
+                [model: messageId]
+            )
+        }
+    }
+#endif
