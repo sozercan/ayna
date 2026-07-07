@@ -216,6 +216,8 @@ struct IOSMultiModelResponseCard: View {
 
     @State private var contentBlocks: [ContentBlock]
     @State private var decodedImage: UIImage?
+    @State private var parseTask: Task<Void, Never>?
+    @State private var parseGeneration = 0
 
     init(
         message: Message,
@@ -229,7 +231,10 @@ struct IOSMultiModelResponseCard: View {
         self.isSelectionMade = isSelectionMade
         self.responseStatus = responseStatus
         self.onRetry = onRetry
-        _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+        _contentBlocks = State(initialValue: MarkdownRenderer.parse(
+            message.content,
+            cachePolicy: responseStatus == .streaming ? .doNotCache : .useCache
+        ))
     }
 
     private var isStreaming: Bool {
@@ -255,12 +260,7 @@ struct IOSMultiModelResponseCard: View {
         .opacity(isSelectionMade && !isSelected ? 0.6 : 1.0)
         .padding(.horizontal)
         .onChange(of: message.content) { _, newContent in
-            Task.detached(priority: .userInitiated) {
-                let blocks = MarkdownRenderer.parse(newContent)
-                await MainActor.run {
-                    contentBlocks = blocks
-                }
-            }
+            scheduleParse(for: newContent)
         }
         .onChange(of: message.imageData) { _, newImageData in
             // Reload image when imageData changes
@@ -285,6 +285,21 @@ struct IOSMultiModelResponseCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Response from \(message.model ?? "unknown model")")
         .accessibilityHint(isSelected ? "Selected" : "Double tap to select")
+    }
+
+    private func scheduleParse(for content: String) {
+        parseTask?.cancel()
+        parseGeneration += 1
+        let generation = parseGeneration
+        let cachePolicy: MarkdownRenderer.CachePolicy = isStreaming ? .doNotCache : .useCache
+
+        parseTask = Task { @MainActor in
+            let blocks = await Task.detached(priority: .userInitiated) {
+                MarkdownRenderer.parse(content, cachePolicy: cachePolicy)
+            }.value
+            guard !Task.isCancelled, generation == parseGeneration else { return }
+            contentBlocks = blocks
+        }
     }
 
     private func loadImageFromPath() {
