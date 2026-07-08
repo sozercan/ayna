@@ -63,8 +63,13 @@ final class AynaSmokeUITests: AynaUITestCase {
         searchField.click()
         searchField.typeText(uniqueKeyword)
 
-        // Verify filtering
-        XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
+        // Verify filtering. SwiftUI can expose the sidebar title's accessibility
+        // value truncated to the visible text width, so use a stable prefix match
+        // for the expected filtered row while still requiring the non-match to disappear.
+        let titlePrefix = String(title.prefix(16))
+        let titlePredicate = NSPredicate(format: "value BEGINSWITH %@ OR label == %@", titlePrefix, title)
+        let filteredTitle = app.staticTexts.containing(titlePredicate).firstMatch
+        XCTAssertTrue(filteredTitle.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts[otherTitle].exists)
     }
 
