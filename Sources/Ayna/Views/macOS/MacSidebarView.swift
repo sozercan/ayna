@@ -36,6 +36,10 @@ struct MacSidebarView: View {
             return
         }
 
+        // Publish fast in-memory matches immediately so the sidebar responds while
+        // Spotlight-backed full-text search/hydration completes in the background.
+        searchResults = conversationManager.searchConversations(query: query)
+
         searchTask = Task {
             // Debounce
             try? await Task.sleep(for: .milliseconds(300))
