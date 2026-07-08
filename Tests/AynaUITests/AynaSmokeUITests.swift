@@ -66,10 +66,11 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Verify filtering. SwiftUI can expose sidebar title text truncated in the
         // accessibility value on CI, so assert that some filtered conversation row
         // remains while the known non-matching title disappears.
+        let sidebarList = app.outlines[TestIdentifiers.Sidebar.conversationList]
         let rowPredicate = NSPredicate(format: "identifier BEGINSWITH %@", "sidebar.conversationRow.")
-        let filteredRow = app.staticTexts.matching(rowPredicate).firstMatch
+        let filteredRow = sidebarList.descendants(matching: .any).matching(rowPredicate).firstMatch
         XCTAssertTrue(filteredRow.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts[otherTitle].exists)
+        XCTAssertFalse(sidebarList.staticTexts[otherTitle].exists)
     }
 
     func testDeleteConversation() {
