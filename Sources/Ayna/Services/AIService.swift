@@ -992,6 +992,8 @@ class AIService: ObservableObject {
             multiModelRequestBuildTasks[requestModel]?.cancel()
         } else if tracksCurrentRequest {
             currentRequestBuildTask?.cancel()
+            currentTask?.cancel()
+            currentTask = nil
             if stream {
                 currentStreamTask?.cancel()
             }
@@ -1370,6 +1372,8 @@ class AIService: ObservableObject {
 
         if tracksCurrentRequest {
             currentRequestBuildTask?.cancel()
+            currentTask?.cancel()
+            currentTask = nil
         }
 
         let toolDefinitions = RequestBuilderToolDefinitions(tools)
