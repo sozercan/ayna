@@ -46,10 +46,40 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-# Build path helper
+# Build path helpers. SwiftPM has used both triple-specific paths
+# (`.build/arm64-apple-macosx/release`) and Xcode-style paths
+# (`.build/out/Products/Release`) across toolchain versions.
+configuration_dir_name() {
+  case "$CONF" in
+    debug) echo "Debug" ;;
+    release) echo "Release" ;;
+    *) echo "$CONF" ;;
+  esac
+}
+
+build_product_dirs() {
+  local arch="$1"
+  local config_dir
+  config_dir="$(configuration_dir_name)"
+  case "$arch" in
+    arm64|x86_64) echo ".build/${arch}-apple-macosx/$CONF" ;;
+  esac
+  echo ".build/$CONF"
+  echo ".build/out/Products/${config_dir}"
+}
+
 build_product_path() {
   local name="$1"
   local arch="$2"
+  local dir
+  while IFS= read -r dir; do
+    if [[ -f "$dir/$name" ]]; then
+      echo "$dir/$name"
+      return 0
+    fi
+  done < <(build_product_dirs "$arch")
+
+  # Return the preferred legacy path for a clear error if no candidate exists.
   case "$arch" in
     arm64|x86_64) echo ".build/${arch}-apple-macosx/$CONF/$name" ;;
     *) echo ".build/$CONF/$name" ;;
@@ -251,18 +281,13 @@ fi
 # Embed Sparkle.framework
 SPARKLE_FRAMEWORK=""
 for arch in "${ARCH_LIST[@]}"; do
-  CANDIDATE=$(build_product_path "" "$arch")
-  CANDIDATE_DIR=$(dirname "$CANDIDATE")
-  if [[ -d "$CANDIDATE_DIR/Sparkle.framework" ]]; then
-    SPARKLE_FRAMEWORK="$CANDIDATE_DIR/Sparkle.framework"
-    break
-  fi
+  while IFS= read -r CANDIDATE_DIR; do
+    if [[ -d "$CANDIDATE_DIR/Sparkle.framework" ]]; then
+      SPARKLE_FRAMEWORK="$CANDIDATE_DIR/Sparkle.framework"
+      break 2
+    fi
+  done < <(build_product_dirs "$arch")
 done
-
-# Also check the default build path
-if [[ -z "$SPARKLE_FRAMEWORK" ]] && [[ -d ".build/$CONF/Sparkle.framework" ]]; then
-  SPARKLE_FRAMEWORK=".build/$CONF/Sparkle.framework"
-fi
 
 if [[ -n "$SPARKLE_FRAMEWORK" ]]; then
   echo "✨ Embedding Sparkle.framework..."
