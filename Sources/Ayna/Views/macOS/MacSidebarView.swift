@@ -15,6 +15,7 @@ struct MacSidebarView: View {
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
+    @FocusState private var isSearchFieldFocused: Bool
     @State private var searchResults: [Conversation] = []
     @State private var searchTask: Task<Void, Never>?
 
@@ -80,10 +81,12 @@ struct MacSidebarView: View {
                         Text("Search")
                             .font(.system(size: 16))
                             .foregroundStyle(Theme.textPlaceholder)
+                            .allowsHitTesting(false)
                     }
                     TextField("", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
+                        .focused($isSearchFieldFocused)
                         .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
                         .onChange(of: searchText) { _, newValue in
                             performSearch(query: newValue)
@@ -105,6 +108,10 @@ struct MacSidebarView: View {
             }
             .padding(.horizontal, Spacing.sm)
             .frame(height: 30)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isSearchFieldFocused = true
+            }
             .modifier(IMessageSearchBarStyle())
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.md)
