@@ -70,6 +70,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     private struct PendingChunkBuffer {
         var chunks: [String] = []
+        var pendingCharacterCount = 0
         var flushTask: Task<Void, Never>?
     }
 
@@ -1127,8 +1128,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         let key = StreamingChunkKey(conversationId: conversationId, messageId: messageId, model: model)
         var buffer = pendingChunkBuffers[key] ?? PendingChunkBuffer()
         buffer.chunks.append(chunk)
+        buffer.pendingCharacterCount += chunk.count
 
-        let pendingLength = buffer.chunks.reduce(0) { $0 + $1.count }
         if buffer.flushTask == nil {
             let interval = streamingChunkFlushInterval
             buffer.flushTask = Task { @MainActor [weak self] in
@@ -1140,7 +1141,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         pendingChunkBuffers[key] = buffer
 
-        if pendingLength >= streamingChunkImmediateFlushThreshold {
+        if buffer.pendingCharacterCount >= streamingChunkImmediateFlushThreshold {
             flushStreamingChunks(for: key)
         }
     }

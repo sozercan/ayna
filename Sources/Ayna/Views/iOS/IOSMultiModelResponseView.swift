@@ -293,12 +293,14 @@ struct IOSMultiModelResponseCard: View {
         let generation = parseGeneration
         let cachePolicy: MarkdownRenderer.CachePolicy = isStreaming ? .doNotCache : .useCache
 
-        parseTask = Task { @MainActor in
-            let blocks = await Task.detached(priority: .userInitiated) {
-                MarkdownRenderer.parse(content, cachePolicy: cachePolicy)
-            }.value
-            guard !Task.isCancelled, generation == parseGeneration else { return }
-            contentBlocks = blocks
+        parseTask = Task(priority: .userInitiated) {
+            guard !Task.isCancelled else { return }
+            let blocks = MarkdownRenderer.parse(content, cachePolicy: cachePolicy)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard generation == parseGeneration else { return }
+                contentBlocks = blocks
+            }
         }
     }
 
