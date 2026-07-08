@@ -355,18 +355,13 @@ final class ConversationManager: ObservableObject {
                 return nil
             }
 
-            let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            guard !dirtyIds.contains(proposedConversation.id) else {
+            guard let index = getConversationIndex(for: proposedConversation.id) else {
                 logManager(
-                    "⚠️ Skipping metadata-only save while a newer dirty snapshot is pending",
+                    "⚠️ Skipping metadata-only save for conversation no longer in memory",
                     level: .info,
                     metadata: ["id": proposedConversation.id.uuidString]
                 )
                 return nil
-            }
-
-            guard let index = getConversationIndex(for: proposedConversation.id) else {
-                return loadedConversation
             }
 
             let latestConversation = conversations[index]
@@ -1049,6 +1044,7 @@ final class ConversationManager: ObservableObject {
             messages: [titleMessage],
             model: conversation.model,
             stream: false,
+            tracksCurrentRequest: false,
             onChunk: { chunk in
                 Task { await accumulator.append(chunk) }
             },
@@ -1252,20 +1248,53 @@ final class ConversationManager: ObservableObject {
 
     // MARK: - Search and Filter
 
+    nonisolated static func conversationMatchesCurrentSearchText(
+        _ conversation: Conversation,
+        query: String,
+        metadataSearchTextById: [UUID: String]
+    ) -> Bool {
+        conversation.title.localizedCaseInsensitiveContains(query)
+            || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
+            || conversation.messages.contains { message in
+                message.content.localizedCaseInsensitiveContains(query)
+            }
+    }
+
+    nonisolated static func metadataOnlySpotlightHitNeedsHydration(
+        _ conversation: Conversation,
+        query: String,
+        metadataSearchTextById: [UUID: String],
+        metadataOnlyConversationIds: Set<UUID>,
+        spotlightIds: Set<UUID>
+    ) -> Bool {
+        let isMetadataOnly = metadataOnlyConversationIds.contains(conversation.id)
+            || conversation.metadataPreview != nil
+        guard isMetadataOnly, spotlightIds.contains(conversation.id) else {
+            return false
+        }
+
+        return !conversationMatchesCurrentSearchText(
+            conversation,
+            query: query,
+            metadataSearchTextById: metadataSearchTextById
+        )
+    }
+
     func searchConversationsAsync(query: String, conversations: [Conversation]) async
         -> [Conversation]
     {
         guard !query.isEmpty else { return conversations }
         let metadataSearchTextById = metadataSearchTextById
+        let metadataOnlyConversationIds = metadataOnlyConversationIds
 
         #if os(watchOS)
             // watchOS doesn't have CoreSpotlight, use manual search
             return conversations.filter { conversation in
-                conversation.title.localizedCaseInsensitiveContains(query)
-                    || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
-                    || conversation.messages.contains { message in
-                        message.content.localizedCaseInsensitiveContains(query)
-                    }
+                Self.conversationMatchesCurrentSearchText(
+                    conversation,
+                    query: query,
+                    metadataSearchTextById: metadataSearchTextById
+                )
             }
         #else
             // Use Core Spotlight for high-performance search
@@ -1281,29 +1310,36 @@ final class ConversationManager: ObservableObject {
                     foundIds.append(contentsOf: items.map(\.uniqueIdentifier))
                 }
 
-                searchQuery.completionHandler = { error in
+                searchQuery.completionHandler = { [weak self] error in
                     if let error {
                         DiagnosticsLogger.log(.conversationManager, level: .error, message: "Spotlight search failed: \(error.localizedDescription)")
                         // Fallback to manual search if Spotlight fails
                         let manualResults = conversations.filter { conversation in
-                            conversation.title.localizedCaseInsensitiveContains(query)
-                                || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
-                                || conversation.messages.contains { message in
-                                    message.content.localizedCaseInsensitiveContains(query)
-                                }
+                            Self.conversationMatchesCurrentSearchText(
+                                conversation,
+                                query: query,
+                                metadataSearchTextById: metadataSearchTextById
+                            )
                         }
                         continuation.resume(returning: manualResults)
                         return
                     }
 
                     let ids = Set(foundIds.compactMap { UUID(uuidString: $0) })
-                    // Filter the provided conversations list to ensure we only return what's currently loaded/valid.
-                    // Also include metadata-only manual matches because they are intentionally not full-content indexed.
-                    let results = conversations.filter { conversation in
-                        ids.contains(conversation.id)
-                            || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            continuation.resume(returning: [])
+                            return
+                        }
+                        let results = await self.verifiedSearchResults(
+                            conversations: conversations,
+                            query: query,
+                            metadataSearchTextById: metadataSearchTextById,
+                            metadataOnlyConversationIds: metadataOnlyConversationIds,
+                            spotlightIds: ids
+                        )
+                        continuation.resume(returning: results)
                     }
-                    continuation.resume(returning: results)
                 }
 
                 searchQuery.start()
@@ -1311,15 +1347,58 @@ final class ConversationManager: ObservableObject {
         #endif
     }
 
+    private func verifiedSearchResults(
+        conversations: [Conversation],
+        query: String,
+        metadataSearchTextById: [UUID: String],
+        metadataOnlyConversationIds: Set<UUID>,
+        spotlightIds: Set<UUID>
+    ) async -> [Conversation] {
+        var results: [Conversation] = []
+        results.reserveCapacity(conversations.count)
+
+        for conversation in conversations {
+            if Self.conversationMatchesCurrentSearchText(
+                conversation,
+                query: query,
+                metadataSearchTextById: metadataSearchTextById
+            ) {
+                results.append(conversation)
+                continue
+            }
+
+            guard spotlightIds.contains(conversation.id) else { continue }
+            let isMetadataOnly = metadataOnlyConversationIds.contains(conversation.id)
+                || conversation.metadataPreview != nil
+            guard isMetadataOnly else {
+                results.append(conversation)
+                continue
+            }
+
+            guard let loadedConversation = await ensureConversationLoaded(conversation.id),
+                  Self.conversationMatchesCurrentSearchText(
+                      loadedConversation,
+                      query: query,
+                      metadataSearchTextById: [:]
+                  )
+            else {
+                continue
+            }
+            results.append(loadedConversation)
+        }
+
+        return results
+    }
+
     func searchConversations(query: String) -> [Conversation] {
         guard !query.isEmpty else { return conversations }
 
         return conversations.filter { conversation in
-            conversation.title.localizedCaseInsensitiveContains(query) ||
-                (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false) ||
-                conversation.messages.contains { message in
-                    message.content.localizedCaseInsensitiveContains(query)
-                }
+            Self.conversationMatchesCurrentSearchText(
+                conversation,
+                query: query,
+                metadataSearchTextById: metadataSearchTextById
+            )
         }
     }
 }

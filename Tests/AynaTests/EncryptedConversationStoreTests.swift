@@ -239,6 +239,37 @@ struct EncryptedConversationStoreTests {
         #expect(metadata.first?.messageCount == conversation.messages.count)
     }
 
+    @Test("Metadata loading rebuilds sidecar newer by less than one second")
+    func metadataLoadingRebuildsSidecarNewerByLessThanOneSecond() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        var conversation = TestHelpers.sampleConversation(title: "Near Original")
+        try await store.save(conversation)
+
+        let metadataURL = store.metadataFileURL(for: conversation.id)
+        let originalMetadataData = try Data(contentsOf: metadataURL)
+
+        conversation.title = "Near Updated"
+        conversation.addMessage(Message(role: .user, content: "Subsecond newer message"))
+        try await store.save(conversation)
+
+        try originalMetadataData.write(to: metadataURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceReferenceDate: 199.8)],
+            ofItemAtPath: metadataURL.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceReferenceDate: 200)],
+            ofItemAtPath: store.fileURL(for: conversation.id).path
+        )
+
+        let metadata = try await store.loadConversationMetadata()
+
+        #expect(metadata.count == 1)
+        #expect(metadata.first?.title == "Near Updated")
+        #expect(metadata.first?.messageCount == conversation.messages.count)
+    }
+
     @Test("Legacy metadata without preview fields requires backfill")
     func legacyMetadataWithoutPreviewFieldsRequiresBackfill() throws {
         let id = UUID()

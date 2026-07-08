@@ -463,7 +463,6 @@ final class EncryptedConversationStore: Sendable {
         metadataURL: URL,
         conversationURL: URL
     ) -> Bool {
-        let sameSaveTimestampTolerance: TimeInterval = 1
         do {
             let metadataValues = try metadataURL.resourceValues(forKeys: [.contentModificationDateKey])
             let conversationValues = try conversationURL.resourceValues(forKeys: [.contentModificationDateKey])
@@ -472,7 +471,7 @@ final class EncryptedConversationStore: Sendable {
             else {
                 return true
             }
-            return conversationDate.timeIntervalSince(metadataDate) > sameSaveTimestampTolerance
+            return conversationDate > metadataDate
         } catch {
             return true
         }

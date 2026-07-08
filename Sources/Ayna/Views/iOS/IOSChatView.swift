@@ -182,6 +182,7 @@ struct IOSChatView: View {
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
                     .onChange(of: conversation.messages.last?.content) {
+                        updateDisplayableItems()
                         // Only scroll during generation - use transaction to disable animations
                         // This prevents janky scrolling during rapid streaming updates
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {

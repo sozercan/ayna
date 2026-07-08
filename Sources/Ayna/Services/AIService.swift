@@ -783,6 +783,7 @@ class AIService: ObservableObject {
         tools: [[String: Any]]? = nil,
         conversationId: UUID? = nil,
         isMultiModelRequest: Bool = false,
+        tracksCurrentRequest: Bool = true,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
@@ -922,7 +923,8 @@ class AIService: ObservableObject {
                 onComplete: onComplete,
                 onError: onError,
                 onToolCallRequested: onToolCallRequested,
-                onReasoning: onReasoning
+                onReasoning: onReasoning,
+                tracksCurrentRequest: tracksCurrentRequest
             )
             return
         }
@@ -976,7 +978,7 @@ class AIService: ObservableObject {
 
         if isMultiModelRequest {
             multiModelStreamTasks[requestModel]?.cancel()
-        } else {
+        } else if tracksCurrentRequest {
             currentRequestBuildTask?.cancel()
             if stream {
                 currentStreamTask?.cancel()
@@ -1002,7 +1004,7 @@ class AIService: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if isMultiModelRequest {
                     self.multiModelStreamTasks.removeValue(forKey: requestModel)
-                } else {
+                } else if tracksCurrentRequest {
                     self.currentRequestBuildTask = nil
                 }
                 DiagnosticsLogger.log(
@@ -1017,7 +1019,7 @@ class AIService: ObservableObject {
             guard !Task.isCancelled else { return }
             if isMultiModelRequest {
                 self.multiModelStreamTasks.removeValue(forKey: requestModel)
-            } else {
+            } else if tracksCurrentRequest {
                 self.currentRequestBuildTask = nil
             }
 
@@ -1051,7 +1053,7 @@ class AIService: ObservableObject {
         }
         if isMultiModelRequest {
             multiModelStreamTasks[requestModel] = buildTask
-        } else {
+        } else if tracksCurrentRequest {
             currentRequestBuildTask = buildTask
         }
     }
@@ -1295,6 +1297,7 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
+        tracksCurrentRequest: Bool = true,
         attempt: Int = 0
     ) {
         // Check if this model has a provider override
@@ -1347,7 +1350,9 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        currentRequestBuildTask?.cancel()
+        if tracksCurrentRequest {
+            currentRequestBuildTask?.cancel()
+        }
 
         let toolDefinitions = RequestBuilderToolDefinitions(tools)
         let buildTask = Task { [weak self] in
@@ -1364,13 +1369,17 @@ class AIService: ObservableObject {
                 )
             else {
                 guard !Task.isCancelled else { return }
-                self.currentRequestBuildTask = nil
+                if tracksCurrentRequest {
+                    self.currentRequestBuildTask = nil
+                }
                 onError(AIError.invalidRequest)
                 return
             }
 
             guard !Task.isCancelled else { return }
-            self.currentRequestBuildTask = nil
+            if tracksCurrentRequest {
+                self.currentRequestBuildTask = nil
+            }
 
             let task = self.urlSession.dataTask(with: request) { [weak self] data, _, error in
                 let selfRef = self
@@ -1405,6 +1414,7 @@ class AIService: ObservableObject {
                                     onError: onError,
                                     onToolCallRequested: onToolCallRequested,
                                     onReasoning: onReasoning,
+                                    tracksCurrentRequest: tracksCurrentRequest,
                                     attempt: attempt + 1
                                 )
                             }
@@ -1459,7 +1469,9 @@ class AIService: ObservableObject {
             self.currentTask = task
             task.resume()
         }
-        currentRequestBuildTask = buildTask
+        if tracksCurrentRequest {
+            currentRequestBuildTask = buildTask
+        }
     }
 
     // swiftlint:enable superfluous_disable_command

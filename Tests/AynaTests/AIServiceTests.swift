@@ -32,6 +32,30 @@ struct AIServiceTests {
         return service
     }
 
+    private static func bodyString(from request: URLRequest) -> String {
+        var bodyData = request.httpBody
+        if bodyData == nil, let stream = request.httpBodyStream {
+            stream.open()
+            var data = Data()
+            let bufferSize = 1024
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: bufferSize)
+                if read > 0 {
+                    data.append(buffer, count: read)
+                } else {
+                    break
+                }
+            }
+            stream.close()
+            bodyData = data
+        }
+
+        guard let bodyData else { return "" }
+        return String(data: bodyData, encoding: .utf8) ?? ""
+    }
+
     @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
     func sendMessageWithoutAPIKeyThrowsError() async {
         let service = makeService()
@@ -147,6 +171,75 @@ struct AIServiceTests {
 
         #expect(content == "Hi")
         #expect(receivedChunk.value == "Hello")
+    }
+
+    @Test("Background title request is not cancelled by foreground request", .timeLimit(.minutes(1)))
+    func backgroundTitleRequestIsNotCancelledByForegroundRequest() async {
+        let service = makeService()
+        service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
+
+        MockURLProtocol.requestHandler = { request in
+            let body = Self.bodyString(from: request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let content = body.contains("Generate a very short title") ? "Generated Title" : "Chat Response"
+            let responseBody = Data(#"{"choices":[{"message":{"content":"\#(content)"}}]}"#.utf8)
+            return (response, responseBody)
+        }
+
+        let titleChunk = ResultHolder()
+        let chatChunk = ResultHolder()
+
+        await confirmation("background title request completes") { titleCompleted in
+            await confirmation("foreground request completes") { chatCompleted in
+                service.sendMessage(
+                    messages: [Message(role: .user, content: "Generate a very short title")],
+                    model: nil,
+                    temperature: nil,
+                    stream: false,
+                    tools: nil,
+                    conversationId: nil,
+                    tracksCurrentRequest: false,
+                    onChunk: { chunk in
+                        titleChunk.value += chunk
+                    },
+                    onComplete: {
+                        titleCompleted()
+                    },
+                    onError: { error in
+                        Issue.record("Unexpected title error: \(error)")
+                    },
+                    onToolCall: nil,
+                    onToolCallRequested: nil,
+                    onReasoning: nil
+                )
+
+                service.sendMessage(
+                    messages: [Message(role: .user, content: "Real chat request")],
+                    model: nil,
+                    temperature: nil,
+                    stream: false,
+                    tools: nil,
+                    conversationId: nil,
+                    onChunk: { chunk in
+                        chatChunk.value += chunk
+                    },
+                    onComplete: {
+                        chatCompleted()
+                    },
+                    onError: { error in
+                        Issue.record("Unexpected chat error: \(error)")
+                    },
+                    onToolCall: nil,
+                    onToolCallRequested: nil,
+                    onReasoning: nil
+                )
+
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+
+        #expect(titleChunk.value == "Generated Title")
+        #expect(chatChunk.value == "Chat Response")
     }
 
     @Test("Send message parses structured content response", .timeLimit(.minutes(1)))

@@ -156,6 +156,62 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.count == conversation.messages.count)
     }
 
+    @Test("Hydrating metadata placeholder before export includes message history")
+    @MainActor
+    func hydratingMetadataPlaceholderBeforeExportIncludesMessageHistory() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-export-hydration-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let conversation = TestHelpers.sampleConversation(title: "Export Hydration")
+        try await store.save(conversation)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await manager.loadingTask?.value
+
+        let placeholder = try #require(manager.conversations.first)
+        #expect(placeholder.messages.isEmpty == true)
+        #expect(ConversationExporter.generateMarkdown(for: placeholder).contains("Hello") == false)
+
+        let hydrated = try #require(await manager.ensureConversationLoaded(conversation.id))
+        let markdown = ConversationExporter.generateMarkdown(for: hydrated)
+
+        #expect(markdown.contains("Hello"))
+        #expect(markdown.contains("Hi there"))
+    }
+
+    @Test("Metadata-only Spotlight hit hydrates when current metadata does not match")
+    func metadataOnlySpotlightHitHydratesWhenCurrentMetadataDoesNotMatch() {
+        let id = UUID()
+        let metadataOnlyConversation = Conversation(
+            id: id,
+            title: "Current Title",
+            messages: [],
+            metadataPreview: "Current preview"
+        )
+        let metadataSearchTextById = [id: "Current Title Current preview"]
+        let staleSpotlightIds: Set<UUID> = [id]
+
+        #expect(
+            ConversationManager.metadataOnlySpotlightHitNeedsHydration(
+                metadataOnlyConversation,
+                query: "old deleted term",
+                metadataSearchTextById: metadataSearchTextById,
+                metadataOnlyConversationIds: [id],
+                spotlightIds: staleSpotlightIds
+            )
+        )
+        #expect(
+            !ConversationManager.metadataOnlySpotlightHitNeedsHydration(
+                metadataOnlyConversation,
+                query: "current preview",
+                metadataSearchTextById: metadataSearchTextById,
+                metadataOnlyConversationIds: [id],
+                spotlightIds: staleSpotlightIds
+            )
+        )
+    }
+
     @Test("Selecting metadata placeholder lazy loads full conversation")
     @MainActor
     func selectingMetadataPlaceholderLazyLoadsFullConversation() async throws {
@@ -237,6 +293,41 @@ struct ConversationManagerTests {
 
         let persisted = try #require(try await store.loadConversation(id: conversation.id))
         #expect(persisted.title == "Renamed Preview Save")
+        #expect(persisted.messages.count == conversation.messages.count)
+    }
+
+    @Test("Later metadata placeholder save replaces pending debounced save")
+    @MainActor
+    func laterMetadataPlaceholderSaveReplacesPendingDebouncedSave() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-metadata-debounce-latest-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let conversation = TestHelpers.sampleConversation(title: "Original Debounced")
+        try await store.save(conversation)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(500))
+        _ = await manager.loadingTask?.value
+
+        var firstEdit = try #require(manager.conversations.first)
+        firstEdit.title = "First Pending Title"
+        firstEdit.updatedAt = Date().addingTimeInterval(10)
+        manager.save(firstEdit)
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        var secondEdit = firstEdit
+        secondEdit.title = "Second Pending Title"
+        secondEdit.temperature = 0.42
+        secondEdit.updatedAt = Date().addingTimeInterval(20)
+        manager.conversations = [secondEdit]
+        manager.save(secondEdit)
+
+        try await Task.sleep(for: .milliseconds(700))
+
+        let persisted = try #require(try await store.loadConversation(id: conversation.id))
+        #expect(persisted.title == "Second Pending Title")
+        #expect(persisted.temperature == 0.42)
         #expect(persisted.messages.count == conversation.messages.count)
     }
 

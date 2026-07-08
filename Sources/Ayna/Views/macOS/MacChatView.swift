@@ -311,10 +311,14 @@ struct MacChatView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button(action: { exportConversation(format: .markdown) }) {
+                    Button {
+                        Task { await exportConversation(format: .markdown) }
+                    } label: {
                         Label("Export as Markdown", systemImage: "doc.text")
                     }
-                    Button(action: { exportConversation(format: .pdf) }) {
+                    Button {
+                        Task { await exportConversation(format: .pdf) }
+                    } label: {
                         Label("Export as PDF", systemImage: "doc.text.image")
                     }
                 } label: {
@@ -429,13 +433,16 @@ struct MacChatView: View {
         case pdf
     }
 
-    private func exportConversation(format: ExportFormat) {
+    private func exportConversation(format: ExportFormat) async {
+        let conversationForExport = await conversationManager.ensureConversationLoaded(currentConversation.id)
+            ?? currentConversation
+
         let url: URL?
         switch format {
         case .markdown:
-            let content = ConversationExporter.generateMarkdown(for: currentConversation)
+            let content = ConversationExporter.generateMarkdown(for: conversationForExport)
             let tempDir = FileManager.default.temporaryDirectory
-            let fileName = "\(currentConversation.title.replacingOccurrences(of: " ", with: "_")).md"
+            let fileName = "\(conversationForExport.title.replacingOccurrences(of: " ", with: "_")).md"
             let fileURL = tempDir.appendingPathComponent(fileName)
             do {
                 try content.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -445,7 +452,7 @@ struct MacChatView: View {
                 url = nil
             }
         case .pdf:
-            url = ConversationExporter.generatePDF(for: currentConversation)
+            url = ConversationExporter.generatePDF(for: conversationForExport)
         }
 
         if let url {
