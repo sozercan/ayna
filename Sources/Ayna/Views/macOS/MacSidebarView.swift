@@ -310,6 +310,7 @@ struct ConversationRow: View {
                     Text(conversation.title)
                         .font(Typography.body.weight(.semibold))
                         .lineLimit(1)
+                        .accessibilityLabel(conversation.title)
                     Spacer()
                     Text(timeString)
                         .font(Typography.timestamp)
