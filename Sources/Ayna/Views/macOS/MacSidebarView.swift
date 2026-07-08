@@ -27,9 +27,9 @@ struct MacSidebarView: View {
         ConversationTimelineGrouper.sections(from: filteredConversations)
     }
 
-    private func performSearch() {
+    private func performSearch(query: String? = nil) {
         searchTask?.cancel()
-        let query = searchText
+        let query = query ?? searchText
 
         guard !query.isEmpty else {
             searchResults = []
@@ -74,15 +74,15 @@ struct MacSidebarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-                        .onChange(of: searchText) {
-                            performSearch()
+                        .onChange(of: searchText) { _, newValue in
+                            performSearch(query: newValue)
                         }
                 }
 
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
-                        performSearch()
+                        performSearch(query: "")
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(Theme.textTertiary)
@@ -100,7 +100,7 @@ struct MacSidebarView: View {
             .padding(.bottom, Spacing.sm)
             .onChange(of: conversationManager.conversations) {
                 if !searchText.isEmpty {
-                    performSearch()
+                    performSearch(query: searchText)
                 }
             }
 
