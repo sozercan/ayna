@@ -19,8 +19,19 @@ struct MacSidebarView: View {
     @State private var searchTask: Task<Void, Never>?
 
     private var filteredConversations: [Conversation] {
-        let source = searchText.isEmpty ? conversationManager.conversations : searchResults
-        return source.sorted { $0.updatedAt > $1.updatedAt }
+        guard !searchText.isEmpty else {
+            return conversationManager.conversations.sorted { $0.updatedAt > $1.updatedAt }
+        }
+
+        var uniqueConversations: [UUID: Conversation] = [:]
+        for conversation in conversationManager.searchConversations(query: searchText) {
+            uniqueConversations[conversation.id] = conversation
+        }
+        for conversation in searchResults {
+            uniqueConversations[conversation.id] = conversation
+        }
+
+        return uniqueConversations.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var timelineSections: [ConversationTimelineSection] {
