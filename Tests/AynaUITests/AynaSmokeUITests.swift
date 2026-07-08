@@ -68,7 +68,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         // for the expected filtered row while still requiring the non-match to disappear.
         let titlePrefix = String(title.prefix(16))
         let titlePredicate = NSPredicate(format: "value BEGINSWITH %@ OR label == %@", titlePrefix, title)
-        let filteredTitle = app.staticTexts.containing(titlePredicate).firstMatch
+        let filteredTitle = app.staticTexts.matching(titlePredicate).firstMatch
         XCTAssertTrue(filteredTitle.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts[otherTitle].exists)
     }
