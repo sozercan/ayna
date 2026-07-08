@@ -653,16 +653,18 @@ enum OpenAIRequestBuilder {
         isGitHubModels: Bool = false
     ) async -> URLRequest? {
         let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
-        return createChatCompletionsRequest(
-            url: url,
-            messages: resolvedMessages,
-            model: model,
-            stream: stream,
-            tools: tools.value,
-            apiKey: apiKey,
-            isAzure: isAzure,
-            isGitHubModels: isGitHubModels
-        )
+        return await Task.detached(priority: .userInitiated) {
+            createChatCompletionsRequest(
+                url: url,
+                messages: resolvedMessages,
+                model: model,
+                stream: stream,
+                tools: tools.value,
+                apiKey: apiKey,
+                isAzure: isAzure,
+                isGitHubModels: isGitHubModels
+            )
+        }.value
     }
 
     /// Create a configured URLRequest for the Chat Completions API.
@@ -719,14 +721,16 @@ enum OpenAIRequestBuilder {
         isAzure: Bool
     ) async -> URLRequest? {
         let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
-        return createResponsesRequest(
-            url: url,
-            messages: resolvedMessages,
-            model: model,
-            tools: tools.value,
-            apiKey: apiKey,
-            isAzure: isAzure
-        )
+        return await Task.detached(priority: .userInitiated) {
+            createResponsesRequest(
+                url: url,
+                messages: resolvedMessages,
+                model: model,
+                tools: tools.value,
+                apiKey: apiKey,
+                isAzure: isAzure
+            )
+        }.value
     }
 
     /// Create a configured URLRequest for the Responses API.

@@ -1156,7 +1156,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     }
 
     private func flushStreamingChunks(for key: StreamingChunkKey) {
-        guard var buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
+        guard let buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
         buffer.flushTask?.cancel()
         let chunk = buffer.chunks.joined()
         guard !chunk.isEmpty else { return }
@@ -1169,7 +1169,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         model: String? = nil
     ) {
         let key = StreamingChunkKey(conversationId: conversationId, messageId: messageId, model: model)
-        guard var buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
+        guard let buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
         buffer.flushTask?.cancel()
     }
 

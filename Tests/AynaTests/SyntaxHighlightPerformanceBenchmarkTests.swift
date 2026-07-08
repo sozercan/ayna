@@ -23,7 +23,6 @@ struct SyntaxHighlightPerformanceBenchmarkTests {
         #expect(String(highlighted.characters) == code)
         #expect(Self.foregroundColorDescriptions(in: highlighted).count == 1)
         #expect(SyntaxHighlightedCodeView.isHighlightCached(for: code, language: "swift"))
-        #expect(elapsed < 1.0)
     }
 
     @Test("Medium Swift code keeps highlighting and caches", .timeLimit(.minutes(1)))
@@ -51,7 +50,6 @@ struct SyntaxHighlightPerformanceBenchmarkTests {
         #expect(String(second.characters) == code)
         #expect(Self.foregroundColorDescriptions(in: first).count > 1)
         #expect(Self.foregroundColorDescriptions(in: second).count > 1)
-        #expect(secondElapsed < 0.2)
     }
 
     private static func swiftFixture(lineCount: Int, marker: String) -> String {

@@ -63,6 +63,8 @@ class AIService: ObservableObject {
     private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var multiModelTask: Task<Void, Never>?
+    /// Tracks request-build tasks for each model in multi-model mode.
+    private var multiModelRequestBuildTasks: [String: Task<Void, Never>] = [:]
     /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: Task<Void, Never>] = [:]
     #if !os(watchOS)
@@ -626,7 +628,17 @@ class AIService: ObservableObject {
         currentStreamTask = nil
         multiModelTask?.cancel()
         multiModelTask = nil
-        // Cancel all individual multi-model stream tasks
+        // Cancel all individual multi-model request build and stream tasks
+        for (model, task) in multiModelRequestBuildTasks {
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "Canceling multi-model request build task",
+                metadata: ["model": model]
+            )
+            task.cancel()
+        }
+        multiModelRequestBuildTasks.removeAll()
         for (model, task) in multiModelStreamTasks {
             task.cancel()
             DiagnosticsLogger.log(
@@ -977,7 +989,7 @@ class AIService: ObservableObject {
         )
 
         if isMultiModelRequest {
-            multiModelStreamTasks[requestModel]?.cancel()
+            multiModelRequestBuildTasks[requestModel]?.cancel()
         } else if tracksCurrentRequest {
             currentRequestBuildTask?.cancel()
             if stream {
@@ -1003,7 +1015,7 @@ class AIService: ObservableObject {
             else {
                 guard !Task.isCancelled else { return }
                 if isMultiModelRequest {
-                    self.multiModelStreamTasks.removeValue(forKey: requestModel)
+                    self.multiModelRequestBuildTasks.removeValue(forKey: requestModel)
                 } else if tracksCurrentRequest {
                     self.currentRequestBuildTask = nil
                 }
@@ -1018,7 +1030,7 @@ class AIService: ObservableObject {
 
             guard !Task.isCancelled else { return }
             if isMultiModelRequest {
-                self.multiModelStreamTasks.removeValue(forKey: requestModel)
+                self.multiModelRequestBuildTasks.removeValue(forKey: requestModel)
             } else if tracksCurrentRequest {
                 self.currentRequestBuildTask = nil
             }
@@ -1047,12 +1059,13 @@ class AIService: ObservableObject {
             } else {
                 self.nonStreamResponse(
                     request: request, onChunk: onChunk, onComplete: onComplete, onError: onError,
-                    onToolCall: onToolCall, onReasoning: onReasoning
+                    onToolCall: onToolCall, onReasoning: onReasoning,
+                    tracksCurrentRequest: tracksCurrentRequest
                 )
             }
         }
         if isMultiModelRequest {
-            multiModelStreamTasks[requestModel] = buildTask
+            multiModelRequestBuildTasks[requestModel] = buildTask
         } else if tracksCurrentRequest {
             currentRequestBuildTask = buildTask
         }
@@ -1099,6 +1112,10 @@ class AIService: ObservableObject {
 
         // Cancel any existing multi-model task and individual stream tasks
         multiModelTask?.cancel()
+        for (_, task) in multiModelRequestBuildTasks {
+            task.cancel()
+        }
+        multiModelRequestBuildTasks.removeAll()
         for (_, task) in multiModelStreamTasks {
             task.cancel()
         }
@@ -1232,6 +1249,7 @@ class AIService: ObservableObject {
             // All models completed
             await MainActor.run {
                 self.multiModelTask = nil
+                self.multiModelRequestBuildTasks.removeAll()
                 self.multiModelStreamTasks.removeAll()
                 DiagnosticsLogger.log(
                     .aiService,
@@ -1387,7 +1405,9 @@ class AIService: ObservableObject {
                     guard let self = selfRef else { return }
 
                     // Clear the task reference
-                    self.currentTask = nil
+                    if tracksCurrentRequest {
+                        self.currentTask = nil
+                    }
 
                     if let error {
                         // Don't report error if it was cancelled
@@ -1466,7 +1486,9 @@ class AIService: ObservableObject {
             }
 
             // Store and start the task
-            self.currentTask = task
+            if tracksCurrentRequest {
+                self.currentTask = task
+            }
             task.resume()
         }
         if tracksCurrentRequest {
@@ -2020,6 +2042,7 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
+        tracksCurrentRequest: Bool = true,
         attempt: Int = 0
     ) {
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
@@ -2044,6 +2067,7 @@ class AIService: ObservableObject {
                                 onError: onError,
                                 onToolCall: onToolCall,
                                 onReasoning: onReasoning,
+                                tracksCurrentRequest: tracksCurrentRequest,
                                 attempt: attempt + 1
                             )
                         }
@@ -2141,7 +2165,9 @@ class AIService: ObservableObject {
             }
         }
 
-        currentTask = task
+        if tracksCurrentRequest {
+            currentTask = task
+        }
         task.resume()
     }
 

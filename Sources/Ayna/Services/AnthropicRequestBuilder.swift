@@ -76,13 +76,15 @@ enum AnthropicRequestBuilder {
         tools: RequestBuilderToolDefinitions = .none
     ) async throws -> URLRequest {
         let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
-        return try createMessagesRequest(
-            url: url,
-            messages: resolvedMessages,
-            config: config,
-            stream: stream,
-            tools: tools.value
-        )
+        return try await Task.detached(priority: .userInitiated) {
+            try createMessagesRequest(
+                url: url,
+                messages: resolvedMessages,
+                config: config,
+                stream: stream,
+                tools: tools.value
+            )
+        }.value
     }
 
     /// Create a configured URLRequest for the Anthropic Messages API.

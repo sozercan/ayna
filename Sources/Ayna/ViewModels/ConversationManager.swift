@@ -368,7 +368,13 @@ final class ConversationManager: ObservableObject {
             guard metadataOnlyConversationIds.contains(proposedConversation.id)
                 || latestConversation.metadataPreview != nil
             else {
-                return latestConversation
+                guard proposedConversation.updatedAt > latestConversation.updatedAt else {
+                    return latestConversation
+                }
+                return mergeMetadataBackedChanges(
+                    from: proposedConversation,
+                    into: latestConversation
+                )
             }
 
             let proposedIsAtLeastAsRecent = proposedConversation.updatedAt >= latestConversation.updatedAt
@@ -1368,9 +1374,13 @@ final class ConversationManager: ObservableObject {
             }
 
             guard spotlightIds.contains(conversation.id) else { continue }
-            let isMetadataOnly = metadataOnlyConversationIds.contains(conversation.id)
-                || conversation.metadataPreview != nil
-            guard isMetadataOnly else {
+            guard Self.metadataOnlySpotlightHitNeedsHydration(
+                conversation,
+                query: query,
+                metadataSearchTextById: metadataSearchTextById,
+                metadataOnlyConversationIds: metadataOnlyConversationIds,
+                spotlightIds: spotlightIds
+            ) else {
                 results.append(conversation)
                 continue
             }
