@@ -653,7 +653,7 @@ enum OpenAIRequestBuilder {
         isGitHubModels: Bool = false
     ) async -> URLRequest? {
         let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
-        return await Task.detached(priority: .userInitiated) {
+        let buildTask = Task.detached(priority: .userInitiated) {
             createChatCompletionsRequest(
                 url: url,
                 messages: resolvedMessages,
@@ -664,7 +664,18 @@ enum OpenAIRequestBuilder {
                 isAzure: isAzure,
                 isGitHubModels: isGitHubModels
             )
-        }.value
+        }
+
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled else {
+                buildTask.cancel()
+                return nil
+            }
+            let request = await buildTask.value
+            return Task.isCancelled ? nil : request
+        } onCancel: {
+            buildTask.cancel()
+        }
     }
 
     /// Create a configured URLRequest for the Chat Completions API.
@@ -721,7 +732,7 @@ enum OpenAIRequestBuilder {
         isAzure: Bool
     ) async -> URLRequest? {
         let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
-        return await Task.detached(priority: .userInitiated) {
+        let buildTask = Task.detached(priority: .userInitiated) {
             createResponsesRequest(
                 url: url,
                 messages: resolvedMessages,
@@ -730,7 +741,18 @@ enum OpenAIRequestBuilder {
                 apiKey: apiKey,
                 isAzure: isAzure
             )
-        }.value
+        }
+
+        return await withTaskCancellationHandler {
+            guard !Task.isCancelled else {
+                buildTask.cancel()
+                return nil
+            }
+            let request = await buildTask.value
+            return Task.isCancelled ? nil : request
+        } onCancel: {
+            buildTask.cancel()
+        }
     }
 
     /// Create a configured URLRequest for the Responses API.

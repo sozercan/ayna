@@ -67,6 +67,7 @@ final class AynaSmokeUITests: AynaUITestCase {
         // The matching row remains visible, but SwiftUI exposes filtered macOS List
         // containers/row titles inconsistently on CI when text is truncated.
         XCTAssertFalse(app.staticTexts[otherTitle].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["No results found"].exists)
     }
 
     func testDeleteConversation() {
