@@ -22,11 +22,18 @@ struct AIServiceTests {
         MockURLProtocol.reset()
     }
 
-    private func makeService() -> AIService {
+    private func makeService(
+        anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {
+            AnthropicProvider(urlSession: $0)
+        }
+    ) -> AIService {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config)
-        let service = AIService(urlSession: session)
+        let service = AIService(
+            urlSession: session,
+            anthropicProviderFactory: anthropicProviderFactory
+        )
         service.customModels = ["gpt-4o"]
         service.selectedModel = "gpt-4o"
         return service
@@ -240,6 +247,50 @@ struct AIServiceTests {
 
         #expect(titleChunk.value == "Generated Title")
         #expect(chatChunk.value == "Chat Response")
+    }
+
+    @Test("Untracked Anthropic request does not replace current request")
+    func untrackedAnthropicRequestDoesNotReplaceCurrentRequest() async throws {
+        let factory = ControllableAnthropicProviderFactory()
+        let service = makeService { _ in
+            factory.makeProvider()
+        }
+        let model = "claude-test"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .anthropic
+        service.modelAPIKeys[model] = "sk-ant-unit-test"
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground chat")],
+            model: model,
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Background title")],
+            model: model,
+            stream: false,
+            tracksCurrentRequest: false,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+
+        let providers = factory.providers
+        #expect(providers.count == 2)
+
+        let foregroundProvider = try #require(providers.first)
+        let backgroundProvider = try #require(providers.last)
+        backgroundProvider.complete()
+        await Task.yield()
+
+        service.cancelCurrentRequest()
+
+        #expect(foregroundProvider.isCancelled)
+        #expect(!backgroundProvider.isCancelled)
     }
 
     @Test("Send message parses structured content response", .timeLimit(.minutes(1)))
@@ -710,6 +761,43 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+@MainActor
+private final class ControllableAnthropicProviderFactory {
+    private(set) var providers: [ControllableAnthropicProvider] = []
+
+    func makeProvider() -> any AIProviderProtocol {
+        let provider = ControllableAnthropicProvider()
+        providers.append(provider)
+        return provider
+    }
+}
+
+@MainActor
+private final class ControllableAnthropicProvider: AIProviderProtocol, @unchecked Sendable {
+    let providerType: AIProvider = .anthropic
+    let requiresAPIKey = true
+    private(set) var isCancelled = false
+    private var callbacks: AIProviderStreamCallbacks?
+
+    func sendMessage(
+        messages _: [Message],
+        config _: AIProviderRequestConfig,
+        stream _: Bool,
+        tools _: [[String: Any]]?,
+        callbacks: AIProviderStreamCallbacks
+    ) {
+        self.callbacks = callbacks
+    }
+
+    func cancelRequest() {
+        isCancelled = true
+    }
+
+    func complete() {
+        callbacks?.onComplete()
+    }
 }
 
 final class ResultHolder: @unchecked Sendable {

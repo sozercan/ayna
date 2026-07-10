@@ -72,7 +72,9 @@ class AIService: ObservableObject {
     #endif
 
     /// Holds the Anthropic provider during streaming to prevent deallocation
-    private var currentAnthropicProvider: AnthropicProvider?
+    private var currentAnthropicProvider: (any AIProviderProtocol)?
+    private var currentAnthropicRequestID: UUID?
+    private var untrackedAnthropicProviders: [UUID: any AIProviderProtocol] = [:]
 
     @Published var provider: AIProvider {
         didSet {
@@ -87,6 +89,7 @@ class AIService: ObservableObject {
 
     /// Custom URLSession with longer timeout for slow models
     private let urlSession: URLSession
+    private let anthropicProviderFactory: @MainActor (URLSession) -> any AIProviderProtocol
 
     // Image generation service
     #if !os(watchOS)
@@ -200,7 +203,13 @@ class AIService: ObservableObject {
         case imageGeneration
     }
 
-    init(urlSession: URLSession? = nil) {
+    init(
+        urlSession: URLSession? = nil,
+        anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {
+            AnthropicProvider(urlSession: $0)
+        }
+    ) {
+        self.anthropicProviderFactory = anthropicProviderFactory
         if let session = urlSession {
             self.urlSession = session
             #if !os(watchOS)
@@ -652,6 +661,7 @@ class AIService: ObservableObject {
         // Cancel Anthropic provider and clear reference to prevent memory leak
         currentAnthropicProvider?.cancelRequest()
         currentAnthropicProvider = nil
+        currentAnthropicRequestID = nil
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -897,6 +907,7 @@ class AIService: ObservableObject {
                 stream: stream,
                 tools: tools,
                 conversationId: conversationId,
+                tracksCurrentRequest: tracksCurrentRequest,
                 callbacks: anthropicCallbacks
             )
             return
@@ -2279,6 +2290,7 @@ class AIService: ObservableObject {
         stream: Bool,
         tools: [[String: Any]]?,
         conversationId: UUID?,
+        tracksCurrentRequest: Bool,
         callbacks: AIProviderStreamCallbacks
     ) {
         let modelAPIKey = getAPIKey(for: model)
@@ -2314,22 +2326,31 @@ class AIService: ObservableObject {
 
         // Get provider and send request
         // Store provider to prevent deallocation during streaming
-        let provider = AnthropicProvider(urlSession: urlSession)
-        currentAnthropicProvider = provider
+        let requestID = UUID()
+        let provider = anthropicProviderFactory(urlSession)
+        if tracksCurrentRequest {
+            currentAnthropicProvider?.cancelRequest()
+            currentAnthropicProvider = provider
+            currentAnthropicRequestID = requestID
+        } else {
+            untrackedAnthropicProviders[requestID] = provider
+        }
+
+        let finishRequest: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor in
+                self?.finishAnthropicRequest(requestID, tracksCurrentRequest: tracksCurrentRequest)
+            }
+        }
 
         // Wrap callbacks to clear provider reference on completion
         let wrappedCallbacks = AIProviderStreamCallbacks(
             onChunk: callbacks.onChunk,
-            onComplete: { [weak self] in
-                Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
-                }
+            onComplete: {
+                finishRequest()
                 callbacks.onComplete()
             },
-            onError: { [weak self] error in
-                Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
-                }
+            onError: { error in
+                finishRequest()
                 callbacks.onError(error)
             },
             onToolCallRequested: callbacks.onToolCallRequested,
@@ -2343,6 +2364,16 @@ class AIService: ObservableObject {
             tools: tools,
             callbacks: wrappedCallbacks
         )
+    }
+
+    private func finishAnthropicRequest(_ requestID: UUID, tracksCurrentRequest: Bool) {
+        if tracksCurrentRequest {
+            guard currentAnthropicRequestID == requestID else { return }
+            currentAnthropicProvider = nil
+            currentAnthropicRequestID = nil
+        } else {
+            untrackedAnthropicProviders.removeValue(forKey: requestID)
+        }
     }
 
     /// Retry logic delegated to AIRetryPolicy

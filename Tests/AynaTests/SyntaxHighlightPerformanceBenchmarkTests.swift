@@ -5,7 +5,7 @@ import Testing
 
 @testable import Ayna
 
-@Suite("Syntax Highlight Performance Benchmarks", .serialized)
+@Suite("Syntax Highlight Performance Benchmarks", .tags(.slow), .serialized)
 @MainActor
 struct SyntaxHighlightPerformanceBenchmarkTests {
     @Test("Large Swift code uses plain fast path", .timeLimit(.minutes(1)))

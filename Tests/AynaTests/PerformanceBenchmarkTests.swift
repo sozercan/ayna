@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("Parser Performance Benchmarks", .serialized)
+@Suite("Parser Performance Benchmarks", .tags(.slow), .serialized)
 struct ParserPerformanceBenchmarkTests {
     private static let lineCount = 10000
 
