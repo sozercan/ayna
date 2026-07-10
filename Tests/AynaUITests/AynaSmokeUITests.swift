@@ -60,8 +60,8 @@ final class AynaSmokeUITests: AynaUITestCase {
             "sidebar.conversationRow.",
             otherTitle
         )
-        let nonMatchingTitle = app.staticTexts.matching(sidebarTitlePredicate).firstMatch
-        XCTAssertTrue(nonMatchingTitle.waitForExistence(timeout: 10))
+        let nonMatchingTitles = app.staticTexts.matching(sidebarTitlePredicate)
+        XCTAssertTrue(nonMatchingTitles.firstMatch.waitForExistence(timeout: 10))
 
         // Search
         let searchField = app.textFields[TestIdentifiers.Sidebar.searchField]
@@ -73,8 +73,10 @@ final class AynaSmokeUITests: AynaUITestCase {
         // The matching row remains visible, but SwiftUI exposes filtered macOS List
         // containers/row titles inconsistently on CI when text is truncated.
         let titleDisappeared = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"),
-            object: nonMatchingTitle
+            predicate: NSPredicate { _, _ in
+                !self.app.staticTexts.matching(sidebarTitlePredicate).firstMatch.exists
+            },
+            object: app
         )
         XCTAssertEqual(XCTWaiter.wait(for: [titleDisappeared], timeout: 2), .completed)
         XCTAssertFalse(app.staticTexts["No results found"].exists)
