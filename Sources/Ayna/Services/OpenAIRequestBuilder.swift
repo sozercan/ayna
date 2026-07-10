@@ -181,7 +181,8 @@ enum OpenAIRequestBuilder {
                             let prevMessage = messages[prevIdx]
                             if prevMessage.role == .assistant {
                                 if let toolCalls = prevMessage.toolCalls,
-                                   toolCalls.contains(where: { $0.id == toolCallId }) {
+                                   toolCalls.contains(where: { $0.id == toolCallId })
+                                {
                                     foundAssistant = true
                                 }
                                 break
@@ -274,7 +275,7 @@ enum OpenAIRequestBuilder {
     /// - Messages are wrapped in `type: "message"` objects
     /// - Content types are `input_text`/`output_text` instead of just `text`
     /// - Images use `input_image` type
-    /// - System messages are skipped
+    /// - System messages are skipped here and promoted to top-level `instructions` by `buildResponsesBody`
     /// - Tool results use `function_call_output` type (not "tool" role)
     /// - Assistant tool calls use `function_call` type in output
     ///
@@ -444,6 +445,14 @@ enum OpenAIRequestBuilder {
             "reasoning": ["summary": "auto"],
             "text": ["verbosity": "medium"]
         ]
+
+        let instructions = messages
+            .filter { $0.role == .system && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.content)
+            .joined(separator: "\n\n")
+        if !instructions.isEmpty {
+            body["instructions"] = instructions
+        }
 
         // Add tools if provided (convert from Chat Completions format to Responses format)
         if let tools, !tools.isEmpty {
