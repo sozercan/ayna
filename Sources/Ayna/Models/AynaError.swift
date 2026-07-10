@@ -418,6 +418,35 @@ struct AnyCodable: Codable, Equatable, @unchecked Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
 
+        if Mirror(reflecting: value).displayStyle == .class,
+           let number = value as? NSNumber
+        {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                try container.encode(number.boolValue)
+            } else if let decimalNumber = number as? NSDecimalNumber {
+                let decimal = decimalNumber.decimalValue
+                if decimal.isNaN {
+                    try container.encodeNil()
+                } else {
+                    try container.encode(decimal)
+                }
+            } else if CFNumberIsFloatType(number) {
+                let double = number.doubleValue
+                if double.isFinite {
+                    try container.encode(double)
+                } else {
+                    try container.encodeNil()
+                }
+            } else if let int = Int64(number.stringValue) {
+                try container.encode(int)
+            } else if let uint = UInt64(number.stringValue) {
+                try container.encode(uint)
+            } else {
+                try container.encodeNil()
+            }
+            return
+        }
+
         switch value {
         case let bool as Bool:
             try container.encode(bool)
