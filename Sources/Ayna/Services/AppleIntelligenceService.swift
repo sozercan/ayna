@@ -35,7 +35,7 @@ enum AppleIntelligenceError: LocalizedError {
     }
 }
 
-#if canImport(FoundationModels)
+#if canImport(FoundationModels) && !os(watchOS)
     import FoundationModels
 
     @available(macOS 26.0, iOS 26.0, *)

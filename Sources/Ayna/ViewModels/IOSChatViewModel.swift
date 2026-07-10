@@ -1153,6 +1153,7 @@ extension IOSChatViewModel {
             models: models, userMessageId: userMessage.id, responseGroupId: responseGroupId,
             messageIds: &messageIds, placeholderMessages: &placeholderMessages
         )
+        let messageIdsByModel = messageIds
         conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
 
         guard let updatedConversation = conversation else {
@@ -1176,7 +1177,7 @@ extension IOSChatViewModel {
                     self.processMultiModelChunk(
                         model: model,
                         chunk: chunk,
-                        messageIds: messageIds,
+                        messageIds: messageIdsByModel,
                         conversationId: conversationId
                     )
                 }
@@ -1187,7 +1188,7 @@ extension IOSChatViewModel {
                     guard let self = selfRef else { return }
                     self.processMultiModelCompletion(
                         model: model,
-                        messageIds: messageIds,
+                        messageIds: messageIdsByModel,
                         conversationId: conversationId,
                         responseGroupId: responseGroupId
                     )
@@ -1215,7 +1216,7 @@ extension IOSChatViewModel {
                     self.processMultiModelError(
                         model: model,
                         error: error,
-                        messageIds: messageIds,
+                        messageIds: messageIdsByModel,
                         conversationId: conversationId,
                         responseGroupId: responseGroupId
                     )
