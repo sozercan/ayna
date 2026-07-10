@@ -64,9 +64,15 @@ struct MacSidebarView: View {
         VStack(spacing: 0) {
             // Search Box - iMessage style with liquid glass on macOS 26+
             HStack(spacing: Spacing.sm) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Theme.textTertiary)
-                    .font(.system(size: 15, weight: .regular))
+                Button {
+                    isSearchFieldFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Theme.textTertiary)
+                        .font(.system(size: 15, weight: .regular))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Focus search")
 
                 ZStack(alignment: .leading) {
                     if searchText.isEmpty {
@@ -100,10 +106,6 @@ struct MacSidebarView: View {
             }
             .padding(.horizontal, Spacing.sm)
             .frame(height: 30)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                isSearchFieldFocused = true
-            }
             .modifier(IMessageSearchBarStyle())
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.md)
@@ -258,7 +260,7 @@ struct ConversationRow: View {
     }()
 
     private var lastMessagePreview: String {
-        conversation.metadataPreview ?? conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
+        conversation.metadataPreview ?? conversation.messages.last?.content ?? "No messages"
     }
 
     private var timeString: String {

@@ -435,8 +435,11 @@ struct MacChatView: View {
     }
 
     private func exportConversation(format: ExportFormat) async {
-        let conversationForExport = await conversationManager.ensureConversationLoaded(currentConversation.id)
-            ?? currentConversation
+        guard let conversationForExport = await conversationManager.ensureConversationLoaded(currentConversation.id) else {
+            logChat("❌ Cannot export conversation: failed to load conversation history", level: .error)
+            errorMessage = "Could not load this conversation for export. Please try again."
+            return
+        }
 
         let url: URL?
         switch format {

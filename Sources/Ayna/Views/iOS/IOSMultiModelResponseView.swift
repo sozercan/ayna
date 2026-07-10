@@ -262,6 +262,11 @@ struct IOSMultiModelResponseCard: View {
         .onChange(of: message.content) { _, newContent in
             scheduleParse(for: newContent)
         }
+        .onChange(of: isStreaming) { wasStreaming, isStreaming in
+            if wasStreaming, !isStreaming {
+                scheduleParse(for: message.content)
+            }
+        }
         .onChange(of: message.imageData) { _, newImageData in
             // Reload image when imageData changes
             if newImageData != nil {

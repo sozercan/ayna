@@ -275,9 +275,10 @@ final class ConversationManager: ObservableObject {
 
             conversations = reconciled
             metadataOnlyConversationIds = nextMetadataOnlyIds
-            metadataSearchTextById = Dictionary(
-                uniqueKeysWithValues: metadataFromDisk.map { ($0.id, $0.searchableText) }
-            )
+            metadataSearchTextById = metadataFromDisk.reduce(into: [:]) { searchTextById, metadata in
+                guard nextMetadataOnlyIds.contains(metadata.id) else { return }
+                searchTextById[metadata.id] = metadata.searchableText
+            }
 
             // If selected conversation no longer exists, clear selection
             if let selectedId = selectedConversationId,
@@ -1353,7 +1354,7 @@ final class ConversationManager: ObservableObject {
         #endif
     }
 
-    private func verifiedSearchResults(
+    func verifiedSearchResults(
         conversations: [Conversation],
         query: String,
         metadataSearchTextById: [UUID: String],
@@ -1381,7 +1382,6 @@ final class ConversationManager: ObservableObject {
                 metadataOnlyConversationIds: metadataOnlyConversationIds,
                 spotlightIds: spotlightIds
             ) else {
-                results.append(conversation)
                 continue
             }
 

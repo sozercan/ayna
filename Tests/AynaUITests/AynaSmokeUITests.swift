@@ -51,13 +51,23 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Title should be the message content
         let title = "Message with \(uniqueKeyword)"
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10))
+        let rowIdentifierPrefix = "sidebar.conversationRow."
+        let matchingTitlePrefix = String(title.prefix(16))
+        let matchingRowTitlePredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value BEGINSWITH %@",
+            rowIdentifierPrefix,
+            matchingTitlePrefix
+        )
+        let matchingRowTitle = app.staticTexts.matching(matchingRowTitlePredicate).firstMatch
+        XCTAssertTrue(matchingRowTitle.waitForExistence(timeout: 10))
+        let matchingRowIdentifier = matchingRowTitle.identifier
 
         // Create another one
         composeInitialMessageAndSend("Another conversation")
         let otherTitle = "Another conversation"
         let sidebarTitlePredicate = NSPredicate(
             format: "identifier BEGINSWITH %@ AND value == %@",
-            "sidebar.conversationRow.",
+            rowIdentifierPrefix,
             otherTitle
         )
         let nonMatchingTitles = app.staticTexts.matching(sidebarTitlePredicate)
@@ -69,16 +79,26 @@ final class AynaSmokeUITests: AynaUITestCase {
         searchField.click()
         searchField.typeText(uniqueKeyword)
 
-        // Verify filtering by requiring the known non-matching sidebar title to disappear.
-        // The matching row remains visible, but SwiftUI exposes filtered macOS List
-        // containers/row titles inconsistently on CI when text is truncated.
-        let titleDisappeared = XCTNSPredicateExpectation(
+        // SwiftUI can recycle the accessibility element for a removed List row,
+        // so re-query all current sidebar row identifiers until only the matching
+        // conversation remains.
+        let rowIdentifierPredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@",
+            rowIdentifierPrefix
+        )
+        let rowsFiltered = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                !self.app.staticTexts.matching(sidebarTitlePredicate).firstMatch.exists
+                let visibleRowIdentifiers = Set(
+                    self.app.staticTexts
+                        .matching(rowIdentifierPredicate)
+                        .allElementsBoundByIndex
+                        .map(\.identifier)
+                )
+                return visibleRowIdentifiers == Set([matchingRowIdentifier])
             },
             object: app
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [titleDisappeared], timeout: 2), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [rowsFiltered], timeout: 5), .completed)
         XCTAssertFalse(app.staticTexts["No results found"].exists)
     }
 

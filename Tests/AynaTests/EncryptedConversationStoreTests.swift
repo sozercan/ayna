@@ -336,6 +336,17 @@ struct EncryptedConversationStoreTests {
         #expect(metadata.searchableText == "Legacy Metadata")
     }
 
+    @Test("Metadata preview uses the true latest message")
+    func metadataPreviewUsesTheTrueLatestMessage() {
+        var conversation = Conversation(title: "Latest Preview")
+        conversation.addMessage(Message(role: .assistant, content: "Older assistant reply"))
+        conversation.addMessage(Message(role: .user, content: "Latest unanswered prompt"))
+
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.lastMessagePreview == "Latest unanswered prompt")
+    }
+
     @Test("Metadata searchable text includes older messages up to cap")
     func metadataSearchableTextIncludesOlderMessagesUpToCap() {
         var conversation = Conversation(title: "Searchable")

@@ -129,9 +129,16 @@ private enum WatchMessageKeys {
                 for conversation in recentConversations {
                     guard self.syncGeneration == generation else { return }
 
-                    if self.conversationManager?.isMetadataOnlyConversation(conversation.id) == true,
-                       let hydrated = await self.conversationManager?.ensureConversationLoaded(conversation.id)
-                    {
+                    if self.conversationManager?.isMetadataOnlyConversation(conversation.id) == true {
+                        guard let hydrated = await self.conversationManager?.ensureConversationLoaded(conversation.id) else {
+                            DiagnosticsLogger.log(
+                                .watchConnectivity,
+                                level: .error,
+                                message: "Skipping conversation in Watch sync because hydration failed",
+                                metadata: ["conversationId": conversation.id.uuidString]
+                            )
+                            continue
+                        }
                         guard self.syncGeneration == generation else { return }
                         conversationsForSync.append(hydrated)
                     } else {

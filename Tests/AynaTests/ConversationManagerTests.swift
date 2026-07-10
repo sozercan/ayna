@@ -412,6 +412,42 @@ struct ConversationManagerTests {
         manager.clearAllConversations()
     }
 
+    @Test("Reload ignores stale sidecar text for dirty full conversation")
+    @MainActor
+    func reloadIgnoresStaleSidecarTextForDirtyFullConversation() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-dirty-search-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        var conversation = Conversation(title: "Searchable")
+        conversation.addMessage(Message(role: .user, content: "old deleted term"))
+        try await store.save(conversation)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+        let hydrated = try #require(await manager.ensureConversationLoaded(conversation.id))
+        let messageId = try #require(hydrated.messages.first?.id)
+
+        #expect(manager.editMessage(in: hydrated, messageId: messageId, newContent: "current replacement"))
+        try await Task.sleep(for: .milliseconds(50))
+
+        await manager.reloadConversations()
+
+        #expect(manager.searchConversations(query: "old deleted term").isEmpty)
+        #expect(manager.searchConversations(query: "current replacement").map(\.id) == [conversation.id])
+
+        let staleSpotlightResults = await manager.verifiedSearchResults(
+            conversations: manager.conversations,
+            query: "old deleted term",
+            metadataSearchTextById: [:],
+            metadataOnlyConversationIds: [],
+            spotlightIds: [conversation.id]
+        )
+        #expect(staleSpotlightResults.isEmpty)
+
+        manager.clearAllConversations()
+    }
+
     // MARK: - Edit Message Tests
 
     @Test("Edit message updates content and marks as edited")

@@ -403,7 +403,7 @@ struct ConversationRow: View {
     }()
 
     var lastMessagePreview: String {
-        conversation.metadataPreview ?? conversation.messages.last(where: { $0.role == .assistant })?.content ?? "No messages"
+        conversation.metadataPreview ?? conversation.messages.last?.content ?? "No messages"
     }
 
     var timeString: String {

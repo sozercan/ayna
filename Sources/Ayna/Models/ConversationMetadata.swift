@@ -117,7 +117,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     }
 
     private static func previewText(from conversation: Conversation) -> String {
-        let previewSource = conversation.messages.last(where: { $0.role == .assistant })
+        let previewSource = conversation.messages.last
         guard let content = previewSource?.content, !content.isEmpty else { return "" }
         return String(content.prefix(240))
     }
