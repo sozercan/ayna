@@ -47,10 +47,13 @@ import Testing
             )
 
             #expect(fixture.manager.conversations.first?.messages.first?.content == "")
+            #expect(fixture.viewModel.messageContentRevision == 0)
 
             try await Task.sleep(for: .milliseconds(120))
 
             #expect(fixture.manager.conversations.first?.messages.first?.content == "Hello")
+            #expect(fixture.manager.conversations.first?.messages.last?.content == "")
+            #expect(fixture.viewModel.messageContentRevision == 1)
         }
 
         @Test("Model completion flushes pending chunks immediately", .timeLimit(.minutes(1)))
@@ -74,6 +77,7 @@ import Testing
 
             #expect(fixture.manager.conversations.first?.messages.first?.content == "Done")
             #expect(fixture.manager.conversations.first?.responseGroups.first?.responses.first?.status == .completed)
+            #expect(fixture.viewModel.messageContentRevision == 1)
         }
 
         private func makeFixture() async throws -> Fixture {
@@ -87,8 +91,11 @@ import Testing
             let responseGroupId = UUID()
             let userMessageId = UUID()
             let model = "test-model-a"
+            let trailingModel = "test-model-b"
+            let trailingMessageId = UUID()
             var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
             responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
+            responseGroup.addResponse(messageId: trailingMessageId, modelName: trailingModel, status: .streaming)
             let assistantMessage = Message(
                 id: messageId,
                 role: .assistant,
@@ -96,10 +103,17 @@ import Testing
                 model: model,
                 responseGroupId: responseGroupId
             )
+            let trailingAssistantMessage = Message(
+                id: trailingMessageId,
+                role: .assistant,
+                content: "",
+                model: trailingModel,
+                responseGroupId: responseGroupId
+            )
             let conversation = Conversation(
                 id: conversationId,
                 title: "Streaming Coalescing",
-                messages: [assistantMessage],
+                messages: [assistantMessage, trailingAssistantMessage],
                 model: model,
                 responseGroups: [responseGroup]
             )

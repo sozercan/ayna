@@ -45,6 +45,7 @@ struct MacChatView: View {
     @State private var isComposerFocused = true
     @State private var toolChainTimeoutTask: Task<Void, Never>?
     @State private var showingSystemPromptSheet = false
+    @State private var isPreparingMessageSend = false
 
     // Multi-model support (unified selection - 1 model = single, 2+ = multi)
     @State private var selectedModels: Set<String> = []
@@ -708,6 +709,13 @@ struct MacChatView: View {
             isComposerFocused = true
             return
         }
+
+        guard !isPreparingMessageSend else {
+            logChat("⏳ Ignoring duplicate send while message preparation is in progress", level: .info)
+            return
+        }
+        isPreparingMessageSend = true
+        defer { isPreparingMessageSend = false }
 
         if conversationManager.isMetadataOnlyConversation(conversation.id) {
             guard await conversationManager.ensureConversationLoaded(conversation.id) != nil else {

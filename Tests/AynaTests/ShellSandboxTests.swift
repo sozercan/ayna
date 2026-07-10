@@ -501,6 +501,27 @@ struct ShellSandboxTests {
         }
     }
 
+    @Test("Project root symlink retarget updates working-directory boundary")
+    func projectRootSymlinkRetargetUpdatesWorkingDirectoryBoundary() throws {
+        let tempRoot = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let oldTarget = tempRoot.appendingPathComponent("old-project")
+        let newTarget = tempRoot.appendingPathComponent("new-project")
+        try FileManager.default.createDirectory(at: oldTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newTarget, withIntermediateDirectories: true)
+
+        let projectRoot = tempRoot.appendingPathComponent("project")
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: oldTarget)
+        let sandbox = ShellSandbox(projectRoot: projectRoot)
+
+        try FileManager.default.removeItem(at: projectRoot)
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: newTarget)
+
+        #expect(!sandbox.isWorkingDirectoryAllowed(oldTarget.path))
+        #expect(sandbox.isWorkingDirectoryAllowed(newTarget.path))
+    }
+
     // MARK: - Bulk Validation Checks
 
     @Test("Bulk shell validation classifications stay stable")

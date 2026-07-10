@@ -303,6 +303,38 @@ struct PathValidatorTests {
         }
     }
 
+    @Test("Project root symlink retarget updates write boundary")
+    func projectRootSymlinkRetargetUpdatesWriteBoundary() throws {
+        let tempRoot = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let oldTarget = tempRoot.appendingPathComponent("old-project")
+        let newTarget = tempRoot.appendingPathComponent("new-project")
+        try FileManager.default.createDirectory(at: oldTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newTarget, withIntermediateDirectories: true)
+
+        let projectRoot = tempRoot.appendingPathComponent("project")
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: oldTarget)
+        let validator = PathValidator(projectRoot: projectRoot, protectedPaths: [], sensitiveFilenames: [])
+
+        try FileManager.default.removeItem(at: projectRoot)
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: newTarget)
+
+        let oldTargetResult = validator.validate(
+            oldTarget.appendingPathComponent("Sources/Old.swift").path,
+            operation: .write
+        )
+        let newTargetResult = validator.validate(
+            newTarget.appendingPathComponent("Sources/New.swift").path,
+            operation: .write
+        )
+
+        #expect(oldTargetResult == .requiresApproval(reason: "Path outside project directory"))
+        #expect(newTargetResult == .allowed)
+        #expect(!validator.isWithinProject(oldTarget.path))
+        #expect(validator.isWithinProject(newTarget.path))
+    }
+
     // MARK: - Bulk Validation Checks
 
     @Test("Bulk path validation classifications stay stable")

@@ -21,8 +21,6 @@ struct PathValidator {
     let protectedPaths: [String]
     let sensitiveFilenames: Set<String>
 
-    private let projectRootComponents: [String]?
-
     private static let environmentVariableRegex = try! NSRegularExpression(
         pattern: #"\$([A-Za-z_][A-Za-z0-9_]*)"#,
         options: []
@@ -74,7 +72,6 @@ struct PathValidator {
         self.projectRoot = projectRoot
         self.protectedPaths = protectedPaths
         self.sensitiveFilenames = sensitiveFilenames
-        self.projectRootComponents = projectRoot.map { Self.canonicalPathComponents(for: $0) }
     }
 
     // MARK: - Validation
@@ -151,7 +148,7 @@ struct PathValidator {
         // Step 6: For write/execute operations, check project boundary
         if operation == .write || operation == .execute {
             if requireApprovalOutsideProject, let projectRoot {
-                let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
+                let rootComponents = Self.canonicalPathComponents(for: projectRoot)
                 if !Self.pathComponents(pathComponents, startWith: rootComponents) {
                     return .requiresApproval(reason: "Path outside project directory")
                 }
@@ -179,7 +176,7 @@ struct PathValidator {
         guard let projectRoot else { return false }
         guard let canonical = canonicalize(path) else { return false }
 
-        let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
+        let rootComponents = Self.canonicalPathComponents(for: projectRoot)
         return Self.pathComponents(canonical.pathComponents, startWith: rootComponents)
     }
 

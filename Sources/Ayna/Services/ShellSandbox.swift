@@ -23,7 +23,6 @@ struct ShellSandbox {
     let restrictToProjectDirectory: Bool
 
     private let blockedPatternRules: [BlockedPatternRule]
-    private let projectRootComponents: [String]?
 
     private struct BlockedPatternRule {
         let pattern: String
@@ -142,7 +141,6 @@ struct ShellSandbox {
         self.allowUnlistedCommands = allowUnlistedCommands
         self.restrictToProjectDirectory = restrictToProjectDirectory
         self.blockedPatternRules = blockedPatterns.map(BlockedPatternRule.init)
-        self.projectRootComponents = projectRoot.map { Self.canonicalPathComponents(for: $0) }
     }
 
     // MARK: - Validation
@@ -217,7 +215,7 @@ struct ShellSandbox {
         }
 
         let pathComponents = Self.canonicalPathComponents(forPath: path)
-        let rootComponents = projectRootComponents ?? Self.canonicalPathComponents(for: projectRoot)
+        let rootComponents = Self.canonicalPathComponents(for: projectRoot)
 
         return Self.pathComponents(pathComponents, startWith: rootComponents)
     }

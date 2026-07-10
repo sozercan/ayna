@@ -34,6 +34,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
     @Published var attachedImages: [UIImage] = []
+    @Published private(set) var messageContentRevision = 0
 
     /// The name of the tool currently being executed (for UI indicator)
     @Published var currentToolName: String?
@@ -1200,7 +1201,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             chunk: chunk
         )
 
-        if !success {
+        if success {
+            messageContentRevision &+= 1
+        } else {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,

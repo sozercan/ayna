@@ -66,7 +66,12 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Verify filtering by requiring the known non-matching sidebar title to disappear.
         // The matching row remains visible, but SwiftUI exposes filtered macOS List
         // containers/row titles inconsistently on CI when text is truncated.
-        XCTAssertFalse(app.staticTexts[otherTitle].waitForExistence(timeout: 2))
+        let nonMatchingTitle = app.staticTexts[otherTitle]
+        let titleDisappeared = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: nonMatchingTitle
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [titleDisappeared], timeout: 2), .completed)
         XCTAssertFalse(app.staticTexts["No results found"].exists)
     }
 
