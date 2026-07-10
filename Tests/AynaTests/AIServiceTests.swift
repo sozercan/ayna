@@ -293,6 +293,38 @@ struct AIServiceTests {
         #expect(!backgroundProvider.isCancelled)
     }
 
+    @Test("Anthropic multi-model requests remain independently tracked")
+    func anthropicMultiModelRequestsRemainIndependentlyTracked() throws {
+        let factory = ControllableAnthropicProviderFactory()
+        let service = makeService { _ in
+            factory.makeProvider()
+        }
+        let models = ["claude-a", "claude-b"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .anthropic
+            service.modelAPIKeys[model] = "sk-ant-unit-test"
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Compare")],
+                model: model,
+                stream: true,
+                isMultiModelRequest: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+        }
+
+        let providers = factory.providers
+        #expect(providers.count == models.count)
+        #expect(providers.allSatisfy { !$0.isCancelled })
+
+        service.cancelCurrentRequest()
+
+        #expect(providers.allSatisfy { $0.isCancelled })
+    }
+
     @Test("Send message parses structured content response", .timeLimit(.minutes(1)))
     func sendMessageParsesStructuredContentResponse() async {
         let service = makeService()

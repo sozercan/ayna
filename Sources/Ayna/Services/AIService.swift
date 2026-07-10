@@ -75,6 +75,7 @@ class AIService: ObservableObject {
     private var currentAnthropicProvider: (any AIProviderProtocol)?
     private var currentAnthropicRequestID: UUID?
     private var untrackedAnthropicProviders: [UUID: any AIProviderProtocol] = [:]
+    private var multiModelAnthropicProviders: [UUID: any AIProviderProtocol] = [:]
 
     @Published var provider: AIProvider {
         didSet {
@@ -658,6 +659,10 @@ class AIService: ObservableObject {
             )
         }
         multiModelStreamTasks.removeAll()
+        for provider in multiModelAnthropicProviders.values {
+            provider.cancelRequest()
+        }
+        multiModelAnthropicProviders.removeAll()
         // Cancel Anthropic provider and clear reference to prevent memory leak
         currentAnthropicProvider?.cancelRequest()
         currentAnthropicProvider = nil
@@ -907,6 +912,7 @@ class AIService: ObservableObject {
                 stream: stream,
                 tools: tools,
                 conversationId: conversationId,
+                isMultiModelRequest: isMultiModelRequest,
                 tracksCurrentRequest: tracksCurrentRequest,
                 callbacks: anthropicCallbacks
             )
@@ -1133,6 +1139,10 @@ class AIService: ObservableObject {
             task.cancel()
         }
         multiModelStreamTasks.removeAll()
+        for provider in multiModelAnthropicProviders.values {
+            provider.cancelRequest()
+        }
+        multiModelAnthropicProviders.removeAll()
 
         // Use a TaskGroup to send requests in parallel
         let task = Task {
@@ -1264,6 +1274,7 @@ class AIService: ObservableObject {
                 self.multiModelTask = nil
                 self.multiModelRequestBuildTasks.removeAll()
                 self.multiModelStreamTasks.removeAll()
+                self.multiModelAnthropicProviders.removeAll()
                 DiagnosticsLogger.log(
                     .aiService,
                     level: .info,
@@ -2290,6 +2301,7 @@ class AIService: ObservableObject {
         stream: Bool,
         tools: [[String: Any]]?,
         conversationId: UUID?,
+        isMultiModelRequest: Bool,
         tracksCurrentRequest: Bool,
         callbacks: AIProviderStreamCallbacks
     ) {
@@ -2328,7 +2340,9 @@ class AIService: ObservableObject {
         // Store provider to prevent deallocation during streaming
         let requestID = UUID()
         let provider = anthropicProviderFactory(urlSession)
-        if tracksCurrentRequest {
+        if isMultiModelRequest {
+            multiModelAnthropicProviders[requestID] = provider
+        } else if tracksCurrentRequest {
             currentAnthropicProvider?.cancelRequest()
             currentAnthropicProvider = provider
             currentAnthropicRequestID = requestID
@@ -2338,7 +2352,11 @@ class AIService: ObservableObject {
 
         let finishRequest: @Sendable () -> Void = { [weak self] in
             Task { @MainActor in
-                self?.finishAnthropicRequest(requestID, tracksCurrentRequest: tracksCurrentRequest)
+                self?.finishAnthropicRequest(
+                    requestID,
+                    isMultiModelRequest: isMultiModelRequest,
+                    tracksCurrentRequest: tracksCurrentRequest
+                )
             }
         }
 
@@ -2366,8 +2384,14 @@ class AIService: ObservableObject {
         )
     }
 
-    private func finishAnthropicRequest(_ requestID: UUID, tracksCurrentRequest: Bool) {
-        if tracksCurrentRequest {
+    private func finishAnthropicRequest(
+        _ requestID: UUID,
+        isMultiModelRequest: Bool,
+        tracksCurrentRequest: Bool
+    ) {
+        if isMultiModelRequest {
+            multiModelAnthropicProviders.removeValue(forKey: requestID)
+        } else if tracksCurrentRequest {
             guard currentAnthropicRequestID == requestID else { return }
             currentAnthropicProvider = nil
             currentAnthropicRequestID = nil
