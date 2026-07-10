@@ -119,6 +119,10 @@ struct Conversation: Identifiable, Equatable, Sendable {
         case multiModelEnabled, activeModels, responseGroups
     }
 
+    private enum LegacyCodingKeys: String, CodingKey {
+        case systemPrompt
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -127,7 +131,18 @@ struct Conversation: Identifiable, Equatable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         model = try container.decode(String.self, forKey: .model)
-        systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
+        if container.contains(.systemPromptMode) {
+            systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
+        } else {
+            let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            if let legacySystemPrompt = try legacyContainer.decodeIfPresent(String.self, forKey: .systemPrompt),
+               !legacySystemPrompt.isEmpty
+            {
+                systemPromptMode = .custom(legacySystemPrompt)
+            } else {
+                systemPromptMode = .inheritGlobal
+            }
+        }
         temperature = try container.decode(Double.self, forKey: .temperature)
         // Provide defaults for new multi-model fields (backward compatibility)
         multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
