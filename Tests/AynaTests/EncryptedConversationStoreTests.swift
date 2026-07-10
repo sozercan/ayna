@@ -1,4 +1,5 @@
 @testable import Ayna
+import CryptoKit
 import Foundation
 import Testing
 
@@ -132,6 +133,46 @@ struct EncryptedConversationStoreTests {
         #expect(metadata.isEmpty)
         #expect(counts.dataReads == 0)
         #expect(counts.stringReads == 0)
+    }
+
+    @Test("Legacy metadata migration deduplicates conversation IDs with last entry winning")
+    func legacyMetadataMigrationDeduplicatesConversationIDsWithLastEntryWinning() async throws {
+        let tempRoot = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let directory = tempRoot.appendingPathComponent("Conversations", isDirectory: true)
+        let legacyFileURL = tempRoot.appendingPathComponent("conversations.enc")
+        let keyIdentifier = UUID().uuidString
+        let keychain = InMemoryKeychainStorage()
+        let key = SymmetricKey(size: .bits256)
+        let keyData = key.withUnsafeBytes { Data($0) }
+        try keychain.setData(keyData, for: keyIdentifier)
+        try keychain.setString("1", for: "\(keyIdentifier)_initialized")
+
+        let conversationId = UUID()
+        var older = TestHelpers.sampleConversation(id: conversationId, title: "Older Duplicate")
+        older.updatedAt = Date(timeIntervalSinceReferenceDate: 100)
+        var newer = TestHelpers.sampleConversation(id: conversationId, title: "Newer Duplicate")
+        newer.updatedAt = Date(timeIntervalSinceReferenceDate: 200)
+
+        let encoded = try JSONEncoder().encode([older, newer])
+        let sealed = try AES.GCM.seal(encoded, using: key)
+        let encrypted = try #require(sealed.combined)
+        try encrypted.write(to: legacyFileURL, options: .atomic)
+
+        let store = EncryptedConversationStore(
+            directoryURL: directory,
+            legacyFileURL: legacyFileURL,
+            keyIdentifier: keyIdentifier,
+            keychain: keychain
+        )
+        let metadata = try await store.loadConversationMetadata()
+        let migrated = try #require(try await store.loadConversation(id: conversationId))
+
+        #expect(metadata.count == 1)
+        #expect(metadata.first?.title == "Newer Duplicate")
+        #expect(migrated.title == "Newer Duplicate")
+        #expect(!FileManager.default.fileExists(atPath: legacyFileURL.path))
     }
 
     @Test("Encryption key is cached across repeated save and load operations")

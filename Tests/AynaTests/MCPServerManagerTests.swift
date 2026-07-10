@@ -178,8 +178,8 @@ struct MCPServerManagerTests {
         let stub = StubMCPService(config: config)
         stub.listToolsResult = .success([tool])
         stub.listResourcesResult = .success([resource])
-        stub.listToolsDelay = .milliseconds(300)
-        stub.listResourcesDelay = .milliseconds(300)
+        let overlapProbe = DiscoveryOverlapProbe()
+        stub.discoveryOverlapProbe = overlapProbe
 
         let manager = MCPServerManager(
             serviceFactory: { _ in stub },
@@ -189,11 +189,10 @@ struct MCPServerManagerTests {
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
 
-        let start = Date()
         await manager.connectToServer(config)
-        let elapsed = Date().timeIntervalSince(start)
+        let didOverlap = await overlapProbe.didOverlap()
 
-        print("BENCH mcp.discovery.singleServerConcurrent seconds=\(elapsed) sequentialFloor=0.60")
+        #expect(didOverlap)
         #expect(stub.listToolsCallCount == 1)
         #expect(stub.listResourcesCallCount == 1)
         #expect(manager.availableTools == [tool])
@@ -242,6 +241,33 @@ private func makeTool(name: String, serverName: String) -> MCPTool {
 
 private enum MCPTestError: Error {
     case expected
+    case discoveryDidNotOverlap
+}
+
+private actor DiscoveryOverlapProbe {
+    enum Operation: CaseIterable, Hashable {
+        case tools
+        case resources
+    }
+
+    private var enteredOperations: Set<Operation> = []
+
+    func enterAndWaitForOverlap(_ operation: Operation) async throws {
+        enteredOperations.insert(operation)
+
+        for _ in 0 ..< 100 {
+            if enteredOperations.count == Operation.allCases.count {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        throw MCPTestError.discoveryDidNotOverlap
+    }
+
+    func didOverlap() -> Bool {
+        enteredOperations.count == Operation.allCases.count
+    }
 }
 
 private final class StubMCPService: MCPServicing, @unchecked Sendable {
@@ -258,8 +284,7 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
     var listResourcesCallCount = 0
     var listToolsResult: Result<[MCPTool], Error> = .success([])
     var listResourcesResult: Result<[MCPResource], Error> = .success([])
-    var listToolsDelay: Duration = .zero
-    var listResourcesDelay: Duration = .zero
+    var discoveryOverlapProbe: DiscoveryOverlapProbe?
     var onConnect: (() -> Void)?
 
     init(config: MCPServerConfig, connectResults: [Result<Void, Error>] = [.success(())]) {
@@ -287,13 +312,13 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
 
     func listTools() async throws -> [MCPTool] {
         listToolsCallCount += 1
-        try await Task.sleep(for: listToolsDelay)
+        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.tools)
         return try listToolsResult.get()
     }
 
     func listResources() async throws -> [MCPResource] {
         listResourcesCallCount += 1
-        try await Task.sleep(for: listResourcesDelay)
+        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.resources)
         return try listResourcesResult.get()
     }
 

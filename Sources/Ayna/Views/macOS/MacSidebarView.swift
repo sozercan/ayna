@@ -24,15 +24,7 @@ struct MacSidebarView: View {
             return conversationManager.conversations.sorted { $0.updatedAt > $1.updatedAt }
         }
 
-        var uniqueConversations: [UUID: Conversation] = [:]
-        for conversation in conversationManager.searchConversations(query: searchText) {
-            uniqueConversations[conversation.id] = conversation
-        }
-        for conversation in searchResults {
-            uniqueConversations[conversation.id] = conversation
-        }
-
-        return uniqueConversations.values.sorted { $0.updatedAt > $1.updatedAt }
+        return searchResults.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var timelineSections: [ConversationTimelineSection] {

@@ -110,6 +110,7 @@ struct PersistenceColdLoadBenchmarkTests {
     @Test("Encrypted store loads many full conversations", .timeLimit(.minutes(1)))
     func encryptedStoreLoadsManyFullConversations() async throws {
         let fixture = try await Self.makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let coldStore = TestHelpers.makeTestStore(
             directory: fixture.directory,
             keyIdentifier: fixture.keyIdentifier,
@@ -130,6 +131,7 @@ struct PersistenceColdLoadBenchmarkTests {
     @Test("Encrypted store loads many conversation metadata sidecars", .timeLimit(.minutes(1)))
     func encryptedStoreLoadsManyConversationMetadataSidecars() async throws {
         let fixture = try await Self.makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let coldStore = TestHelpers.makeTestStore(
             directory: fixture.directory,
             keyIdentifier: fixture.keyIdentifier,

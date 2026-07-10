@@ -79,6 +79,7 @@ final class EncryptedConversationStore: Sendable {
 
     init(
         directoryURL: URL? = nil,
+        legacyFileURL: URL? = nil,
         keyIdentifier: String = "conversation_encryption_key",
         keychain: KeychainStoring = KeychainStorage.standard
     ) {
@@ -107,7 +108,7 @@ final class EncryptedConversationStore: Sendable {
             )
         }
 
-        legacyFileURL = baseDirectory.appendingPathComponent("conversations.enc")
+        self.legacyFileURL = legacyFileURL ?? baseDirectory.appendingPathComponent("conversations.enc")
         self.keyIdentifier = keyIdentifier
         self.keychain = keychain
         encryptionKeyCache = EncryptionKeyCache(keyIdentifier: keyIdentifier, keychain: keychain)
@@ -135,8 +136,8 @@ final class EncryptedConversationStore: Sendable {
                     .encryptedStore, level: .info, message: "Found legacy conversation file, migrating..."
                 )
                 do {
-                    let conversations = try Self.loadLegacyFile(
-                        at: legacyFileURL, keyData: keyData
+                    let conversations = Self.deduplicatedLegacyConversations(
+                        try Self.loadLegacyFile(at: legacyFileURL, keyData: keyData)
                     )
                     // Save all to new format
                     for conversation in conversations {
@@ -219,7 +220,9 @@ final class EncryptedConversationStore: Sendable {
             // sidecar records instead of full message histories.
             if FileManager.default.fileExists(atPath: legacyFileURL.path) {
                 let keyData = try keyCache.keyData()
-                let conversations = try Self.loadLegacyFile(at: legacyFileURL, keyData: keyData)
+                let conversations = Self.deduplicatedLegacyConversations(
+                    try Self.loadLegacyFile(at: legacyFileURL, keyData: keyData)
+                )
                 for conversation in conversations {
                     try Self.save(
                         conversation,
@@ -361,6 +364,26 @@ final class EncryptedConversationStore: Sendable {
         let key = SymmetricKey(data: keyData)
         let plaintext = try AES.GCM.open(box, using: key)
         return try JSONDecoder().decode([Conversation].self, from: plaintext)
+    }
+
+    private nonisolated static func deduplicatedLegacyConversations(
+        _ conversations: [Conversation]
+    ) -> [Conversation] {
+        var result: [Conversation] = []
+        result.reserveCapacity(conversations.count)
+        var indexById: [UUID: Int] = [:]
+        indexById.reserveCapacity(conversations.count)
+
+        for conversation in conversations {
+            if let index = indexById[conversation.id] {
+                result[index] = conversation
+            } else {
+                indexById[conversation.id] = result.count
+                result.append(conversation)
+            }
+        }
+
+        return result
     }
 
     private nonisolated static func load(from url: URL, keyData: Data) throws -> Conversation {
