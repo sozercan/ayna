@@ -7,14 +7,7 @@ import Testing
 struct RequestBuilderAsyncTests {
     @Test("Async request builder resolves local-path image data off the synchronous payload path")
     func asyncRequestBuilderResolvesLocalPathImageDataOffSynchronousPayloadPath() async throws {
-        let originalAsyncLoader = Message.attachmentAsyncLoader
-        defer { Message.attachmentAsyncLoader = originalAsyncLoader }
-
         let imageData = Self.pngData(byteCount: 4096)
-        Message.attachmentAsyncLoader = { path in
-            path == "benchmark-local-image" ? imageData : nil
-        }
-
         let attachment = Message.FileAttachment(
             fileName: "local.png",
             mimeType: "image/png",
@@ -29,7 +22,10 @@ struct RequestBuilderAsyncTests {
             model: "gpt-4o",
             stream: true,
             apiKey: "test-key",
-            isAzure: false
+            isAzure: false,
+            attachmentDataLoader: { path in
+                path == "benchmark-local-image" ? imageData : nil
+            }
         )
 
         let request = try #require(maybeRequest)

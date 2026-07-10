@@ -123,16 +123,59 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     }
 
     private static func searchText(from conversation: Conversation) -> String {
-        var parts = [conversation.title]
-        parts.append(contentsOf: conversation.messages.map(\.content))
-        let fullText = parts.joined(separator: "\n")
         let maxSearchTextLength = 12000
-        guard fullText.count > maxSearchTextLength else { return fullText }
-
         let headCount = maxSearchTextLength / 2
         let tailCount = maxSearchTextLength - headCount
-        let headEnd = fullText.index(fullText.startIndex, offsetBy: headCount)
-        let tailStart = fullText.index(fullText.endIndex, offsetBy: -tailCount)
-        return "\(fullText[..<headEnd])\n…\n\(fullText[tailStart...])"
+        var completeText = ""
+        completeText.reserveCapacity(maxSearchTextLength)
+        var completeTextCount = 0
+        var head = ""
+        head.reserveCapacity(headCount)
+        var headCharacterCount = 0
+        var tail = ""
+        tail.reserveCapacity(tailCount)
+        var tailCharacterCount = 0
+        var exceededLimit = false
+
+        func append(_ segment: String) {
+            let segmentCount = segment.count
+
+            if !exceededLimit {
+                if completeTextCount + segmentCount <= maxSearchTextLength {
+                    completeText.append(segment)
+                    completeTextCount += segmentCount
+                } else {
+                    exceededLimit = true
+                    completeText.removeAll(keepingCapacity: false)
+                }
+            }
+
+            let remainingHeadCount = headCount - headCharacterCount
+            if remainingHeadCount > 0 {
+                head.append(contentsOf: segment.prefix(remainingHeadCount))
+                headCharacterCount += min(segmentCount, remainingHeadCount)
+            }
+
+            if segmentCount >= tailCount {
+                tail = String(segment.suffix(tailCount))
+                tailCharacterCount = tailCount
+            } else {
+                tail.append(segment)
+                tailCharacterCount += segmentCount
+                let overflow = tailCharacterCount - tailCount
+                if overflow > 0 {
+                    tail.removeFirst(overflow)
+                    tailCharacterCount -= overflow
+                }
+            }
+        }
+
+        append(conversation.title)
+        for message in conversation.messages {
+            append("\n")
+            append(message.content)
+        }
+
+        return exceededLimit ? "\(head)\n…\n\(tail)" : completeText
     }
 }

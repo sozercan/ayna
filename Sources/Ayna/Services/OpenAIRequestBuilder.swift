@@ -29,7 +29,12 @@ struct RequestBuilderToolDefinitions: @unchecked Sendable {
 /// Resolves request-builder attachment data without forcing body construction
 /// to use `@MainActor` synchronous attachment loaders.
 enum RequestBuilderAttachmentResolver {
-    static func resolvingImageAttachmentData(in messages: [Message]) async -> [Message] {
+    typealias AttachmentDataLoader = @Sendable (String) async -> Data?
+
+    static func resolvingImageAttachmentData(
+        in messages: [Message],
+        attachmentDataLoader: AttachmentDataLoader? = nil
+    ) async -> [Message] {
         var resolvedMessages = messages
 
         for messageIndex in resolvedMessages.indices {
@@ -39,12 +44,16 @@ enum RequestBuilderAttachmentResolver {
             for attachmentIndex in attachments.indices {
                 guard attachments[attachmentIndex].mimeType.starts(with: "image/"),
                       attachments[attachmentIndex].data == nil,
-                      attachments[attachmentIndex].localPath != nil
+                      let localPath = attachments[attachmentIndex].localPath
                 else {
                     continue
                 }
 
-                attachments[attachmentIndex].data = await attachments[attachmentIndex].loadContent()
+                if let attachmentDataLoader {
+                    attachments[attachmentIndex].data = await attachmentDataLoader(localPath)
+                } else {
+                    attachments[attachmentIndex].data = await attachments[attachmentIndex].loadContent()
+                }
                 didUpdateAttachments = true
             }
 
@@ -650,9 +659,13 @@ enum OpenAIRequestBuilder {
         tools: RequestBuilderToolDefinitions = .none,
         apiKey: String,
         isAzure: Bool,
-        isGitHubModels: Bool = false
+        isGitHubModels: Bool = false,
+        attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async -> URLRequest? {
-        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
+            in: messages,
+            attachmentDataLoader: attachmentDataLoader
+        )
         let buildTask = Task.detached(priority: .userInitiated) {
             createChatCompletionsRequest(
                 url: url,

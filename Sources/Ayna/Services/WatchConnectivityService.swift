@@ -127,9 +127,12 @@ private enum WatchMessageKeys {
                 conversationsForSync.reserveCapacity(recentConversations.count)
 
                 for conversation in recentConversations {
+                    guard self.syncGeneration == generation else { return }
+
                     if self.conversationManager?.isMetadataOnlyConversation(conversation.id) == true,
                        let hydrated = await self.conversationManager?.ensureConversationLoaded(conversation.id)
                     {
+                        guard self.syncGeneration == generation else { return }
                         conversationsForSync.append(hydrated)
                     } else {
                         conversationsForSync.append(conversation)

@@ -55,7 +55,13 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Create another one
         composeInitialMessageAndSend("Another conversation")
         let otherTitle = "Another conversation"
-        XCTAssertTrue(app.staticTexts[otherTitle].waitForExistence(timeout: 10))
+        let sidebarTitlePredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value == %@",
+            "sidebar.conversationRow.",
+            otherTitle
+        )
+        let nonMatchingTitle = app.staticTexts.matching(sidebarTitlePredicate).firstMatch
+        XCTAssertTrue(nonMatchingTitle.waitForExistence(timeout: 10))
 
         // Search
         let searchField = app.textFields[TestIdentifiers.Sidebar.searchField]
@@ -66,7 +72,6 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Verify filtering by requiring the known non-matching sidebar title to disappear.
         // The matching row remains visible, but SwiftUI exposes filtered macOS List
         // containers/row titles inconsistently on CI when text is truncated.
-        let nonMatchingTitle = app.staticTexts[otherTitle]
         let titleDisappeared = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"),
             object: nonMatchingTitle

@@ -363,6 +363,19 @@ struct EncryptedConversationStoreTests {
         #expect(metadata.searchableText.count <= 12003)
     }
 
+    @Test("Metadata searchable text preserves exact bounded head and tail")
+    func metadataSearchableTextPreservesExactBoundedHeadAndTail() {
+        var conversation = Conversation(title: String(repeating: "t", count: 4_000))
+        conversation.addMessage(Message(role: .user, content: String(repeating: "u", count: 5_000)))
+        conversation.addMessage(Message(role: .assistant, content: String(repeating: "a", count: 5_000)))
+
+        let fullText = ([conversation.title] + conversation.messages.map(\.content)).joined(separator: "\n")
+        let expected = "\(fullText.prefix(6_000))\n…\n\(fullText.suffix(6_000))"
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.searchableText == expected)
+    }
+
     @Test("Load conversation by id returns full conversation when present")
     func loadConversationByIdReturnsFullConversation() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
