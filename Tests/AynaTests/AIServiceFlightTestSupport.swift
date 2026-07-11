@@ -104,6 +104,15 @@ final class FlightTestURLProtocolServer: @unchecked Sendable {
         }
     }
 
+    func waitForRequestCount(_ count: Int, timeout: Duration = .seconds(2)) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while requestCount < count, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return requestCount >= count
+    }
+
     var requestCount: Int {
         lock.lock()
         defer { lock.unlock() }

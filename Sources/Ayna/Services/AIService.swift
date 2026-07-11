@@ -81,6 +81,9 @@ enum RequestFlightCheckpoint: Sendable {
     case dataCallback
     case dataRetry
     case anthropicTerminal
+    case multiModelPermitQueued
+    case multiModelStart
+    case multiModelCallback
 }
 
 struct RequestFlightObserver: Sendable {
@@ -137,6 +140,34 @@ private enum AnthropicFlightCallback: @unchecked Sendable {
     case reasoning(String)
 }
 
+private enum MultiModelBatchCallback: @unchecked Sendable {
+    case chunk(String)
+    case complete
+    case error(Error)
+    case toolRequest(id: String, name: String, arguments: [String: Any])
+    case reasoning(String)
+}
+
+struct AIServiceResponseSimulationCallbacks: Sendable {
+    let onChunk: @Sendable (String) -> Void
+    let onComplete: @Sendable () -> Void
+}
+
+typealias AIServiceResponseSimulator = @MainActor @Sendable (
+    [Message],
+    AIServiceResponseSimulationCallbacks
+) -> Void
+
+private enum MultiModelCredentialSource: Sendable {
+    case githubOAuth
+    case storedModelKey(oauthTokenAtPreparation: String?)
+}
+
+private struct MultiModelPreparedCredential: Sendable {
+    let value: String
+    let source: MultiModelCredentialSource
+}
+
 @MainActor
 class AIService: ObservableObject {
     static let shared = AIService()
@@ -163,7 +194,7 @@ class AIService: ObservableObject {
     private var currentTask = RequestFlight<URLSessionDataTask>()
     private var multiModelDataTasks: [String: RequestFlight<URLSessionDataTask>] = [:]
     private var currentStreamTask = RequestFlight<Task<Void, Never>>()
-    private var multiModelTask: Task<Void, Never>?
+    private var multiModelTask = RequestFlight<Task<Void, Never>>()
     /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
     #if !os(watchOS)
@@ -190,6 +221,7 @@ class AIService: ObservableObject {
     private let anthropicProviderFactory: @MainActor (URLSession) -> any AIProviderProtocol
     private let retryDelay: @Sendable (Int, Date?) async -> Void
     private let requestFlightObserver: RequestFlightObserver
+    private let responseSimulator: AIServiceResponseSimulator?
 
     // Image generation service
     #if !os(watchOS)
@@ -311,11 +343,13 @@ class AIService: ObservableObject {
         retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfterDate in
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
         },
-        requestFlightObserver: RequestFlightObserver = .none
+        requestFlightObserver: RequestFlightObserver = .none,
+        responseSimulator: AIServiceResponseSimulator? = nil
     ) {
         self.anthropicProviderFactory = anthropicProviderFactory
         self.retryDelay = retryDelay
         self.requestFlightObserver = requestFlightObserver
+        self.responseSimulator = responseSimulator
 
         if let session = urlSession {
             self.urlSession = session
@@ -686,6 +720,53 @@ class AIService: ObservableObject {
         return modelAPIKeys[model] ?? ""
     }
 
+    private func prepareGitHubCredential(for model: String) async throws -> MultiModelPreparedCredential {
+        if GitHubOAuthService.shared.isAuthenticated {
+            do {
+                let accessToken = try await GitHubOAuthService.shared.getValidAccessToken()
+                guard !accessToken.isEmpty else {
+                    throw AynaError.missingAPIKey(provider: AIProvider.githubModels.displayName)
+                }
+                return MultiModelPreparedCredential(value: accessToken, source: .githubOAuth)
+            } catch {
+                if let storedKey = modelAPIKeys[model], !storedKey.isEmpty {
+                    return MultiModelPreparedCredential(
+                        value: storedKey,
+                        source: .storedModelKey(
+                            oauthTokenAtPreparation: GitHubOAuthService.shared.getAccessToken()
+                        )
+                    )
+                }
+                throw error
+            }
+        }
+
+        guard let storedKey = modelAPIKeys[model], !storedKey.isEmpty else {
+            throw AynaError.missingAPIKey(provider: AIProvider.githubModels.displayName)
+        }
+        return MultiModelPreparedCredential(
+            value: storedKey,
+            source: .storedModelKey(oauthTokenAtPreparation: nil)
+        )
+    }
+
+    private func isCurrentGitHubCredential(
+        _ credential: MultiModelPreparedCredential,
+        model: String
+    ) -> Bool {
+        switch credential.source {
+        case .githubOAuth:
+            return GitHubOAuthService.shared.isAuthenticated &&
+                GitHubOAuthService.shared.isCurrentAccessTokenValid(credential.value)
+        case let .storedModelKey(oauthTokenAtPreparation):
+            let currentOAuthToken = GitHubOAuthService.shared.isAuthenticated
+                ? GitHubOAuthService.shared.getAccessToken()
+                : nil
+            return modelAPIKeys[model] == credential.value &&
+                currentOAuthToken == oauthTokenAtPreparation
+        }
+    }
+
     private func getAPIURL(deploymentName: String? = nil, provider: AIProvider? = nil) throws -> String {
         let effectiveProvider = provider ?? self.provider
         let modelName = deploymentName ?? selectedModel
@@ -738,6 +819,7 @@ class AIService: ObservableObject {
         )
 
         let dataTask = currentTask.take()
+        let multiModelBatchTask = multiModelTask.take()
         let multiDataTasks = multiModelDataTasks.compactMap { model, flight -> (String, URLSessionDataTask)? in
             var flight = flight
             return flight.take().map { (model, $0) }
@@ -760,6 +842,8 @@ class AIService: ObservableObject {
             appleIntelligenceTask = nil
         #endif
 
+        // Fence queued multi-model starts before active handles can release shared permits.
+        multiModelBatchTask?.cancel()
         dataTask?.cancel()
         for (model, task) in multiDataTasks {
             task.cancel()
@@ -771,8 +855,6 @@ class AIService: ObservableObject {
             )
         }
         streamTask?.cancel()
-        multiModelTask?.cancel()
-        multiModelTask = nil
         for (model, task) in multiStreamTasks {
             task.cancel()
             DiagnosticsLogger.log(
@@ -931,7 +1013,8 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: (@Sendable (String) -> Void)? = nil
+        onReasoning: (@Sendable (String) -> Void)? = nil,
+        preparedAPIKey: String? = nil
     ) {
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -947,6 +1030,14 @@ class AIService: ObservableObject {
                 "toolCount": "\(tools?.count ?? 0)"
             ]
         )
+
+        if let responseSimulator {
+            responseSimulator(
+                messages,
+                AIServiceResponseSimulationCallbacks(onChunk: onChunk, onComplete: onComplete)
+            )
+            return
+        }
 
         // Mock response for UI tests on macOS and iOS (UITestEnvironment not available on watchOS)
         #if !os(watchOS)
@@ -1041,7 +1132,7 @@ class AIService: ObservableObject {
             return
         }
 
-        let modelAPIKey = getAPIKey(for: requestModel)
+        let modelAPIKey = preparedAPIKey ?? getAPIKey(for: requestModel)
 
         // Check GitHub Models rate limit before making request
         if effectiveProvider == .githubModels {
@@ -1177,7 +1268,7 @@ class AIService: ObservableObject {
 
     // MARK: - Multi-Model Parallel Requests
 
-    // swiftlint:disable function_body_length
+    // swiftlint:disable function_body_length cyclomatic_complexity
     /// Sends a message to multiple models in parallel using TaskGroup.
     /// Each model streams independently, and tool calls are deferred until the user selects a response.
     ///
@@ -1202,9 +1293,27 @@ class AIService: ObservableObject {
         onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String, String) -> Void)? = nil
     ) {
-        // Validate we have models to query
         guard !models.isEmpty else {
             onError("", AIError.missingModel)
+            onAllComplete()
+            return
+        }
+
+        func rejectBatch(_ error: Error) {
+            models.forEach { onError($0, error) }
+            onAllComplete()
+        }
+
+        let requestModels = models.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let modelRequests = Array(zip(models, requestModels))
+        guard !requestModels.contains(where: \.isEmpty) else {
+            rejectBatch(AIError.missingModel)
+            return
+        }
+
+        var uniqueModels: Set<String> = []
+        if let duplicateModel = requestModels.first(where: { !uniqueModels.insert($0).inserted }) {
+            rejectBatch(AIError.apiError("Duplicate model in multi-model request: \(duplicateModel)"))
             return
         }
 
@@ -1212,11 +1321,10 @@ class AIService: ObservableObject {
             .aiService,
             level: .info,
             message: "🔀 Starting multi-model request",
-            metadata: ["models": models.joined(separator: ", ")]
+            metadata: ["models": requestModels.joined(separator: ", ")]
         )
 
-        // Cancel any existing multi-model task and individual stream tasks
-        multiModelTask?.cancel()
+        let previousBatchTask = multiModelTask.take()
         let previousDataTasks = multiModelDataTasks.compactMap { _, flight -> URLSessionDataTask? in
             var flight = flight
             return flight.take()
@@ -1232,19 +1340,30 @@ class AIService: ObservableObject {
             return flight.take()
         }
         multiModelAnthropicProviders.removeAll()
+
+        // Cancel the batch first so queued runners are fenced before active request handles release permits.
+        previousBatchTask?.cancel()
         previousDataTasks.forEach { $0.cancel() }
         previousStreamTasks.forEach { $0.cancel() }
         previousAnthropicProviders.forEach { $0.cancelRequest() }
+        // Apple Intelligence still uses one shared foreground task. Batch callbacks are ownership-gated here,
+        // but safely cancelling only a prior batch requires separate per-request Apple task ownership.
 
-        // Use a TaskGroup to send requests in parallel
-        let task = Task {
+        let flightID = RequestFlightID()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+
             await withTaskGroup(of: Void.self) { group in
-                for model in models {
+                for (callbackModel, model) in modelRequests {
+                    guard !Task.isCancelled, self.multiModelTask.owns(flightID) else { return }
+                    let effectiveProvider = self.modelProviders[model] ?? self.provider
+                    let preparedEndpoint = self.modelEndpoints[model]
+                    let preparedEndpointType = self.modelEndpointTypes[model]
+                    let requestFlightObserver = self.requestFlightObserver
+
                     group.addTask { [weak self] in
                         guard let self else { return }
-
-                        // Check for cancellation before starting
-                        if Task.isCancelled {
+                        guard !Task.isCancelled else {
                             DiagnosticsLogger.log(
                                 .aiService,
                                 level: .info,
@@ -1254,105 +1373,152 @@ class AIService: ObservableObject {
                             return
                         }
 
-                        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                            Task { @MainActor in
-                                // Check for cancellation again on MainActor
-                                if Task.isCancelled {
-                                    continuation.resume()
-                                    return
+                        let preparedCredential: MultiModelPreparedCredential?
+                        if effectiveProvider == .githubModels {
+                            do {
+                                preparedCredential = try await self.prepareGitHubCredential(for: model)
+                            } catch {
+                                let message = error.localizedDescription
+                                await MainActor.run {
+                                    guard !Task.isCancelled, self.multiModelTask.owns(flightID) else { return }
+                                    onError(callbackModel, AIError.apiError(message))
                                 }
+                                return
+                            }
+                        } else {
+                            preparedCredential = nil
+                        }
+                        let preparedAPIKey = preparedCredential?.value
 
-                                // Concurrency gate for GitHub Models in multi-model mode.
-                                // GitHub Models rate limits are scoped per token/user, so we serialize per-token.
-                                let effectiveProvider = self.modelProviders[model] ?? self.provider
-                                let accessTokenForGate = (effectiveProvider == .githubModels)
-                                    ? self.getAPIKey(for: model)
-                                    : ""
+                        guard !Task.isCancelled else { return }
+                        let stillOwnsBatch = await MainActor.run {
+                            self.multiModelTask.owns(flightID)
+                        }
+                        guard stillOwnsBatch else { return }
 
-                                @MainActor
-                                func sendWithGate(_ gateRelease: OneShot?) {
-                                    self.sendMessage(
-                                        messages: messages,
-                                        model: model,
-                                        temperature: temperature,
-                                        stream: true,
-                                        tools: nil, // Tools disabled in multi-model mode - deferred
-                                        conversationId: nil,
-                                        isMultiModelRequest: true,
-                                        onChunk: { chunk in
-                                            onChunk(model, chunk)
-                                        },
-                                        onComplete: { [gateRelease] in
-                                            DiagnosticsLogger.log(
-                                                .aiService,
-                                                level: .info,
-                                                message: "✅ Model completed in multi-model request",
-                                                metadata: ["model": model]
-                                            )
-                                            gateRelease?.run()
-                                            onModelComplete(model)
-                                            continuation.resume()
-                                        },
-                                        onError: { [gateRelease] error in
-                                            DiagnosticsLogger.log(
-                                                .aiService,
-                                                level: .error,
-                                                message: "❌ Model failed in multi-model request",
-                                                metadata: ["model": model, "error": error.localizedDescription]
-                                            )
-                                            gateRelease?.run()
-                                            onError(model, error)
-                                            continuation.resume()
-                                        },
-                                        onToolCall: nil, // Deferred - not executed during multi-model
-                                        onToolCallRequested: { toolId, toolName, arguments in
-                                            // Report the tool call as pending (will execute after selection)
-                                            onPendingToolCall?(model, toolId, toolName, arguments)
-                                        },
-                                        onReasoning: { reasoning in
-                                            onReasoning?(model, reasoning)
-                                        }
+                        let gitHubPermit: MultiModelRequestRunner.GitHubPermit? = if let preparedAPIKey {
+                            MultiModelRequestRunner.GitHubPermit.shared(
+                                key: GitHubOAuthService.rateLimitKey(forAccessToken: preparedAPIKey),
+                                onQueued: {
+                                    requestFlightObserver.record(.multiModelPermitQueued, true)
+                                }
+                            )
+                        } else {
+                            nil
+                        }
+
+                        await MultiModelRequestRunner.run(gitHubPermit: gitHubPermit) { [weak self] completion in
+                            guard let self,
+                                  !Task.isCancelled,
+                                  self.multiModelTask.owns(flightID)
+                            else {
+                                completion()
+                                return
+                            }
+
+                            let callbackForwarder = OrderedMainActorForwarder<MultiModelBatchCallback> { [weak self] event in
+                                let ownsBatch = self?.multiModelTask.owns(flightID) == true
+                                requestFlightObserver.record(.multiModelCallback, ownsBatch)
+                                guard ownsBatch else { return }
+
+                                switch event {
+                                case let .chunk(chunk):
+                                    guard !completion.isFinished else { return }
+                                    onChunk(callbackModel, chunk)
+
+                                case .complete:
+                                    guard completion() else { return }
+                                    DiagnosticsLogger.log(
+                                        .aiService,
+                                        level: .info,
+                                        message: "✅ Model completed in multi-model request",
+                                        metadata: ["model": model]
                                     )
-                                }
+                                    onModelComplete(callbackModel)
 
-                                if effectiveProvider == .githubModels, !accessTokenForGate.isEmpty {
-                                    let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: accessTokenForGate)
-                                    do {
-                                        try await GitHubModelsRequestGate.shared.acquire(key: gateKey)
-                                    } catch {
-                                        continuation.resume()
-                                        return
-                                    }
+                                case let .error(error):
+                                    guard completion() else { return }
+                                    DiagnosticsLogger.log(
+                                        .aiService,
+                                        level: .error,
+                                        message: "❌ Model failed in multi-model request",
+                                        metadata: ["model": model, "error": error.localizedDescription]
+                                    )
+                                    onError(callbackModel, error)
 
-                                    let gateRelease = OneShot {
-                                        Task { await GitHubModelsRequestGate.shared.release(key: gateKey) }
-                                    }
+                                case let .toolRequest(toolID, toolName, arguments):
+                                    guard !completion.isFinished else { return }
+                                    onPendingToolCall?(callbackModel, toolID, toolName, arguments)
 
-                                    if Task.isCancelled {
-                                        gateRelease.run()
-                                        continuation.resume()
-                                        return
-                                    }
-
-                                    if let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: accessTokenForGate) {
-                                        gateRelease.run()
-                                        onError(model, AIError.apiError(rateLimitError))
-                                        continuation.resume()
-                                        return
-                                    }
-
-                                    sendWithGate(gateRelease)
-                                } else {
-                                    sendWithGate(nil)
+                                case let .reasoning(reasoning):
+                                    guard !completion.isFinished else { return }
+                                    onReasoning?(callbackModel, reasoning)
                                 }
                             }
+
+                            let currentProvider = self.modelProviders[model] ?? self.provider
+                            let credentialIsCurrent = preparedCredential.map {
+                                self.isCurrentGitHubCredential($0, model: model)
+                            } ?? true
+                            guard currentProvider == effectiveProvider,
+                                  self.modelEndpoints[model] == preparedEndpoint,
+                                  self.modelEndpointTypes[model] == preparedEndpointType,
+                                  credentialIsCurrent
+                            else {
+                                callbackForwarder.enqueue(
+                                    .error(
+                                        AIError.apiError(
+                                            "Model configuration changed while the request was queued. Please retry."
+                                        )
+                                    )
+                                )
+                                return
+                            }
+
+                            requestFlightObserver.record(.multiModelStart, true)
+
+                            if effectiveProvider == .githubModels,
+                               let preparedAPIKey,
+                               let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: preparedAPIKey)
+                            {
+                                callbackForwarder.enqueue(.error(AIError.apiError(rateLimitError)))
+                                return
+                            }
+
+                            self.sendMessage(
+                                messages: messages,
+                                model: model,
+                                temperature: temperature,
+                                stream: true,
+                                tools: nil, // Tools disabled in multi-model mode - deferred
+                                conversationId: nil,
+                                isMultiModelRequest: true,
+                                onChunk: { chunk in
+                                    callbackForwarder.enqueue(.chunk(chunk))
+                                },
+                                onComplete: {
+                                    callbackForwarder.enqueue(.complete)
+                                },
+                                onError: { error in
+                                    callbackForwarder.enqueue(.error(error))
+                                },
+                                onToolCall: nil, // Deferred - not executed during multi-model
+                                onToolCallRequested: { toolID, toolName, arguments in
+                                    callbackForwarder.enqueue(
+                                        .toolRequest(id: toolID, name: toolName, arguments: arguments)
+                                    )
+                                },
+                                onReasoning: { reasoning in
+                                    callbackForwarder.enqueue(.reasoning(reasoning))
+                                },
+                                preparedAPIKey: preparedAPIKey
+                            )
                         }
                     }
                 }
             }
 
-            // Check for cancellation before calling onAllComplete
-            if Task.isCancelled {
+            guard !Task.isCancelled else {
                 DiagnosticsLogger.log(
                     .aiService,
                     level: .info,
@@ -1361,22 +1527,19 @@ class AIService: ObservableObject {
                 return
             }
 
-            // All models completed
-            await MainActor.run {
-                self.multiModelTask = nil
-                self.multiModelStreamTasks.removeAll()
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .info,
-                    message: "🏁 All models completed in multi-model request"
-                )
-                onAllComplete()
-            }
+            guard self.multiModelTask.clear(ifOwnedBy: flightID) else { return }
+            self.multiModelStreamTasks.removeAll()
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🏁 All models completed in multi-model request"
+            )
+            onAllComplete()
         }
-        multiModelTask = task
+        multiModelTask.install(task, id: flightID)?.cancel()
     }
 
-    // swiftlint:enable function_body_length
+    // swiftlint:enable function_body_length cyclomatic_complexity
 
     private func simulateUITestResponse(
         messages: [Message],
