@@ -20,6 +20,7 @@ enum DeepLinkError: LocalizedError {
     case invalidEndpointType(String)
     case modelAlreadyExists(String)
     case modelNotFound(String)
+    case confirmationInProgress
     case unknownAction(String)
 
     var errorDescription: String? {
@@ -36,6 +37,8 @@ enum DeepLinkError: LocalizedError {
             "Model '\(name)' already exists"
         case let .modelNotFound(name):
             "Model '\(name)' not found"
+        case .confirmationInProgress:
+            "Another model confirmation is already in progress"
         case let .unknownAction(action):
             "Unknown action: \(action)"
         }
@@ -55,6 +58,8 @@ enum DeepLinkError: LocalizedError {
             "Use a different model name or remove the existing model first"
         case .modelNotFound:
             "Check that the model name is correct"
+        case .confirmationInProgress:
+            "Finish or cancel the current model confirmation, then try again"
         case .unknownAction:
             "Supported actions: add-model, chat"
         }
@@ -113,17 +118,24 @@ enum DeepLinkAction: Equatable {
 final class DeepLinkManager: ObservableObject {
     static let shared = DeepLinkManager()
 
-    /// Pending add-model request awaiting user confirmation
-    @Published var pendingAddModel: AddModelRequest?
+    private struct PendingConfirmation {
+        let request: AddModelRequest
+        let deferredChat: ChatRequest?
+    }
 
-    /// Pending chat request to be executed (stored while waiting for add-model confirmation)
-    @Published var pendingChat: ChatRequest?
+    /// Pending add-model request awaiting user confirmation
+    @Published private(set) var pendingAddModel: AddModelRequest?
+
+    /// Pending chat exposed for diagnostics and compatibility with existing tests.
+    var pendingChat: ChatRequest? {
+        pendingConfirmation?.deferredChat ?? readyChatQueue.first
+    }
 
     /// Error message to display in error banner
-    @Published var errorMessage: String?
+    @Published private(set) var errorMessage: String?
 
     /// Recovery suggestion for the current error
-    @Published var errorRecoverySuggestion: String?
+    @Published private(set) var errorRecoverySuggestion: String?
 
     /// Whether a confirmation sheet should be shown
     var showAddModelConfirmation: Bool {
@@ -131,6 +143,8 @@ final class DeepLinkManager: ObservableObject {
     }
 
     private let aiService: AIService
+    private var pendingConfirmation: PendingConfirmation?
+    private var readyChatQueue: [ChatRequest] = []
 
     init(aiService: AIService? = nil) {
         self.aiService = aiService ?? .shared
@@ -159,8 +173,7 @@ final class DeepLinkManager: ObservableObject {
 
             switch action {
             case let .addModel(request):
-                // Show confirmation dialog instead of adding immediately
-                pendingAddModel = request
+                try installConfirmation(request, deferredChat: nil)
                 DiagnosticsLogger.log(
                     .app,
                     level: .info,
@@ -174,9 +187,7 @@ final class DeepLinkManager: ObservableObject {
                     let modelExists = aiService.customModels.contains(modelConfig.name)
                     print("🔗 DEBUG: modelConfig.name=\(modelConfig.name), modelExists=\(modelExists), customModels=\(aiService.customModels)")
                     if !modelExists {
-                        // Model doesn't exist - show add confirmation first, store chat for after
-                        pendingAddModel = modelConfig
-                        pendingChat = request
+                        try installConfirmation(modelConfig, deferredChat: request)
                         DiagnosticsLogger.log(
                             .app,
                             level: .fault,
@@ -190,7 +201,7 @@ final class DeepLinkManager: ObservableObject {
                         )
                     } else {
                         // Model exists - proceed with chat directly
-                        pendingChat = request
+                        enqueueReadyChat(request)
                         DiagnosticsLogger.log(
                             .app,
                             level: .info,
@@ -202,8 +213,8 @@ final class DeepLinkManager: ObservableObject {
                         )
                     }
                 } else {
-                    // No config provided - proceed with chat directly
-                    pendingChat = request
+                    try validateModelAvailability(for: request)
+                    enqueueReadyChat(request)
                     DiagnosticsLogger.log(
                         .app,
                         level: .info,
@@ -242,11 +253,18 @@ final class DeepLinkManager: ObservableObject {
 
     /// Confirm and execute the pending add-model request
     /// If there's a pending chat request, it will proceed after adding the model
-    func confirmAddModel() {
-        guard let request = pendingAddModel else { return }
+    func confirmAddModel(expectedRequestID: UUID) {
+        guard let confirmation = pendingConfirmation,
+              let request = pendingAddModel,
+              confirmation.request.id == request.id,
+              request.id == expectedRequestID
+        else { return }
 
         do {
             try addModelConfig(request)
+            if let deferredChat = confirmation.deferredChat {
+                readyChatQueue.append(deferredChat)
+            }
             DiagnosticsLogger.log(
                 .app,
                 level: .info,
@@ -255,27 +273,27 @@ final class DeepLinkManager: ObservableObject {
             )
             // Note: pendingChat is preserved so the chat can proceed
         } catch let error as DeepLinkError {
-            errorMessage = error.errorDescription
-            errorRecoverySuggestion = error.recoverySuggestion
-            // Clear pending chat on error since the model wasn't added
-            pendingChat = nil
+            present(error)
         } catch {
             errorMessage = ErrorPresenter.userMessage(for: error)
             errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
-            pendingChat = nil
         }
 
+        pendingConfirmation = nil
         pendingAddModel = nil
     }
 
     /// Cancel the pending add-model request
     /// Also clears any pending chat that was waiting for the model
-    func cancelAddModel() {
+    func cancelAddModel(expectedRequestID: UUID) {
+        guard let confirmation = pendingConfirmation,
+              let request = pendingAddModel,
+              confirmation.request.id == request.id,
+              request.id == expectedRequestID
+        else { return }
+
+        pendingConfirmation = nil
         pendingAddModel = nil
-        // Also clear pending chat if it was part of unified flow
-        if pendingChat?.modelConfig != nil {
-            pendingChat = nil
-        }
         DiagnosticsLogger.log(
             .app,
             level: .info,
@@ -289,12 +307,52 @@ final class DeepLinkManager: ObservableObject {
         errorRecoverySuggestion = nil
     }
 
-    /// Clear the pending chat request (after it's been processed)
-    func clearPendingChat() {
-        pendingChat = nil
+    /// Atomically return and clear the next ready chat request in FIFO order.
+    func consumeNextReadyChat() -> ChatRequest? {
+        popNextReadyChat()
     }
 
     // MARK: - Private Methods
+
+    private func enqueueReadyChat(_ request: ChatRequest) {
+        readyChatQueue.append(request)
+    }
+
+    private func installConfirmation(_ request: AddModelRequest, deferredChat: ChatRequest?) throws {
+        guard pendingConfirmation == nil else {
+            throw DeepLinkError.confirmationInProgress
+        }
+
+        pendingConfirmation = PendingConfirmation(request: request, deferredChat: deferredChat)
+        pendingAddModel = request
+    }
+
+    private func popNextReadyChat() -> ChatRequest? {
+        while !readyChatQueue.isEmpty {
+            let request = readyChatQueue.removeFirst()
+            if isModelAvailable(for: request) {
+                return request
+            }
+            present(DeepLinkError.modelNotFound(request.model ?? ""))
+        }
+        return nil
+    }
+
+    private func validateModelAvailability(for request: ChatRequest) throws {
+        guard isModelAvailable(for: request) else {
+            throw DeepLinkError.modelNotFound(request.model ?? "")
+        }
+    }
+
+    private func isModelAvailable(for request: ChatRequest) -> Bool {
+        guard let model = request.model else { return true }
+        return aiService.customModels.contains(model)
+    }
+
+    private func present(_ error: DeepLinkError) {
+        errorMessage = error.errorDescription
+        errorRecoverySuggestion = error.recoverySuggestion
+    }
 
     /// Parse a URL into a deep link action
     private func parseURL(_ url: URL) throws -> DeepLinkAction {
@@ -334,9 +392,7 @@ final class DeepLinkManager: ObservableObject {
     private func extractParameters(from components: URLComponents) -> [String: String] {
         var params: [String: String] = [:]
         components.queryItems?.forEach { item in
-            if let value = item.value {
-                params[item.name] = value
-            }
+            params[item.name] = item.value ?? ""
         }
         return params
     }
@@ -344,9 +400,11 @@ final class DeepLinkManager: ObservableObject {
     /// Parse add-model action parameters
     private func parseAddModel(params: [String: String]) throws -> DeepLinkAction {
         // Name is required
-        guard let name = params["name"], !name.isEmpty else {
+        guard let rawName = params["name"] else {
             throw DeepLinkError.missingRequiredParameter("name")
         }
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw DeepLinkError.missingRequiredParameter("name") }
 
         // Provider (optional, defaults to OpenAI)
         let provider: AIProvider
@@ -409,7 +467,16 @@ final class DeepLinkManager: ObservableObject {
     /// Supports unified flow: if provider/endpoint/key/type params are present along with model,
     /// creates a model config that will be used to add the model if it doesn't exist
     private func parseChat(params: [String: String]) throws -> DeepLinkAction {
-        let model = params["model"]
+        let model: String?
+        if let rawModel = params["model"] {
+            let trimmedModel = rawModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedModel.isEmpty else {
+                throw DeepLinkError.missingRequiredParameter("model")
+            }
+            model = trimmedModel
+        } else {
+            model = nil
+        }
 
         // Check if model configuration params are provided (unified add+chat flow)
         var modelConfig: AddModelRequest?

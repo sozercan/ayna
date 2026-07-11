@@ -15,6 +15,8 @@ struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var presentedAddModelRequest: AddModelRequest?
+    @State private var dismissingAddModelRequestID: UUID?
 
     var body: some View {
         ZStack {
@@ -51,40 +53,91 @@ struct IOSContentView: View {
         .alert(
             "Add Model",
             isPresented: .init(
-                get: { deepLinkManager.pendingAddModel != nil },
+                get: { presentedAddModelRequest != nil },
                 set: { newValue in
-                    // Only cancel if alert is being dismissed AND pendingAddModel is still set
-                    if !newValue, deepLinkManager.pendingAddModel != nil {
-                        deepLinkManager.cancelAddModel()
+                    guard !newValue else { return }
+                    if let requestID = dismissingAddModelRequestID {
+                        completeAddModelDismissal(requestID)
+                    } else if let request = presentedAddModelRequest {
+                        dismissingAddModelRequestID = request.id
+                        presentedAddModelRequest = nil
+                        deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+                        completeAddModelDismissal(request.id)
                     }
                 }
             ),
-            presenting: deepLinkManager.pendingAddModel
-        ) { _ in
+            presenting: presentedAddModelRequest
+        ) { request in
             Button("Cancel", role: .cancel) {
-                deepLinkManager.cancelAddModel()
+                finishPresentedAddModel(request, shouldConfirm: false)
             }
             Button("Add") {
-                deepLinkManager.confirmAddModel()
+                finishPresentedAddModel(request, shouldConfirm: true)
             }
         } message: { request in
             Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
         }
+        .onAppear {
+            if presentedAddModelRequest == nil {
+                presentedAddModelRequest = deepLinkManager.pendingAddModel
+            }
+        }
         // Process pending chat after add-model alert is dismissed (unified flow)
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
-            // When pendingAddModel goes from some value to nil AND we have a pending chat
-            if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
-                // Model was added (or cancelled), process the pending chat if model now exists
-                if let model = chatRequest.model,
-                   AIService.shared.customModels.contains(model)
-                {
-                    _ = conversationManager.startConversation(
-                        model: chatRequest.model,
-                        prompt: chatRequest.prompt,
-                        systemPrompt: chatRequest.systemPrompt
-                    )
-                }
-                deepLinkManager.clearPendingChat()
+            updatePresentedAddModel(from: oldValue, to: newValue)
+            guard oldValue != nil, newValue == nil else { return }
+
+            if let chatRequest = deepLinkManager.consumeNextReadyChat() {
+                _ = conversationManager.startConversation(
+                    model: chatRequest.model,
+                    prompt: chatRequest.prompt,
+                    systemPrompt: chatRequest.systemPrompt
+                )
+            }
+        }
+    }
+
+    private func finishPresentedAddModel(_ request: AddModelRequest, shouldConfirm: Bool) {
+        guard dismissingAddModelRequestID == nil,
+              presentedAddModelRequest?.id == request.id
+        else { return }
+
+        dismissingAddModelRequestID = request.id
+        presentedAddModelRequest = nil
+        if shouldConfirm {
+            deepLinkManager.confirmAddModel(expectedRequestID: request.id)
+        } else {
+            deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+        }
+    }
+
+    private func updatePresentedAddModel(from oldValue: AddModelRequest?, to newValue: AddModelRequest?) {
+        if newValue == nil,
+           dismissingAddModelRequestID == nil,
+           presentedAddModelRequest?.id == oldValue?.id
+        {
+            dismissingAddModelRequestID = oldValue?.id
+            presentedAddModelRequest = nil
+        } else if newValue != nil,
+                  dismissingAddModelRequestID == nil,
+                  presentedAddModelRequest == nil
+        {
+            presentedAddModelRequest = newValue
+        }
+    }
+
+    private func completeAddModelDismissal(_ requestID: UUID) {
+        guard dismissingAddModelRequestID == requestID else { return }
+        presentPendingAddModelAfterDismissal(requestID)
+    }
+
+    private func presentPendingAddModelAfterDismissal(_ requestID: UUID) {
+        Task { @MainActor in
+            await Task.yield()
+            guard dismissingAddModelRequestID == requestID else { return }
+            dismissingAddModelRequestID = nil
+            if presentedAddModelRequest == nil {
+                presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
         }
     }

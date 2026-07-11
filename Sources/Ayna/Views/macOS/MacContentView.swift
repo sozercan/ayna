@@ -19,6 +19,8 @@ extension Notification.Name {
 struct MacContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+    @State private var presentedAddModelRequest: AddModelRequest?
+    @State private var dismissingAddModelRequestID: UUID?
 
     var body: some View {
         ZStack {
@@ -89,34 +91,88 @@ struct MacContentView: View {
         }
         // Add model confirmation sheet
         .sheet(isPresented: .init(
-            get: { deepLinkManager.pendingAddModel != nil },
+            get: { presentedAddModelRequest != nil },
             set: { newValue in
-                // Only cancel if the sheet is being dismissed AND pendingAddModel is still set
-                // (i.e., user dismissed without clicking Add - confirmAddModel already clears it)
-                if !newValue, deepLinkManager.pendingAddModel != nil {
-                    deepLinkManager.cancelAddModel()
+                guard !newValue else { return }
+                if let requestID = dismissingAddModelRequestID {
+                    completeAddModelDismissal(requestID)
+                } else if let request = presentedAddModelRequest {
+                    dismissingAddModelRequestID = request.id
+                    presentedAddModelRequest = nil
+                    deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+                    completeAddModelDismissal(request.id)
                 }
             }
         )) {
-            if let request = deepLinkManager.pendingAddModel {
-                AddModelConfirmationSheet(request: request)
+            if let request = presentedAddModelRequest {
+                AddModelConfirmationSheet(
+                    request: request,
+                    onCancel: { finishPresentedAddModel(request, shouldConfirm: false) },
+                    onConfirm: { finishPresentedAddModel(request, shouldConfirm: true) }
+                )
+            }
+        }
+        .onAppear {
+            if presentedAddModelRequest == nil {
+                presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
         }
         // Process pending chat after add-model sheet is dismissed (unified flow)
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
-            // When pendingAddModel goes from some value to nil AND we have a pending chat
-            if oldValue != nil, newValue == nil, let chatRequest = deepLinkManager.pendingChat {
-                // Model was added (or cancelled), process the pending chat if model now exists
-                if let model = chatRequest.model,
-                   AIService.shared.customModels.contains(model)
-                {
-                    _ = conversationManager.startConversation(
-                        model: chatRequest.model,
-                        prompt: chatRequest.prompt,
-                        systemPrompt: chatRequest.systemPrompt
-                    )
-                }
-                deepLinkManager.clearPendingChat()
+            updatePresentedAddModel(from: oldValue, to: newValue)
+            guard oldValue != nil, newValue == nil else { return }
+
+            if let chatRequest = deepLinkManager.consumeNextReadyChat() {
+                _ = conversationManager.startConversation(
+                    model: chatRequest.model,
+                    prompt: chatRequest.prompt,
+                    systemPrompt: chatRequest.systemPrompt
+                )
+            }
+        }
+    }
+
+    private func finishPresentedAddModel(_ request: AddModelRequest, shouldConfirm: Bool) {
+        guard dismissingAddModelRequestID == nil,
+              presentedAddModelRequest?.id == request.id
+        else { return }
+
+        dismissingAddModelRequestID = request.id
+        presentedAddModelRequest = nil
+        if shouldConfirm {
+            deepLinkManager.confirmAddModel(expectedRequestID: request.id)
+        } else {
+            deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+        }
+    }
+
+    private func updatePresentedAddModel(from oldValue: AddModelRequest?, to newValue: AddModelRequest?) {
+        if newValue == nil,
+           dismissingAddModelRequestID == nil,
+           presentedAddModelRequest?.id == oldValue?.id
+        {
+            dismissingAddModelRequestID = oldValue?.id
+            presentedAddModelRequest = nil
+        } else if newValue != nil,
+                  dismissingAddModelRequestID == nil,
+                  presentedAddModelRequest == nil
+        {
+            presentedAddModelRequest = newValue
+        }
+    }
+
+    private func completeAddModelDismissal(_ requestID: UUID) {
+        guard dismissingAddModelRequestID == requestID else { return }
+        presentPendingAddModelAfterDismissal(requestID)
+    }
+
+    private func presentPendingAddModelAfterDismissal(_ requestID: UUID) {
+        Task { @MainActor in
+            await Task.yield()
+            guard dismissingAddModelRequestID == requestID else { return }
+            dismissingAddModelRequestID = nil
+            if presentedAddModelRequest == nil {
+                presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
         }
     }
@@ -126,7 +182,8 @@ struct MacContentView: View {
 
 private struct AddModelConfirmationSheet: View {
     let request: AddModelRequest
-    @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -176,13 +233,13 @@ private struct AddModelConfirmationSheet: View {
             // Actions
             HStack(spacing: 16) {
                 Button("Cancel") {
-                    deepLinkManager.cancelAddModel()
+                    onCancel()
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Button("Add Model") {
-                    deepLinkManager.confirmAddModel()
+                    onConfirm()
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

@@ -176,3 +176,24 @@ final class IOSSmokeUITests: IOSUITestCase {
         XCTAssertTrue(hasEmptyState, "Empty state or welcome view should be visible after navigating to new chat")
     }
 }
+
+/// Deep-link lifecycle coverage that does not depend on compact split-view navigation.
+@MainActor
+final class IOSDeepLinkUITests: IOSUITestCase {
+    func testUnifiedChatShowsModelConfirmationAndCanCancel() throws {
+        let url = try XCTUnwrap(
+            URL(string: "ayna://chat?model=ui-deeplink-model&provider=openai&prompt=Should%20not%20send")
+        )
+
+        app.open(url)
+
+        let addModelAlert = app.alerts["Add Model"]
+        let alertAppeared = addModelAlert.waitForExistence(timeout: UITestTimeout.normal)
+        XCTAssertTrue(alertAppeared, "Unified chat should require add-model confirmation")
+
+        addModelAlert.buttons["Cancel"].tap()
+
+        let alertDisappeared = addModelAlert.waitForNonExistence(timeout: UITestTimeout.normal)
+        XCTAssertTrue(alertDisappeared, "Cancelling should dismiss model confirmation")
+    }
+}

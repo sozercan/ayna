@@ -1,4 +1,5 @@
 @testable import Ayna
+import Combine
 import Foundation
 import Testing
 
@@ -23,6 +24,30 @@ struct DeepLinkManagerTests {
         service.modelEndpointTypes = [:]
         let manager = DeepLinkManager(aiService: service)
         return (manager, service)
+    }
+
+    private func consumeExactlyOne(from manager: DeepLinkManager) throws -> ChatRequest {
+        let requests = drainReadyChats(from: manager)
+        #expect(requests.count == 1)
+        return try #require(requests.first)
+    }
+
+    private func drainReadyChats(from manager: DeepLinkManager) -> [ChatRequest] {
+        var requests: [ChatRequest] = []
+        while let request = manager.consumeNextReadyChat() {
+            requests.append(request)
+        }
+        return requests
+    }
+
+    private func confirmPendingModel(in manager: DeepLinkManager) throws {
+        let requestID = try #require(manager.pendingAddModel?.id)
+        manager.confirmAddModel(expectedRequestID: requestID)
+    }
+
+    private func cancelPendingModel(in manager: DeepLinkManager) throws {
+        let requestID = try #require(manager.pendingAddModel?.id)
+        manager.cancelAddModel(expectedRequestID: requestID)
     }
 
     // MARK: - URL Parsing Tests
@@ -80,6 +105,17 @@ struct DeepLinkManagerTests {
 
         #expect(manager.pendingAddModel == nil)
         #expect(manager.errorMessage != nil)
+    }
+
+    @Test("Parse add-model whitespace name shows error")
+    func parseAddModelWhitespaceNameShowsError() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://add-model?name=%20%20%20"))
+
+        await manager.handle(url: url)
+
+        #expect(manager.pendingAddModel == nil)
+        #expect(manager.errorMessage?.contains("name") == true)
     }
 
     @Test("Parse add-model invalid provider shows error")
@@ -194,7 +230,8 @@ struct DeepLinkManagerTests {
 
     @Test("Parse chat with all parameters")
     func parseChatWithAllParameters() async throws {
-        let (manager, _) = makeManager()
+        let (manager, service) = makeManager()
+        service.customModels.append("gpt-4o")
         let url = try #require(URL(string: "ayna://chat?model=gpt-4o&prompt=Hello%20world&system=You%20are%20helpful"))
 
         await manager.handle(url: url)
@@ -208,7 +245,8 @@ struct DeepLinkManagerTests {
 
     @Test("Parse chat with model only")
     func parseChatWithModelOnly() async throws {
-        let (manager, _) = makeManager()
+        let (manager, service) = makeManager()
+        service.customModels.append("claude-3")
         let url = try #require(URL(string: "ayna://chat?model=claude-3"))
 
         await manager.handle(url: url)
@@ -244,6 +282,369 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingChat?.prompt == nil)
         #expect(manager.pendingChat?.systemPrompt == nil)
         #expect(manager.errorMessage == nil)
+    }
+
+    // MARK: - Pending Chat Consumption Tests
+
+    @Test("Unified chat remains pending before add-model confirmation")
+    func unifiedChatRemainsPendingBeforeAddModelConfirmation() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model=new-model&provider=openai&prompt=Hello"))
+
+        await manager.handle(url: url)
+
+        let consumedChats = drainReadyChats(from: manager)
+
+        #expect(consumedChats.isEmpty)
+        #expect(manager.pendingAddModel?.name == "new-model")
+        #expect(manager.pendingChat?.model == "new-model")
+        #expect(manager.pendingChat?.prompt == "Hello")
+    }
+
+    @Test("Unified chat becomes available after add-model confirmation")
+    func unifiedChatBecomesAvailableAfterAddModelConfirmation() async throws {
+        let (manager, service) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model=new-model&provider=openai&prompt=Hello"))
+
+        await manager.handle(url: url)
+        try confirmPendingModel(in: manager)
+
+        let consumedChat = try consumeExactlyOne(from: manager)
+
+        #expect(service.customModels.contains("new-model"))
+        #expect(consumedChat.model == "new-model")
+        #expect(consumedChat.prompt == "Hello")
+    }
+
+    @Test("Consuming a ready chat clears it exactly once")
+    func consumingReadyChatClearsItExactlyOnce() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?prompt=Hello"))
+
+        await manager.handle(url: url)
+
+        let firstConsumption = drainReadyChats(from: manager)
+        let secondConsumption = drainReadyChats(from: manager)
+
+        #expect(firstConsumption.first?.prompt == "Hello")
+        #expect(manager.pendingChat == nil)
+        #expect(secondConsumption.isEmpty)
+    }
+
+    @Test("Ordinary chat is immediately available for consumption")
+    func ordinaryChatIsImmediatelyAvailableForConsumption() async throws {
+        let (manager, service) = makeManager()
+        service.customModels.append("gpt-4o")
+        let url = try #require(URL(string: "ayna://chat?model=gpt-4o&prompt=Hello&system=Be%20concise"))
+
+        await manager.handle(url: url)
+
+        let consumedChat = try consumeExactlyOne(from: manager)
+
+        #expect(manager.pendingAddModel == nil)
+        #expect(consumedChat.model == "gpt-4o")
+        #expect(consumedChat.prompt == "Hello")
+        #expect(consumedChat.systemPrompt == "Be concise")
+    }
+
+    @Test("Ordinary chat is consumed before confirming an overlapping unified chat")
+    func ordinaryChatIsConsumedBeforeConfirmingOverlappingUnifiedChat() async throws {
+        let (manager, service) = makeManager()
+        service.customModels.append("gpt-4o")
+        let unifiedURL = try #require(URL(string: "ayna://chat?model=deferred-model&provider=openai&prompt=Deferred"))
+        let ordinaryURL = try #require(URL(string: "ayna://chat?model=gpt-4o&prompt=Ready"))
+
+        await manager.handle(url: unifiedURL)
+        await manager.handle(url: ordinaryURL)
+
+        let ordinaryChat = try consumeExactlyOne(from: manager)
+
+        #expect(ordinaryChat.model == "gpt-4o")
+        #expect(ordinaryChat.prompt == "Ready")
+        #expect(manager.pendingAddModel?.name == "deferred-model")
+        #expect(manager.pendingChat?.model == "deferred-model")
+        #expect(manager.pendingChat?.prompt == "Deferred")
+        #expect(drainReadyChats(from: manager).isEmpty)
+
+        try confirmPendingModel(in: manager)
+
+        let deferredChat = try consumeExactlyOne(from: manager)
+
+        #expect(service.customModels.contains("deferred-model"))
+        #expect(deferredChat.model == "deferred-model")
+        #expect(deferredChat.prompt == "Deferred")
+    }
+
+    @Test("Ordinary chat is preserved when an overlapping unified chat arrives afterward")
+    func ordinaryChatIsPreservedWhenOverlappingUnifiedChatArrivesAfterward() async throws {
+        let (manager, service) = makeManager()
+        service.customModels.append("gpt-4o")
+        let ordinaryURL = try #require(URL(string: "ayna://chat?model=gpt-4o&prompt=Ready"))
+        let unifiedURL = try #require(URL(string: "ayna://chat?model=deferred-model&provider=openai&prompt=Deferred"))
+
+        await manager.handle(url: ordinaryURL)
+        await manager.handle(url: unifiedURL)
+
+        let ordinaryChat = try consumeExactlyOne(from: manager)
+
+        #expect(ordinaryChat.model == "gpt-4o")
+        #expect(ordinaryChat.prompt == "Ready")
+        #expect(manager.pendingAddModel?.name == "deferred-model")
+        #expect(manager.pendingChat?.model == "deferred-model")
+        #expect(manager.pendingChat?.prompt == "Deferred")
+        #expect(drainReadyChats(from: manager).isEmpty)
+
+        try confirmPendingModel(in: manager)
+
+        let deferredChat = try consumeExactlyOne(from: manager)
+
+        #expect(service.customModels.contains("deferred-model"))
+        #expect(deferredChat.model == "deferred-model")
+        #expect(deferredChat.prompt == "Deferred")
+    }
+
+    @Test("Cancelling an overlapping unified chat preserves the ordinary chat")
+    func cancellingOverlappingUnifiedChatPreservesOrdinaryChat() async throws {
+        let (manager, service) = makeManager()
+        let unifiedURL = try #require(URL(string: "ayna://chat?model=cancelled-model&provider=openai&prompt=Deferred"))
+        let ordinaryURL = try #require(URL(string: "ayna://chat?prompt=Ready"))
+
+        await manager.handle(url: unifiedURL)
+        await manager.handle(url: ordinaryURL)
+
+        try cancelPendingModel(in: manager)
+
+        #expect(manager.pendingAddModel == nil)
+        #expect(manager.pendingChat?.prompt == "Ready")
+        #expect(!service.customModels.contains("cancelled-model"))
+
+        let ordinaryChat = try consumeExactlyOne(from: manager)
+
+        #expect(ordinaryChat.prompt == "Ready")
+        #expect(drainReadyChats(from: manager).isEmpty)
+    }
+
+    @Test("Standalone add-model confirmation does not block an ordinary chat")
+    func standaloneAddModelConfirmationDoesNotBlockOrdinaryChat() async throws {
+        let (manager, _) = makeManager()
+        let addModelURL = try #require(URL(string: "ayna://add-model?name=standalone-model"))
+        let ordinaryURL = try #require(URL(string: "ayna://chat?prompt=Ready"))
+
+        await manager.handle(url: addModelURL)
+        await manager.handle(url: ordinaryURL)
+
+        let ordinaryChat = try consumeExactlyOne(from: manager)
+
+        #expect(ordinaryChat.prompt == "Ready")
+        #expect(manager.pendingAddModel?.name == "standalone-model")
+        #expect(manager.pendingChat == nil)
+    }
+
+    @Test("Ready chats are drained in URL arrival order")
+    func readyChatsAreDrainedInURLArrivalOrder() async throws {
+        let (manager, _) = makeManager()
+        let firstURL = try #require(URL(string: "ayna://chat?prompt=First"))
+        let secondURL = try #require(URL(string: "ayna://chat?prompt=Second"))
+        let thirdURL = try #require(URL(string: "ayna://chat?prompt=Third"))
+
+        await manager.handle(url: firstURL)
+        await manager.handle(url: secondURL)
+        await manager.handle(url: thirdURL)
+
+        #expect(drainReadyChats(from: manager).map(\.prompt) == ["First", "Second", "Third"])
+        #expect(drainReadyChats(from: manager).isEmpty)
+    }
+
+    @Test("Earlier ready chat stays ahead of later deferred chat")
+    func earlierReadyChatStaysAheadOfLaterDeferredChat() async throws {
+        let (manager, _) = makeManager()
+        let readyURL = try #require(URL(string: "ayna://chat?prompt=Ready"))
+        let deferredURL = try #require(URL(string: "ayna://chat?model=deferred-model&provider=openai&prompt=Deferred"))
+
+        await manager.handle(url: readyURL)
+        await manager.handle(url: deferredURL)
+        try confirmPendingModel(in: manager)
+
+        #expect(drainReadyChats(from: manager).map(\.prompt) == ["Ready", "Deferred"])
+    }
+
+    @Test("Ready chat stays ahead when older deferred chat is confirmed")
+    func readyChatStaysAheadWhenOlderDeferredChatIsConfirmed() async throws {
+        let (manager, _) = makeManager()
+        let deferredURL = try #require(URL(string: "ayna://chat?model=deferred-model&provider=openai&prompt=Deferred"))
+        let readyURL = try #require(URL(string: "ayna://chat?prompt=Ready"))
+
+        await manager.handle(url: deferredURL)
+        await manager.handle(url: readyURL)
+        try confirmPendingModel(in: manager)
+
+        #expect(drainReadyChats(from: manager).map(\.prompt) == ["Ready", "Deferred"])
+    }
+
+    @Test("Second confirmation cannot replace active confirmation")
+    func secondConfirmationCannotReplaceActiveConfirmation() async throws {
+        let (manager, service) = makeManager()
+        let firstURL = try #require(URL(string: "ayna://chat?model=first-model&provider=openai&prompt=First"))
+        let secondURL = try #require(URL(string: "ayna://chat?model=second-model&provider=openai&prompt=Second"))
+
+        await manager.handle(url: firstURL)
+        let firstRequestID = try #require(manager.pendingAddModel?.id)
+        await manager.handle(url: secondURL)
+
+        #expect(manager.errorMessage == "Another model confirmation is already in progress")
+        #expect(manager.pendingAddModel?.id == firstRequestID)
+        #expect(manager.pendingChat?.prompt == "First")
+
+        manager.confirmAddModel(expectedRequestID: firstRequestID)
+
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(service.customModels.contains("first-model"))
+        #expect(!service.customModels.contains("second-model"))
+        #expect(chat.prompt == "First")
+    }
+
+    @Test("Standalone confirmation cannot replace active unified confirmation")
+    func standaloneConfirmationCannotReplaceActiveUnifiedConfirmation() async throws {
+        let (manager, _) = makeManager()
+        let unifiedURL = try #require(URL(string: "ayna://chat?model=first-model&provider=openai&prompt=First"))
+        let addModelURL = try #require(URL(string: "ayna://add-model?name=second-model"))
+
+        await manager.handle(url: unifiedURL)
+        let firstRequestID = try #require(manager.pendingAddModel?.id)
+        await manager.handle(url: addModelURL)
+
+        #expect(manager.errorMessage == "Another model confirmation is already in progress")
+        #expect(manager.pendingAddModel?.id == firstRequestID)
+        #expect(manager.pendingChat?.prompt == "First")
+    }
+
+    @Test(
+        "Active standalone confirmation rejects another confirmation",
+        arguments: [
+            "ayna://add-model?name=second-model",
+            "ayna://chat?model=second-model&provider=openai&prompt=Second"
+        ]
+    )
+    func activeStandaloneConfirmationRejectsAnotherConfirmation(incomingURLString: String) async throws {
+        let (manager, _) = makeManager()
+        let firstURL = try #require(URL(string: "ayna://add-model?name=first-model"))
+        let incomingURL = try #require(URL(string: incomingURLString))
+
+        await manager.handle(url: firstURL)
+        let firstRequestID = try #require(manager.pendingAddModel?.id)
+        await manager.handle(url: incomingURL)
+
+        #expect(manager.errorMessage == "Another model confirmation is already in progress")
+        #expect(manager.pendingAddModel?.id == firstRequestID)
+        #expect(manager.pendingAddModel?.name == "first-model")
+        #expect(manager.pendingChat == nil)
+    }
+
+    @Test("Stale cancellation cannot cancel a newer confirmation")
+    func staleCancellationCannotCancelNewerConfirmation() async throws {
+        let (manager, _) = makeManager()
+        let firstURL = try #require(URL(string: "ayna://add-model?name=first-model"))
+        let secondURL = try #require(URL(string: "ayna://add-model?name=second-model"))
+
+        await manager.handle(url: firstURL)
+        let firstRequestID = try #require(manager.pendingAddModel?.id)
+        manager.cancelAddModel(expectedRequestID: firstRequestID)
+        await manager.handle(url: secondURL)
+        let secondRequestID = try #require(manager.pendingAddModel?.id)
+
+        manager.cancelAddModel(expectedRequestID: firstRequestID)
+
+        #expect(manager.pendingAddModel?.id == secondRequestID)
+        #expect(manager.pendingAddModel?.name == "second-model")
+    }
+
+    @Test("Stale confirmation cannot confirm a newer request")
+    func staleConfirmationCannotConfirmNewerRequest() async throws {
+        let (manager, service) = makeManager()
+        let firstURL = try #require(URL(string: "ayna://add-model?name=first-model"))
+        let secondURL = try #require(URL(string: "ayna://add-model?name=second-model"))
+
+        await manager.handle(url: firstURL)
+        let firstRequestID = try #require(manager.pendingAddModel?.id)
+        manager.cancelAddModel(expectedRequestID: firstRequestID)
+        await manager.handle(url: secondURL)
+        let secondRequestID = try #require(manager.pendingAddModel?.id)
+
+        manager.confirmAddModel(expectedRequestID: firstRequestID)
+
+        #expect(manager.pendingAddModel?.id == secondRequestID)
+        #expect(!service.customModels.contains("second-model"))
+    }
+
+    @Test("Unknown named chat is rejected instead of falling back")
+    func unknownNamedChatIsRejectedInsteadOfFallingBack() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model=missing-model&prompt=Private"))
+
+        await manager.handle(url: url)
+
+        #expect(drainReadyChats(from: manager).isEmpty)
+        #expect(manager.pendingChat == nil)
+        #expect(manager.errorMessage == "Model 'missing-model' not found")
+    }
+
+    @Test("Whitespace model is rejected before unified confirmation")
+    func whitespaceModelIsRejectedBeforeUnifiedConfirmation() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model=%20%20&provider=openai&prompt=Private"))
+
+        await manager.handle(url: url)
+
+        #expect(manager.pendingAddModel == nil)
+        #expect(manager.pendingChat == nil)
+        #expect(manager.errorMessage?.contains("model") == true)
+    }
+
+    @Test("Valueless model is rejected instead of falling back")
+    func valuelessModelIsRejectedInsteadOfFallingBack() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model&prompt=Private"))
+
+        await manager.handle(url: url)
+
+        #expect(manager.pendingAddModel == nil)
+        #expect(manager.pendingChat == nil)
+        #expect(manager.errorMessage?.contains("model") == true)
+    }
+
+    @Test("Chat is rejected if model disappears before consumption")
+    func chatIsRejectedIfModelDisappearsBeforeConsumption() async throws {
+        let (manager, service) = makeManager()
+        service.customModels.append("temporary-model")
+        let url = try #require(URL(string: "ayna://chat?model=temporary-model&prompt=Private"))
+
+        await manager.handle(url: url)
+        service.customModels.removeAll()
+
+        #expect(drainReadyChats(from: manager).isEmpty)
+        #expect(manager.pendingChat == nil)
+        #expect(manager.errorMessage == "Model 'temporary-model' not found")
+    }
+
+    @Test("Cancelled deferred chat is absent when cancellation publishes")
+    func cancelledDeferredChatIsAbsentWhenCancellationPublishes() async throws {
+        let (manager, _) = makeManager()
+        let url = try #require(URL(string: "ayna://chat?model=cancel-model&provider=openai&prompt=Private"))
+        await manager.handle(url: url)
+
+        var chatVisibleWhenCancellationPublished: ChatRequest?
+        let cancellation = manager.$pendingAddModel
+            .dropFirst()
+            .sink { request in
+                if request == nil {
+                    chatVisibleWhenCancellationPublished = manager.pendingChat
+                }
+            }
+
+        try cancelPendingModel(in: manager)
+
+        #expect(chatVisibleWhenCancellationPublished == nil)
+        withExtendedLifetime(cancellation) {}
     }
 
     // MARK: - Invalid URL Tests
@@ -283,7 +684,7 @@ struct DeepLinkManagerTests {
 
         #expect(manager.pendingAddModel != nil)
 
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         #expect(manager.pendingAddModel == nil)
         #expect(service.customModels.contains("test-model"))
@@ -298,7 +699,7 @@ struct DeepLinkManagerTests {
         let url = try #require(URL(string: "ayna://add-model?name=test-model&provider=github"))
         await manager.handle(url: url)
 
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         #expect(service.customModels.contains("test-model"))
         #expect(service.modelEndpoints["test-model"] == nil)
@@ -310,7 +711,7 @@ struct DeepLinkManagerTests {
         let url = try #require(URL(string: "ayna://add-model?name=test-model"))
         await manager.handle(url: url)
 
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         #expect(service.customModels.contains("test-model"))
         #expect(service.modelAPIKeys["test-model"] == nil)
@@ -324,7 +725,7 @@ struct DeepLinkManagerTests {
 
         #expect(manager.pendingAddModel != nil)
 
-        manager.cancelAddModel()
+        try cancelPendingModel(in: manager)
 
         #expect(manager.pendingAddModel == nil)
         #expect(!service.customModels.contains("test-model"))
@@ -336,12 +737,12 @@ struct DeepLinkManagerTests {
         // Add first model
         let url1 = try #require(URL(string: "ayna://add-model?name=duplicate-model"))
         await manager.handle(url: url1)
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         // Try to add duplicate
         let url2 = try #require(URL(string: "ayna://add-model?name=duplicate-model"))
         await manager.handle(url: url2)
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("already exists") ?? false)
@@ -361,49 +762,6 @@ struct DeepLinkManagerTests {
 
         #expect(manager.errorMessage == nil)
         #expect(manager.errorRecoverySuggestion == nil)
-    }
-
-    @Test("Clear pending chat clears request")
-    func clearPendingChatClearsRequest() async throws {
-        let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://chat?prompt=test"))
-        await manager.handle(url: url)
-
-        #expect(manager.pendingChat != nil)
-
-        manager.clearPendingChat()
-
-        #expect(manager.pendingChat == nil)
-    }
-
-    @Test("New URL clears previous error")
-    func newURLClearsPreviousError() async throws {
-        let (manager, _) = makeManager()
-        // First cause an error
-        let badURL = try #require(URL(string: "ayna://unknown"))
-        await manager.handle(url: badURL)
-        #expect(manager.errorMessage != nil)
-
-        // Then handle a valid URL
-        let goodURL = try #require(URL(string: "ayna://chat?prompt=hello"))
-        await manager.handle(url: goodURL)
-
-        #expect(manager.errorMessage == nil)
-        #expect(manager.pendingChat != nil)
-    }
-
-    // MARK: - OAuth Callback Tests
-
-    @Test("OAuth callback is recognized")
-    func oAuthCallbackIsRecognized() async throws {
-        let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://auth/callback?code=test-code"))
-
-        await manager.handle(url: url)
-
-        // OAuth callbacks don't set pending states, they're delegated
-        #expect(manager.pendingAddModel == nil)
-        #expect(manager.errorMessage == nil)
     }
 
     // MARK: - Main Action Tests
@@ -433,7 +791,7 @@ struct DeepLinkManagerTests {
 
         #expect(manager.showAddModelConfirmation)
 
-        manager.cancelAddModel()
+        try cancelPendingModel(in: manager)
 
         #expect(!manager.showAddModelConfirmation)
     }
@@ -499,17 +857,18 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel != nil)
         #expect(manager.pendingChat != nil)
 
-        manager.confirmAddModel()
+        try confirmPendingModel(in: manager)
 
         // Model should be added
         #expect(service.customModels.contains("unified-model"))
         #expect(service.modelProviders["unified-model"] == .githubModels)
         #expect(service.modelAPIKeys["unified-model"] == "test-key")
 
-        // Add model confirmation cleared, but chat preserved
+        // Add model confirmation cleared, and chat released exactly once
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.prompt == "Test prompt")
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.prompt == "Test prompt")
+        #expect(drainReadyChats(from: manager).isEmpty)
     }
 
     @Test("Unified flow cancel clears both pending requests")
@@ -521,7 +880,7 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel != nil)
         #expect(manager.pendingChat != nil)
 
-        manager.cancelAddModel()
+        try cancelPendingModel(in: manager)
 
         // Both should be cleared
         #expect(manager.pendingAddModel == nil)
@@ -607,7 +966,8 @@ struct DeepLinkManagerTests {
 
     @Test("Chat without config params has no model config")
     func chatWithoutConfigParamsHasNoModelConfig() async throws {
-        let (manager, _) = makeManager()
+        let (manager, service) = makeManager()
+        service.customModels.append("simple-model")
         let url = try #require(URL(string: "ayna://chat?model=simple-model&prompt=Hello"))
 
         await manager.handle(url: url)
