@@ -216,7 +216,7 @@ final class ConversationManager: ObservableObject {
 
     @discardableResult
     func clearAllConversations() -> Task<Void, Never> {
-        let beforeClear = conversations
+        let beforeClear = conversations.map(resolvingInterruptedImageGeneration)
         let selectedBeforeClear = selectedConversationId
         let receipt = persistenceCoordinator.clear(beforeClear)
 
@@ -332,7 +332,8 @@ final class ConversationManager: ObservableObject {
         let current = conversations[index]
         let id = current.id
         let wasSelected = selectedConversationId == id
-        let receipt = persistenceCoordinator.delete(current)
+        let rollbackSnapshot = resolvingInterruptedImageGeneration(in: current)
+        let receipt = persistenceCoordinator.delete(rollbackSnapshot)
 
         conversations.remove(at: index)
         updateCacheForRemoval(id: id, at: index)
@@ -385,6 +386,35 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    private func resolvingInterruptedImageGeneration(in conversation: Conversation) -> Conversation {
+        var restored = conversation
+        var interruptedMessageIDs: Set<UUID> = []
+        for index in restored.messages.indices {
+            let message = restored.messages[index]
+            guard message.role == .assistant,
+                  message.mediaType == .image,
+                  message.imageData == nil,
+                  message.imagePath == nil,
+                  message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                continue
+            }
+            interruptedMessageIDs.insert(message.id)
+            restored.messages[index].content = "Image generation stopped"
+        }
+        guard !interruptedMessageIDs.isEmpty else { return restored }
+
+        for groupIndex in restored.responseGroups.indices {
+            for responseIndex in restored.responseGroups[groupIndex].responses.indices
+                where interruptedMessageIDs.contains(restored.responseGroups[groupIndex].responses[responseIndex].id) &&
+                restored.responseGroups[groupIndex].responses[responseIndex].status == .streaming
+            {
+                restored.responseGroups[groupIndex].responses[responseIndex].status = .failed
+            }
+        }
+        return restored
+    }
+
     func updateConversation(_ conversation: Conversation) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index] = conversation
@@ -428,7 +458,12 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    func updateMessage(in conversation: Conversation, messageId: UUID, update: (inout Message) -> Void) {
+    @discardableResult
+    func updateMessage(
+        in conversation: Conversation,
+        messageId: UUID,
+        update: (inout Message) -> Void
+    ) -> Bool {
         if let convIndex = getConversationIndex(for: conversation.id),
            let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
         {
@@ -437,7 +472,9 @@ final class ConversationManager: ObservableObject {
             conversations[convIndex].messages[msgIndex] = message
             conversations[convIndex].updatedAt = Date()
             save(conversations[convIndex])
+            return true
         }
+        return false
     }
 
     // MARK: - Safe ID-Based Access

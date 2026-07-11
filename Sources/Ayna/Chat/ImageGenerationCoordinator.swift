@@ -2,208 +2,119 @@
 //  ImageGenerationCoordinator.swift
 //  ayna
 //
-//  Extracted from MacChatView/MacNewChatView - handles image generation logic
+//  Owns every stage of the current image-generation user action.
 //
 
 #if !os(watchOS)
 
-import Foundation
+    import Foundation
 
-/// Coordinates image generation, including multi-model parallel generation
-@MainActor
-final class ImageGenerationCoordinator {
-    /// Callback types for image generation results
-    typealias ImageSuccessHandler = @Sendable (Data, UUID) -> Void
-    typealias ImageErrorHandler = @Sendable (Error, UUID) -> Void
-    typealias CompletionHandler = @Sendable () -> Void
-
-    /// Configuration for multi-model image generation
-    struct MultiModelConfig {
-        let prompt: String
-        let models: [String]
-        let previousImage: Data?
-        let userMessageId: UUID
-        let aiService: AIService
-    }
-
-    /// Result of multi-model image generation setup
-    struct MultiModelResult {
-        let responseGroupId: UUID
-        let messageIds: [String: UUID]
-        let responseGroup: ResponseGroup
-    }
-
-    /// Generates a single image using the AI service
-    /// - Parameters:
-    ///   - prompt: The image generation prompt
-    ///   - model: The model to use
-    ///   - previousImage: Optional previous image for editing context
-    ///   - aiService: The AI service instance
-    ///   - onSuccess: Called with image data and message ID on success
-    ///   - onError: Called with error and message ID on failure
-    /// - Returns: The message ID of the placeholder message
-    static func generateSingleImage(
-        prompt: String,
-        model: String,
-        previousImage: Data?,
-        aiService: AIService,
-        onSuccess: @escaping ImageSuccessHandler,
-        onError: @escaping ImageErrorHandler
-    ) -> UUID {
-        let messageId = UUID()
-
-        if let previousImage {
-            // Use image editing API for follow-up requests
-            aiService.editImage(
-                prompt: prompt,
-                sourceImage: previousImage,
-                model: model,
-                onComplete: { imageData in
-                    onSuccess(imageData, messageId)
-                },
-                onError: { error in
-                    onError(error, messageId)
-                }
-            )
-        } else {
-            // Use generation API
-            aiService.generateImage(
-                prompt: prompt,
-                model: model,
-                onComplete: { imageData in
-                    onSuccess(imageData, messageId)
-                },
-                onError: { error in
-                    onError(error, messageId)
-                }
-            )
+    /// Fences and cancels the tasks and transport children belonging to one image action.
+    @MainActor
+    final class ImageGenerationCoordinator {
+        struct OperationID: Hashable, Sendable {
+            private let rawValue = UUID()
         }
 
-        return messageId
-    }
-
-    /// Creates a placeholder message for image generation
-    static func createImagePlaceholder(
-        messageId: UUID,
-        model: String,
-        responseGroupId: UUID? = nil
-    ) -> Message {
-        Message(
-            id: messageId,
-            role: .assistant,
-            content: "",
-            model: model,
-            responseGroupId: responseGroupId,
-            mediaType: .image
-        )
-    }
-
-    /// Generates images from multiple models in parallel
-    /// - Parameters:
-    ///   - config: Configuration for multi-model generation
-    ///   - onImageSuccess: Called for each successful image generation
-    ///   - onImageError: Called for each failed image generation
-    ///   - onAllComplete: Called when all generations have finished
-    /// - Returns: Result containing responseGroupId, messageIds, and responseGroup
-    static func generateMultiModelImages(
-        config: MultiModelConfig,
-        onImageSuccess: @escaping ImageSuccessHandler,
-        onImageError: @escaping ImageErrorHandler,
-        onAllComplete: @escaping CompletionHandler
-    ) -> MultiModelResult {
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        // Create message IDs and response entries for each model
-        for model in config.models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
+        private struct Cancellation {
+            let cancel: @MainActor () -> Void
         }
 
-        // Create response group
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
-            userMessageId: config.userMessageId,
-            responses: responseEntries
-        )
+        private struct ActiveOperation {
+            let id: OperationID
+            var cancellations: [Cancellation] = []
+        }
 
-        // Track completion with thread-safe counter
-        let remainingCount = AsyncCounter(total: config.models.count)
+        private var activeOperation: ActiveOperation?
 
-        // Generate images in parallel
-        for model in config.models {
-            guard let messageId = messageIds[model] else { continue }
+        var hasActiveOperation: Bool {
+            activeOperation != nil
+        }
 
-            let wrappedOnComplete: @Sendable (Data) -> Void = { imageData in
-                Task { @MainActor in
-                    onImageSuccess(imageData, messageId)
-                    if await remainingCount.decrementAndCheck() {
-                        onAllComplete()
-                    }
-                }
-            }
+        /// Starts a new logical image operation and atomically fences/cancels its predecessor.
+        func beginOperation() -> OperationID {
+            cancelCurrentOperation()
+            let id = OperationID()
+            activeOperation = ActiveOperation(id: id)
+            return id
+        }
 
-            let wrappedOnError: @Sendable (Error) -> Void = { error in
-                Task { @MainActor in
-                    onImageError(error, messageId)
-                    if await remainingCount.decrementAndCheck() {
-                        onAllComplete()
-                    }
-                }
-            }
+        func owns(_ id: OperationID) -> Bool {
+            activeOperation?.id == id
+        }
 
-            if let previousImage = config.previousImage {
-                config.aiService.editImage(
-                    prompt: config.prompt,
-                    sourceImage: previousImage,
-                    model: model,
-                    onComplete: wrappedOnComplete,
-                    onError: wrappedOnError
-                )
-            } else {
-                config.aiService.generateImage(
-                    prompt: config.prompt,
-                    model: model,
-                    onComplete: wrappedOnComplete,
-                    onError: wrappedOnError
-                )
+        static func pendingMessageIDs(
+            in responseGroup: ResponseGroup,
+            candidates: [UUID]
+        ) -> [UUID] {
+            let streamingIDs = Set(responseGroup.responses.filter { $0.status == .streaming }.map(\.id))
+            return candidates.filter { streamingIDs.contains($0) }
+        }
+
+        /// Adds one AI transport child to a single- or multi-model logical operation.
+        func track(_ request: AIImageRequest?, for id: OperationID) {
+            guard let request else { return }
+            trackCancellation(for: id) {
+                request.cancel()
             }
         }
 
-        return MultiModelResult(
-            responseGroupId: responseGroupId,
-            messageIds: messageIds,
-            responseGroup: responseGroup
-        )
+        /// Adds an auxiliary stage such as image loading or post-processing.
+        func track(_ task: Task<Void, Never>, for id: OperationID) {
+            trackCancellation(for: id) {
+                task.cancel()
+            }
+        }
+
+        func onCancel(
+            for id: OperationID,
+            perform action: @escaping @MainActor () -> Void
+        ) {
+            trackCancellation(for: id, cancellation: action)
+        }
+
+        /// Schedules actor-isolated work from a sendable transport callback and owns the task.
+        nonisolated func schedule(
+            for id: OperationID,
+            operation: @escaping @MainActor @Sendable () async -> Void
+        ) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let task = Task { @MainActor [weak self] in
+                    guard let self, self.owns(id), !Task.isCancelled else { return }
+                    await operation()
+                }
+                self.track(task, for: id)
+            }
+        }
+
+        /// Completes only the matching operation; stale completions cannot clear a replacement.
+        @discardableResult
+        func finishOperation(_ id: OperationID) -> Bool {
+            guard owns(id) else { return false }
+            activeOperation = nil
+            return true
+        }
+
+        @discardableResult
+        func cancelCurrentOperation() -> Bool {
+            guard let operation = activeOperation else { return false }
+            activeOperation = nil
+            operation.cancellations.forEach { $0.cancel() }
+            return true
+        }
+
+        private func trackCancellation(
+            for id: OperationID,
+            cancellation: @escaping @MainActor () -> Void
+        ) {
+            guard var operation = activeOperation, operation.id == id else {
+                cancellation()
+                return
+            }
+            operation.cancellations.append(Cancellation(cancel: cancellation))
+            activeOperation = operation
+        }
     }
-
-    /// Saves image data to storage and returns the path
-    static func saveImageToStorage(imageData: Data) throws -> String {
-        try AttachmentStorage.shared.save(data: imageData, extension: "png")
-    }
-}
-
-// MARK: - Async Counter
-
-/// Thread-safe counter for tracking async completion
-private actor AsyncCounter {
-    private var remaining: Int
-
-    init(total: Int) {
-        remaining = total
-    }
-
-    func decrementAndCheck() -> Bool {
-        remaining -= 1
-        return remaining <= 0
-    }
-}
 
 #endif

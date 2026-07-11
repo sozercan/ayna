@@ -92,6 +92,27 @@ struct RequestFlightObserver: Sendable {
     static let none = RequestFlightObserver { _, _ in }
 }
 
+#if !os(watchOS)
+    /// Owner-specific cancellation token for one image transport request.
+    ///
+    /// Higher-level image operations retain these tokens so replacing a view or
+    /// cancelling one conversation cannot accidentally cancel another owner's work.
+    @MainActor
+    final class AIImageRequest {
+        fileprivate weak var service: AIService?
+        fileprivate let flightID: RequestFlightID
+
+        fileprivate init(service: AIService, flightID: RequestFlightID) {
+            self.service = service
+            self.flightID = flightID
+        }
+
+        func cancel() {
+            service?.cancelImageRequest(flightID)
+        }
+    }
+#endif
+
 private final class OrderedMainActorForwarder<Event: Sendable>: Sendable {
     private struct State: Sendable {
         var events: [Event] = []
@@ -199,6 +220,7 @@ class AIService: ObservableObject {
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
     #if !os(watchOS)
         private var appleIntelligenceTask: Task<Void, Never>?
+        private var imageRequests: [RequestFlightID: OpenAIImageService.RequestHandle] = [:]
     #endif
 
     /// Holds Anthropic providers during active requests to prevent deallocation.
@@ -335,6 +357,18 @@ class AIService: ObservableObject {
         case imageGeneration
     }
 
+    #if !os(watchOS)
+        private static func makeImageService(
+            urlSession: URLSession,
+            retryDelay: @escaping @Sendable (Int, Date?) async -> Void
+        ) -> OpenAIImageService {
+            OpenAIImageService(
+                urlSession: urlSession,
+                retryDelay: { attempt in await retryDelay(attempt, nil) }
+            )
+        }
+    #endif
+
     init(
         urlSession: URLSession? = nil,
         anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {
@@ -354,7 +388,7 @@ class AIService: ObservableObject {
         if let session = urlSession {
             self.urlSession = session
             #if !os(watchOS)
-                imageService = OpenAIImageService(urlSession: session)
+                imageService = Self.makeImageService(urlSession: session, retryDelay: retryDelay)
             #endif
         } else {
             let config = URLSessionConfiguration.default
@@ -362,7 +396,7 @@ class AIService: ObservableObject {
             config.timeoutIntervalForResource = 300 // 5 minutes
             self.urlSession = URLSession(configuration: config)
             #if !os(watchOS)
-                imageService = OpenAIImageService(urlSession: self.urlSession)
+                imageService = Self.makeImageService(urlSession: self.urlSession, retryDelay: retryDelay)
             #endif
         }
 
@@ -811,7 +845,7 @@ class AIService: ObservableObject {
         return .chat
     }
 
-    func cancelCurrentRequest() {
+    func cancelCurrentRequest(includeImageRequests: Bool = true) {
         DiagnosticsLogger.log(
             .aiService,
             level: .info,
@@ -840,6 +874,13 @@ class AIService: ObservableObject {
         #if !os(watchOS)
             let appleTask = appleIntelligenceTask
             appleIntelligenceTask = nil
+            let imageRequestHandles: [OpenAIImageService.RequestHandle]
+            if includeImageRequests {
+                imageRequestHandles = Array(imageRequests.values)
+                imageRequests.removeAll()
+            } else {
+                imageRequestHandles = []
+            }
         #endif
 
         // Fence queued multi-model starts before active handles can release shared permits.
@@ -868,6 +909,7 @@ class AIService: ObservableObject {
         multiAnthropicProviders.forEach { $0.cancelRequest() }
         #if !os(watchOS)
             appleTask?.cancel()
+            imageRequestHandles.forEach { $0.cancel() }
         #endif
         DiagnosticsLogger.log(
             .aiService,
@@ -879,17 +921,18 @@ class AIService: ObservableObject {
     #if !os(watchOS)
         /// Generates an image from a text prompt.
         /// Delegates to OpenAIImageService for the actual network request.
+        @discardableResult
         func generateImage(
             prompt: String,
             model: String? = nil,
             onComplete: @escaping @Sendable (Data) -> Void,
             onError: @escaping @Sendable (Error) -> Void,
             attempt: Int = 0
-        ) {
+        ) -> AIImageRequest? {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
                 onError(AIError.missingModel)
-                return
+                return nil
             }
 
             let effectiveProvider = modelProviders[requestModel] ?? provider
@@ -910,29 +953,54 @@ class AIService: ObservableObject {
                 outputCompression: outputCompression
             )
 
+            let flightID = RequestFlightID()
+            let requestHandle = OpenAIImageService.RequestHandle()
+            imageRequests[flightID] = requestHandle
+
             imageService.generateImage(
                 prompt: prompt,
                 requestConfig: requestConfig,
                 imageConfig: imageConfig,
-                onComplete: onComplete,
-                onError: onError,
+                requestHandle: requestHandle,
+                onComplete: { [weak self] data in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.finishImageRequest(flightID, handle: requestHandle)
+                        else {
+                            return
+                        }
+                        onComplete(data)
+                    }
+                },
+                onError: { [weak self] error in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.finishImageRequest(flightID, handle: requestHandle)
+                        else {
+                            return
+                        }
+                        onError(error)
+                    }
+                },
                 attempt: attempt
             )
+            return AIImageRequest(service: self, flightID: flightID)
         }
 
         /// Edits an image based on a prompt and source image.
         /// Delegates to OpenAIImageService for the actual network request.
+        @discardableResult
         func editImage(
             prompt: String,
             sourceImage: Data,
             model: String? = nil,
             onComplete: @escaping @Sendable (Data) -> Void,
             onError: @escaping @Sendable (Error) -> Void
-        ) {
+        ) -> AIImageRequest? {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
                 onError(AIError.missingModel)
-                return
+                return nil
             }
 
             let effectiveProvider = modelProviders[requestModel] ?? provider
@@ -953,14 +1021,53 @@ class AIService: ObservableObject {
                 outputCompression: outputCompression
             )
 
+            let flightID = RequestFlightID()
+            let requestHandle = OpenAIImageService.RequestHandle()
+            imageRequests[flightID] = requestHandle
+
             imageService.editImage(
                 prompt: prompt,
                 sourceImage: sourceImage,
                 requestConfig: requestConfig,
                 imageConfig: imageConfig,
-                onComplete: onComplete,
-                onError: onError
+                requestHandle: requestHandle,
+                onComplete: { [weak self] data in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.finishImageRequest(flightID, handle: requestHandle)
+                        else {
+                            return
+                        }
+                        onComplete(data)
+                    }
+                },
+                onError: { [weak self] error in
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.finishImageRequest(flightID, handle: requestHandle)
+                        else {
+                            return
+                        }
+                        onError(error)
+                    }
+                }
             )
+            return AIImageRequest(service: self, flightID: flightID)
+        }
+
+        fileprivate func cancelImageRequest(_ flightID: RequestFlightID) {
+            guard let requestHandle = imageRequests.removeValue(forKey: flightID) else { return }
+            requestHandle.cancel()
+        }
+
+        private func finishImageRequest(
+            _ flightID: RequestFlightID,
+            handle: OpenAIImageService.RequestHandle
+        ) -> Bool {
+            guard imageRequests[flightID] === handle else { return false }
+            imageRequests.removeValue(forKey: flightID)
+            handle.finish()
+            return true
         }
     #endif
 

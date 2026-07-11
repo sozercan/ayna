@@ -55,6 +55,28 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.content == "Ping")
     }
 
+    @Test("Update message reports whether the target still exists")
+    @MainActor
+    func updateMessageReportsWhetherTargetExists() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+        let message = Message(role: .assistant, content: "Pending")
+        manager.addMessage(to: conversation, message: message)
+
+        let updated = manager.updateMessage(in: conversation, messageId: message.id) { target in
+            target.content = "Completed"
+        }
+        let missing = manager.updateMessage(in: conversation, messageId: UUID()) { target in
+            target.content = "Unexpected"
+        }
+
+        #expect(updated)
+        #expect(!missing)
+        #expect(manager.conversations.first?.messages.first?.content == "Completed")
+    }
+
     @Test("Clear all conversations empties encrypted store")
     @MainActor
     func clearAllConversationsEmptiesEncryptedStore() async throws {
@@ -127,6 +149,55 @@ struct ConversationManagerTests {
         await clearRepair.started.wait()
         await clearRepair.releaseGate.open()
         await clearManager.flushPendingSaves()
+    }
+
+    @Test("Failed delete restores image placeholders as stopped")
+    @MainActor
+    func failedDeleteRestoresImagePlaceholdersAsStopped() async throws {
+        let model = AIService.shared.selectedModel
+        let userMessage = Message(role: .user, content: "Draw a sphere")
+        let responseGroupID = UUID()
+        let placeholder = Message(
+            role: .assistant,
+            content: "",
+            model: model,
+            responseGroupId: responseGroupID,
+            mediaType: .image
+        )
+        let responseGroup = ResponseGroup(
+            id: responseGroupID,
+            userMessageId: userMessage.id,
+            responses: [
+                .init(id: placeholder.id, modelName: model, status: .streaming),
+            ]
+        )
+        let conversation = Conversation(
+            title: "Interrupted image",
+            messages: [userMessage, placeholder],
+            model: model,
+            responseGroups: [responseGroup]
+        )
+        let store = ScriptedConversationStore(conversations: [conversation])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        let deleteGate = await store.enqueue(.delete(conversation.id), outcome: .fail, blocked: true)
+        let repairGate = await store.enqueue(.save(conversation.id, nil), blocked: true)
+
+        let target = try #require(manager.conversations.first)
+        let rollback = try #require(manager.deleteConversation(target))
+        await deleteGate.started.wait()
+        await deleteGate.releaseGate.open()
+        await rollback.value
+
+        let restored = try #require(manager.conversation(byId: conversation.id))
+        let restoredMessage = try #require(restored.messages.first(where: { $0.id == placeholder.id }))
+        let restoredGroup = try #require(restored.getResponseGroup(responseGroupID))
+        #expect(restoredMessage.content == "Image generation stopped")
+        #expect(restoredGroup.responses.first?.status == .failed)
+
+        await repairGate.started.wait()
+        await repairGate.releaseGate.open()
+        await manager.flushPendingSaves()
     }
 
     @Test("Failed clear does not override a newer new-chat selection")

@@ -27,6 +27,7 @@ struct IOSContentView: View {
                    selectedId != ConversationManager.newConversationId
                 {
                     IOSChatView(conversationId: selectedId)
+                        .id(selectedId)
                 } else {
                     IOSNewChatView()
                         .id(conversationManager.selectedConversationId)
@@ -432,6 +433,9 @@ struct IOSNewChatView: View {
                 level: .info,
                 message: "📱 IOSNewChatView appeared"
             )
+        }
+        .onDisappear {
+            viewModel.cancelOwnedImageOperation()
         }
     }
 

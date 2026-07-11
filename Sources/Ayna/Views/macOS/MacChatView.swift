@@ -44,6 +44,7 @@ struct MacChatView: View {
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
     @State private var toolChainTimeoutTask: Task<Void, Never>?
+    @State var imageGenerationCoordinator = ImageGenerationCoordinator()
     @State private var showingSystemPromptSheet = false
 
     // Multi-model support (unified selection - 1 model = single, 2+ = multi)
@@ -357,6 +358,12 @@ struct MacChatView: View {
             isComposerFocused = true
             checkAndProcessPendingPrompt()
         }
+        .onDisappear {
+            if imageGenerationCoordinator.hasActiveOperation {
+                imageGenerationCoordinator.cancelCurrentOperation()
+                isGenerating = false
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
             // Handle Work with Apps: auto-send message when conversation is created with context
             guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
@@ -667,7 +674,10 @@ struct MacChatView: View {
         if isGenerating {
             // Stop generation immediately
             logChat("🛑 Stop button clicked, cancelling...", level: .info)
-            AIService.shared.cancelCurrentRequest()
+            let cancelledImageOperation = imageGenerationCoordinator.cancelCurrentOperation()
+            if !cancelledImageOperation {
+                AIService.shared.cancelCurrentRequest(includeImageRequests: false)
+            }
 
             // Flush any pending chunks before stopping
             batchUpdateTask?.cancel()

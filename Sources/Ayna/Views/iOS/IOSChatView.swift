@@ -121,13 +121,13 @@ struct IOSChatView: View {
                                     case let .message(message):
                                         IOSMessageView(
                                             message: message,
-                                            onRetry: message.role == .assistant ? {
+                                            onRetry: message.role == .assistant && !viewModel.isGenerating ? {
                                                 viewModel.retryMessage(beforeMessage: message)
                                             } : nil,
-                                            onSwitchModel: message.role == .assistant ? { newModel in
+                                            onSwitchModel: message.role == .assistant && !viewModel.isGenerating ? { newModel in
                                                 viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                             } : nil,
-                                            onEdit: message.role == .user ? { newContent in
+                                            onEdit: message.role == .user && !viewModel.isGenerating ? { newContent in
                                                 let edited = conversationManager.editMessage(
                                                     in: conversation,
                                                     messageId: message.id,
@@ -155,7 +155,7 @@ struct IOSChatView: View {
                                                     messageId: messageId
                                                 )
                                             },
-                                            onRetry: { message in
+                                            onRetry: viewModel.isGenerating ? nil : { message in
                                                 viewModel.retryMessage(beforeMessage: message)
                                             },
                                             defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
@@ -353,6 +353,9 @@ struct IOSChatView: View {
             viewModel.configure(with: conversationManager, conversationId: conversationId)
             // Initialize selectedModels with current conversation model
             initializeSelectedModelsIfNeeded()
+        }
+        .onDisappear {
+            viewModel.cancelOwnedImageOperation()
         }
         .onChange(of: conversation?.model) { _, newModel in
             // Re-initialize if the conversation model changes and selectedModels is empty
