@@ -169,6 +169,45 @@ private enum MultiModelBatchCallback: @unchecked Sendable {
     case reasoning(String)
 }
 
+#if !os(watchOS)
+    @MainActor
+    private struct AppleIntelligenceRequestHandle {
+        let task: Task<Void, Never>
+        let service: any AppleIntelligenceServing
+        let sessionID: String
+
+        func cancel() {
+            task.cancel()
+            service.clearSession(conversationId: sessionID)
+        }
+    }
+
+    @MainActor
+    private struct AppleIntelligenceRequestContext {
+        let service: any AppleIntelligenceServing
+        let messages: [Message]
+        let modelName: String
+        let temperature: Double?
+        let stream: Bool
+        let conversationID: UUID?
+        let isMultiModelRequest: Bool
+        let onChunk: @Sendable (String) -> Void
+        let onComplete: @Sendable () -> Void
+        let onError: @Sendable (Error) -> Void
+    }
+
+    private struct AppleConversationContext {
+        let history: [AppleIntelligenceHistoryEntry]
+        let prompt: String
+        let requiresHistory: Bool
+    }
+
+    private struct AppleToolMatchPlan {
+        var assistantCallIDs: [UUID: [Int: String]] = [:]
+        var toolOutputIDs: [UUID: [Int: String]] = [:]
+    }
+#endif
+
 struct AIServiceResponseSimulationCallbacks: Sendable {
     let onChunk: @Sendable (String) -> Void
     let onComplete: @Sendable () -> Void
@@ -219,7 +258,8 @@ class AIService: ObservableObject {
     /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
     #if !os(watchOS)
-        private var appleIntelligenceTask: Task<Void, Never>?
+        private var currentAppleIntelligenceTask = RequestFlight<AppleIntelligenceRequestHandle>()
+        private var multiModelAppleIntelligenceTasks: [String: RequestFlight<AppleIntelligenceRequestHandle>] = [:]
         private var imageRequests: [RequestFlightID: OpenAIImageService.RequestHandle] = [:]
     #endif
 
@@ -244,6 +284,9 @@ class AIService: ObservableObject {
     private let retryDelay: @Sendable (Int, Date?) async -> Void
     private let requestFlightObserver: RequestFlightObserver
     private let responseSimulator: AIServiceResponseSimulator?
+    #if !os(watchOS)
+        private let injectedAppleIntelligenceService: (any AppleIntelligenceServing)?
+    #endif
 
     // Image generation service
     #if !os(watchOS)
@@ -378,12 +421,16 @@ class AIService: ObservableObject {
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
         },
         requestFlightObserver: RequestFlightObserver = .none,
-        responseSimulator: AIServiceResponseSimulator? = nil
+        responseSimulator: AIServiceResponseSimulator? = nil,
+        appleIntelligenceService: (any AppleIntelligenceServing)? = nil
     ) {
         self.anthropicProviderFactory = anthropicProviderFactory
         self.retryDelay = retryDelay
         self.requestFlightObserver = requestFlightObserver
         self.responseSimulator = responseSimulator
+        #if !os(watchOS)
+            injectedAppleIntelligenceService = appleIntelligenceService
+        #endif
 
         if let session = urlSession {
             self.urlSession = session
@@ -872,8 +919,12 @@ class AIService: ObservableObject {
         }
         multiModelAnthropicProviders.removeAll()
         #if !os(watchOS)
-            let appleTask = appleIntelligenceTask
-            appleIntelligenceTask = nil
+            let appleTask = currentAppleIntelligenceTask.take()
+            let multiAppleTasks = multiModelAppleIntelligenceTasks.compactMap { _, flight -> AppleIntelligenceRequestHandle? in
+                var flight = flight
+                return flight.take()
+            }
+            multiModelAppleIntelligenceTasks.removeAll()
             let imageRequestHandles: [OpenAIImageService.RequestHandle]
             if includeImageRequests {
                 imageRequestHandles = Array(imageRequests.values)
@@ -909,6 +960,7 @@ class AIService: ObservableObject {
         multiAnthropicProviders.forEach { $0.cancelRequest() }
         #if !os(watchOS)
             appleTask?.cancel()
+            multiAppleTasks.forEach { $0.cancel() }
             imageRequestHandles.forEach { $0.cancel() }
         #endif
         DiagnosticsLogger.log(
@@ -1187,16 +1239,32 @@ class AIService: ObservableObject {
         // Handle Apple Intelligence separately
         #if !os(watchOS)
             if effectiveProvider == .appleIntelligence {
-                if #available(macOS 26.0, iOS 26.0, *) {
-                    handleAppleIntelligenceRequest(
+                if let service = injectedAppleIntelligenceService {
+                    handleAppleIntelligenceRequest(AppleIntelligenceRequestContext(
+                        service: service,
                         messages: messages,
+                        modelName: requestModel,
                         temperature: temperature,
                         stream: stream,
-                        conversationId: conversationId,
+                        conversationID: conversationId,
+                        isMultiModelRequest: isMultiModelRequest,
                         onChunk: onChunk,
                         onComplete: onComplete,
                         onError: onError
-                    )
+                    ))
+                } else if #available(macOS 26.0, iOS 26.0, *) {
+                    handleAppleIntelligenceRequest(AppleIntelligenceRequestContext(
+                        service: AppleIntelligenceService.shared,
+                        messages: messages,
+                        modelName: requestModel,
+                        temperature: temperature,
+                        stream: stream,
+                        conversationID: conversationId,
+                        isMultiModelRequest: isMultiModelRequest,
+                        onChunk: onChunk,
+                        onComplete: onComplete,
+                        onError: onError
+                    ))
                 } else {
                     onError(AIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
                 }
@@ -1447,14 +1515,22 @@ class AIService: ObservableObject {
             return flight.take()
         }
         multiModelAnthropicProviders.removeAll()
+        #if !os(watchOS)
+            let previousAppleTasks = multiModelAppleIntelligenceTasks.compactMap { _, flight -> AppleIntelligenceRequestHandle? in
+                var flight = flight
+                return flight.take()
+            }
+            multiModelAppleIntelligenceTasks.removeAll()
+        #endif
 
         // Cancel the batch first so queued runners are fenced before active request handles release permits.
         previousBatchTask?.cancel()
         previousDataTasks.forEach { $0.cancel() }
         previousStreamTasks.forEach { $0.cancel() }
         previousAnthropicProviders.forEach { $0.cancelRequest() }
-        // Apple Intelligence still uses one shared foreground task. Batch callbacks are ownership-gated here,
-        // but safely cancelling only a prior batch requires separate per-request Apple task ownership.
+        #if !os(watchOS)
+            previousAppleTasks.forEach { $0.cancel() }
+        #endif
 
         let flightID = RequestFlightID()
         let task = Task { @MainActor [weak self] in
@@ -3074,98 +3150,547 @@ class AIService: ObservableObject {
     }
 
     #if !os(watchOS)
-        @available(macOS 26.0, iOS 26.0, *)
-        private func handleAppleIntelligenceRequest(
+        private func ownsAppleIntelligenceFlight(
+            _ flightID: RequestFlightID,
+            isMultiModelRequest: Bool,
+            modelName: String
+        ) -> Bool {
+            if isMultiModelRequest {
+                return multiModelAppleIntelligenceTasks[modelName]?.owns(flightID) == true
+            }
+            return currentAppleIntelligenceTask.owns(flightID)
+        }
+
+        @discardableResult
+        private func clearAppleIntelligenceFlight(
+            _ flightID: RequestFlightID,
+            isMultiModelRequest: Bool,
+            modelName: String
+        ) -> Bool {
+            if isMultiModelRequest {
+                guard var flight = multiModelAppleIntelligenceTasks[modelName],
+                      flight.clear(ifOwnedBy: flightID)
+                else {
+                    return false
+                }
+                multiModelAppleIntelligenceTasks.removeValue(forKey: modelName)
+                return true
+            }
+            return currentAppleIntelligenceTask.clear(ifOwnedBy: flightID)
+        }
+
+        @discardableResult
+        private func finishAppleIntelligenceFlight(
+            _ flightID: RequestFlightID,
+            request: AppleIntelligenceRequestContext,
+            sessionID: String
+        ) -> Bool {
+            guard clearAppleIntelligenceFlight(
+                flightID,
+                isMultiModelRequest: request.isMultiModelRequest,
+                modelName: request.modelName
+            ) else {
+                return false
+            }
+            request.service.clearSession(conversationId: sessionID)
+            return true
+        }
+
+        private func installAppleIntelligenceHandle(
+            _ handle: AppleIntelligenceRequestHandle,
+            flightID: RequestFlightID,
+            isMultiModelRequest: Bool,
+            modelName: String
+        ) -> AppleIntelligenceRequestHandle? {
+            if isMultiModelRequest {
+                var flight = multiModelAppleIntelligenceTasks[modelName] ?? RequestFlight()
+                let previous = flight.install(handle, id: flightID)
+                multiModelAppleIntelligenceTasks[modelName] = flight
+                return previous
+            }
+            return currentAppleIntelligenceTask.install(handle, id: flightID)
+        }
+
+        private func appleSessionID(for request: AppleIntelligenceRequestContext) -> String {
+            let conversationScope = request.conversationID?.uuidString ?? "default"
+            let requestScope = UUID().uuidString
+            return request.isMultiModelRequest
+                ? "multi:\(conversationScope):\(request.modelName):\(requestScope)"
+                : "\(conversationScope):\(requestScope)"
+        }
+
+        private func appleSystemInstructions(
             messages: [Message],
-            temperature: Double?,
-            stream: Bool,
-            conversationId: UUID?,
-            onChunk: @escaping (String) -> Void,
-            onComplete: @escaping () -> Void,
-            onError: @escaping (Error) -> Void
-        ) {
-            let service = AppleIntelligenceService.shared
-
-            // Check availability
-            guard service.isAvailable else {
-                onError(AIError.apiError(service.availabilityDescription()))
-                return
-            }
-
-            // Extract system instructions (first system message if any)
-            let baseSystemInstructions =
-                messages.first(where: { $0.role == .system })?.content
-                    ?? "You are a helpful assistant."
-
-            // Inject memory context into system instructions
+            conversationID: UUID?
+        ) -> String {
+            var instructions = messages.first(where: { $0.role == .system })?.content
+                ?? "You are a helpful assistant."
             let memoryContext = MemoryContextProvider.shared.buildContext(
-                currentConversationId: conversationId
+                currentConversationId: conversationID
             )
-            var systemInstructions = baseSystemInstructions
-            if memoryContext.hasContent {
-                var memoryParts: [String] = []
-                if let sessionMetadata = memoryContext.sessionMetadata {
-                    memoryParts.append(sessionMetadata)
-                }
-                if let userMemory = memoryContext.userMemory {
-                    memoryParts.append(userMemory)
-                }
-                if let summaries = memoryContext.conversationSummaries {
-                    memoryParts.append(summaries)
-                }
-                if !memoryParts.isEmpty {
-                    systemInstructions += "\n\n" + memoryParts.joined(separator: "\n\n")
-                }
+            guard memoryContext.hasContent else { return instructions }
+
+            let memoryParts = [
+                memoryContext.sessionMetadata,
+                memoryContext.userMemory,
+                memoryContext.conversationSummaries,
+            ].compactMap(\.self)
+            if !memoryParts.isEmpty {
+                instructions += "\n\n" + memoryParts.joined(separator: "\n\n")
+            }
+            return instructions
+        }
+
+        private func appleToolMatchPlan(messages: [Message]) -> AppleToolMatchPlan {
+            struct PendingCall {
+                let messageID: UUID
+                let index: Int
+                let normalizedID: String
             }
 
-            // Get the last user message as the prompt
-            guard let lastUserMessage = messages.last(where: { $0.role == .user }) else {
-                onError(AIError.apiError("No user message found"))
+            var plan = AppleToolMatchPlan()
+            var pendingByOriginalID: [String: [PendingCall]] = [:]
+            var occurrenceByOriginalID: [String: Int] = [:]
+            let originalIDs = Set(messages.flatMap { ($0.toolCalls ?? []).map(\.id) })
+            var assignedIDs: Set<String> = []
+            for message in messages {
+                switch message.role {
+                case .assistant:
+                    for (index, call) in (message.toolCalls ?? []).enumerated() {
+                        let occurrence = occurrenceByOriginalID[call.id, default: 0]
+                        occurrenceByOriginalID[call.id] = occurrence + 1
+                        var normalizedID = call.id
+                        if occurrence > 0 || assignedIDs.contains(normalizedID) {
+                            var suffix = max(1, occurrence)
+                            repeat {
+                                normalizedID = "\(call.id)#\(suffix)"
+                                suffix += 1
+                            } while originalIDs.contains(normalizedID) || assignedIDs.contains(normalizedID)
+                        }
+                        assignedIDs.insert(normalizedID)
+                        pendingByOriginalID[call.id, default: []].append(PendingCall(
+                            messageID: message.id,
+                            index: index,
+                            normalizedID: normalizedID
+                        ))
+                    }
+                case .tool:
+                    for (index, call) in (message.toolCalls ?? []).enumerated() {
+                        guard var pending = pendingByOriginalID[call.id],
+                              let matched = pending.popLast()
+                        else {
+                            continue
+                        }
+                        pendingByOriginalID[call.id] = pending
+                        plan.assistantCallIDs[matched.messageID, default: [:]][matched.index] = matched.normalizedID
+                        plan.toolOutputIDs[message.id, default: [:]][index] = matched.normalizedID
+                    }
+                case .system, .user:
+                    break
+                }
+            }
+            return plan
+        }
+
+        private func appleHistoryEntries(
+            from message: Message,
+            matchPlan: AppleToolMatchPlan
+        ) -> [AppleIntelligenceHistoryEntry] {
+            let content = message.content
+            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            switch message.role {
+            case .user:
+                guard !trimmedContent.isEmpty else { return [] }
+                return [AppleIntelligenceHistoryEntry(role: .user, content: content)]
+            case .assistant:
+                let toolCalls = (message.toolCalls ?? []).enumerated().compactMap { index, toolCall -> AppleIntelligenceToolCall? in
+                    guard let normalizedID = matchPlan.assistantCallIDs[message.id]?[index],
+                          let data = try? JSONEncoder().encode(toolCall.arguments),
+                          let argumentsJSON = String(data: data, encoding: .utf8)
+                    else {
+                        return nil
+                    }
+                    return AppleIntelligenceToolCall(
+                        id: normalizedID,
+                        name: toolCall.toolName,
+                        argumentsJSON: argumentsJSON
+                    )
+                }
+                guard !trimmedContent.isEmpty || !toolCalls.isEmpty else { return [] }
+                return [AppleIntelligenceHistoryEntry(
+                    role: .assistant,
+                    content: content,
+                    toolCalls: toolCalls
+                )]
+            case .tool:
+                return (message.toolCalls ?? []).enumerated().compactMap { index, toolCall in
+                    guard let normalizedID = matchPlan.toolOutputIDs[message.id]?[index] else { return nil }
+                    return AppleIntelligenceHistoryEntry(
+                        role: .tool,
+                        content: trimmedContent.isEmpty ? "(empty tool output)" : content,
+                        toolName: toolCall.toolName,
+                        toolCallID: normalizedID
+                    )
+                }
+            case .system:
+                return []
+            }
+        }
+
+        private func appleConversationContext(
+            messages: [Message]
+        ) -> AppleConversationContext? {
+            let messages = messages.filter { $0.isSelectedResponse != false }
+            guard let promptIndex = messages.lastIndex(where: { $0.role == .user }) else { return nil }
+            let matchPlan = appleToolMatchPlan(messages: messages)
+
+            let tailEntries = messages[messages.index(after: promptIndex)...].flatMap {
+                appleHistoryEntries(from: $0, matchPlan: matchPlan)
+            }
+            if !tailEntries.isEmpty {
+                let history = messages.flatMap {
+                    appleHistoryEntries(from: $0, matchPlan: matchPlan)
+                }
+                return AppleConversationContext(
+                    history: history,
+                    prompt: "Continue the conversation using the completed context above.",
+                    requiresHistory: true
+                )
+            }
+
+            let history = messages[..<promptIndex].flatMap {
+                appleHistoryEntries(from: $0, matchPlan: matchPlan)
+            }
+            return AppleConversationContext(
+                history: history,
+                prompt: messages[promptIndex].content,
+                requiresHistory: false
+            )
+        }
+
+        private func appleHistoryGroups(
+            _ history: [AppleIntelligenceHistoryEntry]
+        ) -> [[AppleIntelligenceHistoryEntry]] {
+            var groups: [[AppleIntelligenceHistoryEntry]] = []
+            for entry in history {
+                switch entry.role {
+                case .user:
+                    groups.append([entry])
+                case .assistant:
+                    if groups.last?.first?.role == .user {
+                        groups[groups.count - 1].append(entry)
+                    } else {
+                        groups.append([entry])
+                    }
+                case .tool:
+                    if let toolCallID = entry.toolCallID,
+                       groups.last?.contains(where: {
+                           $0.role == .assistant && $0.toolCalls.contains(where: { $0.id == toolCallID })
+                       }) == true
+                    {
+                        groups[groups.count - 1].append(entry)
+                    } else {
+                        groups.append([entry])
+                    }
+                }
+            }
+            return groups
+        }
+
+        private func estimatedAppleHistoryTokens(
+            _ entries: [AppleIntelligenceHistoryEntry]
+        ) -> Int {
+            AppleIntelligenceTranscriptBuilder.entries(from: entries).reduce(0) { total, entry in
+                total + 12 + estimatedAppleTokens(entry.content)
+            }
+        }
+
+        private func estimatedAppleTokens(_ text: String) -> Int {
+            let scalarCount = text.unicodeScalars.count
+            let asciiCount = text.unicodeScalars.lazy.filter(\.isASCII).count
+            let nonASCII = scalarCount - asciiCount
+            return ((asciiCount + 1) / 2) + nonASCII
+        }
+
+        private func compactAppleHistory(
+            _ history: [AppleIntelligenceHistoryEntry],
+            contextSize: Int,
+            systemInstructions: String,
+            prompt: String,
+            requireNewestGroup: Bool
+        ) -> [AppleIntelligenceHistoryEntry]? {
+            let responseReserve = max(64, min(1024, contextSize / 4))
+            let fixedCost = responseReserve + estimatedAppleTokens(systemInstructions) +
+                estimatedAppleTokens(prompt) + 32
+            guard fixedCost <= contextSize else { return nil }
+            var remaining = contextSize - fixedCost
+            var retainedGroups: [[AppleIntelligenceHistoryEntry]] = []
+            for group in appleHistoryGroups(history).reversed() {
+                let groupCost = estimatedAppleHistoryTokens(group)
+                guard groupCost <= remaining else {
+                    return requireNewestGroup && retainedGroups.isEmpty ? nil : retainedGroups.flatMap(\.self)
+                }
+                retainedGroups.insert(group, at: 0)
+                remaining -= groupCost
+            }
+            return retainedGroups.flatMap(\.self)
+        }
+
+        private func fallbackAppleServiceRequest(
+            request: AppleIntelligenceRequestContext,
+            conversationContext: AppleConversationContext,
+            sessionID: String,
+            systemInstructions: String,
+            temperature: Double
+        ) -> AppleIntelligenceRequest? {
+            guard let history = compactAppleHistory(
+                conversationContext.history,
+                contextSize: request.service.contextSize,
+                systemInstructions: systemInstructions,
+                prompt: conversationContext.prompt,
+                requireNewestGroup: conversationContext.requiresHistory
+            ) else {
+                return nil
+            }
+            return AppleIntelligenceRequest(
+                conversationID: sessionID,
+                prompt: conversationContext.prompt,
+                history: history,
+                systemInstructions: systemInstructions,
+                temperature: temperature
+            )
+        }
+
+        private func validatedAppleServiceRequest(
+            request: AppleIntelligenceRequestContext,
+            conversationContext: AppleConversationContext,
+            sessionID: String,
+            systemInstructions: String,
+            temperature: Double
+        ) async -> AppleIntelligenceRequest? {
+            var candidate = AppleIntelligenceRequest(
+                conversationID: sessionID,
+                prompt: conversationContext.prompt,
+                history: conversationContext.history,
+                systemInstructions: systemInstructions,
+                temperature: temperature
+            )
+            let maxInputTokens = max(0, request.service.contextSize - max(64, min(1024, request.service.contextSize / 4)))
+            if let initialCount = await request.service.tokenCount(for: candidate) {
+                guard initialCount > maxInputTokens else { return candidate }
+
+                var groups = appleHistoryGroups(candidate.history)
+                while !groups.isEmpty {
+                    if conversationContext.requiresHistory, groups.count == 1 {
+                        return nil
+                    }
+                    groups.removeFirst()
+                    candidate = AppleIntelligenceRequest(
+                        conversationID: sessionID,
+                        prompt: conversationContext.prompt,
+                        history: groups.flatMap(\.self),
+                        systemInstructions: systemInstructions,
+                        temperature: temperature
+                    )
+                    guard let tokenCount = await request.service.tokenCount(for: candidate) else {
+                        return fallbackAppleServiceRequest(
+                            request: request,
+                            conversationContext: conversationContext,
+                            sessionID: sessionID,
+                            systemInstructions: systemInstructions,
+                            temperature: temperature
+                        )
+                    }
+                    if tokenCount <= maxInputTokens {
+                        return candidate
+                    }
+                }
+                return nil
+            }
+
+            return fallbackAppleServiceRequest(
+                request: request,
+                conversationContext: conversationContext,
+                sessionID: sessionID,
+                systemInstructions: systemInstructions,
+                temperature: temperature
+            )
+        }
+
+        private func ownedAppleServiceRequest(
+            request: AppleIntelligenceRequestContext,
+            conversationContext: AppleConversationContext,
+            sessionID: String,
+            systemInstructions: String,
+            temperature: Double,
+            flightID: RequestFlightID
+        ) async -> AppleIntelligenceRequest? {
+            guard let serviceRequest = await validatedAppleServiceRequest(
+                request: request,
+                conversationContext: conversationContext,
+                sessionID: sessionID,
+                systemInstructions: systemInstructions,
+                temperature: temperature
+            ) else {
+                guard finishAppleIntelligenceFlight(
+                    flightID,
+                    request: request,
+                    sessionID: sessionID
+                ) else {
+                    return nil
+                }
+                request.onError(AIError.apiError("Apple Intelligence context is too large to continue safely"))
+                return nil
+            }
+            guard ownsAppleIntelligenceFlight(
+                flightID,
+                isMultiModelRequest: request.isMultiModelRequest,
+                modelName: request.modelName
+            ) else {
+                return nil
+            }
+            return serviceRequest
+        }
+
+        private func handleAppleIntelligenceRequest(_ request: AppleIntelligenceRequestContext) {
+            guard request.service.isAvailable else {
+                request.onError(AIError.apiError(request.service.availabilityDescription()))
+                return
+            }
+            guard let conversationContext = appleConversationContext(messages: request.messages) else {
+                request.onError(AIError.apiError("No user message found"))
                 return
             }
 
-            // Use the provided conversation ID or a default
-            let convId = conversationId?.uuidString ?? "default"
+            let systemInstructions = appleSystemInstructions(
+                messages: request.messages,
+                conversationID: request.conversationID
+            )
+            let sessionID = appleSessionID(for: request)
+            let requestTemperature = request.temperature ?? 0.7
+            let flightID = RequestFlightID()
+            let task = Task { @MainActor [weak self] in
+                guard let self,
+                      self.ownsAppleIntelligenceFlight(
+                          flightID,
+                          isMultiModelRequest: request.isMultiModelRequest,
+                          modelName: request.modelName
+                      )
+                else {
+                    return
+                }
+                guard let serviceRequest = await self.ownedAppleServiceRequest(
+                    request: request,
+                    conversationContext: conversationContext,
+                    sessionID: sessionID,
+                    systemInstructions: systemInstructions,
+                    temperature: requestTemperature,
+                    flightID: flightID
+                ) else {
+                    return
+                }
 
-            let requestTemp = temperature ?? 0.7
-
-            // Cancel any existing Apple Intelligence task
-            appleIntelligenceTask?.cancel()
-
-            let task = Task {
-                if stream {
-                    await service.streamResponse(
-                        conversationId: convId,
-                        prompt: lastUserMessage.content,
-                        systemInstructions: systemInstructions,
-                        temperature: requestTemp,
-                        onChunk: { chunk in
-                            onChunk(chunk)
+                if request.stream {
+                    await request.service.streamResponse(
+                        request: serviceRequest,
+                        onChunk: { [weak self] chunk in
+                            guard let self,
+                                  self.ownsAppleIntelligenceFlight(
+                                      flightID,
+                                      isMultiModelRequest: request.isMultiModelRequest,
+                                      modelName: request.modelName
+                                  )
+                            else {
+                                return
+                            }
+                            request.onChunk(chunk)
                         },
-                        onComplete: {
-                            onComplete()
+                        onComplete: { [weak self] in
+                            guard let self,
+                                  self.finishAppleIntelligenceFlight(
+                                      flightID,
+                                      request: request,
+                                      sessionID: sessionID
+                                  )
+                            else {
+                                return
+                            }
+                            request.onComplete()
                         },
-                        onError: { error in
-                            onError(error)
+                        onError: { [weak self] error in
+                            guard let self,
+                                  self.finishAppleIntelligenceFlight(
+                                      flightID,
+                                      request: request,
+                                      sessionID: sessionID
+                                  )
+                            else {
+                                return
+                            }
+                            request.onError(error)
                         }
                     )
                 } else {
-                    await service.generateResponse(
-                        conversationId: convId,
-                        prompt: lastUserMessage.content,
-                        systemInstructions: systemInstructions,
-                        temperature: requestTemp,
-                        onComplete: { response in
-                            onChunk(response)
-                            onComplete()
+                    await request.service.generateResponse(
+                        request: serviceRequest,
+                        onComplete: { [weak self] response in
+                            guard let self,
+                                  self.ownsAppleIntelligenceFlight(
+                                      flightID,
+                                      isMultiModelRequest: request.isMultiModelRequest,
+                                      modelName: request.modelName
+                                  )
+                            else {
+                                return
+                            }
+                            request.onChunk(response)
+                            guard self.finishAppleIntelligenceFlight(
+                                flightID,
+                                request: request,
+                                sessionID: sessionID
+                            ) else {
+                                return
+                            }
+                            request.onComplete()
                         },
-                        onError: { error in
-                            onError(error)
+                        onError: { [weak self] error in
+                            guard let self,
+                                  self.finishAppleIntelligenceFlight(
+                                      flightID,
+                                      request: request,
+                                      sessionID: sessionID
+                                  )
+                            else {
+                                return
+                            }
+                            request.onError(error)
                         }
                     )
                 }
+
+                guard !Task.isCancelled,
+                      self.finishAppleIntelligenceFlight(
+                          flightID,
+                          request: request,
+                          sessionID: sessionID
+                      )
+                else {
+                    return
+                }
+                request.onError(AIError.apiError("Apple Intelligence request ended without a terminal callback"))
             }
-            appleIntelligenceTask = task
+            let handle = AppleIntelligenceRequestHandle(
+                task: task,
+                service: request.service,
+                sessionID: sessionID
+            )
+            installAppleIntelligenceHandle(
+                handle,
+                flightID: flightID,
+                isMultiModelRequest: request.isMultiModelRequest,
+                modelName: request.modelName
+            )?.cancel()
         }
     #endif
 

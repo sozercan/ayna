@@ -9,6 +9,132 @@ import Combine
 import Foundation
 import os.log
 
+struct AppleIntelligenceToolCall: Equatable, Sendable {
+    let id: String
+    let name: String
+    let argumentsJSON: String
+}
+
+struct AppleIntelligenceHistoryEntry: Equatable, Sendable {
+    enum Role: Equatable, Sendable {
+        case user
+        case assistant
+        case tool
+    }
+
+    let role: Role
+    let content: String
+    let toolName: String?
+    let toolCallID: String?
+    let toolCalls: [AppleIntelligenceToolCall]
+
+    init(
+        role: Role,
+        content: String,
+        toolName: String? = nil,
+        toolCallID: String? = nil,
+        toolCalls: [AppleIntelligenceToolCall] = []
+    ) {
+        self.role = role
+        self.content = content
+        self.toolName = toolName
+        self.toolCallID = toolCallID
+        self.toolCalls = toolCalls
+    }
+}
+
+struct AppleIntelligenceRequest: Sendable {
+    let conversationID: String
+    let prompt: String
+    let history: [AppleIntelligenceHistoryEntry]
+    let systemInstructions: String
+    let temperature: Double
+}
+
+struct AppleIntelligenceTranscriptEntry: Equatable, Sendable {
+    enum Role: Equatable, Sendable {
+        case user
+        case assistant
+    }
+
+    let role: Role
+    let content: String
+}
+
+enum AppleIntelligenceTranscriptBuilder {
+    static func entries(
+        from history: [AppleIntelligenceHistoryEntry]
+    ) -> [AppleIntelligenceTranscriptEntry] {
+        var toolOutputQueues = history.reduce(into: [String: [AppleIntelligenceHistoryEntry]]()) { outputs, entry in
+            if entry.role == .tool, let toolCallID = entry.toolCallID {
+                outputs[toolCallID, default: []].append(entry)
+            }
+        }
+        var transcript: [AppleIntelligenceTranscriptEntry] = []
+        for entry in history where entry.role != .tool {
+            switch entry.role {
+            case .user:
+                transcript.append(.init(role: .user, content: entry.content))
+            case .assistant:
+                var responseParts = entry.content.isEmpty ? [] : [entry.content]
+                for call in entry.toolCalls {
+                    guard var outputs = toolOutputQueues[call.id], !outputs.isEmpty else { continue }
+                    let output = outputs.removeFirst()
+                    toolOutputQueues[call.id] = outputs
+                    responseParts.append(
+                        "Tool interaction — \(call.name)\nArguments: \(call.argumentsJSON)\nResult: \(output.content)"
+                    )
+                }
+                if !responseParts.isEmpty {
+                    transcript.append(.init(role: .assistant, content: responseParts.joined(separator: "\n\n")))
+                }
+            case .tool:
+                break
+            }
+        }
+        return transcript
+    }
+}
+
+@MainActor
+protocol AppleIntelligenceServing: AnyObject {
+    var isAvailable: Bool { get }
+    var contextSize: Int { get }
+    func availabilityDescription() -> String
+    func clearSession(conversationId: String)
+    func tokenCount(for request: AppleIntelligenceRequest) async -> Int?
+    func streamResponse(
+        request: AppleIntelligenceRequest,
+        onChunk: @escaping @MainActor @Sendable (String) -> Void,
+        onComplete: @escaping @MainActor @Sendable () -> Void,
+        onError: @escaping @MainActor @Sendable (Error) -> Void
+    ) async
+    func generateResponse(
+        request: AppleIntelligenceRequest,
+        onComplete: @escaping @MainActor @Sendable (String) -> Void,
+        onError: @escaping @MainActor @Sendable (Error) -> Void
+    ) async
+}
+
+enum AppleIntelligenceRetryGate {
+    @MainActor
+    static func prepare(
+        clearSession: @MainActor () -> Void,
+        delay: @escaping @MainActor @Sendable () async throws -> Void = {
+            try await Task.sleep(for: .milliseconds(500))
+        }
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        clearSession()
+        do {
+            try await delay()
+        } catch {
+            return false
+        }
+        return !Task.isCancelled
+    }
+}
+
 enum AppleIntelligenceError: LocalizedError {
     case deviceNotEligible
     case appleIntelligenceNotEnabled
@@ -40,7 +166,7 @@ enum AppleIntelligenceError: LocalizedError {
 
     @available(macOS 26.0, iOS 26.0, *)
     @MainActor
-    class AppleIntelligenceService: ObservableObject {
+    class AppleIntelligenceService: ObservableObject, AppleIntelligenceServing {
         static let shared = AppleIntelligenceService()
 
         @Published var model = SystemLanguageModel.default
@@ -64,6 +190,14 @@ enum AppleIntelligenceError: LocalizedError {
         /// Check if Apple Intelligence is available on this device
         var isAvailable: Bool {
             model.isAvailable
+        }
+
+        var contextSize: Int {
+            #if compiler(>=6.3)
+                model.contextSize
+            #else
+                4096
+            #endif
         }
 
         var availability: SystemLanguageModel.Availability {
@@ -90,10 +224,51 @@ enum AppleIntelligenceError: LocalizedError {
             }
         }
 
+        func tokenCount(for request: AppleIntelligenceRequest) async -> Int? {
+            #if compiler(>=6.3)
+                guard #available(macOS 26.4, iOS 26.4, *) else { return nil }
+                do {
+                    let historyTokens = try await model.tokenCount(for: transcriptEntries(
+                        systemInstructions: request.systemInstructions,
+                        history: request.history
+                    ))
+                    let promptTokens = try await model.tokenCount(for: request.prompt)
+                    return historyTokens + promptTokens
+                } catch {
+                    return nil
+                }
+            #else
+                return nil
+            #endif
+        }
+
+        private func transcriptEntries(
+            systemInstructions: String,
+            history: [AppleIntelligenceHistoryEntry]
+        ) -> [Transcript.Entry] {
+            var entries: [Transcript.Entry] = [
+                .instructions(Transcript.Instructions(
+                    segments: [.text(.init(content: systemInstructions))],
+                    toolDefinitions: []
+                )),
+            ]
+            for entry in AppleIntelligenceTranscriptBuilder.entries(from: history) {
+                let segment = Transcript.Segment.text(.init(content: entry.content))
+                switch entry.role {
+                case .user:
+                    entries.append(.prompt(.init(segments: [segment])))
+                case .assistant:
+                    entries.append(.response(.init(assetIDs: [], segments: [segment])))
+                }
+            }
+            return entries
+        }
+
         /// Get or create a session for a conversation
         private func getSession(
             conversationId: String,
-            systemInstructions: String
+            systemInstructions: String,
+            history: [AppleIntelligenceHistoryEntry]
         ) -> LanguageModelSession {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -102,7 +277,10 @@ enum AppleIntelligenceError: LocalizedError {
                 return existingSession
             }
 
-            let newSession = LanguageModelSession(instructions: systemInstructions)
+            let newSession = LanguageModelSession(transcript: Transcript(entries: transcriptEntries(
+                systemInstructions: systemInstructions,
+                history: history
+            )))
             sessions[conversationId] = newSession
             return newSession
         }
@@ -125,109 +303,111 @@ enum AppleIntelligenceError: LocalizedError {
 
         /// Stream response
         func streamResponse(
-            conversationId: String,
-            prompt: String,
-            systemInstructions: String = "You are a helpful assistant.",
-            temperature: Double = 0.7,
-            onChunk: @escaping (String) -> Void,
-            onComplete: @escaping () -> Void,
-            onError: @escaping (Error) -> Void
+            request: AppleIntelligenceRequest,
+            onChunk: @escaping @MainActor @Sendable (String) -> Void,
+            onComplete: @escaping @MainActor @Sendable () -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
+            guard !Task.isCancelled else { return }
             // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence stream unavailable",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+                    metadata: ["conversationId": request.conversationID, "reason": availabilityDescription()]
                 )
                 onError(getAvailabilityError())
                 return
             }
 
-            log("Starting Apple Intelligence stream", metadata: ["conversationId": conversationId])
+            log("Starting Apple Intelligence stream", metadata: ["conversationId": request.conversationID])
 
             let maxRetries = 2
 
             for attempt in 1 ... maxRetries {
+                guard !Task.isCancelled else { return }
                 // Get or create session
                 let session = getSession(
-                    conversationId: conversationId,
-                    systemInstructions: systemInstructions
+                    conversationId: request.conversationID,
+                    systemInstructions: request.systemInstructions,
+                    history: request.history
                 )
 
                 // Create generation options
-                let options = GenerationOptions(temperature: temperature)
+                let options = GenerationOptions(temperature: request.temperature)
 
                 do {
                     // Stream the response
-                    let stream = session.streamResponse(to: prompt, options: options)
+                    let stream = session.streamResponse(to: request.prompt, options: options)
 
                     var previousContent = ""
                     var hasReceivedContent = false
 
                     for try await snapshot in stream {
-                        await MainActor.run {
-                            // snapshot.content contains the full response so far, not just the delta
-                            // Calculate the new text by comparing with previous content
-                            let currentContent = snapshot.content
-                            if currentContent.hasPrefix(previousContent) {
-                                let delta = String(currentContent.dropFirst(previousContent.count))
-                                if !delta.isEmpty {
-                                    onChunk(delta)
-                                    hasReceivedContent = true
-                                }
-                            } else {
-                                // If content doesn't have expected prefix, send full content
-                                onChunk(currentContent)
+                        try Task.checkCancellation()
+                        // snapshot.content contains the full response so far, not just the delta
+                        // Calculate the new text by comparing with previous content
+                        let currentContent = snapshot.content
+                        if currentContent.hasPrefix(previousContent) {
+                            let delta = String(currentContent.dropFirst(previousContent.count))
+                            if !delta.isEmpty {
+                                onChunk(delta)
                                 hasReceivedContent = true
                             }
-                            previousContent = currentContent
+                        } else {
+                            // If content doesn't have expected prefix, send full content
+                            onChunk(currentContent)
+                            hasReceivedContent = true
                         }
+                        previousContent = currentContent
                     }
 
                     if hasReceivedContent {
-                        await MainActor.run {
-                            onComplete()
-                        }
-                        log("Completed Apple Intelligence stream", metadata: ["conversationId": conversationId])
+                        try Task.checkCancellation()
+                        onComplete()
+                        log("Completed Apple Intelligence stream", metadata: ["conversationId": request.conversationID])
                         return
                     } else {
                         if attempt < maxRetries {
                             log(
                                 "Apple Intelligence stream returned no content, retrying...",
                                 level: .default,
-                                metadata: ["conversationId": conversationId, "attempt": "\(attempt)"]
+                                metadata: ["conversationId": request.conversationID, "attempt": "\(attempt)"]
                             )
-                            clearSession(conversationId: conversationId)
-                            try? await Task.sleep(for: .milliseconds(500))
+                            guard await AppleIntelligenceRetryGate.prepare(clearSession: {
+                                self.clearSession(conversationId: request.conversationID)
+                            }) else {
+                                return
+                            }
                             continue
                         } else {
-                            await MainActor.run {
-                                onComplete()
-                            }
-                            log("Completed Apple Intelligence stream (empty)", metadata: ["conversationId": conversationId])
+                            try Task.checkCancellation()
+                            onComplete()
+                            log("Completed Apple Intelligence stream (empty)", metadata: ["conversationId": request.conversationID])
                             return
                         }
                     }
                 } catch is CancellationError {
-                    log("Apple Intelligence stream cancelled", metadata: ["conversationId": conversationId])
+                    log("Apple Intelligence stream cancelled", metadata: ["conversationId": request.conversationID])
                     return
                 } catch {
                     log(
                         "Apple Intelligence stream failed",
                         level: .error,
-                        metadata: ["conversationId": conversationId, "error": error.localizedDescription, "attempt": "\(attempt)"]
+                        metadata: ["conversationId": request.conversationID, "error": error.localizedDescription, "attempt": "\(attempt)"]
                     )
+                    guard !Task.isCancelled else { return }
 
                     if attempt < maxRetries {
-                        clearSession(conversationId: conversationId)
-                        try? await Task.sleep(for: .milliseconds(500))
+                        guard await AppleIntelligenceRetryGate.prepare(clearSession: {
+                            self.clearSession(conversationId: request.conversationID)
+                        }) else {
+                            return
+                        }
                         continue
                     }
 
-                    await MainActor.run {
-                        onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
-                    }
+                    onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
                     return
                 }
             }
@@ -235,54 +415,51 @@ enum AppleIntelligenceError: LocalizedError {
 
         /// Non-streaming response
         func generateResponse(
-            conversationId: String,
-            prompt: String,
-            systemInstructions: String = "You are a helpful assistant.",
-            temperature: Double = 0.7,
-            onComplete: @escaping (String) -> Void,
-            onError: @escaping (Error) -> Void
+            request: AppleIntelligenceRequest,
+            onComplete: @escaping @MainActor @Sendable (String) -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
+            guard !Task.isCancelled else { return }
             // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence response unavailable",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "reason": availabilityDescription()]
+                    metadata: ["conversationId": request.conversationID, "reason": availabilityDescription()]
                 )
                 onError(getAvailabilityError())
                 return
             }
 
-            log("Generating Apple Intelligence response", metadata: ["conversationId": conversationId])
+            log("Generating Apple Intelligence response", metadata: ["conversationId": request.conversationID])
 
             // Get or create session
             let session = getSession(
-                conversationId: conversationId,
-                systemInstructions: systemInstructions
+                conversationId: request.conversationID,
+                systemInstructions: request.systemInstructions,
+                history: request.history
             )
 
             // Create generation options
-            let options = GenerationOptions(temperature: temperature)
+            let options = GenerationOptions(temperature: request.temperature)
 
             do {
                 // Generate the response
-                let response = try await session.respond(to: prompt, options: options)
+                let response = try await session.respond(to: request.prompt, options: options)
 
-                await MainActor.run {
-                    onComplete(response.content)
-                }
-                log("Generated Apple Intelligence response", metadata: ["conversationId": conversationId])
+                try Task.checkCancellation()
+                onComplete(response.content)
+                log("Generated Apple Intelligence response", metadata: ["conversationId": request.conversationID])
             } catch is CancellationError {
-                log("Apple Intelligence generation cancelled", metadata: ["conversationId": conversationId])
+                log("Apple Intelligence generation cancelled", metadata: ["conversationId": request.conversationID])
             } catch {
+                guard !Task.isCancelled else { return }
                 log(
                     "Apple Intelligence generation failed",
                     level: .error,
-                    metadata: ["conversationId": conversationId, "error": error.localizedDescription]
+                    metadata: ["conversationId": request.conversationID, "error": error.localizedDescription]
                 )
-                await MainActor.run {
-                    onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
-                }
+                onError(AppleIntelligenceError.generationFailed(error.localizedDescription))
             }
         }
 
@@ -311,15 +488,23 @@ enum AppleIntelligenceError: LocalizedError {
 
     @available(macOS 26.0, iOS 26.0, *)
     @MainActor
-    class AppleIntelligenceService: ObservableObject {
+    class AppleIntelligenceService: ObservableObject, AppleIntelligenceServing {
         static let shared = AppleIntelligenceService()
 
         var isAvailable: Bool {
             false
         }
 
+        var contextSize: Int {
+            0
+        }
+
         func availabilityDescription() -> String {
             "Apple Intelligence frameworks are not installed on this system"
+        }
+
+        func tokenCount(for _: AppleIntelligenceRequest) async -> Int? {
+            nil
         }
 
         func clearSession(conversationId _: String) {}
@@ -327,44 +512,34 @@ enum AppleIntelligenceError: LocalizedError {
         func clearAllSessions() {}
 
         func streamResponse(
-            conversationId: String,
-            prompt _: String,
-            systemInstructions _: String = "You are a helpful assistant.",
-            temperature _: Double = 0.7,
-            onChunk _: @escaping (String) -> Void,
-            onComplete _: @escaping () -> Void,
-            onError: @escaping (Error) -> Void
+            request: AppleIntelligenceRequest,
+            onChunk _: @escaping @MainActor @Sendable (String) -> Void,
+            onComplete _: @escaping @MainActor @Sendable () -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
             DiagnosticsLogger.log(
                 .appleIntelligence,
                 level: .error,
                 message: "Apple Intelligence unavailable on this platform",
-                metadata: ["conversationId": conversationId]
+                metadata: ["conversationId": request.conversationID]
             )
 
-            await MainActor.run {
-                onError(getAvailabilityError())
-            }
+            onError(getAvailabilityError())
         }
 
         func generateResponse(
-            conversationId: String,
-            prompt _: String,
-            systemInstructions _: String = "You are a helpful assistant.",
-            temperature _: Double = 0.7,
-            onComplete _: @escaping (String) -> Void,
-            onError: @escaping (Error) -> Void
+            request: AppleIntelligenceRequest,
+            onComplete _: @escaping @MainActor @Sendable (String) -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
             DiagnosticsLogger.log(
                 .appleIntelligence,
                 level: .error,
                 message: "Apple Intelligence unavailable on this platform",
-                metadata: ["conversationId": conversationId]
+                metadata: ["conversationId": request.conversationID]
             )
 
-            await MainActor.run {
-                onError(getAvailabilityError())
-            }
+            onError(getAvailabilityError())
         }
 
         private func getAvailabilityError() -> Error {

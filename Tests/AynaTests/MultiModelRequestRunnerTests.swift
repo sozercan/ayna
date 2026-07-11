@@ -238,6 +238,23 @@ struct MultiModelRequestRunnerTests {
         #expect(!started.isSignaled)
     }
 
+    @Test("Cancellation while start is invoking terminates the runner")
+    func cancellationWhileStartIsInvokingTerminatesRunner() async {
+        let returned = FlightTestSignal()
+
+        let task = Task { @MainActor in
+            await MultiModelRequestRunner.run { _ in
+                withUnsafeCurrentTask { currentTask in
+                    currentTask?.cancel()
+                }
+            }
+            returned.signal()
+        }
+
+        #expect(await returned.wait(timeout: .seconds(2)))
+        await task.value
+    }
+
     private func makePermit(
         gate: DeterministicGitHubGate,
         key: String

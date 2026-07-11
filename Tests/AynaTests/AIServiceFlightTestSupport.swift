@@ -1,5 +1,6 @@
 @testable import Ayna
 import Foundation
+import os
 
 final class FlightTestSignal: @unchecked Sendable {
     private let lock = NSLock()
@@ -325,3 +326,176 @@ final class FlightTestAnthropicProviderFactory {
         return provider
     }
 }
+
+#if !os(watchOS)
+    @MainActor
+    final class FlightTestAppleIntelligenceService: AppleIntelligenceServing {
+        var isAvailable = true
+        var contextSize = 4096
+        var tokenCountHandler: ((AppleIntelligenceRequest) -> Int?)?
+        var unavailableDescription = "Unavailable for testing"
+        private(set) var requests: [FlightTestAppleRequest] = []
+        private(set) var clearedSessionIDs: [String] = []
+
+        func availabilityDescription() -> String {
+            unavailableDescription
+        }
+
+        func clearSession(conversationId: String) {
+            clearedSessionIDs.append(conversationId)
+        }
+
+        func tokenCount(for request: AppleIntelligenceRequest) async -> Int? {
+            tokenCountHandler?(request)
+        }
+
+        func streamResponse(
+            request: AppleIntelligenceRequest,
+            onChunk: @escaping @MainActor @Sendable (String) -> Void,
+            onComplete: @escaping @MainActor @Sendable () -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
+        ) async {
+            let request = FlightTestAppleRequest(
+                conversationID: request.conversationID,
+                prompt: request.prompt,
+                history: request.history,
+                onChunk: onChunk,
+                onComplete: { _ in onComplete() },
+                onError: onError
+            )
+            requests.append(request)
+            await request.waitForTerminalOrCancellation()
+        }
+
+        func generateResponse(
+            request: AppleIntelligenceRequest,
+            onComplete: @escaping @MainActor @Sendable (String) -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
+        ) async {
+            let request = FlightTestAppleRequest(
+                conversationID: request.conversationID,
+                prompt: request.prompt,
+                history: request.history,
+                onChunk: { _ in },
+                onComplete: { response in onComplete(response ?? "") },
+                onError: onError
+            )
+            requests.append(request)
+            await request.waitForTerminalOrCancellation()
+        }
+
+        func request(at index: Int, timeout: Duration = .seconds(2)) async -> FlightTestAppleRequest? {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: timeout)
+            while requests.count <= index, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return requests.indices.contains(index) ? requests[index] : nil
+        }
+
+        func request(sessionIDPrefix: String, timeout: Duration = .seconds(2)) async -> FlightTestAppleRequest? {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: timeout)
+            while clock.now < deadline {
+                if let request = requests.first(where: { $0.conversationID.hasPrefix(sessionIDPrefix) }) {
+                    return request
+                }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return requests.first(where: { $0.conversationID.hasPrefix(sessionIDPrefix) })
+        }
+    }
+
+    final class FlightTestAppleRequest: @unchecked Sendable {
+        private enum WaitState {
+            case pending
+            case waiting(CheckedContinuation<Void, Never>)
+            case finished
+        }
+
+        let conversationID: String
+        let prompt: String
+        let history: [AppleIntelligenceHistoryEntry]
+        let cancelled = FlightTestSignal()
+
+        private let waitState = OSAllocatedUnfairLock(initialState: WaitState.pending)
+        private let onChunk: @MainActor @Sendable (String) -> Void
+        private let onComplete: @MainActor @Sendable (String?) -> Void
+        private let onError: @MainActor @Sendable (Error) -> Void
+
+        init(
+            conversationID: String,
+            prompt: String,
+            history: [AppleIntelligenceHistoryEntry],
+            onChunk: @escaping @MainActor @Sendable (String) -> Void,
+            onComplete: @escaping @MainActor @Sendable (String?) -> Void,
+            onError: @escaping @MainActor @Sendable (Error) -> Void
+        ) {
+            self.conversationID = conversationID
+            self.prompt = prompt
+            self.history = history
+            self.onChunk = onChunk
+            self.onComplete = onComplete
+            self.onError = onError
+        }
+
+        func waitForTerminalOrCancellation() async {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    let shouldResume = waitState.withLock { state -> Bool in
+                        guard case .pending = state else { return true }
+                        state = .waiting(continuation)
+                        return false
+                    }
+                    if shouldResume {
+                        continuation.resume()
+                    }
+                }
+            } onCancel: {
+                self.cancel()
+            }
+        }
+
+        @MainActor
+        func emitChunk(_ chunk: String) {
+            onChunk(chunk)
+        }
+
+        @MainActor
+        func complete(response: String? = nil) {
+            onComplete(response)
+            finishWait()
+        }
+
+        @MainActor
+        func fail(_ error: Error) {
+            onError(error)
+            finishWait()
+        }
+
+        func returnWithoutTerminal() {
+            finishWait()
+        }
+
+        private func cancel() {
+            cancelled.signal()
+            finishWait()
+        }
+
+        private func finishWait() {
+            let continuation = waitState.withLock { state -> CheckedContinuation<Void, Never>? in
+                switch state {
+                case .pending:
+                    state = .finished
+                    return nil
+                case let .waiting(continuation):
+                    state = .finished
+                    return continuation
+                case .finished:
+                    return nil
+                }
+            }
+            continuation?.resume()
+        }
+    }
+#endif
