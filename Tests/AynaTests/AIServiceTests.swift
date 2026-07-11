@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+// swiftlint:disable type_body_length
 @Suite("AIService Tests", .tags(.networking, .async), .serialized)
 @MainActor
 struct AIServiceTests {
@@ -30,6 +31,437 @@ struct AIServiceTests {
         service.customModels = ["gpt-4o"]
         service.selectedModel = "gpt-4o"
         return service
+    }
+
+    @Test("Request flights reject stale cleanup")
+    func requestFlightsRejectStaleCleanup() {
+        var flight = RequestFlight<String>()
+        let firstID = RequestFlightID()
+        let secondID = RequestFlightID()
+
+        #expect(flight.install("first", id: firstID) == nil)
+        #expect(flight.install("second", id: secondID) == "first")
+        let staleClearSucceeded = flight.clear(ifOwnedBy: firstID)
+        #expect(!staleClearSucceeded)
+        #expect(flight.owns(secondID))
+    }
+
+    @Test("Taking a request flight detaches its owner and handle")
+    func takingRequestFlightDetachesOwnerAndHandle() {
+        var flight = RequestFlight<String>()
+        let flightID = RequestFlightID()
+        flight.install("handle", id: flightID)
+
+        let handle = flight.take()
+
+        #expect(handle == "handle")
+        #expect(!flight.isActive)
+        #expect(!flight.owns(flightID))
+    }
+
+    @Test("Stale stream cleanup preserves the replacement cancellation handle", .timeLimit(.minutes(1)))
+    func staleStreamCleanupPreservesReplacementCancellationHandle() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let staleCleanupProcessed = FlightTestSignal()
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .streamCancellation, !ownsFlight {
+                    staleCleanupProcessed.signal()
+                }
+            }
+        )
+        let models = ["stream-first", "stream-second"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "First")],
+            model: models[0],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let first = await server.exchange(at: 0)
+        first.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Second")],
+            model: models[1],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let second = await server.exchange(at: 1)
+        second.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        let firstStopped = await first.waitUntilStopped()
+        let staleCleanupObserved = await staleCleanupProcessed.wait(timeout: .seconds(2))
+        #expect(firstStopped)
+        #expect(staleCleanupObserved)
+
+        service.cancelCurrentRequest()
+        let replacementStopped = await second.waitUntilStopped()
+        #expect(replacementStopped)
+    }
+
+    @Test("URLSession cancellation uses stream cancellation cleanup", .timeLimit(.minutes(1)))
+    func urlSessionCancellationUsesStreamCancellationCleanup() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let cancellationProcessed = FlightTestSignal()
+        let clearedOwnedFlight = FlightTestBox<Bool?>(nil)
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .streamCancellation {
+                    clearedOwnedFlight.value = ownsFlight
+                    cancellationProcessed.signal()
+                }
+            }
+        )
+        let model = "cancelled-stream"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+        let errors = FlightTestBox(0)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Cancel")],
+            model: model,
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in errors.value += 1 }
+        )
+        let exchange = await server.exchange(at: 0)
+        exchange.fail(URLError(.cancelled))
+
+        let observedCancellation = await cancellationProcessed.wait(timeout: .seconds(2))
+        #expect(observedCancellation)
+        #expect(clearedOwnedFlight.value == true)
+        #expect(errors.value == 0)
+    }
+
+    @Test("Stream tool result is discarded after ownership changes", .timeLimit(.minutes(1)))
+    func streamToolResultIsDiscardedAfterOwnershipChanges() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let toolStarted = FlightTestSignal()
+        let releaseTool = FlightTestSignal()
+        let staleParserStopped = FlightTestSignal()
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .streamCancellation, !ownsFlight {
+                    staleParserStopped.signal()
+                }
+            }
+        )
+        let models = ["tool-stream", "tool-replacement"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+        let staleChunks = FlightTestBox("")
+        let staleCompleted = FlightTestBox(false)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Tool")],
+            model: models[0],
+            stream: true,
+            onChunk: { staleChunks.value += $0 },
+            onComplete: { staleCompleted.value = true },
+            onError: { _ in },
+            onToolCall: { _, _, _ in
+                toolStarted.signal()
+                await releaseTool.wait()
+                return "stale tool result"
+            }
+        )
+        let first = await server.exchange(at: 0)
+        first.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+        first.send(Data(
+            #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"test_tool","arguments":"{}"}}]}}]}"#.utf8
+        ))
+        first.send(Data("\n".utf8))
+        first.send(Data(#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#.utf8))
+        first.send(Data("\n".utf8))
+        let didStartTool = await toolStarted.wait(timeout: .seconds(2))
+        #expect(didStartTool)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replacement")],
+            model: models[1],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let replacement = await server.exchange(at: 1)
+        replacement.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        releaseTool.signal()
+        let stoppedStaleParser = await staleParserStopped.wait(timeout: .seconds(2))
+        #expect(stoppedStaleParser)
+        #expect(staleChunks.value.isEmpty)
+        #expect(!staleCompleted.value)
+
+        service.cancelCurrentRequest()
+        let replacementStopped = await replacement.waitUntilStopped()
+        #expect(replacementStopped)
+    }
+
+    @Test("Per-model multi stream terminal leaves the foreground stream owned", .timeLimit(.minutes(1)))
+    func perModelMultiStreamTerminalLeavesForegroundStreamOwned() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let models = ["foreground-stream", "multi-stream"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground")],
+            model: models[0],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let foreground = await server.exchange(at: 0)
+        foreground.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        let multiCompleted = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Multi")],
+            model: models[1],
+            stream: true,
+            isMultiModelRequest: true,
+            onChunk: { _ in },
+            onComplete: { multiCompleted.signal() },
+            onError: { _ in }
+        )
+        let multi = await server.exchange(at: 1)
+        multi.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+        multi.send(Data("data: [DONE]\n\n".utf8))
+        multi.finish()
+
+        let didComplete = await multiCompleted.wait(timeout: .seconds(2))
+        #expect(didComplete)
+
+        service.cancelCurrentRequest()
+        let foregroundStopped = await foreground.waitUntilStopped()
+        #expect(foregroundStopped)
+    }
+
+    @Test("Stream retry rechecks ownership after waiting", .timeLimit(.minutes(1)))
+    func streamRetryRechecksOwnershipAfterWaiting() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let retryStarted = FlightTestSignal()
+        let releaseRetry = FlightTestSignal()
+        let staleRetryRejected = FlightTestSignal()
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            retryDelay: { _, _ in
+                retryStarted.signal()
+                await releaseRetry.wait()
+            },
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .streamRetry, !ownsFlight {
+                    staleRetryRejected.signal()
+                }
+            }
+        )
+        let models = ["retry-first", "retry-replacement"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "First")],
+            model: models[0],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let first = await server.exchange(at: 0)
+        first.fail(URLError(.networkConnectionLost))
+        let didStartRetry = await retryStarted.wait(timeout: .seconds(2))
+        #expect(didStartRetry)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replacement")],
+            model: models[1],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let replacement = await server.exchange(at: 1)
+        replacement.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        releaseRetry.signal()
+        let rejectedStaleRetry = await staleRetryRejected.wait(timeout: .seconds(2))
+        #expect(rejectedStaleRetry)
+        #expect(server.requestCount == 2)
+
+        service.cancelCurrentRequest()
+        let replacementStopped = await replacement.waitUntilStopped()
+        #expect(replacementStopped)
+    }
+
+    @Test(
+        "Stale data completion is suppressed and preserves the replacement handle",
+        arguments: DataFlightVariant.allCases
+    )
+    func staleDataCompletionIsSuppressed(variant: DataFlightVariant) async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let staleCallbackProcessed = FlightTestSignal()
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .dataCallback, !ownsFlight {
+                    staleCallbackProcessed.signal()
+                }
+            }
+        )
+        let model = variant.model
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+        service.modelEndpointTypes[model] = variant.endpointType
+
+        let staleChunks = FlightTestBox("")
+        let staleCompleted = FlightTestBox(false)
+        service.sendMessage(
+            messages: [Message(role: .user, content: "First")],
+            model: model,
+            stream: false,
+            onChunk: { staleChunks.value += $0 },
+            onComplete: { staleCompleted.value = true },
+            onError: { _ in }
+        )
+        let first = await server.exchange(at: 0)
+        first.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        first.send(variant.responseData)
+        first.finish()
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replacement")],
+            model: model,
+            stream: false,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let replacement = await server.exchange(at: 1)
+
+        let rejectedStaleCallback = await staleCallbackProcessed.wait(timeout: .seconds(2))
+        #expect(rejectedStaleCallback)
+        #expect(staleChunks.value.isEmpty)
+        #expect(!staleCompleted.value)
+
+        service.cancelCurrentRequest()
+        let replacementStopped = await replacement.waitUntilStopped()
+        #expect(replacementStopped)
+    }
+
+    @Test(
+        "Data retry rechecks ownership after waiting",
+        arguments: DataFlightVariant.allCases
+    )
+    func dataRetryRechecksOwnershipAfterWaiting(variant: DataFlightVariant) async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let retryStarted = FlightTestSignal()
+        let releaseRetry = FlightTestSignal()
+        let staleRetryRejected = FlightTestSignal()
+        let service = AIService(
+            urlSession: URLSession(configuration: config),
+            retryDelay: { _, _ in
+                retryStarted.signal()
+                await releaseRetry.wait()
+            },
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .dataRetry, !ownsFlight {
+                    staleRetryRejected.signal()
+                }
+            }
+        )
+        let model = variant.model
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+        service.modelEndpointTypes[model] = variant.endpointType
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "First")],
+            model: model,
+            stream: false,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let first = await server.exchange(at: 0)
+        first.fail(URLError(.networkConnectionLost))
+        let didStartRetry = await retryStarted.wait(timeout: .seconds(2))
+        #expect(didStartRetry)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replacement")],
+            model: model,
+            stream: false,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let replacement = await server.exchange(at: 1)
+
+        releaseRetry.signal()
+        let rejectedStaleRetry = await staleRetryRejected.wait(timeout: .seconds(2))
+        #expect(rejectedStaleRetry)
+        #expect(server.requestCount == 2)
+
+        service.cancelCurrentRequest()
+        let replacementStopped = await replacement.waitUntilStopped()
+        #expect(replacementStopped)
     }
 
     @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
@@ -254,6 +686,134 @@ struct AIServiceTests {
 
         oauth.clearRetryAfter(forAccessToken: "token-A")
         #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
+    }
+
+    @Test("Stale Anthropic callbacks cannot clear or deliver into a replacement", .timeLimit(.minutes(1)))
+    func staleAnthropicCallbacksCannotClearOrDeliverIntoReplacement() async throws {
+        let factory = FlightTestAnthropicProviderFactory()
+        let staleTerminalProcessed = FlightTestSignal()
+        let service = AIService(
+            anthropicProviderFactory: { _ in factory.makeProvider() },
+            requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                if checkpoint == .anthropicTerminal, !ownsFlight {
+                    staleTerminalProcessed.signal()
+                }
+            }
+        )
+        let model = "claude-flight"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .anthropic
+        service.modelAPIKeys[model] = "sk-ant-unit-test"
+
+        let staleChunks = FlightTestBox("")
+        let staleReasoning = FlightTestBox("")
+        let staleTools = FlightTestBox([String]())
+        let staleCompleted = FlightTestBox(false)
+        let staleErrors = FlightTestBox(0)
+        service.sendMessage(
+            messages: [Message(role: .user, content: "First")],
+            model: model,
+            stream: true,
+            onChunk: { staleChunks.value += $0 },
+            onComplete: { staleCompleted.value = true },
+            onError: { _ in staleErrors.value += 1 },
+            onToolCallRequested: { _, name, _ in staleTools.update { $0.append(name) } },
+            onReasoning: { staleReasoning.value += $0 }
+        )
+
+        let currentChunk = FlightTestBox("")
+        let currentChunkReceived = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replacement")],
+            model: model,
+            stream: true,
+            onChunk: {
+                currentChunk.value += $0
+                currentChunkReceived.signal()
+            },
+            onComplete: {},
+            onError: { _ in }
+        )
+
+        #expect(factory.providers.count == 2)
+        let stale = try #require(factory.providers.first)
+        let current = try #require(factory.providers.last)
+        stale.emitChunk("stale chunk")
+        stale.emitReasoning("stale reasoning")
+        stale.emitToolRequest(name: "stale_tool")
+        stale.complete()
+        stale.fail(URLError(.badServerResponse))
+
+        let rejectedStaleTerminal = await staleTerminalProcessed.wait(timeout: .seconds(2))
+        #expect(rejectedStaleTerminal)
+        current.emitChunk("current chunk")
+        let deliveredCurrentChunk = await currentChunkReceived.wait(timeout: .seconds(2))
+        #expect(deliveredCurrentChunk)
+        #expect(staleChunks.value.isEmpty)
+        #expect(staleReasoning.value.isEmpty)
+        #expect(staleTools.value.isEmpty)
+        #expect(!staleCompleted.value)
+        #expect(staleErrors.value == 0)
+        #expect(currentChunk.value == "current chunk")
+
+        service.cancelCurrentRequest()
+        #expect(current.isCancelled)
+    }
+
+    @Test("Anthropic foreground and per-model multi handles remain independent", .timeLimit(.minutes(1)))
+    func anthropicForegroundAndPerModelMultiHandlesRemainIndependent() async {
+        let factory = FlightTestAnthropicProviderFactory()
+        let service = AIService(anthropicProviderFactory: { _ in factory.makeProvider() })
+        let models = ["claude-foreground", "claude-multi-a", "claude-multi-b"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .anthropic
+            service.modelAPIKeys[model] = "sk-ant-unit-test"
+        }
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground")],
+            model: models[0],
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+
+        let firstMultiCompleted = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Multi A")],
+            model: models[1],
+            stream: true,
+            isMultiModelRequest: true,
+            onChunk: { _ in },
+            onComplete: { firstMultiCompleted.signal() },
+            onError: { _ in }
+        )
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Multi B")],
+            model: models[2],
+            stream: true,
+            isMultiModelRequest: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+
+        #expect(factory.providers.count == 3)
+        let foreground = factory.providers[0]
+        let completedMulti = factory.providers[1]
+        let activeMulti = factory.providers[2]
+        completedMulti.complete()
+        let didCompleteMulti = await firstMultiCompleted.wait(timeout: .seconds(2))
+        #expect(didCompleteMulti)
+
+        service.cancelCurrentRequest()
+        #expect(foreground.isCancelled)
+        #expect(activeMulti.isCancelled)
+        #expect(!completedMulti.isCancelled)
     }
 
     // MARK: - Anthropic Integration Tests
@@ -579,7 +1139,44 @@ struct AIServiceTests {
         #expect(request.url?.absoluteString == "https://proxy.example.com/v1/images/generations")
         #expect(imageData.value == Data("image".utf8))
     }
+}
 
+// swiftlint:enable type_body_length
+
+enum DataFlightVariant: String, CaseIterable, Sendable, CustomTestStringConvertible {
+    case chatCompletions
+    case responses
+
+    var model: String {
+        switch self {
+        case .chatCompletions:
+            "data-chat"
+        case .responses:
+            "data-responses"
+        }
+    }
+
+    var endpointType: APIEndpointType {
+        switch self {
+        case .chatCompletions:
+            .chatCompletions
+        case .responses:
+            .responses
+        }
+    }
+
+    var responseData: Data {
+        switch self {
+        case .chatCompletions:
+            Data("{\"choices\":[{\"message\":{\"content\":\"stale\"}}]}".utf8)
+        case .responses:
+            Data("{\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"stale\"}]}]}".utf8)
+        }
+    }
+
+    var testDescription: String {
+        rawValue
+    }
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
