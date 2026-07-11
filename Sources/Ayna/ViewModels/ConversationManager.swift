@@ -16,18 +16,22 @@ import SwiftUI
     import UniformTypeIdentifiers
 #endif
 
+extension Notification.Name {
+    static let conversationDeleteRolledBack = Notification.Name("conversationDeleteRolledBack")
+}
+
 @MainActor
 final class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
-    @Published var selectedConversationId: UUID?
+    @Published var selectedConversationId: UUID? {
+        didSet { selectionRevision &+= 1 }
+    }
 
     static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
-    private let store: EncryptedConversationStore
     private let persistenceCoordinator: ConversationPersistenceCoordinator
     var loadingTask: Task<Void, Never>?
-    private var isLoaded = false
-    private let saveDebounceDuration: Duration
+    private var selectionRevision: UInt64 = 0
 
     // Performance: O(1) conversation index lookup cache
     private var conversationIndexCache: [UUID: Int] = [:]
@@ -35,6 +39,9 @@ final class ConversationManager: ObservableObject {
     // Performance: Spotlight indexing debounce (3 seconds per conversation)
     private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
     private let indexingDebounceDuration: Duration = .seconds(3)
+    #if !os(watchOS)
+        private var spotlightOperationTail = Task<Void, Never> {}
+    #endif
 
     private func logManager(
         _ message: String,
@@ -94,229 +101,157 @@ final class ConversationManager: ObservableObject {
     }
 
     init(
-        store: EncryptedConversationStore? = nil,
+        store: (any ConversationStoreAdapter)? = nil,
         saveDebounceDuration: Duration = .milliseconds(200)
     ) {
-        let effectiveStore = store ?? .shared
-        self.store = effectiveStore
-        self.saveDebounceDuration = saveDebounceDuration
+        let effectiveStore = store ?? EncryptedConversationStore.shared
         persistenceCoordinator = ConversationPersistenceCoordinator(
             store: effectiveStore,
             debounceDuration: saveDebounceDuration
         )
-        loadingTask = Task {
-            await loadConversations()
-        }
 
-        // Listen for save failures to reload data from disk
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleSaveFailure(_:)),
-            name: .conversationSaveFailed,
-            object: nil
-        )
-    }
-
-    @objc private func handleSaveFailure(_ notification: Notification) {
-        guard let conversationId = notification.userInfo?["conversationId"] as? UUID else { return }
-
-        logManager(
-            "🔄 Reloading conversations after save failure",
-            level: .info,
-            metadata: ["failedId": conversationId.uuidString]
-        )
-
-        // Reload all conversations from disk to restore consistent state
-        Task {
-            await loadConversations()
+        let initialLoad = persistenceCoordinator.load()
+        loadingTask = Task { [weak self] in
+            await self?.consumeLoad(initialLoad)
         }
     }
 
     // MARK: - Persistence
 
     func save(_ conversation: Conversation) {
-        // Delegate to the actor for thread-safe, debounced persistence
-        Task {
-            if !isLoaded {
-                _ = await loadingTask?.value
-            }
-
-            await persistenceCoordinator.enqueueSave(conversation)
-            #if !os(watchOS)
-                indexConversation(conversation)
-            #endif
-        }
+        guard let current = self.conversation(byId: conversation.id) else { return }
+        persistenceCoordinator.apply(current, mode: .coalesced)
+        #if !os(watchOS)
+            indexConversation(current)
+        #endif
     }
 
     @discardableResult
     func saveImmediately(_ conversation: Conversation) -> Task<Void, Never> {
-        Task {
-            if !isLoaded {
-                _ = await loadingTask?.value
-            }
+        guard let current = self.conversation(byId: conversation.id) else {
+            return Task {}
+        }
 
-            do {
-                try await persistenceCoordinator.saveImmediately(conversation)
-                #if !os(watchOS)
-                    indexConversation(conversation)
-                #endif
-            } catch {
-                logManager(
-                    "❌ Failed to save conversation",
-                    level: .error,
-                    metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
-                )
-            }
+        let receipt = persistenceCoordinator.apply(current, mode: .immediate)
+        #if !os(watchOS)
+            indexConversation(current)
+        #endif
+
+        return Task {
+            await receipt?.value
         }
     }
 
-    /// Flushes all pending debounced saves immediately.
-    /// Call on app termination to prevent data loss.
+    /// Flushes every persistence operation accepted before this call.
     func flushPendingSaves() async {
-        await persistenceCoordinator.flushPendingSaves()
+        let receipt = persistenceCoordinator.flush()
+        await receipt.value
     }
 
-    func delete(_ conversationId: UUID) {
-        Task {
-            do {
-                try await persistenceCoordinator.delete(conversationId)
-                MemoryContextProvider.shared.removeConversationSummary(for: conversationId)
-                await loadConversations()
-                if selectedConversationId == conversationId {
-                    selectedConversationId = nil
-                }
-            } catch {
-                logManager(
-                    "❌ Failed to delete conversation",
-                    level: .error,
-                    metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
-                )
-            }
-        }
-    }
-
-    private func loadConversations() async {
-        do {
-            var decodedFromDisk = try await store.loadConversations()
-
-            // Validate and fix models that no longer exist
-            let availableModels = AIService.shared.customModels
-            let defaultModel = AIService.shared.selectedModel
-
-            for index in decodedFromDisk.indices where !availableModels.contains(decodedFromDisk[index].model) {
-                // Model no longer exists, update to default
-                decodedFromDisk[index].model = defaultModel
-                let conversationToSave = decodedFromDisk[index]
-                Task {
-                    do {
-                        try await store.save(conversationToSave)
-                    } catch {
-                        DiagnosticsLogger.log(
-                            .conversationManager,
-                            level: .error,
-                            message: "Failed to save conversation",
-                            metadata: ["error": "\(error)"]
-                        )
-                    }
-                }
-            }
-
-            // Dirty-wins reconciliation:
-            // - Disk is the authoritative snapshot for non-dirty conversations
-            // - In-memory wins for conversations that have pending saves queued
-            let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
-                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID in memory", metadata: ["id": "\(new.id)"])
-                return new
-            })
-            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
-                DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID on disk", metadata: ["id": "\(new.id)"])
-                return new
-            })
-
-            var reconciled: [Conversation] = []
-            reconciled.reserveCapacity(max(memoryById.count, diskById.count))
-
-            // Start from disk snapshot
-            for diskConversation in decodedFromDisk {
-                if dirtyIds.contains(diskConversation.id), let memoryConversation = memoryById[diskConversation.id] {
-                    reconciled.append(memoryConversation)
-                } else {
-                    reconciled.append(diskConversation)
-                }
-            }
-
-            // Add any dirty in-memory conversations not present on disk yet (e.g., newly created)
-            for dirtyId in dirtyIds {
-                if diskById[dirtyId] == nil, let memoryConversation = memoryById[dirtyId] {
-                    reconciled.append(memoryConversation)
-                }
-            }
-
-            // Sort by updated date descending to ensure correct order
-            reconciled.sort { $0.updatedAt > $1.updatedAt }
-
-            conversations = reconciled
-
-            // If selected conversation no longer exists, clear selection
-            if let selectedId = selectedConversationId,
-               !conversations.contains(where: { $0.id == selectedId })
-            {
-                selectedConversationId = nil
-            }
-
-            // Rebuild the index cache after loading and sorting
-            rebuildIndexCache()
-
-            isLoaded = true
-
-            logManager(
-                "✅ Loaded \(conversations.count) conversations",
-                level: .info,
-                metadata: ["count": "\(conversations.count)"]
-            )
-
-            // Index all conversations for Spotlight
-            #if !os(watchOS)
-                indexAllConversations()
-            #endif
-        } catch {
+    private func consumeLoad(_ receipt: PersistenceReceipt<ConversationLoadResult>) async {
+        switch await receipt.value {
+        case let .loaded(loaded):
+            applyLoadedConversations(loaded)
+        case let .failed(error):
             logManager(
                 "❌ Failed to load conversations",
                 level: .error,
-                metadata: ["error": error.localizedDescription]
+                metadata: ["error": error]
             )
-            if conversations.isEmpty {
-                conversations = []
-                conversationIndexCache.removeAll()
-            }
-            isLoaded = true
+        case .superseded:
+            break
         }
+    }
+
+    private func applyLoadedConversations(_ loaded: [Conversation]) {
+        var repaired = loaded
+        let availableModels = AIService.shared.customModels
+        let defaultModel = AIService.shared.selectedModel
+        var repairedIDs: [UUID] = []
+
+        for index in repaired.indices where !availableModels.contains(repaired[index].model) {
+            repaired[index].model = defaultModel
+            repairedIDs.append(repaired[index].id)
+        }
+
+        repaired.sort { lhs, rhs in
+            if lhs.updatedAt == rhs.updatedAt {
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+        conversations = repaired
+
+        if let selectedId = selectedConversationId,
+           !conversations.contains(where: { $0.id == selectedId })
+        {
+            selectedConversationId = nil
+        }
+
+        rebuildIndexCache()
+
+        for id in repairedIDs {
+            guard let current = conversation(byId: id) else { continue }
+            persistenceCoordinator.apply(current, mode: .immediate)
+        }
+
+        logManager(
+            "✅ Loaded \(conversations.count) conversations",
+            level: .info,
+            metadata: ["count": "\(conversations.count)"]
+        )
+
+        #if !os(watchOS)
+            indexAllConversations()
+        #endif
     }
 
     /// Public method to reload conversations from storage.
     /// Used for pull-to-refresh on iOS.
     func reloadConversations() async {
         logManager("🔄 Reloading conversations from storage", level: .info)
-        await loadConversations()
+        let receipt = persistenceCoordinator.load()
+        await consumeLoad(receipt)
     }
 
-    func clearAllConversations() {
-        conversations.removeAll()
-        conversationIndexCache.removeAll()
-        Task {
-            // Cancel all pending saves in the coordinator
-            await persistenceCoordinator.cancelAllPendingSaves()
+    @discardableResult
+    func clearAllConversations() -> Task<Void, Never> {
+        let beforeClear = conversations
+        let selectedBeforeClear = selectedConversationId
+        let receipt = persistenceCoordinator.clear(beforeClear)
 
-            do {
-                try store.clear()
-                logManager("🧹 Cleared encrypted conversation store", level: .info)
-            } catch {
-                logManager(
-                    "⚠️ Failed to clear conversation store",
+        conversations.removeAll(keepingCapacity: true)
+        conversationIndexCache.removeAll(keepingCapacity: true)
+        selectedConversationId = nil
+        let rollbackSelectionRevision = selectionRevision
+        #if !os(watchOS)
+            indexAllConversations()
+        #endif
+
+        return Task { @MainActor [weak self] in
+            let result = await receipt.value
+            guard let self else { return }
+
+            switch result {
+            case .cleared, .superseded:
+                break
+            case let .failed(restored, error):
+                self.conversations = restored
+                self.rebuildIndexCache()
+                if self.selectionRevision == rollbackSelectionRevision,
+                   let selectedBeforeClear,
+                   self.conversations.contains(where: { $0.id == selectedBeforeClear })
+                {
+                    self.selectedConversationId = selectedBeforeClear
+                }
+                self.logManager(
+                    "⚠️ Restored conversations after clear failure",
                     level: .error,
-                    metadata: ["error": error.localizedDescription]
+                    metadata: ["error": error, "count": "\(self.conversations.count)"]
                 )
+                #if !os(watchOS)
+                    self.indexAllConversations()
+                #endif
             }
         }
     }
@@ -390,17 +325,62 @@ final class ConversationManager: ObservableObject {
         return conversation
     }
 
-    func deleteConversation(_ conversation: Conversation) {
-        if let index = getConversationIndex(for: conversation.id) {
-            let id = conversation.id
-            conversations.remove(at: index)
-            updateCacheForRemoval(id: id, at: index)
-            MemoryContextProvider.shared.removeConversationSummary(for: id)
-            Task {
-                try? await store.delete(id)
+    @discardableResult
+    func deleteConversation(_ conversation: Conversation) -> Task<Void, Never>? {
+        guard let index = getConversationIndex(for: conversation.id) else { return nil }
+
+        let current = conversations[index]
+        let id = current.id
+        let wasSelected = selectedConversationId == id
+        let receipt = persistenceCoordinator.delete(current)
+
+        conversations.remove(at: index)
+        updateCacheForRemoval(id: id, at: index)
+        if wasSelected {
+            selectedConversationId = nil
+        }
+        let rollbackSelectionRevision = selectionRevision
+
+        return Task { @MainActor [weak self] in
+            let result = await receipt.value
+            guard let self else { return }
+
+            switch result {
+            case .deleted:
+                MemoryContextProvider.shared.removeConversationSummary(for: id)
                 #if !os(watchOS)
-                    deindexConversation(id: id)
+                    self.deindexConversation(id: id)
                 #endif
+            case let .failed(restored, error):
+                if self.getConversationIndex(for: id) == nil {
+                    let insertionIndex = min(index, self.conversations.count)
+                    self.conversations.insert(restored, at: insertionIndex)
+                    self.updateCacheForInsertion(at: insertionIndex)
+                    var restoredSelection = false
+                    if wasSelected,
+                       self.selectionRevision == rollbackSelectionRevision
+                    {
+                        self.selectedConversationId = id
+                        restoredSelection = true
+                    }
+                    #if !os(watchOS)
+                        self.indexConversation(restored)
+                    #endif
+                    if restoredSelection {
+                        NotificationCenter.default.post(
+                            name: .conversationDeleteRolledBack,
+                            object: nil,
+                            userInfo: ["conversationId": id]
+                        )
+                    }
+                }
+                self.logManager(
+                    "❌ Failed to delete conversation; restored it in the UI",
+                    level: .error,
+                    metadata: ["id": id.uuidString, "error": error]
+                )
+            case .superseded:
+                break
             }
         }
     }
@@ -866,7 +846,9 @@ final class ConversationManager: ObservableObject {
             onReasoning: nil
         )
     }
+}
 
+private extension ConversationManager {
     // MARK: - Spotlight Indexing
 
     #if !os(watchOS)
@@ -927,9 +909,8 @@ final class ConversationManager: ObservableObject {
                     return
                 }
 
-                // Perform the actual indexing on a background thread
                 let conversationCopy = latestConversation
-                Task.detached(priority: .utility) {
+                enqueueSpotlightOperation {
                     let item = ConversationManager.createSearchableItem(for: conversationCopy)
 
                     do {
@@ -953,7 +934,7 @@ final class ConversationManager: ObservableObject {
             indexingDebounceTasks[conversation.id]?.cancel()
             indexingDebounceTasks.removeValue(forKey: conversation.id)
 
-            Task.detached(priority: .utility) {
+            enqueueSpotlightOperation {
                 let item = ConversationManager.createSearchableItem(for: conversation)
 
                 do {
@@ -972,7 +953,7 @@ final class ConversationManager: ObservableObject {
         private func indexAllConversations() {
             let conversationsToIndex = conversations
 
-            Task.detached(priority: .utility) {
+            enqueueSpotlightOperation {
                 do {
                     // Clear existing index first to ensure clean state
                     try await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [
@@ -1005,20 +986,33 @@ final class ConversationManager: ObservableObject {
             indexingDebounceTasks[id]?.cancel()
             indexingDebounceTasks.removeValue(forKey: id)
 
-            CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [id.uuidString]) { error in
-                if let error {
-                    Task { @MainActor in
-                        self.logManager(
-                            "❌ Spotlight deletion error",
-                            level: .error,
-                            metadata: ["error": error.localizedDescription]
-                        )
-                    }
+            enqueueSpotlightOperation {
+                do {
+                    try await CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [id.uuidString])
+                } catch {
+                    DiagnosticsLogger.log(
+                        .conversationManager,
+                        level: .error,
+                        message: "❌ Spotlight deletion error",
+                        metadata: ["error": error.localizedDescription]
+                    )
                 }
             }
         }
-    #endif
 
+        private func enqueueSpotlightOperation(
+            _ operation: @escaping @Sendable () async -> Void
+        ) {
+            let predecessor = spotlightOperationTail
+            spotlightOperationTail = Task.detached(priority: .utility) {
+                await predecessor.value
+                await operation()
+            }
+        }
+    #endif
+}
+
+extension ConversationManager {
     // MARK: - Search and Filter
 
     nonisolated func searchConversationsAsync(query: String, conversations: [Conversation]) async
