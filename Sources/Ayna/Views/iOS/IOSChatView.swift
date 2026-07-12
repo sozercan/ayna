@@ -69,10 +69,17 @@ struct IOSChatView: View {
                 return false
             }
 
-            // Always show tool messages when they have content
+                // Web search results remain in model history but are presented as citations instead.
             if message.role == .tool {
+                    if message.toolCalls?.contains(where: { $0.toolName == WebSearchCoordinator.toolName }) == true {
+                        return false
+                    }
                 return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+
+                if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
+                    return true
+                }
 
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
@@ -190,7 +197,13 @@ struct IOSChatView: View {
                         updateDisplayableItems()
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
+                        .onChange(of: conversation.updatedAt) {
+                            // Message content, tool metadata, citations, and response status can change
+                            // without changing the message count. Refresh copied display items for all.
+                            updateDisplayableItems()
+                        }
                     .onChange(of: conversation.messages.last?.content) {
+                            updateDisplayableItems()
                         // Only scroll during generation - use transaction to disable animations
                         // This prevents janky scrolling during rapid streaming updates
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
@@ -355,7 +368,7 @@ struct IOSChatView: View {
             initializeSelectedModelsIfNeeded()
         }
         .onDisappear {
-            viewModel.cancelOwnedImageOperation()
+                viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
             // Re-initialize if the conversation model changes and selectedModels is empty

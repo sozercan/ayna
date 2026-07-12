@@ -28,8 +28,16 @@
                     LazyVStack(spacing: 12) {
                         if let conversation = conversationStore.conversation(for: conversationId) {
                             ForEach(conversation.messages) { message in
-                                // Don't show empty assistant messages (placeholder during streaming)
-                                if !message.content.isEmpty || message.role.lowercased() == "user" {
+                                let isWebSearchToolResult = message.role.lowercased() == "tool" &&
+                                    message.toolCalls?.contains(where: {
+                                        $0.toolName == WebSearchCoordinator.toolName
+                                    }) == true
+                                // Keep web-search output in provider history but present citations instead.
+                                if !isWebSearchToolResult && (
+                                    !message.content.isEmpty ||
+                                        message.role.lowercased() == "user" ||
+                                        !(message.citations?.isEmpty ?? true)
+                                ) {
                                     WatchMessageView(message: message)
                                         .id(message.id)
                                         .accessibilityIdentifier(TestIdentifiers.Watch.chatMessageRow(for: message.id))
@@ -96,6 +104,9 @@
             }
             .onAppear {
                 viewModel.setConversation(conversationId)
+            }
+            .onDisappear {
+                viewModel.cancelOwnedRequest()
             }
             .userActivity(handoffActivityType) { activity in
                 // Set up Handoff activity for this conversation

@@ -47,6 +47,8 @@ struct WatchMessage: Codable, Identifiable {
     var content: String
     var timestamp: Date
     var model: String?
+    var toolCalls: [MCPToolCall]?
+    var citations: [CitationReference]?
 
     init(from message: Message) {
         id = message.id
@@ -54,12 +56,14 @@ struct WatchMessage: Codable, Identifiable {
         content = message.content
         timestamp = message.timestamp
         model = message.model
+        toolCalls = message.toolCalls
+        citations = message.citations
     }
 
     func toMessage() -> Message {
         let messageRole: Message.Role
-        if let r = Message.Role(rawValue: role) {
-            messageRole = r
+        if let decodedRole = Message.Role(rawValue: role) {
+            messageRole = decodedRole
         } else {
             DiagnosticsLogger.log(.watchConnectivity, level: .default, message: "Invalid message role", metadata: ["role": role])
             messageRole = .assistant
@@ -70,7 +74,9 @@ struct WatchMessage: Codable, Identifiable {
             role: messageRole,
             content: content,
             timestamp: timestamp,
-            model: model
+            toolCalls: toolCalls,
+            model: model,
+            citations: citations
         )
     }
 }

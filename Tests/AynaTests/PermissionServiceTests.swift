@@ -195,6 +195,190 @@ struct PermissionServiceTests {
         #expect(level == .automatic)
     }
 
+    @Test("Cancelling an approval request denies only that request")
+    func cancellingApprovalRequestDeniesOnlyThatRequest() async {
+        let conversationId = UUID()
+        let task = Task {
+            await sut.requestApproval(
+                toolName: "run_command",
+                description: "Run command",
+                details: "sleep 30",
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.isEmpty, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(sut.pendingApprovals.count == 1)
+
+        task.cancel()
+        #expect(await task.value == false)
+        #expect(sut.pendingApprovals.isEmpty)
+    }
+
+    @Test("Remembered approval is not visible until request commits")
+    func rememberedApprovalIsNotVisibleUntilRequestCommits() async {
+        let conversationId = UUID()
+        let details = "/tmp/provisional"
+        let task = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "Write",
+                details: details,
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.isEmpty, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        guard let approvalID = sut.pendingApprovals.first?.id else {
+            Issue.record("Approval did not become pending")
+            return
+        }
+
+        sut.approve(approvalID, rememberForSession: true)
+        #expect(sut.checkPermission(tool: "write_file", details: details, defaultLevel: .askOnce) == .askOnce)
+        #expect(await task.value)
+        #expect(sut.checkPermission(tool: "write_file", details: details, defaultLevel: .askOnce) == .automatic)
+    }
+
+    @Test("Cancelled approval cannot grant session permission")
+    func cancelledApprovalCannotGrantSessionPermission() async {
+        let conversationId = UUID()
+        let details = "echo unsafe"
+        let task = Task {
+            await sut.requestApproval(
+                toolName: "run_command",
+                description: "Run command",
+                details: details,
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.isEmpty, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let approvalID = sut.pendingApprovals.first?.id
+        #expect(approvalID != nil)
+        guard let approvalID else { return }
+
+        task.cancel()
+        sut.approve(approvalID, rememberForSession: true)
+
+        #expect(await task.value == false)
+        #expect(sut.checkPermission(tool: "run_command", details: details, defaultLevel: .askAlways) == .askAlways)
+    }
+
+    @Test("Cancelling an identical approval preserves another committed grant")
+    func cancellingIdenticalApprovalPreservesCommittedGrant() async {
+        let conversationId = UUID()
+        let details = "/tmp/shared"
+        let first = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "First",
+                details: details,
+                conversationId: conversationId
+            )
+        }
+        let second = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "Second",
+                details: details,
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.count < 2, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(sut.pendingApprovals.count == 2)
+        guard let firstID = sut.pendingApprovals.first?.id else { return }
+
+        sut.approve(firstID, rememberForSession: true)
+        #expect(await first.value)
+        second.cancel()
+        #expect(await second.value == false)
+
+        #expect(sut.checkPermission(tool: "write_file", details: details, defaultLevel: .askOnce) == .automatic)
+    }
+
+    @Test("Cancellation after approval resumes still rejects the operation")
+    func cancellationAfterApprovalResumesStillRejectsOperation() async {
+        let conversationId = UUID()
+        let task = Task {
+            await sut.requestApproval(
+                toolName: "run_command",
+                description: "Run command",
+                details: "echo unsafe",
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.isEmpty, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let approvalID = sut.pendingApprovals.first?.id
+        #expect(approvalID != nil)
+        guard let approvalID else { return }
+
+        sut.approve(approvalID)
+        task.cancel()
+
+        #expect(await task.value == false)
+    }
+
+    @Test("Cancelling a stale approval preserves a replacement in the same conversation")
+    func cancellingStaleApprovalPreservesReplacementInSameConversation() async {
+        let conversationId = UUID()
+        let staleTask = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "Stale write",
+                details: "/tmp/stale",
+                conversationId: conversationId
+            )
+        }
+        let replacementTask = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "Replacement write",
+                details: "/tmp/replacement",
+                conversationId: conversationId
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.count < 2, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(sut.pendingApprovals.count == 2)
+
+        staleTask.cancel()
+        #expect(await staleTask.value == false)
+        #expect(sut.pendingApprovals.count == 1)
+        #expect(sut.pendingApprovals.first?.details == "/tmp/replacement")
+
+        if let replacementID = sut.pendingApprovals.first?.id {
+            sut.deny(replacementID)
+        }
+        #expect(await replacementTask.value == false)
+    }
+
     // MARK: - Deny All Pending
 
     @Test("Deny all pending for conversation")

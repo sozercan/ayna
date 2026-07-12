@@ -34,7 +34,6 @@ enum OpenAIRequestBuilder {
     static func buildMessagePayload(from message: Message) -> [String: Any] {
         var payload: [String: Any] = ["role": message.role.rawValue]
 
-        #if !os(watchOS)
             // Handle tool role messages (tool results)
             if message.role == .tool {
                 payload["content"] = message.content
@@ -89,7 +88,6 @@ enum OpenAIRequestBuilder {
                 }
                 return payload
             }
-        #endif
 
         // Check if message has attachments (multimodal content)
         if let attachments = message.attachments, !attachments.isEmpty {
@@ -139,11 +137,12 @@ enum OpenAIRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]? = nil
     ) -> [String: Any] {
-        #if !os(watchOS)
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
+
             // Build a set of valid tool_call_ids that have matching tool responses
             // First, collect all tool messages and their tool_call_ids
             var toolResponseIds = Set<String>()
-            for message in messages {
+        for message in sanitizedMessages {
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
                     toolResponseIds.insert(toolCallId)
                 }
@@ -154,7 +153,7 @@ enum OpenAIRequestBuilder {
             // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
             // 3. For tool messages, only keep if preceding assistant has the matching tool_call
             var filteredMessages: [Message] = []
-            for (index, message) in messages.enumerated() {
+        for (index, message) in sanitizedMessages.enumerated() {
                 if message.role == .tool {
                     // Get the tool_call_id from this tool message
                     guard let toolCallId = message.toolCalls?.first?.id else {
@@ -178,7 +177,7 @@ enum OpenAIRequestBuilder {
                     } else {
                         var foundAssistant = false
                         for prevIdx in stride(from: index - 1, through: 0, by: -1) {
-                            let prevMessage = messages[prevIdx]
+                        let prevMessage = sanitizedMessages[prevIdx]
                             if prevMessage.role == .assistant {
                                 if let toolCalls = prevMessage.toolCalls,
                                    toolCalls.contains(where: { $0.id == toolCallId })
@@ -246,11 +245,13 @@ enum OpenAIRequestBuilder {
                 }
             }
 
-            let messagePayloads: [[String: Any]] = filteredMessages.map { buildMessagePayload(from: $0) }
-        #else
-            // watchOS: No tool support, just pass messages through
-            let messagePayloads: [[String: Any]] = messages.map { buildMessagePayload(from: $0) }
-        #endif
+        let messagePayloads = filteredMessages
+            .filter { message in
+                message.role != .assistant ||
+                    !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    !(message.toolCalls?.isEmpty ?? true)
+            }
+            .map { buildMessagePayload(from: $0) }
 
         var body: [String: Any] = [
             "messages": messagePayloads,
@@ -282,78 +283,95 @@ enum OpenAIRequestBuilder {
     /// - Parameter messages: Messages to convert
     /// - Returns: Array of input items for the Responses API
     static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var inputArray: [[String: Any]] = []
+        var messageIndex = 0
 
-        for message in messages {
-            // Skip system messages - Responses API handles them differently
+        while messageIndex < sanitizedMessages.count {
+            let message = sanitizedMessages[messageIndex]
+
             if message.role == .system {
+                messageIndex += 1
                 continue
             }
 
-            #if !os(watchOS)
-                // Handle tool result messages - convert to function_call_output
+            // Orphan tool outputs are never emitted independently. A valid tool
+            // round is handled with its preceding assistant call below.
                 if message.role == .tool {
-                    if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
-                        let outputItem: [String: Any] = [
-                            "type": "function_call_output",
-                            "call_id": firstToolCall.id,
-                            "output": message.content
-                        ]
-                        inputArray.append(outputItem)
-                    }
+                messageIndex += 1
                     continue
                 }
 
-                // Handle assistant messages with tool calls
                 if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    // First add any text content as a message
                     if !message.content.isEmpty {
-                        let messageItem: [String: Any] = [
+                    inputArray.append([
                             "type": "message",
                             "role": "assistant",
                             "content": [
                                 ["type": "output_text", "text": message.content]
                             ]
-                        ]
-                        inputArray.append(messageItem)
+                    ])
+                }
+
+                // Tool outputs belong to this round only while they are contiguous
+                // and immediately follow the assistant call.
+                var resultByCallID: [String: Message] = [:]
+                var nextIndex = messageIndex + 1
+                while nextIndex < sanitizedMessages.count, sanitizedMessages[nextIndex].role == .tool {
+                    let resultMessage = sanitizedMessages[nextIndex]
+                    if let callID = resultMessage.toolCalls?.first?.id,
+                       resultByCallID[callID] == nil
+                    {
+                        resultByCallID[callID] = resultMessage
+                    }
+                    nextIndex += 1
                     }
 
-                    // Then add each tool call as a function_call item
-                    for toolCall in toolCalls {
-                        // Convert AnyCodable arguments to JSON string
+                var validCalls: [MCPToolCall] = []
+                var seenCallIDs: Set<String> = []
+                for toolCall in toolCalls
+                    where resultByCallID[toolCall.id] != nil && seenCallIDs.insert(toolCall.id).inserted
+                {
                         var argumentsDict: [String: Any] = [:]
                         for (key, anyCodable) in toolCall.arguments {
                             argumentsDict[key] = anyCodable.value
                         }
-
-                        let argumentsString: String = if let argsData = try? JSONSerialization.data(withJSONObject: argumentsDict),
-                                                         let argsStr = String(data: argsData, encoding: .utf8)
-                        {
-                            argsStr
+                    let argumentsString: String = if let data = try? JSONSerialization.data(
+                        withJSONObject: argumentsDict
+                    ), let string = String(data: data, encoding: .utf8) {
+                        string
                         } else {
                             "{}"
                         }
-
-                        let functionCallItem: [String: Any] = [
+                    inputArray.append([
                             "type": "function_call",
                             "call_id": toolCall.id,
                             "name": toolCall.toolName,
                             "arguments": argumentsString
-                        ]
-                        inputArray.append(functionCallItem)
+                    ])
+                    validCalls.append(toolCall)
+                }
+
+                for toolCall in validCalls {
+                    guard let resultMessage = resultByCallID[toolCall.id] else { continue }
+                    inputArray.append([
+                        "type": "function_call_output",
+                        "call_id": toolCall.id,
+                        "output": resultMessage.content
+                    ])
                     }
+
+                messageIndex = nextIndex
                     continue
                 }
-            #endif
 
             var messageItem: [String: Any] = [
                 "type": "message",
                 "role": message.role.rawValue
             ]
-
             var contentArray: [[String: Any]] = []
 
-            if !message.content.isEmpty {
+            if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let contentType = message.role == .user ? "input_text" : "output_text"
                 contentArray.append([
                     "type": contentType,
@@ -361,21 +379,25 @@ enum OpenAIRequestBuilder {
                 ])
             }
 
-            // Add image attachments for user messages
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
                     if let data = attachment.content {
-                        let base64Data = data.base64EncodedString()
                         contentArray.append([
                             "type": "input_image",
-                            "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+                            "image_url": "data:\(attachment.mimeType);base64,\(data.base64EncodedString())"
                         ])
                     }
                 }
             }
 
+            guard !contentArray.isEmpty else {
+                messageIndex += 1
+                continue
+            }
+
             messageItem["content"] = contentArray
             inputArray.append(messageItem)
+            messageIndex += 1
         }
 
         return inputArray

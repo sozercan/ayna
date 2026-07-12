@@ -166,31 +166,83 @@ struct Conversation: Identifiable, Equatable, Sendable {
     // MARK: - Multi-Model Support
 
     /// Get the effective message history for API requests.
-    /// This filters out unselected responses from response groups to maintain linear context.
+    /// This linearizes each response group to one terminal, meaningful response.
     func getEffectiveHistory() -> [Message] {
-        var effectiveMessages: [Message] = []
+        var messagesByID: [UUID: Message] = [:]
+        for message in messages where messagesByID[message.id] == nil {
+            messagesByID[message.id] = message
+        }
 
-        for message in messages {
-            // If message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Find the corresponding response group
-                if let group = responseGroups.first(where: { $0.id == groupId }) {
-                    // Only include if this is the selected response, or if no selection made yet
-                    if group.selectedResponseId == message.id || group.selectedResponseId == nil {
-                        effectiveMessages.append(message)
-                    }
-                    // Skip unselected responses
-                } else {
-                    // No group found, include the message anyway
-                    effectiveMessages.append(message)
-                }
-            } else {
-                // Regular message (not part of a response group)
-                effectiveMessages.append(message)
+        var groupsByID: [UUID: ResponseGroup] = [:]
+        var chosenMessageIDByGroupID: [UUID: UUID] = [:]
+        for group in responseGroups where groupsByID[group.id] == nil {
+            groupsByID[group.id] = group
+            if let messageID = effectiveResponseMessageID(in: group, messagesByID: messagesByID) {
+                chosenMessageIDByGroupID[group.id] = messageID
             }
         }
 
-        return effectiveMessages
+        return messages.filter { message in
+            guard message.role != .assistant || message.hasMeaningfulHistoryContent else {
+                return false
+            }
+
+            guard let groupID = message.responseGroupId else {
+                return message.isSelectedResponse != false
+            }
+
+            guard groupsByID[groupID] != nil else {
+                return message.isSelectedResponse != false
+            }
+
+            return chosenMessageIDByGroupID[groupID] == message.id
+        }
+    }
+
+    private func effectiveResponseMessageID(
+        in group: ResponseGroup,
+        messagesByID: [UUID: Message]
+    ) -> UUID? {
+        func eligibleMessageID(for entry: ResponseGroupEntry) -> UUID? {
+            guard entry.status == .selected || entry.status == .completed,
+                  let message = messagesByID[entry.id],
+                  message.responseGroupId == group.id,
+                  message.role == .assistant,
+                  message.hasMeaningfulHistoryContent
+            else {
+                return nil
+            }
+            return message.id
+        }
+
+        if let selectedResponseID = group.selectedResponseId,
+           let selectedEntry = group.responses.first(where: { $0.id == selectedResponseID }),
+           let selectedMessageID = eligibleMessageID(for: selectedEntry)
+        {
+            return selectedMessageID
+        }
+
+        for entry in group.responses where entry.status == .selected {
+            if let selectedMessageID = eligibleMessageID(for: entry) {
+                return selectedMessageID
+            }
+        }
+
+        for entry in group.responses
+            where entry.modelName == model && (entry.status == .selected || entry.status == .completed)
+        {
+            if let defaultModelMessageID = eligibleMessageID(for: entry) {
+                return defaultModelMessageID
+            }
+        }
+
+        for entry in group.responses where entry.status == .completed {
+            if let completedMessageID = eligibleMessageID(for: entry) {
+                return completedMessageID
+            }
+        }
+
+        return nil
     }
 
     /// Add a response group for multi-model responses
@@ -240,6 +292,48 @@ struct Conversation: Identifiable, Equatable, Sendable {
             responseGroups[index] = group
             updatedAt = Date()
         }
+    }
+}
+
+extension Message {
+    var hasMeaningfulNonToolTranscriptContent: Bool {
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        if let reasoning,
+           !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return true
+        }
+        if !(citations?.isEmpty ?? true) {
+            return true
+        }
+        if let imageData, !imageData.isEmpty {
+            return true
+        }
+        if let imagePath,
+           !imagePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return true
+        }
+        if attachments?.contains(where: { attachment in
+            if let data = attachment.data, !data.isEmpty {
+                return true
+            }
+            if let localPath = attachment.localPath,
+               !localPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                return true
+            }
+            return false
+        }) == true {
+            return true
+        }
+        return false
+    }
+
+    var hasMeaningfulHistoryContent: Bool {
+        hasMeaningfulNonToolTranscriptContent || !(toolCalls?.isEmpty ?? true)
     }
 }
 

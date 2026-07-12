@@ -24,6 +24,8 @@ import os.log
 //
 // Uses dependency injection via SwiftUI Environment.
 #if os(macOS)
+    import Darwin
+
     /// Thread-safe accumulator for pipe data from Process stdout/stderr.
     private final class PipeAccumulator: @unchecked Sendable {
         private let lock = NSLock()
@@ -65,6 +67,99 @@ import os.log
         }
     }
 
+    /// Owns subprocess startup, completion, and TERM-to-KILL escalation as one atomic state.
+    private final class ProcessExecutionController: @unchecked Sendable {
+        private struct State {
+            var process: CommandSubprocess?
+            var isCancelled = false
+            var completionCommitted = false
+            var terminationRequested = false
+        }
+
+        private let lock = NSLock()
+        private var state = State()
+
+        func start(command: String, workingDirectory: URL?) throws -> CommandSubprocess? {
+            lock.lock()
+            guard !state.isCancelled else {
+                lock.unlock()
+                return nil
+            }
+            do {
+                // Keep installation and startup atomic with cancellation.
+                let process = try CommandSubprocess.start(
+                    command: command,
+                    workingDirectory: workingDirectory
+                )
+                state.process = process
+                lock.unlock()
+                return process
+            } catch {
+                state.process = nil
+                lock.unlock()
+                throw error
+            }
+        }
+
+        func cancel() {
+            requestTermination(markCancelled: true)
+        }
+
+        func timeout() {
+            requestTermination(markCancelled: false)
+        }
+
+        func finishIfNotCancelled() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !state.isCancelled, !state.completionCommitted else { return false }
+            state.completionCommitted = true
+            state.process = nil
+            return true
+        }
+
+        private func requestTermination(markCancelled: Bool) {
+            lock.lock()
+            guard !state.completionCommitted else {
+                lock.unlock()
+                return
+            }
+            if markCancelled {
+                state.isCancelled = true
+            }
+            guard !state.terminationRequested else {
+                lock.unlock()
+                return
+            }
+            state.terminationRequested = true
+            let process = state.process
+            lock.unlock()
+
+            guard let process, process.isRunning else { return }
+            process.terminate()
+
+            // `Process.terminate()` only sends SIGTERM. Commands may trap or ignore it,
+            // which would otherwise leave `waitUntilExit()` and the awaiting tool task
+            // suspended forever. Escalate to SIGKILL after a short grace period.
+            Task.detached { [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, self.shouldForceKill(process) else { return }
+                process.forceKill()
+            }
+        }
+
+        private func shouldForceKill(_ process: CommandSubprocess) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !state.completionCommitted,
+                  state.process === process
+            else {
+                return false
+            }
+            return process.isRunning
+        }
+    }
+
     @Observable @MainActor
     final class BuiltinToolService {
         // MARK: - Properties
@@ -72,6 +167,8 @@ import os.log
         private let permissionService: PermissionService
         private let shellSandbox: ShellSandbox
         private let pathValidator: PathValidator
+        private let processStartGate: @Sendable () async -> Void
+        private let processCompletionGate: @Sendable () async -> Void
         let projectRoot: URL?
 
         /// Whether the service is enabled
@@ -106,12 +203,16 @@ import os.log
         init(
             permissionService: PermissionService,
             shellSandbox: ShellSandbox? = nil,
-            projectRoot: URL? = nil
+            projectRoot: URL? = nil,
+            processStartGate: @escaping @Sendable () async -> Void = {},
+            processCompletionGate: @escaping @Sendable () async -> Void = {}
         ) {
             self.permissionService = permissionService
             self.projectRoot = projectRoot
             self.pathValidator = PathValidator(projectRoot: projectRoot)
             self.shellSandbox = shellSandbox ?? ShellSandbox(projectRoot: projectRoot)
+            self.processStartGate = processStartGate
+            self.processCompletionGate = processCompletionGate
         }
 
         // MARK: - File Operations
@@ -141,6 +242,7 @@ import os.log
                     details: path,
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.readFile, reason: "User denied")
                 }
@@ -237,10 +339,10 @@ import os.log
                     details: path,
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.writeFile, reason: "User denied")
                 }
-                permissionService.recordSessionApproval(tool: ToolName.writeFile, details: path)
             }
 
             // Resolve path with symlink resolution to prevent TOCTOU attacks
@@ -279,6 +381,8 @@ import os.log
             } catch {
                 throw ToolExecutionError.fileNotWritable(path: path, underlying: "Cannot create directory: \(error.localizedDescription)")
             }
+
+            try Task.checkCancellation()
 
             // Write file
             do {
@@ -361,10 +465,10 @@ import os.log
                     diffPreview: diffPreview,
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.editFile, reason: "User denied")
                 }
-                permissionService.recordSessionApproval(tool: ToolName.editFile, details: path)
             }
 
             // Resolve path with symlink resolution to prevent TOCTOU attacks
@@ -387,6 +491,8 @@ import os.log
             case .allowed:
                 break
             }
+
+            try Task.checkCancellation()
 
             // Write updated content
             do {
@@ -422,6 +528,7 @@ import os.log
                     details: path,
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.listDirectory, reason: "User denied")
                 }
@@ -487,6 +594,7 @@ import os.log
                     details: "Pattern: \(pattern) in \(path)",
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.searchFiles, reason: "User denied")
                 }
@@ -523,7 +631,9 @@ import os.log
                 guard resourceValues?.isRegularFile == true else { continue }
 
                 let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                if let size = attrs?[.size] as? Int, size > maxReadSize { continue }
+                if let size = attrs?[.size] as? Int, size > maxReadSize {
+                    continue
+                }
 
                 // Read file
                 guard let data = try? Data(contentsOf: fileURL),
@@ -544,7 +654,9 @@ import os.log
                             matchEnd: match.range.location + match.range.length
                         ))
 
-                        if results.count >= maxSearchResults { break }
+                        if results.count >= maxSearchResults {
+                            break
+                        }
                     }
                 }
             }
@@ -600,14 +712,13 @@ import os.log
                     details: command,
                     conversationId: conversationId
                 )
+                try Task.checkCancellation()
                 if !approved {
                     throw ToolExecutionError.permissionDenied(tool: ToolName.runCommand, reason: "User denied")
                 }
-                // Only remember allowed commands
-                if validation == .allowed {
-                    permissionService.recordSessionApproval(tool: ToolName.runCommand, details: command)
-                }
             }
+
+            try Task.checkCancellation()
 
             // Execute command off the main thread to prevent UI freezes
             let startTime = Date()
@@ -645,58 +756,32 @@ import os.log
             timeoutSeconds: Int,
             startTime: Date
         ) async throws -> CommandResult {
-            // Use a class to share process reference with cancellation handler
-            final class ProcessHolder: @unchecked Sendable {
-                private var _process: Process?
-                private let lock = NSLock()
-
-                var process: Process? {
-                    get {
-                        lock.lock()
-                        defer { lock.unlock() }
-                        return _process
-                    }
-                    set {
-                        lock.lock()
-                        defer { lock.unlock() }
-                        _process = newValue
-                    }
-                }
-            }
-            let processHolder = ProcessHolder()
+            let processHolder = ProcessExecutionController()
+            let processStartGate = processStartGate
+            let processCompletionGate = processCompletionGate
 
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     Task.detached {
-                        let process = Process()
-                        processHolder.process = process
+                        await processStartGate()
 
-                        let stdoutPipe = Pipe()
-                        let stderrPipe = Pipe()
-
-                        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                        process.arguments = ["-c", command]
-                        process.standardOutput = stdoutPipe
-                        process.standardError = stderrPipe
-
-                        if let workingDir {
-                            process.currentDirectoryURL = workingDir
+                        do {
+                            guard let process = try processHolder.start(
+                                command: command,
+                                workingDirectory: workingDir
+                            ) else {
+                                continuation.resume(throwing: CancellationError())
+                                return
                         }
 
-                        // Set up timeout task
                         let timeoutTask = Task {
                             do {
                                 try await Task.sleep(for: .seconds(timeoutSeconds))
-                                if process.isRunning {
-                                    process.terminate()
-                                }
+                                    processHolder.timeout()
                             } catch {
                                 // Cancelled - expected when process completes normally
                             }
                         }
-
-                        do {
-                            try process.run()
 
                             // Read both pipes concurrently to avoid deadlock (Apple TN2050).
                             // Sequential reads can deadlock if one pipe fills its buffer
@@ -705,50 +790,58 @@ import os.log
                             let stdoutAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
                             let stderrAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
 
-                            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                            process.standardOutput.readabilityHandler = { handle in
                                 let data = handle.availableData
                                 if data.isEmpty {
-                                    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                                    process.standardOutput.readabilityHandler = nil
                                 } else {
                                     stdoutAccumulator.append(data)
                                 }
                             }
-                            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                            process.standardError.readabilityHandler = { handle in
                                 let data = handle.availableData
                                 if data.isEmpty {
-                                    stderrPipe.fileHandleForReading.readabilityHandler = nil
+                                    process.standardError.readabilityHandler = nil
                                 } else {
                                     stderrAccumulator.append(data)
                                 }
                             }
 
-                            process.waitUntilExit()
+                            let terminationStatus = process.waitUntilExit()
                             timeoutTask.cancel()
 
-                            // Clear handlers after exit
-                            stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                            stderrPipe.fileHandleForReading.readabilityHandler = nil
-
-                            // Drain any remaining buffered data not captured by handlers
-                            let remainingStdout = stdoutPipe.fileHandleForReading.availableData
-                            let remainingStderr = stderrPipe.fileHandleForReading.availableData
-                            if !remainingStdout.isEmpty {
-                                stdoutAccumulator.append(remainingStdout)
+                            // Drain only bytes already buffered. A descendant retaining a write end
+                            // must never make post-exit cleanup block indefinitely.
+                            process.standardOutput.readabilityHandler = nil
+                            process.standardError.readabilityHandler = nil
+                            let remaining = process.drainAvailableOutput()
+                            if !remaining.stdout.isEmpty {
+                                stdoutAccumulator.append(remaining.stdout)
                             }
-                            if !remainingStderr.isEmpty {
-                                stderrAccumulator.append(remainingStderr)
+                            if !remaining.stderr.isEmpty {
+                                stderrAccumulator.append(remaining.stderr)
                             }
+                            process.closeOutput()
 
                             let duration = Date().timeIntervalSince(startTime)
 
                             var stdout = String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
                             var stderr = String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
                             let truncationNote = "\n[Output truncated at \(self.maxOutputSize / 1024 / 1024)MB]"
-                            if stdoutAccumulator.truncated { stdout += truncationNote }
-                            if stderrAccumulator.truncated { stderr += truncationNote }
+                            if stdoutAccumulator.truncated {
+                                stdout += truncationNote
+                            }
+                            if stderrAccumulator.truncated {
+                                stderr += truncationNote
+                            }
 
+                            await processCompletionGate()
+                            guard processHolder.finishIfNotCancelled() else {
+                                continuation.resume(throwing: CancellationError())
+                                return
+                            }
                             let commandResult = CommandResult(
-                                exitCode: process.terminationStatus,
+                                exitCode: terminationStatus,
                                 stdout: stdout,
                                 stderr: stderr,
                                 duration: duration
@@ -756,19 +849,20 @@ import os.log
 
                             continuation.resume(returning: commandResult)
                         } catch {
+                            if processHolder.finishIfNotCancelled() {
                             continuation.resume(throwing: ToolExecutionError.commandFailed(
                                 command: command,
                                 exitCode: -1,
                                 stderr: error.localizedDescription
                             ))
+                            } else {
+                                continuation.resume(throwing: CancellationError())
                         }
                     }
                 }
-            } onCancel: {
-                // Terminate the process if the task is cancelled (e.g., user cancels stream)
-                if let process = processHolder.process, process.isRunning {
-                    process.terminate()
                 }
+            } onCancel: {
+                processHolder.cancel()
             }
         }
 

@@ -499,13 +499,17 @@ extension MacChatView {
         // Capture necessary values for closures
         let conversationId = conversation.id
 
-        // Send to all models in parallel
-        aiService.sendToMultipleModels(
+        // Send to all models in parallel under this view's owner-specific operation.
+        let coordinator = toolChainCoordinator
+        activeAssistantMessageID = nil
+        activeMultiModelResponseGroupID = responseGroupId
+        let operationID = coordinator.beginOperation(conversationID: conversationId)
+        let request = aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
             temperature: temperature,
             onChunk: { model, chunk in
-                Task { @MainActor in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model],
                           let convIndex = conversationManager.conversations.firstIndex(where: {
                               $0.id == conversationId
@@ -521,7 +525,7 @@ extension MacChatView {
                 }
             },
             onModelComplete: { model in
-                Task { @MainActor in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status
@@ -542,7 +546,8 @@ extension MacChatView {
                 }
             },
             onAllComplete: {
-                Task { @MainActor in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
+                    guard coordinator.owns(operationID, conversationID: conversationId) else { return }
                     isGenerating = false
                     logChat("🏁 All models completed", level: .info)
 
@@ -552,10 +557,12 @@ extension MacChatView {
                     }) {
                         conversationManager.saveImmediately(conversationManager.conversations[convIndex])
                     }
+                    activeMultiModelResponseGroupID = nil
+                    _ = coordinator.finishOperation(operationID)
                 }
             },
             onError: { model, error in
-                Task { @MainActor in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
 
                     // Update response group status to failed
@@ -577,7 +584,7 @@ extension MacChatView {
             },
             onPendingToolCall: { model, toolId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendableWrapper(arguments)
-                Task { @MainActor in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model],
                           let convIndex = conversationManager.conversations.firstIndex(where: {
                               $0.id == conversationId
@@ -610,6 +617,9 @@ extension MacChatView {
             },
             onReasoning: nil
         )
+        coordinator.onCancel(for: operationID) {
+            request.cancel()
+        }
     }
 }
 #endif

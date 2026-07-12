@@ -519,6 +519,7 @@ final class ConversationManager: ObservableObject {
             return false
         }
         conversations[convIndex].messages[msgIndex].content += chunk
+        conversations[convIndex].updatedAt = Date()
         return true
     }
 

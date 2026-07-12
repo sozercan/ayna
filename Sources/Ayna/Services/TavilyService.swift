@@ -181,6 +181,9 @@ final class TavilyService: ObservableObject {
         } catch let error as TavilyError {
             throw error
         } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             log(.error, "❌ Network error during web search", metadata: ["error": error.localizedDescription])
             if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                 NetworkCircuitBreaker.recordFailure(key: circuitKey)

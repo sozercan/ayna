@@ -82,6 +82,29 @@ struct PendingApproval: Identifiable, Sendable, Equatable {
     }
 }
 
+private final class CancelledApprovalRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: Set<UUID> = []
+
+    func mark(_ id: UUID) {
+        lock.lock()
+        ids.insert(id)
+        lock.unlock()
+    }
+
+    func contains(_ id: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ids.contains(id)
+    }
+
+    func clear(_ id: UUID) {
+        lock.lock()
+        ids.remove(id)
+        lock.unlock()
+    }
+}
+
 // MARK: - Permission Service
 
 /// Manages approval workflow for dangerous operations.
@@ -104,12 +127,15 @@ final class PermissionService {
     /// Session approvals - tools that have been approved for this session
     /// Key format: "toolName:path" or "toolName:command"
     private var sessionApprovals: Set<String> = []
+    private var committedSessionApprovalKeys: Set<String> = []
+    private var pendingSessionApprovalOwners: [UUID: String] = [:]
 
     /// Whether to persist approvals across sessions
     var persistApprovalsAcrossSessions: Bool = false
 
     /// Continuations for async approval flow
     private var approvalContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private nonisolated let cancelledApprovals = CancelledApprovalRegistry()
 
     /// Timeout tasks for auto-deny
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
@@ -251,6 +277,7 @@ final class PermissionService {
     func recordSessionApproval(tool: String, details: String) {
         let key = approvalKey(tool: tool, details: details)
         sessionApprovals.insert(key)
+        committedSessionApprovalKeys.insert(key)
 
         log(.info, "Session approval recorded", metadata: ["tool": tool, "key": key])
     }
@@ -304,28 +331,43 @@ final class PermissionService {
             conversationId: conversationId
         )
 
-        // Wait for approval - store continuation BEFORE adding to pending list
-        // and starting timeout to prevent race conditions where deny() could be
-        // called before the continuation is stored
-        return await withCheckedContinuation { continuation in
+        // Store the continuation before exposing the request so approval, denial,
+        // timeout, and task cancellation all race through the same exact ID.
+        let approved = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
             approvalContinuations[approval.id] = continuation
             pendingApprovals.append(approval)
+
+                // Cancellation can win before the continuation is installed.
+                // Recheck after insertion so this request is never orphaned.
+                guard !Task.isCancelled else {
+                    deny(approval.id)
+                    return
+                }
+
             log(.info, "Approval requested", metadata: [
                 "tool": toolName,
                 "id": approval.id.uuidString
             ])
 
-            // Post notification for UI updates
             NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
                 "conversationId": conversationId,
                 "count": pendingApprovals.count
             ])
-
-            // Show system notification for user attention
             showSystemNotification(for: approval)
-
             startTimeoutTask(for: approval.id)
         }
+        } onCancel: { [weak self] in
+            self?.cancelledApprovals.mark(approval.id)
+            Task { @MainActor in
+                self?.handleCancelledApproval(approval)
+            }
+        }
+        let accepted = approved && !Task.isCancelled
+        if accepted {
+            commitSessionApproval(for: approval.id)
+        }
+        return accepted
     }
 
     /// Approves a pending request.
@@ -334,6 +376,10 @@ final class PermissionService {
     ///   - approvalId: The ID of the pending approval
     ///   - rememberForSession: Whether to remember this approval for the session
     func approve(_ approvalId: UUID, rememberForSession: Bool = false) {
+        guard !cancelledApprovals.contains(approvalId) else {
+            deny(approvalId)
+            return
+        }
         guard let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) else {
             return
         }
@@ -342,7 +388,8 @@ final class PermissionService {
 
         // Record session approval if requested
         if rememberForSession {
-            recordSessionApproval(tool: approval.toolName, details: approval.details)
+            let key = approvalKey(tool: approval.toolName, details: approval.details)
+            pendingSessionApprovalOwners[approvalId] = key
         }
 
         // Remove from pending
@@ -359,6 +406,7 @@ final class PermissionService {
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: true)
         }
+        cancelledApprovals.clear(approvalId)
 
         log(.info, "Approval granted", metadata: [
             "tool": approval.toolName,
@@ -377,6 +425,7 @@ final class PermissionService {
     /// - Parameter approvalId: The ID of the pending approval
     func deny(_ approvalId: UUID) {
         guard let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) else {
+            cancelledApprovals.clear(approvalId)
             return
         }
 
@@ -396,6 +445,8 @@ final class PermissionService {
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: false)
         }
+        pendingSessionApprovalOwners.removeValue(forKey: approvalId)
+        cancelledApprovals.clear(approvalId)
 
         log(.info, "Approval denied", metadata: [
             "tool": approval.toolName,
@@ -447,6 +498,8 @@ final class PermissionService {
     /// Clears all session approvals.
     func clearSessionApprovals() {
         sessionApprovals.removeAll()
+        committedSessionApprovalKeys.removeAll()
+        pendingSessionApprovalOwners.removeAll()
         log(.info, "Session approvals cleared")
     }
 
@@ -473,6 +526,23 @@ final class PermissionService {
         }
     }
 
+    private func handleCancelledApproval(_ approval: PendingApproval) {
+        if let key = pendingSessionApprovalOwners.removeValue(forKey: approval.id),
+           !committedSessionApprovalKeys.contains(key),
+           !pendingSessionApprovalOwners.values.contains(key)
+        {
+            sessionApprovals.remove(key)
+        }
+        deny(approval.id)
+        cancelledApprovals.clear(approval.id)
+    }
+
+    private func commitSessionApproval(for approvalID: UUID) {
+        guard let key = pendingSessionApprovalOwners.removeValue(forKey: approvalID) else { return }
+        sessionApprovals.insert(key)
+        committedSessionApprovalKeys.insert(key)
+    }
+
     // MARK: - Private Helpers
 
     private func approvalKey(tool: String, details: String) -> String {
@@ -484,7 +554,7 @@ final class PermissionService {
         timeoutTasks[approvalId] = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(timeout))
-                await self?.deny(approvalId)
+                self?.deny(approvalId)
             } catch {
                 // Task was cancelled, which is expected
             }

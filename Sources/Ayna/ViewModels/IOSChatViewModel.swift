@@ -49,11 +49,19 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     var conversationManager: ConversationManager
     let aiService: AIService
     private let imageGenerationCoordinator = ImageGenerationCoordinator()
+        private let toolChainCoordinator = ToolChainCoordinator()
+        private let toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
 
     // MARK: - Tool Call State
 
     /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
+        private var activeAssistantMessageId: UUID?
+        private var activeMultiModelResponseGroupId: UUID?
+        private var pendingAutoSendTask: Task<Void, Never>?
+        private var pendingAutoSendID: UUID?
+        private var pendingAutoSendDraft: String?
+        private var pendingAutoSendConversationID: UUID?
 
     /// Maximum tool chain depth for iOS.
     /// Lower than macOS (25) due to mobile resource constraints and typical mobile use cases.
@@ -135,13 +143,18 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Update the conversation manager reference.
     /// Used when view model was created before environment was available.
     func configure(with manager: ConversationManager) {
+            if conversationManager !== manager {
+                cancelPendingAutoSend()
+            }
         conversationManager = manager
     }
 
     /// Configure with conversation manager and conversation ID.
     /// Used for existing conversation views.
     func configure(with manager: ConversationManager, conversationId: UUID) {
-        cancelOwnedImageOperation()
+            if self.conversationId != conversationId || conversationManager !== manager {
+                cancelOwnedOperations()
+            }
         conversationManager = manager
         self.conversationId = conversationId
 
@@ -161,7 +174,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Reset state for a fresh new chat session.
     func resetForNewChat() {
-        imageGenerationCoordinator.cancelCurrentOperation()
+            cancelOwnedOperations()
         conversationId = nil
         messageText = ""
         isGenerating = false
@@ -183,6 +196,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Check for and process a pending auto-send prompt from deep link.
     /// This should be called after the view model is configured with a conversation.
     private func checkAndProcessPendingPrompt() {
+            cancelPendingAutoSend()
         guard let convId = conversationId,
               let index = conversationManager.conversations.firstIndex(where: { $0.id == convId }),
               let prompt = conversationManager.conversations[index].pendingAutoSendPrompt,
@@ -198,16 +212,69 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             metadata: ["promptLength": "\(prompt.count)"]
         )
 
-        // Clear the pending prompt to prevent re-sending
+            // Clear and persist the prompt before claiming it so view recreation cannot resend it.
         conversationManager.conversations[index].pendingAutoSendPrompt = nil
+            conversationManager.saveImmediately(conversationManager.conversations[index])
 
         // Set the message text and send
         messageText = prompt
+            pendingAutoSendDraft = prompt
+            pendingAutoSendConversationID = convId
+            let autoSendID = UUID()
+            pendingAutoSendID = autoSendID
         // Use a small delay to ensure the view is fully loaded
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(100))
-            sendMessage()
+            let task = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return
+                }
+                guard let self,
+                      self.pendingAutoSendID == autoSendID,
+                      self.conversationId == convId,
+                      self.messageText == prompt
+                else {
+                    return
         }
+                self.pendingAutoSendTask = nil
+                self.pendingAutoSendID = nil
+                self.pendingAutoSendDraft = nil
+                self.pendingAutoSendConversationID = nil
+                self.sendMessage()
+            }
+            pendingAutoSendTask = task
+        }
+
+        @discardableResult
+        private func cancelPendingAutoSend() -> Bool {
+            let wasPending = pendingAutoSendTask != nil || pendingAutoSendID != nil
+            pendingAutoSendTask?.cancel()
+            pendingAutoSendTask = nil
+            pendingAutoSendID = nil
+            if let draft = pendingAutoSendDraft,
+               messageText == draft,
+               let claimedConversationID = pendingAutoSendConversationID,
+               let index = conversationManager.conversations.firstIndex(where: { $0.id == claimedConversationID })
+            {
+                // Return an unsent claim to durable conversation state so view disappearance,
+                // reconfiguration, or switching conversations cannot silently drop a deep link.
+                if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
+                    conversationManager.conversations[index].pendingAutoSendPrompt = draft
+                    conversationManager.saveImmediately(conversationManager.conversations[index])
+                }
+                messageText = ""
+            }
+            pendingAutoSendDraft = nil
+            pendingAutoSendConversationID = nil
+            return wasPending
+        }
+
+        private func consumePendingAutoSendClaim() {
+            pendingAutoSendTask?.cancel()
+            pendingAutoSendTask = nil
+            pendingAutoSendID = nil
+            pendingAutoSendDraft = nil
+            pendingAutoSendConversationID = nil
     }
 
     /// Retry the last failed message
@@ -328,13 +395,15 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             message: "🛑 Cancelling generation",
             metadata: logMetadata
         )
-        let cancelledImageOperation = imageGenerationCoordinator.cancelCurrentOperation()
-        if !cancelledImageOperation {
-            aiService.cancelCurrentRequest(includeImageRequests: false)
+            toolChainCoordinator.cancelCurrentOperation {
+                finalizePersistedTextGeneration()
         }
+            imageGenerationCoordinator.cancelCurrentOperation()
         isGenerating = false
         currentToolName = nil
         toolCallDepth = 0
+            activeAssistantMessageId = nil
+            activeMultiModelResponseGroupId = nil
         pendingUserMessage = nil
     }
 
@@ -362,6 +431,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             )
             return
         }
+
+            // A manual send during the short deep-link delay consumes the same durable claim;
+            // cancel the delayed task without restoring or clearing the visible draft.
+            consumePendingAutoSendClaim()
 
         // Prevent sending while already generating
         guard !isGenerating else {
@@ -514,8 +587,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             return
         }
 
-        // Messages to send (exclude the empty assistant message we just added)
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
+            // Linearize multi-model history and omit failed/empty placeholders. The newly added
+            // empty assistant is also excluded by effective-history filtering.
+            var messagesToSend = updatedConversation.getEffectiveHistory()
 
         // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
@@ -547,16 +621,34 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             tools: tools
         )
     }
+    }
 
+    private extension IOSChatViewModel {
     /// Helper method to send messages with tool call support
     private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String,
         conversationId: UUID,
         assistantMessageId: UUID,
-        tools: [[String: Any]]?
+        tools: [[String: Any]]?,
+        operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
     ) {
         let toolsWrapper = UncheckedSendable(tools)
+        let coordinator = toolChainCoordinator
+        let roundCoordinator = toolCallRequestRoundCoordinator
+        let operationID = existingOperationID ?? coordinator.beginOperation(conversationID: conversationId)
+        if existingOperationID == nil {
+            activeMultiModelResponseGroupId = nil
+        }
+            guard coordinator.owns(operationID, conversationID: conversationId),
+                  let requestRoundID = roundCoordinator.beginRequestRound(
+                      for: operationID,
+                      coordinatedBy: coordinator
+                  )
+            else {
+                return
+            }
+            activeAssistantMessageId = assistantMessageId
 
         DiagnosticsLogger.log(
             .chatView,
@@ -568,16 +660,19 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             ]
         )
 
-        aiService.sendMessage(
+            let request = aiService.sendMessage(
             messages: messages,
             model: model,
             stream: true,
             tools: tools,
             onChunk: { [weak self] chunk in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
-                    // Log first chunk received
+                    MainActor.assumeIsolated {
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId
+                        else {
+                            return
+                        }
                     if !chunk.isEmpty {
                         DiagnosticsLogger.log(
                             .chatView,
@@ -589,10 +684,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             ]
                         )
                     }
-                    // Clear tool indicator when we start receiving content
-                    if self.currentToolName != nil {
                         self.currentToolName = nil
-                    }
                     self.updateAssistantMessage(
                         assistantMessageId,
                         appendingChunk: chunk,
@@ -601,9 +693,13 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 }
             },
             onComplete: { [weak self] in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
+                    MainActor.assumeIsolated {
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId
+                        else {
+                            return
+                        }
 
                     DiagnosticsLogger.log(
                         .chatView,
@@ -615,290 +711,425 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         ]
                     )
 
-                    // Only stop generating if no tool call is pending
-                    // If a tool call was requested, keep generating until tool execution completes
-                    if self.currentToolName == nil {
-                        self.isGenerating = false
-
-                        // Clear pending message on success
-                        self.pendingUserMessage = nil
-
-                        // Play message received sound
-                        SoundEngine.messageReceived()
-
-                        if let finalConversation = self.conversationManager.conversation(byId: conversationId) {
-                            self.conversationManager.save(finalConversation)
-                        }
-
-                        // Notify that conversation is ready (for new chat navigation)
-                        if self.isNewChatMode {
-                            self.onConversationCreated?(conversationId)
-                        }
-
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "✅ Message generation completed",
-                            metadata: ["conversationId": conversationId.uuidString]
+                        let resolution = roundCoordinator.providerDidComplete(
+                            operationID: operationID,
+                            requestRoundID: requestRoundID
                         )
-                    } else {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "⏳ onComplete: Tool call pending, keeping isGenerating=true",
-                            metadata: ["toolName": self.currentToolName ?? "unknown"]
+                        self.handleToolRoundResolution(
+                            resolution,
+                            operationID: operationID,
+                            assistantMessageId: assistantMessageId,
+                            model: model,
+                            conversationId: conversationId,
+                            tools: toolsWrapper.value
                         )
                     }
-                }
             },
             onError: { [weak self] error in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
-
-                    // Handle cancellation silently - don't show error UI for user-initiated cancels
-                    if error is CancellationError {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "Request cancelled",
-                            metadata: ["assistantMessageId": assistantMessageId.uuidString]
-                        )
-                        self.isGenerating = false
-                        self.currentToolName = nil
-                        self.toolCallDepth = 0
-                        self.pendingUserMessage = nil
-                        return
-                    }
-
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "🚨 onError callback fired",
-                        metadata: [
-                            "error": ErrorPresenter.userMessage(for: error),
-                            "assistantMessageId": assistantMessageId.uuidString
-                        ]
-                    )
-
-                    self.isGenerating = false
-
-                    // Play error sound
-                    SoundEngine.error()
-
-                    self.currentToolName = nil
-                    self.toolCallDepth = 0
-                    self.errorMessage = ErrorPresenter.userMessage(for: error)
-                    self.errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
-
-                    // Store the failed message for retry
-                    self.failedMessage = self.pendingUserMessage
-                    self.pendingUserMessage = nil
-
-                    // Remove the empty assistant placeholder message since we show error in banner
-                    self.conversationManager.removeMessage(
-                        conversationId: conversationId,
-                        messageId: assistantMessageId
-                    )
-
-                    // Still notify for navigation even on error if conversation was created
-                    if self.isNewChatMode {
-                        self.onConversationCreated?(conversationId)
-                    }
-
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .error,
-                        message: "❌ Message generation failed: \(ErrorPresenter.userMessage(for: error))",
-                        metadata: ["conversationId": conversationId.uuidString]
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.handleToolRequestError(
+                            error,
+                            operationID: operationID,
+                            assistantMessageId: assistantMessageId,
+                            conversationId: conversationId
                     )
                 }
             },
             onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
-                let selfRef = self
                 let argumentsWrapper = UncheckedSendable(arguments)
-                let toolNameCopy = toolName
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
-                    // Set currentToolName first thing to prevent race condition with onComplete
-                    // checking if tool call is pending. The stream may send [DONE] immediately
-                    // after finish_reason: "tool_calls".
-                    self.currentToolName = toolNameCopy
-                    let arguments = argumentsWrapper.value
-
-                    // Validate conversation still exists
-                    guard self.conversationManager.conversation(byId: conversationId) != nil else {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .default,
-                            message: "⚠️ Tool call requested but conversation no longer exists"
+                    MainActor.assumeIsolated {
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId,
+                              self.conversationManager.conversation(byId: conversationId) != nil,
+                              let toolToken = roundCoordinator.registerTool(
+                                  for: operationID,
+                                  requestRoundID: requestRoundID
                         )
-                        self.isGenerating = false
-                        self.currentToolName = nil
+                        else {
                         return
                     }
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .info,
-                        message: "🔧 Tool call requested: \(toolName)",
-                        metadata: ["toolName": toolName]
-                    )
 
-                    // Check depth limit
+                        if toolToken.registrationIndex == 0 {
                     guard self.toolCallDepth < self.maxToolCallDepth else {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .error,
-                            message: "⚠️ Max tool call depth reached"
-                        )
-                        self.isGenerating = false
-                        self.currentToolName = nil
-                        self.errorMessage = "Tool call limit reached. Please try again."
-                        // Remove the empty assistant placeholder message
-                        self.conversationManager.removeMessage(
-                            conversationId: conversationId,
-                            messageId: assistantMessageId
+                                self.stopToolChainAtDepthLimit(
+                                    operationID: operationID,
+                                    assistantMessageId: assistantMessageId,
+                                    conversationId: conversationId
                         )
                         return
                     }
-
                     self.toolCallDepth += 1
+                        }
 
-                    // Store tool call in the last assistant message using safe ID-based access
-                    if let conv = self.conversationManager.conversation(byId: conversationId),
-                       let lastMessage = conv.messages.last,
-                       lastMessage.role == .assistant
-                    {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                        self.currentToolName = toolName
+                        let arguments = argumentsWrapper.value
+                        let anyCodableArguments = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
                             result[pair.key] = AnyCodable(pair.value)
                         }
                         let toolCall = MCPToolCall(
                             id: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: anyCodableArguments
                         )
-                        self.conversationManager.updateMessage(
+                        let updatedAssistant = self.conversationManager.updateMessage(
                             conversationId: conversationId,
-                            messageId: lastMessage.id
+                            messageId: assistantMessageId
                         ) { message in
-                            message.toolCalls = [toolCall]
+                            var calls = message.toolCalls ?? []
+                            if !calls.contains(where: { $0.id == toolCallId }) {
+                                calls.append(toolCall)
+                            }
+                            message.toolCalls = calls
                         }
-                        if let updatedConv = self.conversationManager.conversation(byId: conversationId) {
-                            self.conversationManager.save(updatedConv)
+                        guard updatedAssistant else {
+                            self.stopToolChainForMissingConversation(
+                                operationID: operationID,
+                                assistantMessageId: assistantMessageId,
+                                conversationId: conversationId
+                            )
+                            return
                         }
+                        if let updatedConversation = self.conversationManager.conversation(byId: conversationId) {
+                            self.conversationManager.save(updatedConversation)
+                        }
+
+                        self.executeTool(
+                            token: toolToken,
+                            callID: toolCallId,
+                            toolName: toolName,
+                            arguments: argumentsWrapper,
+                            anyCodableArguments: anyCodableArguments,
+                            operationID: operationID,
+                            assistantMessageId: assistantMessageId,
+                            model: model,
+                            conversationId: conversationId,
+                            tools: toolsWrapper
+                        )
+                        }
+                        }
+            )
+            coordinator.onCancel(for: operationID) {
+                request.cancel()
+            }
+        }
+
+        // swiftlint:disable:next function_parameter_count
+        private func executeTool(
+            token: ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken,
+            callID: String,
+            toolName: String,
+            arguments: UncheckedSendable<[String: Any]>,
+            anyCodableArguments: [String: AnyCodable],
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            model: String,
+            conversationId: UUID,
+            tools: UncheckedSendable<[[String: Any]]?>
+        ) {
+            let coordinator = toolChainCoordinator
+            let roundCoordinator = toolCallRequestRoundCoordinator
+            coordinator.schedule(for: operationID, conversationID: conversationId) { [weak self] in
+                guard let self,
+                      coordinator.owns(operationID, conversationID: conversationId),
+                      self.activeAssistantMessageId == assistantMessageId
+                else {
+                    return
                     }
 
-                    // Execute the tool
-                    Task {
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
                             message: "⚙️ Executing tool: \(toolName)"
                         )
-
-                        // Execute built-in tool with citations (Tavily web search)
-                        let (result, citations) = await self.aiService.executeBuiltInToolWithCitations(
+                let (output, citations) = await self.aiService.executeBuiltInToolWithCitations(
                             name: toolName,
-                            arguments: argumentsWrapper.value
+                    arguments: arguments.value
                         )
+                guard coordinator.owns(operationID, conversationID: conversationId),
+                      self.activeAssistantMessageId == assistantMessageId,
+                      !Task.isCancelled
+                else {
+                    return
+                }
 
                         DiagnosticsLogger.log(
                             .chatView,
                             level: .info,
-                            message: "✅ Tool result received (\(result.count) chars, \(citations?.count ?? 0) citations)"
+                    message: "✅ Tool result received (\(output.count) chars, \(citations?.count ?? 0) citations)"
                         )
 
-                        await MainActor.run {
-                            let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
-                                result[pair.key] = AnyCodable(pair.value)
+                let result = ToolExecutionResult(
+                    callID: callID,
+                    toolName: toolName,
+                    arguments: anyCodableArguments,
+                    output: output,
+                    citations: citations ?? []
+                )
+                let resolution = roundCoordinator.toolDidComplete(token, result: result)
+                self.handleToolRoundResolution(
+                    resolution,
+                    operationID: operationID,
+                    assistantMessageId: assistantMessageId,
+                    model: model,
+                    conversationId: conversationId,
+                    tools: tools.value
+                )
+            }
+        }
+
+        private func handleToolRoundResolution(
+            _ resolution: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Resolution,
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            model: String,
+            conversationId: UUID,
+            tools: [[String: Any]]?
+        ) {
+            guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
+                return
                             }
 
-                            // For web_search, skip creating a tool message and attach citations to assistant
-                            let isWebSearch = toolName == "web_search"
+            switch resolution {
+            case .pending, .ignored:
+                return
+            case .responseCompleted:
+                finishToolSupportedResponse(
+                    operationID: operationID,
+                    assistantMessageId: assistantMessageId,
+                    conversationId: conversationId
+                )
+            case let .launchContinuation(continuation):
+                launchToolContinuation(
+                    continuation,
+                    operationID: operationID,
+                    assistantMessageId: assistantMessageId,
+                    model: model,
+                    conversationId: conversationId,
+                    tools: tools
+                )
+            }
+        }
 
-                            if !isWebSearch {
-                                // For non-web-search tools, create the tool message as before
-                                var toolMessage = Message(role: .tool, content: result)
-                                toolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
+        private func launchToolContinuation(
+            _ continuation: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Continuation,
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            model: String,
+            conversationId: UUID,
+            tools: [[String: Any]]?
+        ) {
+            guard continuation.operationID == operationID,
+                  toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
+                return
+            }
+
+            let results = continuation.toolResults.map(\.result)
+            for result in results {
+                guard let conversation = conversationManager.conversation(byId: conversationId) else {
+                    stopToolChainForMissingConversation(
+                        operationID: operationID,
+                        assistantMessageId: assistantMessageId,
+                        conversationId: conversationId
                                     )
-                                ]
-                                guard let conv = self.conversationManager.conversation(byId: conversationId) else {
-                                    self.isGenerating = false
-                                    self.currentToolName = nil
-                                    self.toolCallDepth = 0
                                     return
                                 }
-                                self.conversationManager.addMessage(to: conv, message: toolMessage)
+                conversationManager.addMessage(to: conversation, message: result.makeMessage())
                             }
 
-                            // Continue conversation with tool result
-                            guard let updatedConv = self.conversationManager.conversation(byId: conversationId) else {
-                                self.isGenerating = false
-                                self.currentToolName = nil
-                                self.toolCallDepth = 0
+            guard let conversationWithResults = conversationManager.conversation(byId: conversationId) else {
+                stopToolChainForMissingConversation(
+                    operationID: operationID,
+                    assistantMessageId: assistantMessageId,
+                    conversationId: conversationId
+                )
                                 return
                             }
 
-                            // Add a new empty assistant message for the model's response
-                            // For web_search, attach citations to this message
                             var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
-                            if isWebSearch, let citations {
+            let citations = ToolExecutionResult.combinedCitations(from: results)
+            if !citations.isEmpty {
                                 continuationAssistantMessage.citations = citations
                             }
-                            self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
+            conversationManager.addMessage(
+                to: conversationWithResults,
+                message: continuationAssistantMessage
+            )
 
-                            // Get conversation again with new assistant message
-                            guard let convWithAssistant = self.conversationManager.conversation(byId: conversationId) else {
-                                self.isGenerating = false
-                                self.currentToolName = nil
-                                self.toolCallDepth = 0
+            guard let conversationWithAssistant = conversationManager.conversation(byId: conversationId),
+                  toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
                                 return
                             }
 
-                            // Build messages for API - exclude the continuation assistant message
-                            // The continuation message is just a placeholder for where we'll store the response
-                            var continuationMessages = Array(convWithAssistant.messages.dropLast())
-                            if isWebSearch {
-                                // Append a synthetic tool message for the API only
-                                var syntheticToolMessage = Message(role: .tool, content: result)
-                                syntheticToolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
-                                    )
-                                ]
-                                // Append the tool message at the end (after the assistant with tool_calls)
-                                continuationMessages.append(syntheticToolMessage)
-                            }
-
-                            if let sysPrompt = self.conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
-                                let sysMessage = Message(role: .system, content: sysPrompt)
-                                continuationMessages.insert(sysMessage, at: 0)
-                            }
-
-                            // Clear tool name since tool execution is complete
-                            // The continuation is now a regular API call
-                            self.currentToolName = nil
-
-                            self.sendMessageWithToolSupport(
-                                messages: continuationMessages,
-                                model: model,
-                                conversationId: conversationId,
-                                assistantMessageId: continuationAssistantMessage.id,
-                                tools: toolsWrapper.value
-                            )
-                        }
-                    }
-                }
+            var history = conversationWithAssistant
+            history.messages.removeAll { $0.id == continuationAssistantMessage.id }
+            var continuationMessages = history.getEffectiveHistory()
+            if let systemPrompt = conversationManager.effectiveSystemPrompt(for: conversationWithAssistant) {
+                continuationMessages.insert(Message(role: .system, content: systemPrompt), at: 0)
             }
+
+            currentToolName = nil
+            sendMessageWithToolSupport(
+                messages: continuationMessages,
+                model: model,
+                conversationId: conversationId,
+                assistantMessageId: continuationAssistantMessage.id,
+                tools: tools,
+                operationID: operationID
+                                    )
+                            }
+
+        private func finishToolSupportedResponse(
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            conversationId: UUID
+        ) {
+            guard activeAssistantMessageId == assistantMessageId,
+                  toolChainCoordinator.finishOperation(operationID)
+            else {
+                return
+                            }
+            activeAssistantMessageId = nil
+            isGenerating = false
+            currentToolName = nil
+            toolCallDepth = 0
+            pendingUserMessage = nil
+            SoundEngine.messageReceived()
+
+            if let finalConversation = conversationManager.conversation(byId: conversationId) {
+                conversationManager.save(finalConversation)
+            }
+
+            if isNewChatMode {
+                onConversationCreated?(conversationId)
+            }
+
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "✅ Message generation completed",
+                metadata: ["conversationId": conversationId.uuidString]
+            )
+        }
+
+        private func handleToolRequestError(
+            _ error: Error,
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            conversationId: UUID
+        ) {
+            guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
+                return
+            }
+            toolChainCoordinator.cancelCurrentOperation()
+            activeAssistantMessageId = nil
+
+            if error is CancellationError {
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .info,
+                    message: "Request cancelled",
+                    metadata: ["assistantMessageId": assistantMessageId.uuidString]
+                )
+                isGenerating = false
+                currentToolName = nil
+                toolCallDepth = 0
+                pendingUserMessage = nil
+                return
+            }
+
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "🚨 onError callback fired",
+                metadata: [
+                    "error": ErrorPresenter.userMessage(for: error),
+                    "assistantMessageId": assistantMessageId.uuidString
+                ]
+            )
+
+            isGenerating = false
+            SoundEngine.error()
+            currentToolName = nil
+            toolCallDepth = 0
+            errorMessage = ErrorPresenter.userMessage(for: error)
+            errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+            failedMessage = pendingUserMessage
+            pendingUserMessage = nil
+            conversationManager.removeMessage(
+                                conversationId: conversationId,
+                messageId: assistantMessageId
+                            )
+            if let updatedConversation = conversationManager.conversation(byId: conversationId) {
+                conversationManager.save(updatedConversation)
+                        }
+
+            if isNewChatMode {
+                onConversationCreated?(conversationId)
+                    }
+
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Message generation failed: \(ErrorPresenter.userMessage(for: error))",
+                metadata: ["conversationId": conversationId.uuidString]
+            )
+                }
+
+        private func stopToolChainAtDepthLimit(
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            conversationId: UUID
+        ) {
+            guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
+                return
+            }
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "⚠️ Max tool call depth reached"
         )
+            toolChainCoordinator.cancelCurrentOperation()
+            activeAssistantMessageId = nil
+            isGenerating = false
+            currentToolName = nil
+            toolCallDepth = 0
+            errorMessage = "Tool call limit reached. Please try again."
+            conversationManager.removeMessage(
+                conversationId: conversationId,
+                messageId: assistantMessageId
+            )
+            if let updatedConversation = conversationManager.conversation(byId: conversationId) {
+                conversationManager.save(updatedConversation)
+            }
+        }
+
+        private func stopToolChainForMissingConversation(
+            operationID: ToolChainCoordinator.OperationID,
+            assistantMessageId: UUID,
+            conversationId: UUID
+        ) {
+            guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
+                  activeAssistantMessageId == assistantMessageId
+            else {
+                return
+            }
+            toolChainCoordinator.cancelCurrentOperation()
+            activeAssistantMessageId = nil
+            isGenerating = false
+            currentToolName = nil
+            toolCallDepth = 0
     }
 
     /// Get the ID of the last assistant message in the conversation
@@ -1021,7 +1252,7 @@ extension IOSChatViewModel {
             )
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
+            var messagesToSend = updatedConversation.getEffectiveHistory()
 
         // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
@@ -1080,7 +1311,7 @@ extension IOSChatViewModel {
             )
             return
         }
-        var messagesToSend = Array(refreshed.messages.dropLast())
+            var messagesToSend = refreshed.getEffectiveHistory()
 
         // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
@@ -1159,7 +1390,7 @@ extension IOSChatViewModel {
             )
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
+            var messagesToSend = updatedConversation.getEffectiveHistory()
 
         // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
@@ -1237,15 +1468,18 @@ extension IOSChatViewModel {
             messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
-        // Send to all models
-        aiService.sendToMultipleModels(
+            // Send to all models under this view model's owner-specific operation.
+            let coordinator = toolChainCoordinator
+            activeAssistantMessageId = nil
+            activeMultiModelResponseGroupId = responseGroupId
+            let operationID = coordinator.beginOperation(conversationID: conversationId)
+            let request = aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
             temperature: updatedConversation.temperature,
             onChunk: { [weak self] model, chunk in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self else { return }
                     self.processMultiModelChunk(
                         model: model,
                         chunk: chunk,
@@ -1255,9 +1489,8 @@ extension IOSChatViewModel {
                 }
             },
             onModelComplete: { [weak self] model in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self else { return }
                     self.processMultiModelCompletion(
                         model: model,
                         messageIds: messageIdsByModel,
@@ -1267,13 +1500,19 @@ extension IOSChatViewModel {
                 }
             },
             onAllComplete: { [weak self] in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId)
+                        else {
+                            return
+                        }
+
                     self.isGenerating = false
                     if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-                        self.conversationManager.save(self.conversationManager.conversations[convIndex])
+                            self.conversationManager.saveImmediately(self.conversationManager.conversations[convIndex])
                     }
+                        self.activeMultiModelResponseGroupId = nil
+                        guard coordinator.finishOperation(operationID) else { return }
 
                     // Notify that conversation is ready (for new chat navigation)
                     if self.isNewChatMode {
@@ -1282,9 +1521,8 @@ extension IOSChatViewModel {
                 }
             },
             onError: { [weak self] model, error in
-                let selfRef = self
-                Task { @MainActor in
-                    guard let self = selfRef else { return }
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self else { return }
                     self.processMultiModelError(
                         model: model,
                         error: error,
@@ -1297,6 +1535,9 @@ extension IOSChatViewModel {
             onPendingToolCall: nil,
             onReasoning: nil
         )
+            coordinator.onCancel(for: operationID) {
+                request.cancel()
+            }
     }
 
     /// Gets or creates a conversation configured for multi-model mode
@@ -1313,7 +1554,9 @@ extension IOSChatViewModel {
         var updatedConv = newConv
         updatedConv.activeModels = Array(selectedModels)
         updatedConv.multiModelEnabled = true
-        if let first = selectedModels.sorted().first { updatedConv.model = first }
+            if let first = selectedModels.sorted().first {
+                updatedConv.model = first
+            }
         conversationManager.updateConversation(updatedConv)
 
         DiagnosticsLogger.log(.chatView, level: .info, message: "🆕 Created new multi-model conversation",
@@ -1442,14 +1685,44 @@ extension IOSChatViewModel {
 
 // MARK: - Image Generation
 
-extension IOSChatViewModel {
-    /// Cancels only image work owned by this view model.
-    /// Used on disappearance so an old view cannot cancel a replacement owned elsewhere.
-    func cancelOwnedImageOperation() {
-        guard imageGenerationCoordinator.hasActiveOperation else { return }
-        imageGenerationCoordinator.cancelCurrentOperation()
-        isGenerating = false
-    }
+    extension IOSChatViewModel {
+        /// Cancels only image and tool-chain work owned by this view model.
+        /// Used on disappearance so an old view cannot mutate or cancel a replacement owned elsewhere.
+        func cancelOwnedOperations() {
+            let cancelledAutoSend = cancelPendingAutoSend()
+            let hadActiveTextState = activeAssistantMessageId != nil || activeMultiModelResponseGroupId != nil
+            let cancelledToolChain = toolChainCoordinator.cancelCurrentOperation {
+                finalizePersistedTextGeneration()
+            }
+            let cancelledImage = imageGenerationCoordinator.cancelCurrentOperation()
+            guard cancelledAutoSend || cancelledImage || cancelledToolChain || hadActiveTextState else { return }
+            isGenerating = false
+            currentToolName = nil
+            toolCallDepth = 0
+            activeAssistantMessageId = nil
+            activeMultiModelResponseGroupId = nil
+            pendingUserMessage = nil
+        }
+
+        private func finalizePersistedTextGeneration() {
+            let assistantMessageId = activeAssistantMessageId
+            let responseGroupId = activeMultiModelResponseGroupId
+            guard assistantMessageId != nil || responseGroupId != nil,
+                  let conversationId,
+                  let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId })
+            else {
+                activeMultiModelResponseGroupId = nil
+                return
+            }
+
+            ChatGenerationFinalizer.finalize(
+                conversation: &conversationManager.conversations[conversationIndex],
+                activeAssistantMessageID: assistantMessageId,
+                activeResponseGroupID: responseGroupId
+            )
+            conversationManager.saveImmediately(conversationManager.conversations[conversationIndex])
+            activeMultiModelResponseGroupId = nil
+        }
 
     /// Finds the most recent generated or selected image reference in the conversation for editing context.
     private func previousImageSource(in conversation: Conversation) -> (data: Data?, path: String?)? {

@@ -177,21 +177,20 @@ enum AnthropicRequestBuilder {
     static func extractSystemAndConvertMessages(
         _ messages: [Message]
     ) throws -> (systemPrompt: String?, messages: [[String: Any]]) {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var systemPrompt: String?
         var anthropicMessages: [[String: Any]] = []
         var imageCount = 0
 
-        #if !os(watchOS)
             // Build a set of valid tool_call_ids that have matching tool responses
             var toolResponseIds = Set<String>()
-            for message in messages {
+        for message in sanitizedMessages {
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
                     toolResponseIds.insert(toolCallId)
                 }
             }
-        #endif
 
-        for (index, message) in messages.enumerated() {
+        for (index, message) in sanitizedMessages.enumerated() {
             // Extract system prompt (don't include in messages array)
             if message.role == .system {
                 if systemPrompt == nil {
@@ -203,7 +202,6 @@ enum AnthropicRequestBuilder {
                 continue
             }
 
-            #if !os(watchOS)
                 // Handle tool result messages - convert to Anthropic's tool_result format
                 if message.role == .tool {
                     guard let toolCallId = message.toolCalls?.first?.id else {
@@ -212,13 +210,16 @@ enum AnthropicRequestBuilder {
                     }
 
                     // Verify a preceding assistant message has matching tool_call
-                    if index == 0 { continue }
+                if index == 0 {
+                    continue
+                }
                     var foundAssistant = false
                     for prevIdx in stride(from: index - 1, through: 0, by: -1) {
-                        let prevMessage = messages[prevIdx]
+                    let prevMessage = sanitizedMessages[prevIdx]
                         if prevMessage.role == .assistant {
                             if let toolCalls = prevMessage.toolCalls,
-                               toolCalls.contains(where: { $0.id == toolCallId }) {
+                           toolCalls.contains(where: { $0.id == toolCallId })
+                        {
                                 foundAssistant = true
                             }
                             break
@@ -241,6 +242,13 @@ enum AnthropicRequestBuilder {
                     ])
                     continue
                 }
+
+            if message.role == .assistant,
+               message.toolCalls?.isEmpty ?? true,
+               message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                continue
+            }
 
                 // For assistant messages with tool_calls, filter to only those with matching tool responses
                 if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
@@ -275,12 +283,6 @@ enum AnthropicRequestBuilder {
                     }
                     // All tool calls have matching responses - fall through to normal conversion
                 }
-            #else
-                // Skip tool messages on watchOS (tools not supported)
-                if message.role == .tool {
-                    continue
-                }
-            #endif
 
             // Convert message
             let (converted, msgImageCount) = try convertMessage(message)
@@ -347,7 +349,6 @@ enum AnthropicRequestBuilder {
             payload["content"] = message.content
         }
 
-        #if !os(watchOS)
             // Handle assistant messages with tool calls
             if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
                 var contentArray: [[String: Any]] = []
@@ -377,7 +378,6 @@ enum AnthropicRequestBuilder {
 
                 payload["content"] = contentArray
             }
-        #endif
 
         return (payload, imageCount)
     }

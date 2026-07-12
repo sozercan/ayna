@@ -73,6 +73,11 @@ struct RequestFlight<Handle> {
         defer { handle = nil }
         return handle
     }
+
+    mutating func take(ifOwnedBy id: RequestFlightID) -> Handle? {
+        guard owns(id) else { return nil }
+        return take()
+    }
 }
 
 enum RequestFlightCheckpoint: Sendable {
@@ -90,6 +95,81 @@ struct RequestFlightObserver: Sendable {
     let record: @Sendable (RequestFlightCheckpoint, Bool) -> Void
 
     static let none = RequestFlightObserver { _, _ in }
+}
+
+/// Owner-specific cancellation token for one text request.
+///
+/// The token retains the logical request identity across transport retries so a
+/// stale owner can never cancel a newer request that reused the same service.
+@MainActor
+final class AITextRequest {
+    fileprivate weak var service: AIService?
+    fileprivate let flightID: RequestFlightID
+
+    fileprivate init(service: AIService, flightID: RequestFlightID) {
+        self.service = service
+        self.flightID = flightID
+    }
+
+    func cancel() {
+        service?.cancelTextRequest(flightID)
+    }
+}
+
+/// Owner-specific cancellation token for one multi-model text batch.
+///
+/// The batch and every child transport share one logical request identity so a
+/// stale token cannot cancel a replacement batch or an unrelated foreground request.
+@MainActor
+final class AITextBatchRequest {
+    fileprivate weak var service: AIService?
+    fileprivate let flightID: RequestFlightID
+
+    fileprivate init(service: AIService, flightID: RequestFlightID) {
+        self.service = service
+        self.flightID = flightID
+    }
+
+    func cancel() {
+        service?.cancelTextBatchRequest(flightID)
+    }
+}
+
+private final class SimulatedTextRequestHandle: @unchecked Sendable {
+    private struct State: Sendable {
+        var task: Task<Void, Never>?
+        var isTerminal = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func install(_ task: Task<Void, Never>) {
+        let shouldCancel = state.withLock { state -> Bool in
+            guard !state.isTerminal else { return true }
+            state.task = task
+            return false
+        }
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func cancel() {
+        let task = state.withLock { state -> Task<Void, Never>? in
+            guard !state.isTerminal else { return nil }
+            state.isTerminal = true
+            defer { state.task = nil }
+            return state.task
+        }
+        task?.cancel()
+    }
+
+    func finish() {
+        state.withLock { state in
+            state.isTerminal = true
+            state.task = nil
+        }
+    }
 }
 
 #if !os(watchOS)
@@ -254,6 +334,10 @@ class AIService: ObservableObject {
     private var currentTask = RequestFlight<URLSessionDataTask>()
     private var multiModelDataTasks: [String: RequestFlight<URLSessionDataTask>] = [:]
     private var currentStreamTask = RequestFlight<Task<Void, Never>>()
+    private var currentNonStreamToolTask = RequestFlight<Task<Void, Never>>()
+    private var multiModelNonStreamToolTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
+    private var currentSimulatedTextRequest = RequestFlight<SimulatedTextRequestHandle>()
+    private var multiModelSimulatedTextRequests: [String: RequestFlight<SimulatedTextRequestHandle>] = [:]
     private var multiModelTask = RequestFlight<Task<Void, Never>>()
     /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
@@ -892,6 +976,92 @@ class AIService: ObservableObject {
         return .chat
     }
 
+    fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {
+        let dataTask = currentTask.take(ifOwnedBy: flightID)
+        let streamTask = currentStreamTask.take(ifOwnedBy: flightID)
+        let nonStreamToolTask = currentNonStreamToolTask.take(ifOwnedBy: flightID)
+        let simulatedRequest = currentSimulatedTextRequest.take(ifOwnedBy: flightID)
+        let anthropicProvider = currentAnthropicProvider.take(ifOwnedBy: flightID)
+
+        let multiDataTaskModels = multiModelDataTasks.compactMap { model, flight in
+            flight.owns(flightID) ? model : nil
+        }
+        let multiDataTasks = multiDataTaskModels.compactMap { model -> URLSessionDataTask? in
+            var ownedFlight = multiModelDataTasks.removeValue(forKey: model)
+            return ownedFlight?.take(ifOwnedBy: flightID)
+        }
+        let multiStreamTaskModels = multiModelStreamTasks.compactMap { model, flight in
+            flight.owns(flightID) ? model : nil
+        }
+        let multiStreamTasks = multiStreamTaskModels.compactMap { model -> Task<Void, Never>? in
+            var ownedFlight = multiModelStreamTasks.removeValue(forKey: model)
+            return ownedFlight?.take(ifOwnedBy: flightID)
+        }
+        let multiNonStreamToolTaskModels = multiModelNonStreamToolTasks.compactMap { model, flight in
+            flight.owns(flightID) ? model : nil
+        }
+        let multiNonStreamToolTasks = multiNonStreamToolTaskModels.compactMap { model -> Task<Void, Never>? in
+            var ownedFlight = multiModelNonStreamToolTasks.removeValue(forKey: model)
+            return ownedFlight?.take(ifOwnedBy: flightID)
+        }
+        let multiSimulatedRequestModels = multiModelSimulatedTextRequests.compactMap { model, flight in
+            flight.owns(flightID) ? model : nil
+        }
+        let multiSimulatedRequests = multiSimulatedRequestModels.compactMap { model -> SimulatedTextRequestHandle? in
+            var ownedFlight = multiModelSimulatedTextRequests.removeValue(forKey: model)
+            return ownedFlight?.take(ifOwnedBy: flightID)
+        }
+        let multiAnthropicProviderModels = multiModelAnthropicProviders.compactMap { model, flight in
+            flight.owns(flightID) ? model : nil
+        }
+        let multiAnthropicProviders = multiAnthropicProviderModels.compactMap { model -> (any AIProviderProtocol)? in
+            var ownedFlight = multiModelAnthropicProviders.removeValue(forKey: model)
+            return ownedFlight?.take(ifOwnedBy: flightID)
+        }
+
+        #if !os(watchOS)
+            let appleTask = currentAppleIntelligenceTask.take(ifOwnedBy: flightID)
+            let multiAppleTaskModels = multiModelAppleIntelligenceTasks.compactMap { model, flight in
+                flight.owns(flightID) ? model : nil
+            }
+            let multiAppleTasks = multiAppleTaskModels.compactMap { model -> AppleIntelligenceRequestHandle? in
+                var ownedFlight = multiModelAppleIntelligenceTasks.removeValue(forKey: model)
+                return ownedFlight?.take(ifOwnedBy: flightID)
+            }
+        #endif
+
+        dataTask?.cancel()
+        multiDataTasks.forEach { $0.cancel() }
+        streamTask?.cancel()
+        multiStreamTasks.forEach { $0.cancel() }
+        nonStreamToolTask?.cancel()
+        multiNonStreamToolTasks.forEach { $0.cancel() }
+        simulatedRequest?.cancel()
+        multiSimulatedRequests.forEach { $0.cancel() }
+        anthropicProvider?.cancelRequest()
+        multiAnthropicProviders.forEach { $0.cancelRequest() }
+        #if !os(watchOS)
+            appleTask?.cancel()
+            multiAppleTasks.forEach { $0.cancel() }
+        #endif
+    }
+
+    fileprivate func cancelTextBatchRequest(_ flightID: RequestFlightID) {
+        guard let batchTask = multiModelTask.take(ifOwnedBy: flightID) else { return }
+
+        // Fence queued runners before cancelling children that may release shared permits.
+        batchTask.cancel()
+        cancelTextRequest(flightID)
+    }
+
+    private func cancelForegroundNonStreamToolRequest() {
+        guard currentNonStreamToolTask.isActive else { return }
+        let dataTask = currentTask.take()
+        let toolTask = currentNonStreamToolTask.take()
+        dataTask?.cancel()
+        toolTask?.cancel()
+    }
+
     func cancelCurrentRequest(includeImageRequests: Bool = true) {
         DiagnosticsLogger.log(
             .aiService,
@@ -907,6 +1077,18 @@ class AIService: ObservableObject {
         }
         multiModelDataTasks.removeAll()
         let streamTask = currentStreamTask.take()
+        let nonStreamToolTask = currentNonStreamToolTask.take()
+        let multiNonStreamToolTasks = multiModelNonStreamToolTasks.compactMap { _, flight -> Task<Void, Never>? in
+            var flight = flight
+            return flight.take()
+        }
+        multiModelNonStreamToolTasks.removeAll()
+        let simulatedRequest = currentSimulatedTextRequest.take()
+        let multiSimulatedRequests = multiModelSimulatedTextRequests.compactMap { _, flight -> SimulatedTextRequestHandle? in
+            var flight = flight
+            return flight.take()
+        }
+        multiModelSimulatedTextRequests.removeAll()
         let multiStreamTasks = multiModelStreamTasks.compactMap { model, flight -> (String, Task<Void, Never>)? in
             var flight = flight
             return flight.take().map { (model, $0) }
@@ -947,6 +1129,10 @@ class AIService: ObservableObject {
             )
         }
         streamTask?.cancel()
+        nonStreamToolTask?.cancel()
+        multiNonStreamToolTasks.forEach { $0.cancel() }
+        simulatedRequest?.cancel()
+        multiSimulatedRequests.forEach { $0.cancel() }
         for (model, task) in multiStreamTasks {
             task.cancel()
             DiagnosticsLogger.log(
@@ -1158,8 +1344,8 @@ class AIService: ObservableObject {
         return nil
     }
 
-    // swiftlint:disable:next function_body_length
-    func sendMessage(
+    @discardableResult
+    func sendMessage( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String? = nil,
         temperature: Double? = nil,
@@ -1173,9 +1359,16 @@ class AIService: ObservableObject {
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
-        preparedAPIKey: String? = nil
-    ) {
+        preparedAPIKey: String? = nil,
+        requestFlightID: RequestFlightID? = nil
+    ) -> AITextRequest {
+        let flightID = requestFlightID ?? RequestFlightID()
+        let requestHandle = AITextRequest(service: self, flightID: flightID)
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !isMultiModelRequest {
+            cancelForegroundNonStreamToolRequest()
+        }
 
         DiagnosticsLogger.log(
             .aiService,
@@ -1191,11 +1384,23 @@ class AIService: ObservableObject {
         )
 
         if let responseSimulator {
+            let simulatedRequest = beginSimulatedTextRequest(
+                flightID: flightID,
+                isMultiModelRequest: isMultiModelRequest,
+                modelName: requestModel
+            )
             responseSimulator(
                 messages,
-                AIServiceResponseSimulationCallbacks(onChunk: onChunk, onComplete: onComplete)
+                ownedSimulationCallbacks(
+                    flightID: flightID,
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: requestModel,
+                    requestHandle: simulatedRequest,
+                    onChunk: onChunk,
+                    onComplete: onComplete
             )
-            return
+            )
+            return requestHandle
         }
 
         // Mock response for UI tests on macOS and iOS (UITestEnvironment not available on watchOS)
@@ -1204,10 +1409,13 @@ class AIService: ObservableObject {
                 simulateUITestResponse(
                     messages: messages,
                     stream: stream,
+                    flightID: flightID,
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: requestModel,
                     onChunk: onChunk,
                     onComplete: onComplete
                 )
-                return
+                return requestHandle
             }
         #endif
 
@@ -1218,7 +1426,7 @@ class AIService: ObservableObject {
                 message: "❌ Model is empty"
             )
             onError(AIError.missingModel)
-            return
+            return requestHandle
         }
         let effectiveProvider = modelProviders[requestModel] ?? provider
         let endpointInfo = customEndpoint(for: requestModel)
@@ -1251,7 +1459,7 @@ class AIService: ObservableObject {
                         onChunk: onChunk,
                         onComplete: onComplete,
                         onError: onError
-                    ))
+                    ), flightID: flightID)
                 } else if #available(macOS 26.0, iOS 26.0, *) {
                     handleAppleIntelligenceRequest(AppleIntelligenceRequestContext(
                         service: AppleIntelligenceService.shared,
@@ -1264,17 +1472,17 @@ class AIService: ObservableObject {
                         onChunk: onChunk,
                         onComplete: onComplete,
                         onError: onError
-                    ))
+                    ), flightID: flightID)
                 } else {
                     onError(AIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
                 }
-                return
+                return requestHandle
             }
         #else
             // Apple Intelligence is not available on watchOS
             if effectiveProvider == .appleIntelligence {
                 onError(AIError.apiError("Apple Intelligence is not available on Apple Watch"))
-                return
+                return requestHandle
             }
         #endif
 
@@ -1294,9 +1502,10 @@ class AIService: ObservableObject {
                 tools: tools,
                 conversationId: conversationId,
                 isMultiModelRequest: isMultiModelRequest,
-                callbacks: anthropicCallbacks
+                callbacks: anthropicCallbacks,
+                flightID: flightID
             )
-            return
+            return requestHandle
         }
 
         // Validate provider settings
@@ -1304,7 +1513,7 @@ class AIService: ObservableObject {
             try validateProviderSettings(for: effectiveProvider, model: requestModel)
         } catch {
             onError(error)
-            return
+            return requestHandle
         }
 
         let modelAPIKey = preparedAPIKey ?? getAPIKey(for: requestModel)
@@ -1313,7 +1522,7 @@ class AIService: ObservableObject {
         if effectiveProvider == .githubModels {
             if let rateLimitError = checkGitHubModelsRateLimit(accessToken: modelAPIKey) {
                 onError(AIError.apiError(rateLimitError))
-                return
+                return requestHandle
             }
         }
 
@@ -1322,7 +1531,7 @@ class AIService: ObservableObject {
         if endpointType == .responses {
             if effectiveProvider == .githubModels {
                 onError(AIError.apiError("GitHub Models does not support the Responses API endpoint"))
-                return
+                return requestHandle
             }
             responsesAPIRequest(
                 messages: messages,
@@ -1333,9 +1542,10 @@ class AIService: ObservableObject {
                 onError: onError,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                isMultiModelRequest: isMultiModelRequest
+                isMultiModelRequest: isMultiModelRequest,
+                initialFlightID: flightID
             )
-            return
+            return requestHandle
         }
 
         // Build API request
@@ -1344,7 +1554,7 @@ class AIService: ObservableObject {
             apiURL = try getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
         } catch {
             onError(error)
-            return
+            return requestHandle
         }
 
         guard let url = URL(string: apiURL) else {
@@ -1355,7 +1565,7 @@ class AIService: ObservableObject {
                 metadata: ["url": apiURL]
             )
             onError(AIError.invalidURL)
-            return
+            return requestHandle
         }
 
         let needsAuth = effectiveProvider == .openai || effectiveProvider == .githubModels
@@ -1403,7 +1613,7 @@ class AIService: ObservableObject {
                 message: "❌ Failed to create request"
             )
             onError(AIError.invalidRequest)
-            return
+            return requestHandle
         }
 
         DiagnosticsLogger.log(
@@ -1426,7 +1636,13 @@ class AIService: ObservableObject {
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
-            streamResponse(request: request, callbacks: callbacks, isMultiModelRequest: isMultiModelRequest, modelName: requestModel)
+            streamResponse(
+                request: request,
+                callbacks: callbacks,
+                isMultiModelRequest: isMultiModelRequest,
+                modelName: requestModel,
+                initialFlightID: flightID
+            )
         } else {
             nonStreamResponse(
                 request: request,
@@ -1436,9 +1652,11 @@ class AIService: ObservableObject {
                 onComplete: onComplete,
                 onError: onError,
                 onToolCall: onToolCall,
-                onReasoning: onReasoning
+                onReasoning: onReasoning,
+                initialFlightID: flightID
             )
         }
+        return requestHandle
     }
 
     // MARK: - Multi-Model Parallel Requests
@@ -1457,6 +1675,7 @@ class AIService: ObservableObject {
     ///   - onError: Called with (modelName, error) when a model encounters an error
     ///   - onPendingToolCall: Called when a model requests a tool call (deferred until selection)
     ///   - onReasoning: Called with (modelName, reasoning) for reasoning content
+    @discardableResult
     func sendToMultipleModels(
         messages: [Message],
         models: [String],
@@ -1467,11 +1686,14 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (String, Error) -> Void,
         onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String, String) -> Void)? = nil
-    ) {
+    ) -> AITextBatchRequest {
+        let flightID = RequestFlightID()
+        let requestHandle = AITextBatchRequest(service: self, flightID: flightID)
+
         guard !models.isEmpty else {
             onError("", AIError.missingModel)
             onAllComplete()
-            return
+            return requestHandle
         }
 
         func rejectBatch(_ error: Error) {
@@ -1483,13 +1705,13 @@ class AIService: ObservableObject {
         let modelRequests = Array(zip(models, requestModels))
         guard !requestModels.contains(where: \.isEmpty) else {
             rejectBatch(AIError.missingModel)
-            return
+            return requestHandle
         }
 
         var uniqueModels: Set<String> = []
         if let duplicateModel = requestModels.first(where: { !uniqueModels.insert($0).inserted }) {
             rejectBatch(AIError.apiError("Duplicate model in multi-model request: \(duplicateModel)"))
-            return
+            return requestHandle
         }
 
         DiagnosticsLogger.log(
@@ -1510,6 +1732,16 @@ class AIService: ObservableObject {
             return flight.take()
         }
         multiModelStreamTasks.removeAll()
+        let previousNonStreamToolTasks = multiModelNonStreamToolTasks.compactMap { _, flight -> Task<Void, Never>? in
+            var flight = flight
+            return flight.take()
+        }
+        multiModelNonStreamToolTasks.removeAll()
+        let previousSimulatedRequests = multiModelSimulatedTextRequests.compactMap { _, flight -> SimulatedTextRequestHandle? in
+            var flight = flight
+            return flight.take()
+        }
+        multiModelSimulatedTextRequests.removeAll()
         let previousAnthropicProviders = multiModelAnthropicProviders.compactMap { _, flight -> (any AIProviderProtocol)? in
             var flight = flight
             return flight.take()
@@ -1527,12 +1759,13 @@ class AIService: ObservableObject {
         previousBatchTask?.cancel()
         previousDataTasks.forEach { $0.cancel() }
         previousStreamTasks.forEach { $0.cancel() }
+        previousNonStreamToolTasks.forEach { $0.cancel() }
+        previousSimulatedRequests.forEach { $0.cancel() }
         previousAnthropicProviders.forEach { $0.cancelRequest() }
         #if !os(watchOS)
             previousAppleTasks.forEach { $0.cancel() }
         #endif
 
-        let flightID = RequestFlightID()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
 
@@ -1694,7 +1927,8 @@ class AIService: ObservableObject {
                                 onReasoning: { reasoning in
                                     callbackForwarder.enqueue(.reasoning(reasoning))
                                 },
-                                preparedAPIKey: preparedAPIKey
+                                preparedAPIKey: preparedAPIKey,
+                                requestFlightID: flightID
                             )
                         }
                     }
@@ -1720,16 +1954,132 @@ class AIService: ObservableObject {
             onAllComplete()
         }
         multiModelTask.install(task, id: flightID)?.cancel()
+        return requestHandle
     }
 
     // swiftlint:enable function_body_length cyclomatic_complexity
 
+    private func ownsSimulatedTextRequest(
+        _ flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> Bool {
+        if isMultiModelRequest {
+            return multiModelSimulatedTextRequests[modelName]?.owns(flightID) == true
+        }
+        return currentSimulatedTextRequest.owns(flightID)
+    }
+
+    private func beginSimulatedTextRequest(
+        flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> SimulatedTextRequestHandle {
+        let requestHandle = SimulatedTextRequestHandle()
+        let previousHandle: SimulatedTextRequestHandle?
+        if isMultiModelRequest {
+            var flight = multiModelSimulatedTextRequests[modelName] ?? RequestFlight()
+            previousHandle = flight.install(requestHandle, id: flightID)
+            multiModelSimulatedTextRequests[modelName] = flight
+        } else {
+            previousHandle = currentSimulatedTextRequest.install(requestHandle, id: flightID)
+        }
+        previousHandle?.cancel()
+        return requestHandle
+    }
+
+    @discardableResult
+    private func finishSimulatedTextRequest(
+        _ flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String,
+        requestHandle: SimulatedTextRequestHandle
+    ) -> Bool {
+        let ownedHandle: SimulatedTextRequestHandle?
+        if isMultiModelRequest {
+            guard var flight = multiModelSimulatedTextRequests[modelName],
+                  let handle = flight.take(ifOwnedBy: flightID)
+            else {
+                return false
+            }
+            multiModelSimulatedTextRequests.removeValue(forKey: modelName)
+            ownedHandle = handle
+        } else {
+            ownedHandle = currentSimulatedTextRequest.take(ifOwnedBy: flightID)
+        }
+        guard let ownedHandle, ownedHandle === requestHandle else {
+            ownedHandle?.cancel()
+            return false
+        }
+        requestHandle.finish()
+        return true
+    }
+
+    private func ownedSimulationCallbacks(
+        flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String,
+        requestHandle: SimulatedTextRequestHandle,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void
+    ) -> AIServiceResponseSimulationCallbacks {
+        AIServiceResponseSimulationCallbacks(
+            onChunk: { [weak self] chunk in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let ownsRequest = self.ownsSimulatedTextRequest(
+                        flightID,
+                        isMultiModelRequest: isMultiModelRequest,
+                        modelName: modelName
+                    )
+                    if isMultiModelRequest {
+                        self.requestFlightObserver.record(.multiModelCallback, ownsRequest)
+                    }
+                    guard ownsRequest else { return }
+                    onChunk(chunk)
+                }
+            },
+            onComplete: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let finishedRequest = self.finishSimulatedTextRequest(
+                        flightID,
+                        isMultiModelRequest: isMultiModelRequest,
+                        modelName: modelName,
+                        requestHandle: requestHandle
+                    )
+                    if isMultiModelRequest {
+                        self.requestFlightObserver.record(.multiModelCallback, finishedRequest)
+                    }
+                    guard finishedRequest else { return }
+                    onComplete()
+                }
+            }
+        )
+    }
+
     private func simulateUITestResponse(
         messages: [Message],
         stream: Bool,
+        flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void
     ) {
+        let requestHandle = beginSimulatedTextRequest(
+            flightID: flightID,
+            isMultiModelRequest: isMultiModelRequest,
+            modelName: modelName
+        )
+        let callbacks = ownedSimulationCallbacks(
+            flightID: flightID,
+            isMultiModelRequest: isMultiModelRequest,
+            modelName: modelName,
+            requestHandle: requestHandle,
+            onChunk: onChunk,
+            onComplete: onComplete
+        )
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
 
@@ -1743,8 +2093,8 @@ class AIService: ObservableObject {
                 let content = String(userContent[range.upperBound ..< endRange.lowerBound])
                 // Return just the content as the title (or a shortened version)
                 let title = String(content.prefix(50))
-                onChunk(title)
-                onComplete()
+                callbacks.onChunk(title)
+                callbacks.onComplete()
                 return
             }
         }
@@ -1752,16 +2102,18 @@ class AIService: ObservableObject {
         let response = "UI Test Response: \(userContent)"
 
         if stream {
-            Task { @MainActor in
+            let task = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(50))
-                onChunk(response)
-                onComplete()
+                callbacks.onChunk(response)
+                callbacks.onComplete()
             }
+            requestHandle.install(task)
         } else {
-            Task { @MainActor in
-                onChunk(response)
-                onComplete()
+            let task = Task { @MainActor in
+                callbacks.onChunk(response)
+                callbacks.onComplete()
             }
+            requestHandle.install(task)
         }
     }
 
@@ -1840,9 +2192,10 @@ class AIService: ObservableObject {
         onReasoning: (@Sendable (String) -> Void)? = nil,
         isMultiModelRequest: Bool = false,
         attempt: Int = 0,
+        initialFlightID: RequestFlightID? = nil,
         existingFlightID: RequestFlightID? = nil
     ) {
-        let flightID = existingFlightID ?? RequestFlightID()
+        let flightID = existingFlightID ?? initialFlightID ?? RequestFlightID()
         guard existingFlightID == nil || ownsDataFlight(
             flightID,
             isMultiModelRequest: isMultiModelRequest,
@@ -2330,10 +2683,11 @@ class AIService: ObservableObject {
         attempt: Int = 0,
         isMultiModelRequest: Bool = false,
         modelName: String? = nil,
+        initialFlightID: RequestFlightID? = nil,
         existingFlightID: RequestFlightID? = nil
     ) {
         let session = urlSession
-        let flightID = existingFlightID ?? RequestFlightID()
+        let flightID = existingFlightID ?? initialFlightID ?? RequestFlightID()
 
         if existingFlightID != nil {
             guard ownsStreamFlight(
@@ -2517,7 +2871,6 @@ class AIService: ObservableObject {
                     // Batching buffers
                     var contentBuffer = ""
                     var reasoningBuffer = ""
-                    var lastUpdateTime = CFAbsoluteTimeGetCurrent()
                     var totalBytesReceived = 0
 
                     // Maximum line length to prevent OOM from malformed streams without newlines
@@ -2602,10 +2955,11 @@ class AIService: ObservableObject {
                                     return
                                 }
 
-                                // Check if we should dispatch batch
+                                // Deliver each parsed SSE event before waiting for another byte.
+                                // Deferring a short tail until a later event can silently lose it
+                                // when Stop cancels a quiet stream between events. Platform views
+                                // perform their own render throttling where needed.
                                 if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
-                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
                                         let contentToSend = contentBuffer
                                         let reasoningToSend = reasoningBuffer
                                         let delivered = await MainActor.run {
@@ -2622,12 +2976,40 @@ class AIService: ObservableObject {
                                         guard delivered else { return }
                                         contentBuffer = ""
                                         reasoningBuffer = ""
-                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
-                                    }
                                 }
                             }
                             buffer.removeAll()
                         }
+                    }
+
+                    // Some providers close immediately after their final SSE `data:` record
+                    // without a trailing newline. Parse that residual record once before EOF
+                    // finalization instead of silently discarding it.
+                    if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
+                        let ownsFlight = await MainActor.run {
+                            self.ownsStreamFlight(
+                                flightID,
+                                isMultiModelRequest: isMultiModelRequest,
+                                modelName: modelName
+                            )
+                        }
+                        guard ownsFlight else { throw CancellationError() }
+                        let result = await OpenAIStreamParser.processStreamLine(
+                            line,
+                            toolCallBuffers: currentToolCallBuffers,
+                            toolCallIds: toolCallIds,
+                            onToolCall: guardedToolCall,
+                            onToolCallRequested: guardedToolCallRequested
+                        )
+                        currentToolCallBuffers = result.toolCallBuffers
+                        toolCallIds = result.toolCallIds
+                        if let content = result.content {
+                            contentBuffer += content
+                        }
+                        if let reasoning = result.reasoning {
+                            reasoningBuffer += reasoning
+                        }
+                        buffer.removeAll()
                     }
 
                     // Flush any remaining content
@@ -2906,6 +3288,78 @@ class AIService: ObservableObject {
         }
     }
 
+    private func ownsNonStreamToolFlight(
+        _ flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> Bool {
+        if isMultiModelRequest {
+            return multiModelNonStreamToolTasks[modelName]?.owns(flightID) == true
+        }
+        return currentNonStreamToolTask.owns(flightID)
+    }
+
+    private func ownsNonStreamToolExecution(
+        _ flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> Bool {
+        ownsDataFlight(
+            flightID,
+            isMultiModelRequest: isMultiModelRequest,
+            modelName: modelName
+        ) && ownsNonStreamToolFlight(
+            flightID,
+            isMultiModelRequest: isMultiModelRequest,
+            modelName: modelName
+        )
+    }
+
+    @discardableResult
+    private func clearNonStreamToolFlight(
+        _ flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> Bool {
+        if isMultiModelRequest {
+            guard var flight = multiModelNonStreamToolTasks[modelName],
+                  flight.clear(ifOwnedBy: flightID)
+            else {
+                return false
+            }
+            multiModelNonStreamToolTasks.removeValue(forKey: modelName)
+            return true
+        }
+        return currentNonStreamToolTask.clear(ifOwnedBy: flightID)
+    }
+
+    @discardableResult
+    private func installNonStreamToolTask(
+        _ task: Task<Void, Never>,
+        flightID: RequestFlightID,
+        isMultiModelRequest: Bool,
+        modelName: String
+    ) -> Bool {
+        guard ownsDataFlight(
+            flightID,
+            isMultiModelRequest: isMultiModelRequest,
+            modelName: modelName
+        ) else {
+            return false
+        }
+
+        if isMultiModelRequest {
+            var flight = multiModelNonStreamToolTasks[modelName] ?? RequestFlight()
+            let previousTask = flight.install(task, id: flightID)
+            multiModelNonStreamToolTasks[modelName] = flight
+            previousTask?.cancel()
+            return true
+        }
+
+        currentNonStreamToolTask.install(task, id: flightID)?.cancel()
+        return true
+    }
+
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func nonStreamResponse(
         request: URLRequest,
@@ -2917,9 +3371,10 @@ class AIService: ObservableObject {
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0,
+        initialFlightID: RequestFlightID? = nil,
         existingFlightID: RequestFlightID? = nil
     ) {
-        let flightID = existingFlightID ?? RequestFlightID()
+        let flightID = existingFlightID ?? initialFlightID ?? RequestFlightID()
         if existingFlightID == nil {
             let previousTask = takeDataTask(
                 isMultiModelRequest: isMultiModelRequest,
@@ -3071,18 +3526,12 @@ class AIService: ObservableObject {
                             }
                         }
 
-                        // Async tool execution intentionally remains outside request-flight ownership.
                         if let toolCalls = message["tool_calls"] as? [[String: Any]],
                            let onToolCall
                         {
-                            guard self.clearDataFlight(
-                                flightID,
-                                isMultiModelRequest: isMultiModelRequest,
-                                modelName: modelName
-                            ) else {
-                                return
-                            }
-                            Task {
+                            let toolTask = Task { @MainActor [weak self] in
+                                guard let self else { return }
+
                                 for toolCall in toolCalls {
                                     if let id = toolCall["id"] as? String,
                                        let function = toolCall["function"] as? [String: Any],
@@ -3092,15 +3541,71 @@ class AIService: ObservableObject {
                                        let arguments = try? JSONSerialization.jsonObject(with: argsData)
                                        as? [String: Any]
                                     {
+                                        guard !Task.isCancelled,
+                                              self.ownsNonStreamToolExecution(
+                                                  flightID,
+                                                  isMultiModelRequest: isMultiModelRequest,
+                                                  modelName: modelName
+                                              )
+                                        else {
+                                            return
+                                        }
+
                                         let result = await onToolCall(id, name, arguments)
-                                        await MainActor.run {
+
+                                        guard !Task.isCancelled,
+                                              self.ownsNonStreamToolExecution(
+                                                  flightID,
+                                                  isMultiModelRequest: isMultiModelRequest,
+                                                  modelName: modelName
+                                              )
+                                        else {
+                                            return
+                                        }
+
                                             onChunk("\n\n[Tool: \(name)]\n\(result)\n")
+
+                                        guard self.ownsNonStreamToolExecution(
+                                            flightID,
+                                            isMultiModelRequest: isMultiModelRequest,
+                                            modelName: modelName
+                                        ) else {
+                                            return
                                         }
                                     }
                                 }
-                                await MainActor.run {
+
+                                guard !Task.isCancelled,
+                                      self.ownsNonStreamToolExecution(
+                                          flightID,
+                                          isMultiModelRequest: isMultiModelRequest,
+                                          modelName: modelName
+                                      ),
+                                      self.clearNonStreamToolFlight(
+                                          flightID,
+                                          isMultiModelRequest: isMultiModelRequest,
+                                          modelName: modelName
+                                      ),
+                                      self.clearDataFlight(
+                                          flightID,
+                                          isMultiModelRequest: isMultiModelRequest,
+                                          modelName: modelName
+                                      )
+                                else {
+                                    return
+                                }
+
                                     onComplete()
                                 }
+
+                            guard self.installNonStreamToolTask(
+                                toolTask,
+                                flightID: flightID,
+                                isMultiModelRequest: isMultiModelRequest,
+                                modelName: modelName
+                            ) else {
+                                toolTask.cancel()
+                                return
                             }
                             return
                         }
@@ -3553,7 +4058,10 @@ class AIService: ObservableObject {
             return serviceRequest
         }
 
-        private func handleAppleIntelligenceRequest(_ request: AppleIntelligenceRequestContext) {
+        private func handleAppleIntelligenceRequest(
+            _ request: AppleIntelligenceRequestContext,
+            flightID: RequestFlightID = RequestFlightID()
+        ) {
             guard request.service.isAvailable else {
                 request.onError(AIError.apiError(request.service.availabilityDescription()))
                 return
@@ -3569,7 +4077,6 @@ class AIService: ObservableObject {
             )
             let sessionID = appleSessionID(for: request)
             let requestTemperature = request.temperature ?? 0.7
-            let flightID = RequestFlightID()
             let task = Task { @MainActor [weak self] in
                 guard let self,
                       self.ownsAppleIntelligenceFlight(
@@ -3732,7 +4239,8 @@ class AIService: ObservableObject {
         tools: [[String: Any]]?,
         conversationId: UUID?,
         isMultiModelRequest: Bool,
-        callbacks: AIProviderStreamCallbacks
+        callbacks: AIProviderStreamCallbacks,
+        flightID: RequestFlightID = RequestFlightID()
     ) {
         let modelAPIKey = getAPIKey(for: model)
         let endpointInfo = customEndpoint(for: model)
@@ -3767,7 +4275,6 @@ class AIService: ObservableObject {
 
         // Install ownership before sending because a provider may fail synchronously.
         let provider = anthropicProviderFactory(urlSession)
-        let flightID = RequestFlightID()
         if isMultiModelRequest {
             var previousFlight = multiModelAnthropicProviders.removeValue(forKey: model)
             let previousProvider = previousFlight?.take()

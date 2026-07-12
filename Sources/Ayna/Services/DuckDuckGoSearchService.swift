@@ -156,6 +156,9 @@ final class DuckDuckGoSearchService {
         } catch let error as DuckDuckGoSearchError {
             throw error
         } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             log(.error, "❌ DuckDuckGo search failed", metadata: [
                 "error": error.localizedDescription,
             ])

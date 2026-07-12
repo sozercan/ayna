@@ -77,6 +77,29 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.content == "Completed")
     }
 
+    @Test("Appending streamed content advances the conversation revision")
+    @MainActor
+    func appendStreamedContentAdvancesConversationRevision() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+        let message = Message(role: .assistant, content: "")
+        manager.addMessage(to: conversation, message: message)
+        let previousUpdate = try #require(manager.conversations.first?.updatedAt)
+        try await Task.sleep(for: .milliseconds(2))
+
+        let appended = manager.appendToMessage(
+            conversationId: conversation.id,
+            messageId: message.id,
+            chunk: "stream"
+        )
+
+        #expect(appended)
+        #expect(manager.conversations.first?.messages.first?.content == "stream")
+        #expect(manager.conversations.first?.updatedAt ?? .distantPast > previousUpdate)
+    }
+
     @Test("Clear all conversations empties encrypted store")
     @MainActor
     func clearAllConversationsEmptiesEncryptedStore() async throws {

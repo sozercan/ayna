@@ -50,6 +50,109 @@ extension AIServiceTests {
         #expect(allComplete.value)
     }
 
+    @Test("Cancelling an owned batch stops its child and suppresses callbacks", .timeLimit(.minutes(1)))
+    func cancellingOwnedBatchStopsChildAndSuppressesCallbacks() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "owned-batch"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let callbackReceived = FlightTestSignal()
+        let batch = service.sendToMultipleModels(
+            messages: [Message(role: .user, content: "Cancel batch")],
+            models: [model],
+            onChunk: { _, _ in callbackReceived.signal() },
+            onModelComplete: { _ in callbackReceived.signal() },
+            onAllComplete: { callbackReceived.signal() },
+            onError: { _, _ in callbackReceived.signal() }
+        )
+
+        let exchange = await server.exchange(at: 0)
+        exchange.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+        batch.cancel()
+
+        #expect(await exchange.waitUntilStopped(timeout: .seconds(1)))
+        exchange.send(Data("data: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\n".utf8))
+        exchange.finish()
+        #expect(await !(callbackReceived.wait(timeout: .milliseconds(100))))
+    }
+
+    @Test("A stale batch handle cannot cancel its replacement or a foreground request", .timeLimit(.minutes(1)))
+    func staleBatchHandleCannotCancelReplacementOrForeground() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let models = ["stale-batch", "replacement-batch", "foreground"]
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+
+        let staleCallbacks = FlightTestSignal()
+        let staleBatch = service.sendToMultipleModels(
+            messages: [Message(role: .user, content: "Stale")],
+            models: [models[0]],
+            onChunk: { _, _ in staleCallbacks.signal() },
+            onModelComplete: { _ in staleCallbacks.signal() },
+            onAllComplete: { staleCallbacks.signal() },
+            onError: { _, _ in staleCallbacks.signal() }
+        )
+        let staleExchange = await server.exchange(at: 0)
+        staleExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        let replacementComplete = FlightTestSignal()
+        service.sendToMultipleModels(
+            messages: [Message(role: .user, content: "Replacement")],
+            models: [models[1]],
+            onChunk: { _, _ in },
+            onModelComplete: { _ in },
+            onAllComplete: { replacementComplete.signal() },
+            onError: { _, error in Issue.record("Unexpected replacement error: \(error)") }
+        )
+        let replacementExchange = await server.exchange(at: 1)
+        replacementExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+        #expect(await staleExchange.waitUntilStopped(timeout: .seconds(1)))
+
+        let foregroundChunk = FlightTestBox("")
+        let foregroundComplete = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground")],
+            model: models[2],
+            onChunk: { foregroundChunk.value += $0 },
+            onComplete: { foregroundComplete.signal() },
+            onError: { error in Issue.record("Unexpected foreground error: \(error)") }
+        )
+        let foregroundExchange = await server.exchange(at: 2)
+        foregroundExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+        staleBatch.cancel()
+        #expect(!replacementExchange.isStopped)
+        #expect(!foregroundExchange.isStopped)
+
+        replacementExchange.send(Data("data: [DONE]\n\n".utf8))
+        replacementExchange.finish()
+        foregroundExchange.send(
+            Data("data: {\"choices\":[{\"delta\":{\"content\":\"foreground\"}}]}\n\n".utf8)
+        )
+        foregroundExchange.send(Data("data: [DONE]\n\n".utf8))
+        foregroundExchange.finish()
+
+        #expect(await replacementComplete.wait(timeout: .seconds(1)))
+        #expect(await foregroundComplete.wait(timeout: .seconds(1)))
+        #expect(foregroundChunk.value == "foreground")
+        #expect(await !(staleCallbacks.wait(timeout: .milliseconds(100))))
+    }
+
     @Test("A replacement batch drops delayed callbacks from the cancelled batch", .timeLimit(.minutes(1)))
     func replacementBatchDropsDelayedCallbacksFromCancelledBatch() async {
         let staleResponseWaiting = FlightTestSignal()
@@ -166,7 +269,7 @@ extension AIServiceTests {
             service.modelAPIKeys[model] = token
         }
 
-        service.sendToMultipleModels(
+        let staleBatch = service.sendToMultipleModels(
             messages: [Message(role: .user, content: "Stale batch")],
             models: staleModels,
             onChunk: { _, _ in },
@@ -189,7 +292,7 @@ extension AIServiceTests {
         }
 
         if trigger == .stopThenReplace {
-            service.cancelCurrentRequest()
+            staleBatch.cancel()
         }
         service.sendToMultipleModels(
             messages: [Message(role: .user, content: "Replacement")],
