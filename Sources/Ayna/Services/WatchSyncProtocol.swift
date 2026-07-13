@@ -568,20 +568,26 @@ struct WatchConversationMutation: Codable, Equatable, Identifiable, Sendable {
         after acknowledgedRevision: WatchSyncRevision,
         coverage: WatchMutationDeliveryCoverage? = nil
     ) -> Bool {
-        max(createRevision ?? 0, titleRevision ?? 0) > max(
-            acknowledgedRevision,
-            max(coverage?.createRevision ?? 0, coverage?.titleRevision ?? 0)
+        let localRevision = Swift.max(createRevision ?? 0, titleRevision ?? 0)
+        let coveredRevision = Swift.max(
+            coverage?.createRevision ?? 0,
+            coverage?.titleRevision ?? 0
         )
+        let requiredRevision = Swift.max(acknowledgedRevision, coveredRevision)
+        return localRevision > requiredRevision
     }
 
     func changesConfiguration(
         after acknowledgedRevision: WatchSyncRevision,
         coverage: WatchMutationDeliveryCoverage? = nil
     ) -> Bool {
-        max(createRevision ?? 0, configurationRevision ?? 0) > max(
-            acknowledgedRevision,
-            max(coverage?.createRevision ?? 0, coverage?.configurationRevision ?? 0)
+        let localRevision = Swift.max(createRevision ?? 0, configurationRevision ?? 0)
+        let coveredRevision = Swift.max(
+            coverage?.createRevision ?? 0,
+            coverage?.configurationRevision ?? 0
         )
+        let requiredRevision = Swift.max(acknowledgedRevision, coveredRevision)
+        return localRevision > requiredRevision
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1663,7 +1669,7 @@ enum WatchSyncPayloadBuilder {
                 pageCycleCursor: pageCycleCursor
             )
         )
-        let configurationCursorAdvanceCount = pageCycleCursor.map { cursor in
+        let cursorAdvanceCount = pageCycleCursor.map { cursor in
             configurationCursorAdvanceCount(
                 in: allConfigurations,
                 delivered: snapshot.conversationConfigurations,
@@ -1674,7 +1680,7 @@ enum WatchSyncPayloadBuilder {
         } ?? snapshot.conversationConfigurations.count
         return SnapshotBuildResult(
             payload: WatchSyncPayload(snapshot: snapshot, data: data),
-            configurationCursorAdvanceCount: configurationCursorAdvanceCount,
+            configurationCursorAdvanceCount: cursorAdvanceCount,
             unavailablePromptIDs: transportPlan.unavailablePromptIDs
         )
     }
