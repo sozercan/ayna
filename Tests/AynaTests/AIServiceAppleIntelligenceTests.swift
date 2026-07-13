@@ -98,7 +98,7 @@ import Testing
                 stream: false,
                 onChunk: { _ in
                     MainActor.assumeIsolated {
-                        service.sendMessage(
+                        _ = service.sendMessage(
                             messages: [Message(role: .user, content: "Second")],
                             model: models[1],
                             stream: false,
