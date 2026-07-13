@@ -25,11 +25,11 @@ final class MemoryContextProvider {
     private(set) var isMemoryEnabled: Bool = false {
         didSet {
             AppPreferences.storage.set(isMemoryEnabled, forKey: "memoryEnabled")
-            if isMemoryEnabled, !memoryService.isLoaded {
+            if isMemoryEnabled {
+                scheduleMemoryLoadIfNeeded()
+            } else {
                 loadTask?.cancel()
-                loadTask = Task { [weak self] in
-                    await self?.loadAll()
-                }
+                loadTask = nil
             }
         }
     }
@@ -43,7 +43,14 @@ final class MemoryContextProvider {
 
     /// Sets whether memory is enabled
     func setMemoryEnabled(_ enabled: Bool) {
+        guard isMemoryEnabled != enabled else {
+            if enabled {
+                scheduleMemoryLoadIfNeeded()
+            }
+            return
+        }
         isMemoryEnabled = enabled
+        NotificationCenter.default.post(name: .watchSyncContextDidChange, object: nil)
     }
 
     /// Sets whether auto extraction is enabled
@@ -69,10 +76,32 @@ final class MemoryContextProvider {
         // Load stored values
         isMemoryEnabled = AppPreferences.storage.bool(forKey: "memoryEnabled")
         isAutoExtractionEnabled = AppPreferences.storage.bool(forKey: "memoryAutoExtraction")
+        scheduleMemoryLoadIfNeeded()
     }
 
     deinit {
         loadTask?.cancel()
+    }
+
+    nonisolated static func requiresAuthoritativeLoad(
+        isEnabled: Bool,
+        hasAuthoritativeFacts: Bool
+    ) -> Bool {
+        isEnabled && !hasAuthoritativeFacts
+    }
+
+    private func scheduleMemoryLoadIfNeeded() {
+        guard Self.requiresAuthoritativeLoad(
+            isEnabled: isMemoryEnabled,
+            hasAuthoritativeFacts: memoryService.hasAuthoritativeFacts
+        ), loadTask == nil else {
+            return
+        }
+        loadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.loadAll()
+            self.loadTask = nil
+        }
     }
 
     /// Loads all memory data from storage.
@@ -232,9 +261,15 @@ struct MemoryContext: Sendable {
     /// Estimated token count for the memory context
     var estimatedTokens: Int {
         var tokens = 0
-        if let meta = sessionMetadata { tokens += meta.count / 4 }
-        if let memory = userMemory { tokens += memory.count / 4 }
-        if let summaries = conversationSummaries { tokens += summaries.count / 4 }
+        if let meta = sessionMetadata {
+            tokens += meta.count / 4
+        }
+        if let memory = userMemory {
+            tokens += memory.count / 4
+        }
+        if let summaries = conversationSummaries {
+            tokens += summaries.count / 4
+        }
         return tokens
     }
 }

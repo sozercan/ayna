@@ -1,8 +1,11 @@
+// swiftlint:disable file_length
 @testable import Ayna
 import Foundation
 import Testing
 
+// swiftlint:disable identifier_name
 @Suite("ConversationManager Tests", .tags(.viewModel, .persistence), .serialized)
+// swiftlint:disable:next type_body_length
 struct ConversationManagerTests {
     private var defaults: UserDefaults
 
@@ -24,9 +27,9 @@ struct ConversationManagerTests {
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
 
-    @Test("Create new conversation uses selected model")
+    @Test
     @MainActor
-    func createNewConversationUsesSelectedModel() throws {
+    func `Create new conversation uses selected model`() throws {
         AIService.keychain = InMemoryKeychainStorage()
         let directory = try TestHelpers.makeTemporaryDirectory()
         let expectedModel = "unit-test-model"
@@ -39,9 +42,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.model == expectedModel)
     }
 
-    @Test("Add message appends and updates timestamp")
+    @Test
     @MainActor
-    func addMessageAppendsAndUpdatesTimestamp() throws {
+    func `Add message appends and updates timestamp`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -55,9 +58,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.content == "Ping")
     }
 
-    @Test("Update message reports whether the target still exists")
+    @Test
     @MainActor
-    func updateMessageReportsWhetherTargetExists() throws {
+    func `Update message reports whether the target still exists`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
@@ -77,9 +80,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.content == "Completed")
     }
 
-    @Test("Appending streamed content advances the conversation revision")
+    @Test
     @MainActor
-    func appendStreamedContentAdvancesConversationRevision() async throws {
+    func `Appending streamed content advances the conversation revision`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
@@ -100,15 +103,16 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.updatedAt ?? .distantPast > previousUpdate)
     }
 
-    @Test("Clear all conversations empties encrypted store")
+    @Test
     @MainActor
-    func clearAllConversationsEmptiesEncryptedStore() async throws {
+    func `Clear all conversations empties encrypted store`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let store = TestHelpers.makeTestStore(directory: directory, keychain: keychain)
 
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         _ = await manager.loadingTask?.value
+        #expect(manager.isConversationStateAuthoritative)
         manager.conversations = [TestHelpers.sampleConversation()]
         try await store.save(manager.conversations)
 
@@ -120,9 +124,230 @@ struct ConversationManagerTests {
         #expect(try await store.loadConversations().isEmpty)
     }
 
-    @Test("Failed delete and clear roll back optimistic UI without losing newer state")
+    @Test
     @MainActor
-    func persistenceFailuresRollBackOptimisticUI() async throws {
+    func `Failed initial load does not mark empty memory as authoritative`() async {
+        let store = ScriptedConversationStore()
+        _ = await store.enqueue(.load, outcome: .fail)
+        let manager = ConversationManager(store: store, loadRetryBaseDelay: .seconds(30))
+
+        _ = await manager.loadingTask?.value
+
+        #expect(manager.conversations.isEmpty)
+        #expect(!manager.isConversationStateAuthoritative)
+    }
+
+    @Test
+    @MainActor
+    func `Unreadable encrypted record does not publish a partial authoritative load`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let readable = TestHelpers.sampleConversation(title: "Readable")
+        let unreadable = TestHelpers.sampleConversation(title: "Unreadable")
+        try await store.save(readable)
+        try await store.save(unreadable)
+        try Data("corrupt encrypted record".utf8).write(
+            to: store.fileURL(for: unreadable.id),
+            options: .atomic
+        )
+        let manager = ConversationManager(
+            store: store,
+            loadRetryBaseDelay: .seconds(30)
+        )
+
+        _ = await manager.loadingTask?.value
+
+        #expect(!manager.isConversationStateAuthoritative)
+        #expect(manager.conversations.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func `Authoritative state wait blocks legacy ingress until initial load succeeds`() async {
+        let stored = TestHelpers.sampleConversation(title: "Loaded before legacy ingress")
+        let store = ScriptedConversationStore(conversations: [stored])
+        let loadGate = await store.enqueue(.load, outcome: .load([stored]), blocked: true)
+        let manager = ConversationManager(store: store)
+        await loadGate.started.wait()
+
+        let waitingStarted = TestLatch()
+        let waitingFinished = TestLatch()
+        let waiting = Task { @MainActor in
+            await waitingStarted.open()
+            let authoritative = await manager.waitUntilConversationStateIsAuthoritative()
+            await waitingFinished.open()
+            return authoritative
+        }
+        await waitingStarted.wait()
+        await Task.yield()
+
+        let finishedBeforeLoad = await waitingFinished.opened()
+        #expect(!finishedBeforeLoad)
+        #expect(!manager.isConversationStateAuthoritative)
+
+        await loadGate.releaseGate.open()
+        _ = await manager.loadingTask?.value
+
+        let becameAuthoritative = await waiting.value
+        let didFinishWaiting = await waitingFinished.opened()
+        #expect(becameAuthoritative)
+        #expect(didFinishWaiting)
+        #expect(manager.isConversationStateAuthoritative)
+        #expect(manager.conversations.map(\.id) == [stored.id])
+    }
+
+    @Test
+    @MainActor
+    func `Initial load failure retries and restores authority automatically`() async {
+        let stored = TestHelpers.sampleConversation()
+        let store = ScriptedConversationStore(conversations: [stored])
+        _ = await store.enqueue(.load, outcome: .fail)
+        let manager = ConversationManager(
+            store: store,
+            loadRetryBaseDelay: .milliseconds(1)
+        )
+
+        _ = await manager.loadingTask?.value
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !manager.isConversationStateAuthoritative, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(manager.isConversationStateAuthoritative)
+        #expect(manager.conversations.map(\.id) == [stored.id])
+        #expect(manager.conversations.first?.title == stored.title)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Reload failure closes authority preserves UI and retries latest load`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let stored = Conversation(title: "Visible before failed reload", model: model)
+        var refreshed = stored
+        refreshed.title = "Loaded by retry"
+        refreshed.updatedAt = stored.updatedAt.addingTimeInterval(1)
+        let store = ScriptedConversationStore(conversations: [stored])
+        let manager = ConversationManager(store: store, loadRetryBaseDelay: .zero)
+        _ = await manager.loadingTask?.value
+        manager.selectedConversationId = stored.id
+        _ = await store.enqueue(.load, outcome: .fail)
+        let retry = await store.enqueue(
+            .load,
+            outcome: .load([refreshed]),
+            blocked: true
+        )
+
+        await manager.reloadConversations()
+
+        guard !manager.isConversationStateAuthoritative else {
+            Issue.record("Expected the failed latest reload to close conversation authority")
+            return
+        }
+        #expect(manager.conversations == [stored])
+        #expect(manager.selectedConversationId == stored.id)
+
+        await retry.started.wait()
+        #expect(!manager.isConversationStateAuthoritative)
+        #expect(manager.conversations == [stored])
+        #expect(manager.selectedConversationId == stored.id)
+
+        await retry.releaseGate.open()
+        #expect(await manager.waitUntilConversationStateIsAuthoritative())
+        #expect(manager.conversations == [refreshed])
+        #expect(manager.selectedConversationId == stored.id)
+        #expect(await store.operations() == [.load, .load, .load])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Failed reload gates stale Watch publication until retry succeeds`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let stored = Conversation(title: "Stale Watch snapshot", model: model)
+        var refreshed = stored
+        refreshed.title = "Fresh Watch snapshot"
+        refreshed.updatedAt = stored.updatedAt.addingTimeInterval(1)
+        let store = ScriptedConversationStore(conversations: [stored])
+        let manager = ConversationManager(store: store, loadRetryBaseDelay: .zero)
+        _ = await manager.loadingTask?.value
+        _ = await store.enqueue(.load, outcome: .fail)
+        let retry = await store.enqueue(
+            .load,
+            outcome: .load([refreshed]),
+            blocked: true
+        )
+
+        await manager.reloadConversations()
+
+        guard !manager.isConversationStateAuthoritative else {
+            Issue.record("Expected failed reload authority to gate Watch publication")
+            return
+        }
+        #expect(manager.durableConversationsForSync() == [stored])
+        let stalePublication = manager.isConversationStateAuthoritative
+            ? manager.durableConversationsForSync()
+            : nil
+        #expect(stalePublication == nil)
+
+        await retry.started.wait()
+        let publicationDuringRetry = manager.isConversationStateAuthoritative
+            ? manager.durableConversationsForSync()
+            : nil
+        #expect(publicationDuringRetry == nil)
+
+        await retry.releaseGate.open()
+        #expect(await manager.waitUntilConversationStateIsAuthoritative())
+        let publicationAfterRetry = manager.isConversationStateAuthoritative
+            ? manager.durableConversationsForSync()
+            : nil
+        #expect(publicationAfterRetry == [refreshed])
+    }
+
+    @Test
+    @MainActor
+    func `Failed clear after failed initial load remains non-authoritative and keeps retrying`() async {
+        let stored = TestHelpers.sampleConversation()
+        let store = ScriptedConversationStore(conversations: [stored])
+        _ = await store.enqueue(.load, outcome: .fail)
+        _ = await store.enqueue(.clear, outcome: .fail)
+        _ = await store.enqueue(.clear)
+        _ = await store.enqueue(.load, outcome: .fail)
+        _ = await store.enqueue(.load, outcome: .load([stored]))
+        let manager = ConversationManager(
+            store: store,
+            loadRetryBaseDelay: .milliseconds(100)
+        )
+
+        _ = await manager.loadingTask?.value
+        await manager.clearAllConversations().value
+
+        #expect(!manager.isConversationStateAuthoritative)
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !manager.conversations.contains(where: { $0.id == stored.id }), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(manager.isConversationStateAuthoritative)
+        #expect(manager.conversations.map(\.id) == [stored.id])
+    }
+
+    @Test
+    @MainActor
+    func `Failed delete and clear roll back optimistic UI without losing newer state`() async throws {
         AIService.keychain = InMemoryKeychainStorage()
         let previousModels = AIService.shared.customModels
         let model = AIService.shared.selectedModel
@@ -142,22 +367,28 @@ struct ConversationManagerTests {
         let deleteRollback = try #require(deleteManager.deleteConversation(deleteTarget))
         await deleteGate.started.wait()
         #expect(deleteManager.conversations.isEmpty)
+        #expect(deleteManager.pendingDestructivePersistenceOperations == 1)
         await deleteGate.releaseGate.open()
-        await deleteRollback.value
+        _ = await deleteRollback.value
+        #expect(deleteManager.pendingDestructivePersistenceOperations == 1)
         #expect(deleteManager.conversations == [deleted])
         #expect(deleteManager.selectedConversationId == deleted.id)
         await deleteRepair.started.wait()
         await deleteRepair.releaseGate.open()
         await deleteManager.flushPendingSaves()
+        #expect(await waitUntil {
+            deleteManager.pendingDestructivePersistenceOperations == 0
+        })
 
         let beforeClear = Conversation(title: "Before clear", model: model)
         let clearStore = ScriptedConversationStore(conversations: [beforeClear])
         let clearManager = ConversationManager(store: clearStore, saveDebounceDuration: .seconds(30))
         _ = await clearManager.loadingTask?.value
-        let clearGate = await clearStore.enqueue(.clear, outcome: .fail, blocked: true)
+        let clearGate = await clearStore.enqueue(.clear, outcome: .partialClear([beforeClear.id]), blocked: true)
         clearManager.selectedConversationId = beforeClear.id
         let clearRollback = clearManager.clearAllConversations()
         await clearGate.started.wait()
+        #expect(clearManager.pendingDestructivePersistenceOperations == 1)
         clearManager.createNewConversation(title: "After clear")
         let created = try #require(clearManager.conversations.first)
         clearManager.selectedConversationId = created.id
@@ -167,16 +398,20 @@ struct ConversationManagerTests {
         await clearGate.releaseGate.open()
         await saveGate.started.wait()
         await clearRollback.value
+        #expect(clearManager.pendingDestructivePersistenceOperations == 1)
         #expect(Set(clearManager.conversations.map(\.id)) == Set([beforeClear.id, created.id]))
         #expect(clearManager.selectedConversationId == created.id)
         await clearRepair.started.wait()
         await clearRepair.releaseGate.open()
         await clearManager.flushPendingSaves()
+        #expect(await waitUntil {
+            clearManager.pendingDestructivePersistenceOperations == 0
+        })
     }
 
-    @Test("Failed delete restores image placeholders as stopped")
+    @Test
     @MainActor
-    func failedDeleteRestoresImagePlaceholdersAsStopped() async throws {
+    func `Failed delete restores image placeholders as stopped`() async throws {
         let model = AIService.shared.selectedModel
         let userMessage = Message(role: .user, content: "Draw a sphere")
         let responseGroupID = UUID()
@@ -210,7 +445,7 @@ struct ConversationManagerTests {
         let rollback = try #require(manager.deleteConversation(target))
         await deleteGate.started.wait()
         await deleteGate.releaseGate.open()
-        await rollback.value
+        _ = await rollback.value
 
         let restored = try #require(manager.conversation(byId: conversation.id))
         let restoredMessage = try #require(restored.messages.first(where: { $0.id == placeholder.id }))
@@ -223,9 +458,9 @@ struct ConversationManagerTests {
         await manager.flushPendingSaves()
     }
 
-    @Test("Failed clear does not override a newer new-chat selection")
+    @Test
     @MainActor
-    func failedClearPreservesNewChatSelection() async throws {
+    func `Failed clear does not override a newer new-chat selection`() async {
         let model = AIService.shared.selectedModel
         let existing = Conversation(title: "Existing", model: model)
         let store = ScriptedConversationStore(conversations: [existing])
@@ -248,9 +483,9 @@ struct ConversationManagerTests {
         await manager.flushPendingSaves()
     }
 
-    @Test("Search finds matches in title and messages")
+    @Test
     @MainActor
-    func searchFindsMatchesInTitleAndMessages() throws {
+    func `Search finds matches in title and messages`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -270,9 +505,9 @@ struct ConversationManagerTests {
         #expect(bodyResults.first?.title == "Random Chat")
     }
 
-    @Test("Save immediately persists manual changes")
+    @Test
     @MainActor
-    func saveImmediatelyPersistsManualChanges() async throws {
+    func `Save immediately persists manual changes`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-key-id"
@@ -301,9 +536,396 @@ struct ConversationManagerTests {
         #expect(newManager.conversations.first?.messages.last?.content == "Partial content")
     }
 
-    @Test("Reload conversations removes stale non-dirty conversations")
+    @Test
     @MainActor
-    func reloadConversationsRemovesStaleNonDirtyConversations() async throws {
+    func `Proposed save publishes only after durable success is committed`() async {
+        let store = ScriptedConversationStore()
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        let proposed = TestHelpers.sampleConversation(title: "From Watch")
+        let saveGate = await store.enqueue(
+            .save(proposed.id, proposed.title),
+            blocked: true
+        )
+
+        let persistence = manager.persistProposedConversation(proposed)
+        await saveGate.started.wait()
+
+        #expect(manager.conversations.isEmpty)
+        #expect(manager.conversation(byId: proposed.id) == nil)
+
+        await saveGate.releaseGate.open()
+        let result = await persistence.value
+
+        #expect(result == .saved)
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations() == [proposed])
+
+        manager.commitPersistedConversation(proposed)
+
+        #expect(manager.conversations == [proposed])
+        #expect(manager.conversation(byId: proposed.id) == proposed)
+        #expect(await store.operations() == [.load, .save(proposed.id, proposed.title)])
+    }
+
+    @Test
+    @MainActor
+    func `Failed proposed save leaves manager UI unchanged across reload`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let stored = Conversation(title: "Stored", model: model)
+        var proposed = stored
+        proposed.title = "Rejected Watch save"
+        proposed.updatedAt = stored.updatedAt.addingTimeInterval(1)
+        let store = ScriptedConversationStore(conversations: [stored])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        let saveGate = await store.enqueue(
+            .save(proposed.id, proposed.title),
+            outcome: .fail,
+            blocked: true
+        )
+
+        let persistence = manager.persistProposedConversation(proposed)
+        await saveGate.started.wait()
+
+        #expect(manager.conversations == [stored])
+
+        await saveGate.releaseGate.open()
+        let result = await persistence.value
+
+        guard case .failed = result else {
+            Issue.record("Expected proposed save to fail, got \(result)")
+            return
+        }
+        #expect(manager.conversations == [stored])
+        #expect(manager.conversation(byId: proposed.id) == stored)
+        #expect(await store.persistedConversations() == [stored])
+
+        await manager.reloadConversations()
+        await manager.flushPendingSaves()
+
+        #expect(manager.conversations == [stored])
+        #expect(manager.conversation(byId: proposed.id) == stored)
+        #expect(await store.persistedConversations() == [stored])
+        #expect(await store.operations() == [
+            .load,
+            .save(proposed.id, proposed.title),
+            .load,
+        ])
+    }
+
+    @Test
+    @MainActor
+    func `Superseded proposed save is not committed`() async {
+        let store = ScriptedConversationStore()
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        let older = Conversation(title: "Older Watch edit", model: AIService.shared.selectedModel)
+        var newer = older
+        newer.title = "Newer Watch edit"
+        newer.updatedAt = older.updatedAt.addingTimeInterval(1)
+        let olderGate = await store.enqueue(
+            .save(older.id, older.title),
+            blocked: true
+        )
+        let newerGate = await store.enqueue(
+            .save(newer.id, newer.title),
+            blocked: true
+        )
+
+        let olderPersistence = manager.persistProposedConversation(older)
+        await olderGate.started.wait()
+        let newerPersistence = manager.persistProposedConversation(newer)
+
+        #expect(manager.conversations.isEmpty)
+
+        await olderGate.releaseGate.open()
+        let olderResult = await olderPersistence.value
+
+        #expect(olderResult == .superseded)
+        #expect(manager.conversations.isEmpty)
+
+        await newerGate.started.wait()
+        #expect(manager.conversations.isEmpty)
+        await newerGate.releaseGate.open()
+        let newerResult = await newerPersistence.value
+
+        #expect(newerResult == .saved)
+        #expect(manager.conversations.isEmpty)
+
+        manager.commitPersistedConversation(newer)
+
+        #expect(manager.conversations == [newer])
+        #expect(await store.operations() == [
+            .load,
+            .save(older.id, older.title),
+            .save(newer.id, newer.title),
+        ])
+    }
+
+    @Test
+    @MainActor
+    func `Proposed deletion publishes only after durable success is committed`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let existing = Conversation(title: "Delete from Watch", model: model)
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        manager.selectedConversationId = existing.id
+        let deleteGate = await store.enqueue(
+            .delete(existing.id),
+            blocked: true
+        )
+
+        let persistence = manager.persistProposedDeletion(existing)
+        await deleteGate.started.wait()
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+        #expect(manager.selectedConversationId == existing.id)
+
+        await deleteGate.releaseGate.open()
+        let result = await persistence.value
+
+        #expect(result == .deleted)
+        #expect(manager.pendingDestructivePersistenceOperations == 0)
+        #expect(manager.conversations == [existing])
+        #expect(manager.selectedConversationId == existing.id)
+
+        manager.commitPersistedDeletion(existing.id)
+
+        #expect(manager.conversations.isEmpty)
+        #expect(manager.conversation(byId: existing.id) == nil)
+        #expect(manager.selectedConversationId == nil)
+        #expect(await store.operations() == [.load, .delete(existing.id)])
+    }
+
+    @Test
+    @MainActor
+    func `ID-only proposed deletion removes a backing record absent from memory`() async {
+        let hidden = TestHelpers.sampleConversation(title: "Hidden backing record")
+        let store = ScriptedConversationStore(conversations: [hidden])
+        _ = await store.enqueue(.load, outcome: .load([]))
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+
+        #expect(manager.isConversationStateAuthoritative)
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations() == [hidden])
+
+        let persistence = manager.persistProposedDeletion(conversationID: hidden.id)
+        let result = await persistence.value
+
+        #expect(result == .deleted)
+        #expect(manager.pendingDestructivePersistenceOperations == 0)
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations().isEmpty)
+        #expect(await store.operations() == [.load, .delete(hidden.id)])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Failed ID-only deletion keeps its barrier until a delete retry succeeds`() async {
+        let hidden = TestHelpers.sampleConversation(title: "Retry hidden deletion")
+        let store = ScriptedConversationStore(conversations: [hidden])
+        _ = await store.enqueue(.load, outcome: .load([]))
+        _ = await store.enqueue(.delete(hidden.id), outcome: .fail)
+        let retry = await store.enqueue(.delete(hidden.id), blocked: true)
+        let manager = ConversationManager(
+            store: store,
+            destructiveRepairRetryBaseDelay: .milliseconds(1)
+        )
+        _ = await manager.loadingTask?.value
+
+        let persistence = manager.persistProposedDeletion(conversationID: hidden.id)
+        let result = await persistence.value
+
+        guard case .failed(nil, _) = result else {
+            Issue.record("Expected an ID-only delete failure, got \(result)")
+            return
+        }
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(await store.persistedConversations() == [hidden])
+
+        await retry.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await retry.releaseGate.open()
+
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(await store.persistedConversations().isEmpty)
+        #expect(await store.operations() == [
+            .load,
+            .delete(hidden.id),
+            .delete(hidden.id),
+        ])
+    }
+
+    @Test
+    @MainActor
+    func `Failed proposed deletion leaves manager UI unchanged`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let existing = Conversation(title: "Keep after Watch delete", model: model)
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        manager.selectedConversationId = existing.id
+        let deleteGate = await store.enqueue(
+            .delete(existing.id),
+            outcome: .fail,
+            blocked: true
+        )
+        let repairGate = await store.enqueue(
+            .save(existing.id, existing.title),
+            blocked: true
+        )
+
+        let persistence = manager.persistProposedDeletion(existing)
+        await deleteGate.started.wait()
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+        #expect(manager.selectedConversationId == existing.id)
+
+        await deleteGate.releaseGate.open()
+        let result = await persistence.value
+
+        guard case .failed = result else {
+            Issue.record("Expected proposed deletion to fail, got \(result)")
+            return
+        }
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+        #expect(manager.selectedConversationId == existing.id)
+
+        await repairGate.started.wait()
+        await repairGate.releaseGate.open()
+        await manager.flushPendingSaves()
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+
+        #expect(manager.conversations == [existing])
+        #expect(await store.persistedConversations() == [existing])
+        #expect(await store.operations() == [
+            .load,
+            .delete(existing.id),
+            .save(existing.id, existing.title),
+        ])
+    }
+
+    @Test
+    @MainActor
+    func `Superseded proposed deletion is not committed`() async {
+        let previousModels = AIService.shared.customModels
+        let model = AIService.shared.selectedModel
+        if !AIService.shared.customModels.contains(model) {
+            AIService.shared.customModels.append(model)
+        }
+        defer { AIService.shared.customModels = previousModels }
+
+        let existing = Conversation(title: "Before Watch edit", model: model)
+        var newer = existing
+        newer.title = "After Watch edit"
+        newer.updatedAt = existing.updatedAt.addingTimeInterval(1)
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+        let deleteGate = await store.enqueue(
+            .delete(existing.id),
+            blocked: true
+        )
+        let saveGate = await store.enqueue(
+            .save(newer.id, newer.title),
+            blocked: true
+        )
+
+        let deletion = manager.persistProposedDeletion(existing)
+        await deleteGate.started.wait()
+        let save = manager.persistProposedConversation(newer)
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+
+        await deleteGate.releaseGate.open()
+        let deleteResult = await deletion.value
+
+        #expect(deleteResult == .superseded)
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+
+        await saveGate.started.wait()
+        #expect(manager.conversations == [existing])
+        await saveGate.releaseGate.open()
+        let saveResult = await save.value
+
+        #expect(saveResult == .saved)
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations == [existing])
+
+        manager.commitPersistedConversation(newer)
+
+        #expect(manager.conversations == [newer])
+        #expect(await store.operations() == [
+            .load,
+            .delete(existing.id),
+            .save(newer.id, newer.title),
+        ])
+    }
+
+    @Test
+    @MainActor
+    func `Failed normal save keeps Watch sync on the last durable snapshot until retry succeeds`() async {
+        let model = AIService.shared.selectedModel
+        let stored = Conversation(title: "Durable before edit", model: model)
+        var edited = stored
+        edited.title = "Visible but not durable"
+        edited.updatedAt = stored.updatedAt.addingTimeInterval(1)
+        let store = ScriptedConversationStore(conversations: [stored])
+        _ = await store.enqueue(.save(edited.id, edited.title), outcome: .fail)
+        _ = await store.enqueue(.save(edited.id, edited.title))
+        let manager = ConversationManager(store: store, saveDebounceDuration: .zero)
+        _ = await manager.loadingTask?.value
+        let initialDurableRevision = manager.durableConversationRevision
+
+        manager.conversations = [edited]
+        manager.save(edited)
+        await manager.flushPendingSaves()
+
+        #expect(manager.conversations == [edited])
+        #expect(manager.durableConversationsForSync() == [stored])
+
+        await manager.flushPendingSaves()
+
+        #expect(manager.durableConversationsForSync() == [edited])
+        #expect(manager.durableConversationRevision > initialDurableRevision)
+        #expect(await store.persistedConversations() == [edited])
+    }
+
+    @Test
+    @MainActor
+    func `Reload conversations removes stale non-dirty conversations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-reconcile-key"
@@ -328,9 +950,9 @@ struct ConversationManagerTests {
         #expect(!manager.conversations.contains(where: { $0.id == stale.id }))
     }
 
-    @Test("Reload conversations preserves dirty in-memory conversations not yet on disk")
+    @Test
     @MainActor
-    func reloadConversationsPreservesDirtyInMemoryConversationsNotYetOnDisk() async throws {
+    func `Reload conversations preserves dirty in-memory conversations not yet on disk`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = InMemoryKeychainStorage()
         let keyId = "test-dirty-wins-key"
@@ -355,9 +977,9 @@ struct ConversationManagerTests {
         await manager.flushPendingSaves()
     }
 
-    @Test("Dirty memory wins load, then removed model repair is persisted")
+    @Test
     @MainActor
-    func dirtyMemoryWithRemovedModelMergesRepair() async throws {
+    func `Dirty memory wins load, then removed model repair is persisted`() async throws {
         AIService.keychain = InMemoryKeychainStorage()
         let previousModels = AIService.shared.customModels
         let previousSelection = AIService.shared.selectedModel
@@ -395,9 +1017,9 @@ struct ConversationManagerTests {
 
     // MARK: - Edit Message Tests
 
-    @Test("Edit message updates content and marks as edited")
+    @Test
     @MainActor
-    func editMessageUpdatesContentAndMarksAsEdited() throws {
+    func `Edit message updates content and marks as edited`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -419,9 +1041,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.editedAt != nil)
     }
 
-    @Test("Edit message removes subsequent messages")
+    @Test
     @MainActor
-    func editMessageRemovesSubsequentMessages() throws {
+    func `Edit message removes subsequent messages`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -447,9 +1069,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.isEdited == true)
     }
 
-    @Test("Edit message fails for assistant messages")
+    @Test
     @MainActor
-    func editMessageFailsForAssistantMessages() throws {
+    func `Edit message fails for assistant messages`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -470,9 +1092,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.isEdited == false)
     }
 
-    @Test("Edit message with same content does not mark as edited")
+    @Test
     @MainActor
-    func editMessageWithSameContentDoesNotMarkAsEdited() throws {
+    func `Edit message with same content does not mark as edited`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -493,9 +1115,9 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.messages.first?.isEdited == false)
     }
 
-    @Test("Edit message fails for non-existent message")
+    @Test
     @MainActor
-    func editMessageFailsForNonExistentMessage() throws {
+    func `Edit message fails for non-existent message`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 
         let manager = makeManager(directory: directory)
@@ -510,4 +1132,314 @@ struct ConversationManagerTests {
 
         #expect(editResult == false)
     }
+
+    @MainActor
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if condition() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return condition()
+    }
 }
+
+extension ConversationManagerTests {
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Destructive barrier retries failed delete repair until durable success`() async throws {
+        let model = AIService.shared.selectedModel
+        let existing = Conversation(title: "Retry delete rollback", model: model)
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(
+            store: store,
+            destructiveRepairRetryBaseDelay: .milliseconds(1)
+        )
+        _ = await manager.loadingTask?.value
+
+        let deleteGate = await store.enqueue(
+            .delete(existing.id),
+            outcome: .fail,
+            blocked: true
+        )
+        let firstRepair = await store.enqueue(
+            .save(existing.id, existing.title),
+            outcome: .fail,
+            blocked: true
+        )
+        let secondRepair = await store.enqueue(
+            .save(existing.id, existing.title),
+            outcome: .fail,
+            blocked: true
+        )
+        let successfulRepair = await store.enqueue(
+            .save(existing.id, existing.title),
+            blocked: true
+        )
+
+        let target = try #require(manager.conversations.first)
+        let deletion = try #require(manager.deleteConversation(target))
+        await deleteGate.started.wait()
+        await deleteGate.releaseGate.open()
+        guard case .failed = await deletion.value else {
+            Issue.record("Expected delete failure")
+            return
+        }
+
+        await firstRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await firstRepair.releaseGate.open()
+
+        await secondRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await secondRepair.releaseGate.open()
+
+        await successfulRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await successfulRepair.releaseGate.open()
+
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations == [existing])
+        #expect(await store.persistedConversations() == [existing])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Edit during failed delete repair keeps barrier until newest state is durable`() async throws {
+        let existing = Conversation(
+            title: "Rollback before edit",
+            model: AIService.shared.selectedModel
+        )
+        let editedTitle = "Edited after rollback"
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .milliseconds(0),
+            destructiveRepairRetryBaseDelay: .milliseconds(1)
+        )
+        _ = await manager.loadingTask?.value
+        await manager.flushPendingSaves()
+        let operationBaseline = await store.operations().count
+
+        let failedDelete = await store.enqueue(
+            .delete(existing.id),
+            outcome: .fail,
+            blocked: true
+        )
+        let failedRollbackSave = await store.enqueue(
+            .save(existing.id, existing.title),
+            outcome: .fail,
+            blocked: true
+        )
+        let failedEditedSave = await store.enqueue(
+            .save(existing.id, editedTitle),
+            outcome: .fail,
+            blocked: true
+        )
+        let successfulRetry = await store.enqueue(
+            .save(existing.id, editedTitle),
+            blocked: true
+        )
+
+        let target = try #require(manager.conversations.first)
+        let deletion = try #require(manager.deleteConversation(target))
+        await failedDelete.started.wait()
+        await failedDelete.releaseGate.open()
+        guard case .failed = await deletion.value else {
+            Issue.record("Expected delete failure")
+            return
+        }
+        await failedRollbackSave.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+
+        let restored = try #require(manager.conversation(byId: existing.id))
+        manager.renameConversation(restored, newTitle: editedTitle)
+        let edited = try #require(manager.conversation(byId: existing.id))
+        #expect(edited.title == editedTitle)
+
+        await failedRollbackSave.releaseGate.open()
+        await failedEditedSave.started.wait()
+        let barrierDroppedDuringEditedSave = await waitUntil(timeout: .milliseconds(50)) {
+            manager.pendingDestructivePersistenceOperations == 0
+        }
+        guard barrierDroppedDuringEditedSave == false else {
+            Issue.record("Destructive barrier dropped before the edited state was durable")
+            return
+        }
+        #expect(await store.persistedConversations() == [existing])
+
+        await failedEditedSave.releaseGate.open()
+        await successfulRetry.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [edited])
+        await successfulRetry.releaseGate.open()
+
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations == [edited])
+        #expect(await store.persistedConversations() == [edited])
+        let operations = await store.operations()
+        #expect(Array(operations.dropFirst(operationBaseline)) == [
+            .delete(existing.id),
+            .save(existing.id, existing.title),
+            .save(existing.id, editedTitle),
+            .save(existing.id, editedTitle),
+        ])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Newer delete supersedes an older blocked rollback barrier`() async throws {
+        let existing = Conversation(
+            title: "Delete rollback superseded",
+            model: AIService.shared.selectedModel
+        )
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+
+        let firstDelete = await store.enqueue(
+            .delete(existing.id),
+            outcome: .fail,
+            blocked: true
+        )
+        let oldRepair = await store.enqueue(
+            .save(existing.id, existing.title),
+            outcome: .fail,
+            blocked: true
+        )
+        let newerDelete = await store.enqueue(.delete(existing.id), blocked: true)
+
+        let firstTarget = try #require(manager.conversations.first)
+        let firstTask = try #require(manager.deleteConversation(firstTarget))
+        await firstDelete.started.wait()
+        await firstDelete.releaseGate.open()
+        guard case .failed = await firstTask.value else {
+            Issue.record("Expected first delete failure")
+            return
+        }
+        await oldRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+
+        let restored = try #require(manager.conversation(byId: existing.id))
+        let newerTask = try #require(manager.deleteConversation(restored))
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await oldRepair.releaseGate.open()
+        await newerDelete.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await newerDelete.releaseGate.open()
+        #expect(await newerTask.value == .deleted)
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Newer clear supersedes an older blocked delete rollback barrier`() async throws {
+        let existing = Conversation(
+            title: "Delete rollback cleared",
+            model: AIService.shared.selectedModel
+        )
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+
+        let failedDelete = await store.enqueue(
+            .delete(existing.id),
+            outcome: .fail,
+            blocked: true
+        )
+        let oldRepair = await store.enqueue(
+            .save(existing.id, existing.title),
+            outcome: .fail,
+            blocked: true
+        )
+        let newerClear = await store.enqueue(.clear, blocked: true)
+
+        let target = try #require(manager.conversations.first)
+        let deleteTask = try #require(manager.deleteConversation(target))
+        await failedDelete.started.wait()
+        await failedDelete.releaseGate.open()
+        guard case .failed = await deleteTask.value else {
+            Issue.record("Expected delete failure")
+            return
+        }
+        await oldRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+
+        let clearTask = manager.clearAllConversations()
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await oldRepair.releaseGate.open()
+        await newerClear.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await newerClear.releaseGate.open()
+        await clearTask.value
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `Newer clear supersedes an older blocked rewrite barrier`() async {
+        let existing = Conversation(
+            title: "Clear rollback superseded",
+            model: AIService.shared.selectedModel
+        )
+        let store = ScriptedConversationStore(conversations: [existing])
+        let manager = ConversationManager(store: store)
+        _ = await manager.loadingTask?.value
+
+        let firstClear = await store.enqueue(
+            .clear,
+            outcome: .partialClear([existing.id]),
+            blocked: true
+        )
+        let oldRepair = await store.enqueue(
+            .clear,
+            outcome: .fail,
+            blocked: true
+        )
+        let newerClear = await store.enqueue(.clear, blocked: true)
+
+        let firstTask = manager.clearAllConversations()
+        await firstClear.started.wait()
+        await firstClear.releaseGate.open()
+        await firstTask.value
+        await oldRepair.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations == [existing])
+
+        let newerTask = manager.clearAllConversations()
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await oldRepair.releaseGate.open()
+        await newerClear.started.wait()
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        await newerClear.releaseGate.open()
+        await newerTask.value
+        #expect(await waitUntil {
+            manager.pendingDestructivePersistenceOperations == 0
+        })
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations().isEmpty)
+    }
+}
+
+// swiftlint:enable identifier_name

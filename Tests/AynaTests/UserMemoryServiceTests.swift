@@ -12,10 +12,371 @@ import Testing
 @Suite("UserMemoryService Tests")
 @MainActor
 struct UserMemoryServiceTests {
+    @Test
+    func `load publishes only after authoritative storage succeeds`() async {
+        let loadedFact = UserMemoryFact(content: "Persisted fact")
+        let successGate = TestGate()
+        let successStore = ScriptedUserMemoryStore(
+            loadFacts: [loadedFact],
+            loadPlan: .init(gate: successGate, outcome: .success)
+        )
+        let successCenter = NotificationCenter()
+        let successNotifications = NotificationCounter(
+            name: .watchSyncContextDidChange,
+            center: successCenter
+        )
+        defer { successNotifications.stop() }
+        let successful = UserMemoryService(
+            store: successStore,
+            notificationCenter: successCenter
+        )
+
+        let successfulLoad = Task { await successful.loadFacts() }
+        #expect(await eventually { await successStore.loadAttemptCount == 1 })
+        #expect(!successful.hasAuthoritativeFacts)
+        #expect(successNotifications.received == 0)
+
+        await successGate.open()
+        await successfulLoad.value
+
+        #expect(successful.isLoaded)
+        #expect(successful.hasAuthoritativeFacts)
+        #expect(successful.facts == [loadedFact])
+        #expect(successNotifications.received == 1)
+
+        let failureStore = ScriptedUserMemoryStore(loadPlan: .init(outcome: .failure))
+        let failureCenter = NotificationCenter()
+        let failureNotifications = NotificationCounter(
+            name: .watchSyncContextDidChange,
+            center: failureCenter
+        )
+        defer { failureNotifications.stop() }
+        let failing = UserMemoryService(
+            store: failureStore,
+            notificationCenter: failureCenter
+        )
+
+        await failing.loadFacts()
+
+        #expect(failing.isLoaded)
+        #expect(!failing.hasAuthoritativeFacts)
+        #expect(failing.facts.isEmpty)
+        #expect(failureNotifications.received == 0)
+    }
+
+    @Test
+    func `local CRUD during initial load merges stored facts before publishing`() async {
+        let persistedFact = UserMemoryFact(content: "Persisted fact")
+        let deletedPersistedFact = UserMemoryFact(content: "Delete this persisted fact")
+        let loadGate = TestGate()
+        let saveGate = TestGate()
+        let store = ScriptedUserMemoryStore(
+            loadFacts: [persistedFact, deletedPersistedFact],
+            loadPlan: .init(gate: loadGate),
+            savePlans: [.init(gate: saveGate)]
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .zero,
+            notificationCenter: center
+        )
+
+        let load = Task { await service.loadFacts() }
+        #expect(await eventually { await store.loadAttemptCount == 1 })
+
+        let localFact = service.addFact("Local fact")
+        service.deleteFact(deletedPersistedFact.id)
+
+        await loadGate.open()
+        await load.value
+
+        #expect(service.isLoaded)
+        #expect(service.facts == [localFact, persistedFact])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+        #expect(await eventually { await store.saveAttemptCount == 1 })
+        #expect(await store.saveAttempts == [[localFact, persistedFact]])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        await saveGate.open()
+        #expect(await eventually { service.hasAuthoritativeFacts })
+
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.persistedFacts == [localFact, persistedFact])
+    }
+
+    @Test
+    func `sync replacement supersedes an in-flight initial load`() async {
+        let staleDiskFact = UserMemoryFact(content: "Stale disk fact")
+        let syncedFact = UserMemoryFact(content: "Synced fact")
+        let loadGate = TestGate()
+        let saveGate = TestGate()
+        let store = ScriptedUserMemoryStore(
+            loadFacts: [staleDiskFact],
+            loadPlan: .init(gate: loadGate),
+            savePlans: [.init(gate: saveGate)]
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+
+        let load = Task { await service.loadFacts() }
+        #expect(await eventually { await store.loadAttemptCount == 1 })
+
+        service.loadFactsFromSync([syncedFact])
+        await loadGate.open()
+        await load.value
+
+        #expect(service.isLoaded)
+        #expect(service.facts == [syncedFact])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        let save = Task { await service.saveImmediately() }
+        #expect(await eventually { await store.saveAttemptCount == 1 })
+        #expect(await store.saveAttempts == [[syncedFact]])
+
+        await saveGate.open()
+        await save.value
+
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.persistedFacts == [syncedFact])
+    }
+
+    @Test
+    func `debounced local CRUD publishes only after its exact snapshot is durable`() async {
+        let saveGate = TestGate()
+        let store = ScriptedUserMemoryStore(
+            savePlans: [.init(gate: saveGate, outcome: .success)]
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .zero,
+            notificationCenter: center
+        )
+        await service.loadFacts()
+        #expect(service.hasAuthoritativeFacts)
+        notifications.reset()
+
+        service.addFact("Optimistic local fact")
+
+        #expect(service.facts.map(\.content) == ["Optimistic local fact"])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(await eventually { await store.saveAttemptCount == 1 })
+        #expect(notifications.received == 0)
+
+        await saveGate.open()
+        #expect(await eventually { service.hasAuthoritativeFacts })
+
+        #expect(notifications.received == 1)
+        #expect(await store.persistedFacts.map(\.content) == ["Optimistic local fact"])
+    }
+
+    @Test
+    func `failed immediate save keeps optimistic facts private`() async {
+        let store = ScriptedUserMemoryStore(savePlans: [.init(outcome: .failure)])
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+        await service.loadFacts()
+        #expect(service.hasAuthoritativeFacts)
+        notifications.reset()
+
+        service.addFact("Optimistic local fact")
+        await service.saveImmediately()
+
+        #expect(service.facts.map(\.content) == ["Optimistic local fact"])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+        #expect(await store.saveAttemptCount == 1)
+        #expect(await store.persistedFacts.isEmpty)
+    }
+
+    @Test
+    func `stale saves serialize and only the latest durable generation publishes`() async {
+        let firstSaveGate = TestGate()
+        let secondSaveGate = TestGate()
+        let store = ScriptedUserMemoryStore(savePlans: [
+            .init(gate: firstSaveGate, outcome: .success),
+            .init(gate: secondSaveGate, outcome: .success)
+        ])
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+        await service.loadFacts()
+        #expect(service.hasAuthoritativeFacts)
+        notifications.reset()
+
+        service.addFact("First generation")
+        let firstSave = Task { await service.saveImmediately() }
+        #expect(await eventually { await store.saveAttemptCount == 1 })
+
+        service.addFact("Second generation")
+        let secondSave = Task { await service.saveImmediately() }
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+
+        #expect(await store.saveAttemptCount == 1)
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        await firstSaveGate.open()
+        await firstSave.value
+        #expect(await eventually { await store.saveAttemptCount == 2 })
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        await secondSaveGate.open()
+        await secondSave.value
+
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.saveAttempts.map { $0.map(\.content) } == [
+            ["First generation"],
+            ["Second generation", "First generation"]
+        ])
+        #expect(await store.persistedFacts.map(\.content) == [
+            "Second generation",
+            "First generation"
+        ])
+    }
+
+    @Test
+    func `synced facts retry persistence without reloading stale disk state`() async {
+        let syncedFact = UserMemoryFact(content: "Synced fact")
+        let store = ScriptedUserMemoryStore(
+            loadFacts: [UserMemoryFact(content: "Stale disk fact")],
+            savePlans: [
+                .init(outcome: .failure),
+                .init(outcome: .success)
+            ]
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+
+        service.loadFactsFromSync([syncedFact])
+        #expect(service.facts == [syncedFact])
+        #expect(!service.hasAuthoritativeFacts)
+
+        await service.saveImmediately()
+        #expect(service.facts == [syncedFact])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        await service.loadFacts()
+
+        #expect(await store.loadAttemptCount == 0)
+        #expect(await store.saveAttemptCount == 2)
+        #expect(service.facts == [syncedFact])
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.persistedFacts == [syncedFact])
+    }
+
+    @Test
+    func `clear publishes only after encrypted clear succeeds`() async {
+        let persistedFact = UserMemoryFact(content: "Persisted fact")
+        let successGate = TestGate()
+        let successStore = ScriptedUserMemoryStore(
+            loadFacts: [persistedFact],
+            clearPlans: [.init(gate: successGate, outcome: .success)]
+        )
+        let successCenter = NotificationCenter()
+        let successNotifications = NotificationCounter(
+            name: .watchSyncContextDidChange,
+            center: successCenter
+        )
+        defer { successNotifications.stop() }
+        let successful = UserMemoryService(
+            store: successStore,
+            notificationCenter: successCenter
+        )
+        await successful.loadFacts()
+        successNotifications.reset()
+
+        let successfulClear = Task { await successful.clearAllFacts() }
+        #expect(await eventually { await successStore.clearAttemptCount == 1 })
+        #expect(successful.facts.isEmpty)
+        #expect(!successful.hasAuthoritativeFacts)
+        #expect(successNotifications.received == 0)
+
+        await successGate.open()
+        await successfulClear.value
+
+        #expect(successful.hasAuthoritativeFacts)
+        #expect(successNotifications.received == 1)
+        #expect(await successStore.persistedFacts.isEmpty)
+
+        let failureStore = ScriptedUserMemoryStore(
+            loadFacts: [persistedFact],
+            clearPlans: [.init(outcome: .failure)]
+        )
+        let failureCenter = NotificationCenter()
+        let failureNotifications = NotificationCounter(
+            name: .watchSyncContextDidChange,
+            center: failureCenter
+        )
+        defer { failureNotifications.stop() }
+        let failing = UserMemoryService(
+            store: failureStore,
+            notificationCenter: failureCenter
+        )
+        await failing.loadFacts()
+        failureNotifications.reset()
+
+        await failing.clearAllFacts()
+
+        #expect(failing.facts.isEmpty)
+        #expect(!failing.hasAuthoritativeFacts)
+        #expect(failureNotifications.received == 0)
+        #expect(await failureStore.persistedFacts == [persistedFact])
+    }
+
+    private func eventually(_ condition: () async -> Bool) async -> Bool {
+        for _ in 0 ..< 200 {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
+    }
+
     // MARK: - Fact Management
 
-    @Test("Add fact stores fact correctly")
-    func addFactStoresFactCorrectly() {
+    @Test
+    func `add fact stores fact correctly`() {
         let service = UserMemoryService()
         service.addFact("I prefer Swift")
 
@@ -26,8 +387,8 @@ struct UserMemoryServiceTests {
         #expect(facts.first?.isActive == true)
     }
 
-    @Test("Add multiple facts preserves order")
-    func addMultipleFactsPreservesOrder() {
+    @Test
+    func `add multiple facts preserves order`() {
         let service = UserMemoryService()
         service.addFact("Fact 1")
         service.addFact("Fact 2")
@@ -41,8 +402,8 @@ struct UserMemoryServiceTests {
         #expect(facts[2].content == "Fact 1")
     }
 
-    @Test("Delete fact removes from store")
-    func deleteFactRemovesFromStore() {
+    @Test
+    func `delete fact removes from store`() {
         let service = UserMemoryService()
         service.addFact("To be deleted")
 
@@ -57,8 +418,8 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().isEmpty)
     }
 
-    @Test("Toggle fact changes isActive status")
-    func toggleFactChangesIsActiveStatus() {
+    @Test
+    func `toggle fact changes isActive status`() {
         let service = UserMemoryService()
         service.addFact("Toggleable fact")
 
@@ -80,8 +441,8 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().count == 1)
     }
 
-    @Test("Update fact content works correctly")
-    func updateFactContentWorksCorrectly() {
+    @Test
+    func `update fact content works correctly`() {
         let service = UserMemoryService()
         service.addFact("Original content")
 
@@ -96,8 +457,8 @@ struct UserMemoryServiceTests {
         #expect(updated?.content == "Updated content")
     }
 
-    @Test("Clear all facts removes all facts")
-    func clearAllFactsRemovesAllFacts() async {
+    @Test
+    func `clear all facts removes all facts`() async {
         let service = UserMemoryService()
         service.addFact("Fact 1")
         service.addFact("Fact 2")
@@ -111,14 +472,14 @@ struct UserMemoryServiceTests {
 
     // MARK: - Context Formatting
 
-    @Test("Formatted for context returns nil when empty")
-    func formattedForContextReturnsNilWhenEmpty() {
+    @Test
+    func `formatted for context returns nil when empty`() {
         let service = UserMemoryService()
         #expect(service.formattedForContext(tokenBudget: 1000) == nil)
     }
 
-    @Test("Formatted for context includes active facts only")
-    func formattedForContextIncludesActiveFactsOnly() {
+    @Test
+    func `formatted for context includes active facts only`() {
         let service = UserMemoryService()
         service.addFact("Active fact")
         service.addFact("Inactive fact")
@@ -133,8 +494,8 @@ struct UserMemoryServiceTests {
         #expect(context?.contains("Inactive fact") != true)
     }
 
-    @Test("Formatted for context respects token budget")
-    func formattedForContextRespectsTokenBudget() {
+    @Test
+    func `formatted for context respects token budget`() {
         let service = UserMemoryService()
         // Add a long fact
         let longContent = String(repeating: "This is a very long fact. ", count: 100)
@@ -149,8 +510,8 @@ struct UserMemoryServiceTests {
 
     // MARK: - Memory Summary
 
-    @Test("Memory summary reflects fact count")
-    func memorySummaryReflectsFactCount() {
+    @Test
+    func `memory summary reflects fact count`() {
         let service = UserMemoryService()
         #expect(service.memorySummary == "No facts stored")
 
@@ -163,8 +524,8 @@ struct UserMemoryServiceTests {
 
     // MARK: - Command Processing
 
-    @Test("Process store command adds fact")
-    func processStoreCommandAddsFact() {
+    @Test
+    func `process store command adds fact`() {
         let service = UserMemoryService()
         let response = service.processCommand(.store(content: "I love coding"))
 
@@ -173,8 +534,8 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().first?.content == "I love coding")
     }
 
-    @Test("Process remove command removes matching fact")
-    func processRemoveCommandRemovesMatchingFact() {
+    @Test
+    func `process remove command removes matching fact`() {
         let service = UserMemoryService()
         service.addFact("I love coding")
         #expect(service.activeFacts().count == 1)
@@ -186,8 +547,8 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().isEmpty)
     }
 
-    @Test("Process query command returns summary")
-    func processQueryCommandReturnsSummary() {
+    @Test
+    func `process query command returns summary`() {
         let service = UserMemoryService()
         service.addFact("I prefer dark mode")
         service.addFact("I work as a developer")
@@ -198,8 +559,8 @@ struct UserMemoryServiceTests {
         #expect(response?.contains("remember") == true)
     }
 
-    @Test("Process clearAll command returns guidance")
-    func processClearAllCommandReturnsGuidance() {
+    @Test
+    func `process clearAll command returns guidance`() {
         let service = UserMemoryService()
         service.addFact("Fact 1")
         service.addFact("Fact 2")
@@ -211,11 +572,152 @@ struct UserMemoryServiceTests {
         #expect(response?.contains("Settings") == true)
     }
 
-    @Test("Process none command returns nil")
-    func processNoneCommandReturnsNil() {
+    @Test
+    func `process none command returns nil`() {
         let service = UserMemoryService()
         let response = service.processCommand(.none)
         #expect(response == nil)
+    }
+}
+
+private enum ScriptedStoreError: Error {
+    case requestedFailure
+}
+
+private enum ScriptedOperationOutcome: Sendable {
+    case success
+    case failure
+}
+
+private struct ScriptedOperationPlan: Sendable {
+    let gate: TestGate?
+    let outcome: ScriptedOperationOutcome
+
+    init(
+        gate: TestGate? = nil,
+        outcome: ScriptedOperationOutcome = .success
+    ) {
+        self.gate = gate
+        self.outcome = outcome
+    }
+}
+
+private actor TestGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let pendingWaiters = waiters
+        waiters.removeAll()
+        for waiter in pendingWaiters {
+            waiter.resume()
+        }
+    }
+}
+
+private actor ScriptedUserMemoryStore: UserMemoryStoreAdapter {
+    private let loadFactsValue: [UserMemoryFact]
+    private let loadPlan: ScriptedOperationPlan
+    private let savePlans: [ScriptedOperationPlan]
+    private let clearPlans: [ScriptedOperationPlan]
+
+    private(set) var loadAttemptCount = 0
+    private(set) var saveAttempts: [[UserMemoryFact]] = []
+    private(set) var clearAttemptCount = 0
+    private(set) var persistedFacts: [UserMemoryFact]
+
+    var saveAttemptCount: Int {
+        saveAttempts.count
+    }
+
+    init(
+        loadFacts: [UserMemoryFact] = [],
+        loadPlan: ScriptedOperationPlan = .init(),
+        savePlans: [ScriptedOperationPlan] = [],
+        clearPlans: [ScriptedOperationPlan] = []
+    ) {
+        loadFactsValue = loadFacts
+        self.loadPlan = loadPlan
+        self.savePlans = savePlans
+        self.clearPlans = clearPlans
+        persistedFacts = loadFacts
+    }
+
+    func loadMemory() async throws -> UserMemoryStore {
+        loadAttemptCount += 1
+        try await execute(loadPlan)
+        return UserMemoryStore(facts: loadFactsValue)
+    }
+
+    func saveMemory(_ store: UserMemoryStore) async throws {
+        let attempt = saveAttempts.count
+        saveAttempts.append(store.facts)
+        let plan = attempt < savePlans.count ? savePlans[attempt] : .init()
+        try await execute(plan)
+        persistedFacts = store.facts
+    }
+
+    func clearMemory() async throws {
+        let attempt = clearAttemptCount
+        clearAttemptCount += 1
+        let plan = attempt < clearPlans.count ? clearPlans[attempt] : .init()
+        try await execute(plan)
+        persistedFacts = []
+    }
+
+    private func execute(_ plan: ScriptedOperationPlan) async throws {
+        if let gate = plan.gate {
+            await gate.wait()
+        }
+        if plan.outcome == .failure {
+            throw ScriptedStoreError.requestedFailure
+        }
+    }
+}
+
+private final class NotificationCounter: @unchecked Sendable {
+    private let center: NotificationCenter
+    private let lock = NSLock()
+    private var notificationCount = 0
+    private var observer: NSObjectProtocol?
+
+    init(name: Notification.Name, center: NotificationCenter = .default) {
+        self.center = center
+        observer = center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            lock.lock()
+            notificationCount += 1
+            lock.unlock()
+        }
+    }
+
+    var received: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return notificationCount
+    }
+
+    func reset() {
+        lock.lock()
+        notificationCount = 0
+        lock.unlock()
+    }
+
+    func stop() {
+        guard let observer else { return }
+        center.removeObserver(observer)
+        self.observer = nil
     }
 }
 
@@ -223,8 +725,8 @@ struct UserMemoryServiceTests {
 
 @Suite("MemoryCommandPattern Tests")
 struct MemoryCommandPatternTests {
-    @Test("Detect store command from message")
-    func detectStoreCommandFromMessage() {
+    @Test
+    func `detect store command from message`() {
         let command = MemoryCommandPattern.detect(in: "Remember that I prefer dark mode")
 
         if case let .store(content) = command {
@@ -234,8 +736,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Detect remove command from message")
-    func detectRemoveCommandFromMessage() {
+    @Test
+    func `detect remove command from message`() {
         let command = MemoryCommandPattern.detect(in: "Forget that I like coffee")
 
         if case let .remove(content) = command {
@@ -245,8 +747,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Detect query command from message")
-    func detectQueryCommandFromMessage() {
+    @Test
+    func `detect query command from message`() {
         let command = MemoryCommandPattern.detect(in: "What do you remember about me?")
 
         if case .query = command {
@@ -256,8 +758,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Detect clearAll command from message")
-    func detectClearAllCommandFromMessage() {
+    @Test
+    func `detect clearAll command from message`() {
         let command = MemoryCommandPattern.detect(in: "Clear my memory")
 
         if case .clearAll = command {
@@ -267,8 +769,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Detect none for regular message")
-    func detectNoneForRegularMessage() {
+    @Test
+    func `detect none for regular message`() {
         let command = MemoryCommandPattern.detect(in: "Tell me about Swift programming")
 
         if case .none = command {
@@ -278,8 +780,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Avoid false positive for 'I can't remember that'")
-    func avoidFalsePositiveForCantRemember() {
+    @Test
+    func `avoid false positive for 'I can't remember that'`() {
         // This should NOT trigger a store command
         let command = MemoryCommandPattern.detect(in: "I can't remember that password")
 
@@ -290,8 +792,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Avoid false positive when 'remember that' is mid-sentence")
-    func avoidFalsePositiveForMidSentenceRemember() {
+    @Test
+    func `avoid false positive when 'remember that' is mid-sentence`() {
         // This should NOT trigger a store command
         let command = MemoryCommandPattern.detect(in: "Do you remember that meeting we had?")
 
@@ -302,8 +804,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Still detect valid store command at start")
-    func stillDetectValidStoreCommandAtStart() {
+    @Test
+    func `still detect valid store command at start`() {
         let command = MemoryCommandPattern.detect(in: "Remember that I like coffee")
 
         if case let .store(content) = command {
@@ -313,8 +815,8 @@ struct MemoryCommandPatternTests {
         }
     }
 
-    @Test("Detect store command after 'please'")
-    func detectStoreCommandAfterPlease() {
+    @Test
+    func `detect store command after 'please'`() {
         let command = MemoryCommandPattern.detect(in: "Please remember that I prefer dark mode")
 
         if case let .store(content) = command {

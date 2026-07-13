@@ -50,8 +50,8 @@ struct EncryptedConversationStoreTests {
         }
     }
 
-    @Test("Save and load round trips conversations")
-    func saveAndLoadRoundTripsConversations() async throws {
+    @Test
+    func `save and load round trips conversations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation(title: "Alpha")
@@ -64,8 +64,8 @@ struct EncryptedConversationStoreTests {
         #expect(loaded.first?.messages.count == conversation.messages.count)
     }
 
-    @Test("Clear removes encrypted files")
-    func clearRemovesEncryptedFiles() async throws {
+    @Test
+    func `clear removes encrypted files`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation()
@@ -79,8 +79,8 @@ struct EncryptedConversationStoreTests {
         #expect(files.isEmpty)
     }
 
-    @Test("Second store instance loads data using same key")
-    func secondStoreInstanceLoadsDataUsingSameKey() async throws {
+    @Test
+    func `second store instance loads data using same key`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keyIdentifier = UUID().uuidString
 
@@ -98,8 +98,8 @@ struct EncryptedConversationStoreTests {
         #expect(loaded.first?.title == "Persisted")
     }
 
-    @Test("Loading an empty store does not create an encryption key")
-    func loadingEmptyStoreDoesNotCreateEncryptionKey() async throws {
+    @Test
+    func `loading an empty store does not create an encryption key`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = CountingKeychainStorage()
         let store = EncryptedConversationStore(
@@ -116,8 +116,28 @@ struct EncryptedConversationStoreTests {
         #expect(counts.stringReads == 0)
     }
 
-    @Test("Encryption key is cached across repeated save and load operations")
-    func encryptionKeyIsCachedAcrossOperations() async throws {
+    @Test
+    func `one unreadable record fails the whole load instead of returning a partial snapshot`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let readable = TestHelpers.sampleConversation(title: "Readable")
+        let unreadable = TestHelpers.sampleConversation(title: "Unreadable")
+        try await store.save(readable)
+        try await store.save(unreadable)
+        try Data("corrupt encrypted record".utf8).write(
+            to: store.fileURL(for: unreadable.id),
+            options: .atomic
+        )
+
+        await #expect(throws: EncryptedStoreError.self) {
+            _ = try await store.loadConversations()
+        }
+        #expect(FileManager.default.fileExists(atPath: store.fileURL(for: readable.id).path))
+        #expect(FileManager.default.fileExists(atPath: store.fileURL(for: unreadable.id).path))
+    }
+
+    @Test
+    func `encryption key is cached across repeated save and load operations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keychain = CountingKeychainStorage()
         let store = EncryptedConversationStore(

@@ -8,19 +8,47 @@
 import Foundation
 import os.log
 
+protocol UserMemoryStoreAdapter: Sendable {
+    func loadMemory() async throws -> UserMemoryStore
+    func saveMemory(_ store: UserMemoryStore) async throws
+    func clearMemory() async throws
+}
+
+extension EncryptedMemoryStore: UserMemoryStoreAdapter {}
+
 /// Service for managing user memory facts.
 /// Provides CRUD operations and formatting for context injection.
 @MainActor
 @Observable
 final class UserMemoryService {
+    private enum InitialLoadMutation {
+        case upsert(UserMemoryFact)
+        case delete(UUID)
+        case clear
+    }
+
     static let shared = UserMemoryService()
 
     private(set) var facts: [UserMemoryFact] = []
     private(set) var isLoaded = false
+    /// True only when `facts` exactly matches a successfully persisted generation.
+    private(set) var hasAuthoritativeFacts = false
 
-    private let store: EncryptedMemoryStore
+    private let store: any UserMemoryStoreAdapter
+    private let notificationCenter: NotificationCenter
+    private let saveDebounceDuration: Duration
     private nonisolated(unsafe) var saveTask: Task<Void, Never>?
-    private let saveDebounceDuration: Duration = .milliseconds(500)
+    /// Storage writes wait for this task so initial disk state cannot be overwritten before it is reconciled.
+    private nonisolated(unsafe) var initialLoadTask: Task<Void, Never>?
+    /// Serializes physical writes so an older snapshot cannot finish after a newer one.
+    private nonisolated(unsafe) var persistenceTask: Task<Void, Never>?
+    private var factsGeneration: UInt64 = 0
+    private var durableGeneration: UInt64?
+    /// Prevents a load retry from replacing optimistic local or synced facts with stale disk state.
+    private var hasInMemoryAuthority = false
+    private var initialLoadID: UUID?
+    private var initialLoadMutations: [InitialLoadMutation] = []
+    private var initialLoadWasSuperseded = false
 
     /// Maximum number of facts to store
     static let maxFacts = 100
@@ -28,44 +56,66 @@ final class UserMemoryService {
     /// Token budget for memory context (approximate)
     static let defaultTokenBudget = 1000
 
-    init(store: EncryptedMemoryStore = .shared) {
+    init(
+        store: any UserMemoryStoreAdapter = EncryptedMemoryStore.shared,
+        saveDebounceDuration: Duration = .milliseconds(500),
+        notificationCenter: NotificationCenter = .default
+    ) {
         self.store = store
+        self.saveDebounceDuration = saveDebounceDuration
+        self.notificationCenter = notificationCenter
     }
 
     deinit {
         saveTask?.cancel()
+        initialLoadTask?.cancel()
+        persistenceTask?.cancel()
     }
 
     // MARK: - Loading
 
     /// Loads facts from encrypted storage.
     func loadFacts() async {
-        do {
-            let memoryStore = try await store.loadMemory()
-            facts = memoryStore.facts
-            isLoaded = true
-
-            DiagnosticsLogger.log(
-                .conversationManager,
-                level: .info,
-                message: "✅ Loaded user memory",
-                metadata: ["factCount": "\(facts.count)"]
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .conversationManager,
-                level: .error,
-                message: "❌ Failed to load user memory",
-                metadata: ["error": error.localizedDescription]
-            )
-            facts = []
-            isLoaded = true
+        if let initialLoadTask {
+            await initialLoadTask.value
+            return
         }
+
+        if hasInMemoryAuthority {
+            if !hasAuthoritativeFacts {
+                await saveImmediately()
+            }
+            return
+        }
+
+        let loadID = UUID()
+        let store = store
+        initialLoadID = loadID
+        initialLoadMutations = []
+        initialLoadWasSuperseded = false
+
+        let operation = Task { @MainActor [weak self] in
+            do {
+                let memoryStore = try await store.loadMemory()
+                self?.finishInitialLoad(memoryStore, loadID: loadID)
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Failed to load user memory",
+                    metadata: ["error": error.localizedDescription]
+                )
+                self?.finishInitialLoadFailure(loadID: loadID)
+            }
+        }
+        initialLoadTask = operation
+        await operation.value
     }
 
     /// Loads facts received from iOS sync (watchOS only).
     /// Replaces local facts with synced facts and persists to disk.
     func loadFactsFromSync(_ syncedFacts: [UserMemoryFact]) {
+        supersedeInitialLoad()
         facts = Array(syncedFacts.prefix(Self.maxFacts))
         isLoaded = true
         scheduleSave() // Persist to disk for offline access
@@ -92,19 +142,9 @@ final class UserMemoryService {
         )
 
         facts.insert(fact, at: 0)
+        Self.enforceFactLimit(&facts)
 
-        // Enforce max limit
-        if facts.count > Self.maxFacts {
-            // Remove oldest inactive facts first, then oldest active
-            let inactiveFacts = facts.filter { !$0.isActive }
-            if !inactiveFacts.isEmpty, let oldest = inactiveFacts.last {
-                facts.removeAll { $0.id == oldest.id }
-            } else {
-                facts.removeLast()
-            }
-        }
-
-        scheduleSave()
+        scheduleSave(initialLoadMutation: .upsert(fact))
 
         DiagnosticsLogger.log(
             .conversationManager,
@@ -122,13 +162,13 @@ final class UserMemoryService {
 
         facts[index].content = content
         facts[index].updatedAt = Date()
-        scheduleSave()
+        scheduleSave(initialLoadMutation: .upsert(facts[index]))
     }
 
     /// Deletes a fact (hard delete).
     func deleteFact(_ id: UUID) {
         facts.removeAll { $0.id == id }
-        scheduleSave()
+        scheduleSave(initialLoadMutation: .delete(id))
 
         DiagnosticsLogger.log(
             .conversationManager,
@@ -143,30 +183,24 @@ final class UserMemoryService {
 
         facts[index].isActive = active
         facts[index].updatedAt = Date()
-        scheduleSave()
+        scheduleSave(initialLoadMutation: .upsert(facts[index]))
     }
 
     /// Clears all facts.
     func clearAllFacts() async {
-        await saveTask?.value
-        facts.removeAll()
         saveTask?.cancel()
+        saveTask = nil
+        facts.removeAll()
+        let generation = recordFactsChange(initialLoadMutation: .clear)
+        await waitForInitialLoad()
 
-        do {
-            try await store.clearMemory()
-            DiagnosticsLogger.log(
-                .conversationManager,
-                level: .info,
-                message: "🧹 Cleared all memory facts"
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .conversationManager,
-                level: .error,
-                message: "❌ Failed to clear memory store",
-                metadata: ["error": error.localizedDescription]
-            )
+        guard factsGeneration == generation, facts.isEmpty else {
+            await saveImmediately()
+            return
         }
+
+        let operation = enqueueClear(generation: generation)
+        await operation.value
     }
 
     // MARK: - Query
@@ -283,41 +317,234 @@ final class UserMemoryService {
 
     // MARK: - Persistence
 
-    private func scheduleSave() {
+    private func scheduleSave(initialLoadMutation: InitialLoadMutation? = nil) {
+        recordFactsChange(initialLoadMutation: initialLoadMutation)
+        let debounceDuration = saveDebounceDuration
         saveTask?.cancel()
-        saveTask = Task { [weak self] in
+        saveTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(for: self?.saveDebounceDuration ?? .milliseconds(500))
+                try await Task.sleep(for: debounceDuration)
             } catch {
                 return // Cancelled
             }
 
-            await self?.saveNow()
+            guard let self else { return }
+            await self.waitForInitialLoad()
+            guard !Task.isCancelled else { return }
+
+            let operation = self.enqueueSave(self.facts, generation: self.factsGeneration)
+            await operation.value
         }
     }
 
-    private func saveNow() async {
+    @discardableResult
+    private func recordFactsChange(initialLoadMutation: InitialLoadMutation? = nil) -> UInt64 {
+        factsGeneration &+= 1
+        hasInMemoryAuthority = true
+        hasAuthoritativeFacts = false
+
+        if let initialLoadMutation,
+           initialLoadID != nil,
+           !initialLoadWasSuperseded
+        {
+            initialLoadMutations.append(initialLoadMutation)
+        }
+
+        return factsGeneration
+    }
+
+    private func waitForInitialLoad() async {
+        let operation = initialLoadTask
+        await operation?.value
+    }
+
+    private func finishInitialLoad(
+        _ memoryStore: UserMemoryStore,
+        loadID: UUID
+    ) {
+        guard initialLoadID == loadID else { return }
+
+        let mutations = initialLoadMutations
+        let wasSuperseded = initialLoadWasSuperseded
+        resetInitialLoad(loadID: loadID)
+        guard !wasSuperseded else { return }
+
+        isLoaded = true
+        hasInMemoryAuthority = true
+
+        if mutations.isEmpty {
+            facts = memoryStore.facts
+            durableGeneration = factsGeneration
+            hasAuthoritativeFacts = true
+            publishDurableFacts()
+        } else {
+            facts = Self.applying(mutations, to: memoryStore.facts)
+            hasAuthoritativeFacts = false
+        }
+
+        DiagnosticsLogger.log(
+            .conversationManager,
+            level: .info,
+            message: "✅ Loaded user memory",
+            metadata: ["factCount": "\(facts.count)"]
+        )
+    }
+
+    private func finishInitialLoadFailure(loadID: UUID) {
+        guard initialLoadID == loadID else { return }
+
+        let hadLocalMutations = !initialLoadMutations.isEmpty
+        let wasSuperseded = initialLoadWasSuperseded
+        resetInitialLoad(loadID: loadID)
+        guard !wasSuperseded else { return }
+
+        if !hadLocalMutations {
+            facts = []
+            hasInMemoryAuthority = false
+        }
+        isLoaded = true
+        hasAuthoritativeFacts = false
+    }
+
+    private func supersedeInitialLoad() {
+        guard initialLoadID != nil else { return }
+        initialLoadWasSuperseded = true
+        initialLoadMutations.removeAll()
+    }
+
+    private func resetInitialLoad(loadID: UUID) {
+        guard initialLoadID == loadID else { return }
+        initialLoadID = nil
+        initialLoadMutations.removeAll()
+        initialLoadWasSuperseded = false
+        initialLoadTask = nil
+    }
+
+    private static func applying(
+        _ mutations: [InitialLoadMutation],
+        to storedFacts: [UserMemoryFact]
+    ) -> [UserMemoryFact] {
+        var mergedFacts = storedFacts
+
+        for mutation in mutations {
+            switch mutation {
+            case let .upsert(fact):
+                if let index = mergedFacts.firstIndex(where: { $0.id == fact.id }) {
+                    mergedFacts[index] = fact
+                } else {
+                    mergedFacts.insert(fact, at: 0)
+                }
+                enforceFactLimit(&mergedFacts)
+
+            case let .delete(id):
+                mergedFacts.removeAll { $0.id == id }
+
+            case .clear:
+                mergedFacts.removeAll()
+            }
+        }
+
+        return mergedFacts
+    }
+
+    private static func enforceFactLimit(_ facts: inout [UserMemoryFact]) {
+        guard facts.count > maxFacts else { return }
+
+        if let oldestInactiveIndex = facts.lastIndex(where: { !$0.isActive }) {
+            facts.remove(at: oldestInactiveIndex)
+        } else {
+            facts.removeLast()
+        }
+    }
+
+    @discardableResult
+    private func enqueueSave(
+        _ factsSnapshot: [UserMemoryFact],
+        generation: UInt64
+    ) -> Task<Void, Never> {
         let memoryStore = UserMemoryStore(
-            facts: facts,
+            facts: factsSnapshot,
             lastUpdated: Date(),
             version: UserMemoryStore.currentVersion
         )
+        let previousOperation = persistenceTask
+        let store = store
 
-        do {
-            try await store.saveMemory(memoryStore)
-        } catch {
-            DiagnosticsLogger.log(
-                .conversationManager,
-                level: .error,
-                message: "❌ Failed to save user memory",
-                metadata: ["error": error.localizedDescription]
-            )
+        let operation = Task { @MainActor [weak self] in
+            await previousOperation?.value
+
+            do {
+                try await store.saveMemory(memoryStore)
+                self?.finishPersistence(
+                    factsSnapshot: factsSnapshot,
+                    generation: generation
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Failed to save user memory",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
         }
+        persistenceTask = operation
+        return operation
+    }
+
+    @discardableResult
+    private func enqueueClear(generation: UInt64) -> Task<Void, Never> {
+        let previousOperation = persistenceTask
+        let store = store
+
+        let operation = Task { @MainActor [weak self] in
+            await previousOperation?.value
+
+            do {
+                try await store.clearMemory()
+                self?.finishPersistence(factsSnapshot: [], generation: generation)
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .info,
+                    message: "🧹 Cleared all memory facts"
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .conversationManager,
+                    level: .error,
+                    message: "❌ Failed to clear memory store",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
+        }
+        persistenceTask = operation
+        return operation
+    }
+
+    private func finishPersistence(
+        factsSnapshot: [UserMemoryFact],
+        generation: UInt64
+    ) {
+        guard factsGeneration == generation, facts == factsSnapshot else { return }
+
+        hasInMemoryAuthority = true
+        guard durableGeneration != generation || !hasAuthoritativeFacts else { return }
+
+        durableGeneration = generation
+        hasAuthoritativeFacts = true
+        publishDurableFacts()
+    }
+
+    private func publishDurableFacts() {
+        notificationCenter.post(name: .watchSyncContextDidChange, object: nil)
     }
 
     /// Forces an immediate save (e.g., before app termination).
     func saveImmediately() async {
         saveTask?.cancel()
-        await saveNow()
+        saveTask = nil
+        await waitForInitialLoad()
+        let operation = enqueueSave(facts, generation: factsGeneration)
+        await operation.value
     }
 }
