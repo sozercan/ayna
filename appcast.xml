@@ -3,7 +3,7 @@
     <channel>
         <title>Ayna Updates</title>
         <link>https://github.com/sozercan/ayna/releases</link>
-        <description>Most recent updates for Ayna, a native macOS/iOS/watchOS ChatGPT client.</description>
+        <description>Most recent updates for Ayna, a native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.</description>
         <language>en</language>
 
         <!-- New releases will be added here by CI -->
