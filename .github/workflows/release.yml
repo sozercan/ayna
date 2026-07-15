@@ -347,7 +347,7 @@ jobs:
 
           url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
           name "Ayna"
-          desc "Native macOS/iOS/watchOS ChatGPT client"
+          desc "A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI"
           homepage "https://github.com/sozercan/ayna"
 
           auto_updates true
@@ -401,7 +401,7 @@ jobs:
             <channel>
                 <title>Ayna Updates</title>
                 <link>https://github.com/sozercan/ayna/releases</link>
-                <description>Most recent updates for Ayna, a native macOS/iOS/watchOS ChatGPT client.</description>
+                <description>Most recent updates for Ayna, a native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.</description>
                 <language>en</language>
         APPCAST_EOF
 
