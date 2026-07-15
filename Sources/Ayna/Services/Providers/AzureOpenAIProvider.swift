@@ -92,7 +92,8 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                 tools: toolDefinitions,
                 apiKey: config.apiKey,
                 isAzure: true,
-                isGitHubModels: false
+                isGitHubModels: false,
+                supportsParallelToolCalls: true
             ) else {
                 guard !Task.isCancelled else { return }
                 self.currentRequestBuildTask = nil

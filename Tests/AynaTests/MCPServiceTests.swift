@@ -5,12 +5,14 @@
 
     @Suite("MCPService Tests", .tags(.async, .errorHandling), .serialized)
     struct MCPServiceTests {
-        @Test("Initialize request times out and clears pending continuation", .timeLimit(.minutes(1)))
-        func initializeRequestTimesOut() async throws {
+        private static let requestTimeoutSeconds: TimeInterval = 5
+
+        @Test(.timeLimit(.minutes(1)))
+        func `initialize request times out and clears pending continuation`() async throws {
             let harness = try MockMCPServerHarness(mode: .initializeTimeout)
             defer { harness.cleanup() }
 
-            let service = harness.makeService(requestTimeoutSeconds: 1.0)
+            let service = harness.makeService(requestTimeoutSeconds: Self.requestTimeoutSeconds)
             defer { service.disconnect() }
 
             do {
@@ -30,12 +32,12 @@
             #expect(service.pendingRequestCount == 0)
         }
 
-        @Test("List tools request times out and clears pending continuation", .timeLimit(.minutes(1)))
-        func listToolsRequestTimesOut() async throws {
+        @Test(.timeLimit(.minutes(1)))
+        func `list tools request times out and clears pending continuation`() async throws {
             let harness = try MockMCPServerHarness(mode: .listTimeout)
             defer { harness.cleanup() }
 
-            let service = harness.makeService(requestTimeoutSeconds: 1.0)
+            let service = harness.makeService(requestTimeoutSeconds: Self.requestTimeoutSeconds)
             try await service.connect()
             defer { service.disconnect() }
 
@@ -54,12 +56,12 @@
             #expect(service.pendingRequestCount == 0)
         }
 
-        @Test("Tool call request times out and clears pending continuation", .timeLimit(.minutes(1)))
-        func callToolRequestTimesOut() async throws {
+        @Test(.timeLimit(.minutes(1)))
+        func `tool call request times out and clears pending continuation`() async throws {
             let harness = try MockMCPServerHarness(mode: .callTimeout)
             defer { harness.cleanup() }
 
-            let service = harness.makeService(requestTimeoutSeconds: 1.0)
+            let service = harness.makeService(requestTimeoutSeconds: Self.requestTimeoutSeconds)
             try await service.connect()
             defer { service.disconnect() }
 

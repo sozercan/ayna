@@ -59,8 +59,8 @@ struct EncryptedMemoryStoreTests {
 
     // MARK: - User Memory Round-Trip
 
-    @Test("Save and load memory preserves facts")
-    func saveAndLoadMemoryPreservesFacts() async throws {
+    @Test
+    func `save and load memory preserves facts`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -91,8 +91,8 @@ struct EncryptedMemoryStoreTests {
         #expect(loaded.facts.map(\.content).contains("Prefers dark mode"))
     }
 
-    @Test("Load returns empty store when no file exists")
-    func loadReturnsEmptyStoreWhenNoFileExists() async throws {
+    @Test
+    func `load returns empty store when no file exists`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -108,8 +108,8 @@ struct EncryptedMemoryStoreTests {
         #expect(loaded.facts.isEmpty)
     }
 
-    @Test("Clear memory removes file")
-    func clearMemoryRemovesFile() async throws {
+    @Test
+    func `clear memory removes file`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -134,8 +134,8 @@ struct EncryptedMemoryStoreTests {
 
     // MARK: - Conversation Summaries Round-Trip
 
-    @Test("Save and load summaries preserves data")
-    func saveAndLoadSummariesPreservesData() async throws {
+    @Test
+    func `save and load summaries preserves data`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -174,8 +174,67 @@ struct EncryptedMemoryStoreTests {
         #expect(loaded.summaries.map(\.title).contains("Code Review"))
     }
 
-    @Test("Load returns empty digest when no file exists")
-    func loadReturnsEmptyDigestWhenNoFileExists() async throws {
+    @Test
+    func `summary cleanup token makes retry preserve post-clear summaries`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: "test_summary_cleanup_key",
+            keychain: InMemoryKeychainStorage()
+        )
+        let cleanupToken = UUID().uuidString
+        let firstPostClearSummary = ConversationSummary(id: UUID(), title: "After Clear")
+        let firstDigest = RecentConversationsDigest(summaries: [firstPostClearSummary])
+
+        _ = try await store.replaceSummariesAfterCleanup(
+            preserving: firstDigest,
+            cleanupToken: cleanupToken
+        )
+
+        var updatedDigest = firstDigest
+        updatedDigest.upsertSummary(ConversationSummary(id: UUID(), title: "Created Later"))
+        try await store.saveSummaries(updatedDigest)
+
+        let retryResult = try await store.replaceSummariesAfterCleanup(
+            preserving: RecentConversationsDigest(),
+            cleanupToken: cleanupToken
+        )
+        let loaded = try await store.loadSummaries()
+
+        #expect(Set(retryResult.summaries.map(\.title)) == ["After Clear", "Created Later"])
+        #expect(Set(loaded.summaries.map(\.title)) == ["After Clear", "Created Later"])
+    }
+
+    @Test
+    func `first summary cleanup preserves stored summaries for surviving conversations`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let clearedId = UUID()
+        let survivingId = UUID()
+        try await store.saveSummaries(RecentConversationsDigest(summaries: [
+            ConversationSummary(id: clearedId, title: "Cleared"),
+            ConversationSummary(id: survivingId, title: "Created After Clear"),
+        ]))
+
+        let result = try await store.replaceSummariesAfterCleanup(
+            preserving: RecentConversationsDigest(),
+            cleanupToken: UUID().uuidString,
+            survivingConversationIds: [survivingId]
+        )
+        let loaded = try await store.loadSummaries()
+
+        #expect(result.summaries.map(\.id) == [survivingId])
+        #expect(loaded.summaries.map(\.id) == [survivingId])
+    }
+
+    @Test
+    func `load returns empty digest when no file exists`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -193,8 +252,8 @@ struct EncryptedMemoryStoreTests {
 
     // MARK: - Key Generation
 
-    @Test("New key is generated on first access")
-    func newKeyIsGeneratedOnFirstAccess() async throws {
+    @Test
+    func `new key is generated on first access`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -220,8 +279,8 @@ struct EncryptedMemoryStoreTests {
         #expect(keyAfter?.count == 32) // 256 bits = 32 bytes
     }
 
-    @Test("Encryption key is cached across repeated memory and summary operations")
-    func encryptionKeyIsCachedAcrossRepeatedMemoryAndSummaryOperations() async throws {
+    @Test
+    func `encryption key is cached across repeated memory and summary operations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -252,8 +311,8 @@ struct EncryptedMemoryStoreTests {
         #expect(counts.stringReads == 1)
     }
 
-    @Test("Same key is reused across operations")
-    func sameKeyIsReusedAcrossOperations() async throws {
+    @Test
+    func `same key is reused across operations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -282,8 +341,8 @@ struct EncryptedMemoryStoreTests {
 
     // MARK: - Error Handling
 
-    @Test("Key loss is detected when flag exists but key is missing")
-    func keyLossIsDetectedWhenFlagExistsButKeyIsMissing() async throws {
+    @Test
+    func `key loss is detected when flag exists but key is missing`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 

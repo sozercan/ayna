@@ -8,6 +8,56 @@
 
 import Foundation
 
+struct WatchConversationSyncIdentity: Equatable, Sendable {
+    let epoch: UUID?
+    let generation: UInt64
+}
+
+enum WatchConversationSyncFence {
+    static func canInitiateMutation(currentEpoch: UUID?) -> Bool {
+        currentEpoch != nil
+    }
+
+    static func acceptsMutation(
+        incomingEpoch: UUID?,
+        incomingGeneration: UInt64?,
+        currentEpoch: UUID,
+        currentGeneration: UInt64,
+        pendingClearCount: Int
+    ) -> Bool {
+        guard pendingClearCount == 0 else { return false }
+        if incomingEpoch == nil, incomingGeneration == nil {
+            return currentGeneration == 0
+        }
+        guard incomingEpoch == currentEpoch, let incomingGeneration else {
+            return false
+        }
+        return incomingGeneration == currentGeneration
+    }
+
+    static func acceptsContext(
+        incomingEpoch: UUID?,
+        incomingGeneration: UInt64?,
+        currentEpoch: UUID?,
+        currentGeneration: UInt64
+    ) -> Bool {
+        guard let incomingEpoch, let incomingGeneration else {
+            return currentEpoch == nil && currentGeneration == 0
+        }
+        guard incomingEpoch == currentEpoch else { return true }
+        return incomingGeneration >= currentGeneration
+    }
+
+    static func contextRequiresAuthoritativeReset(
+        incomingEpoch: UUID,
+        incomingGeneration: UInt64,
+        currentEpoch: UUID?,
+        currentGeneration: UInt64
+    ) -> Bool {
+        incomingEpoch != currentEpoch || incomingGeneration > currentGeneration
+    }
+}
+
 /// Lightweight conversation model for Watch sync (strips heavy data like images and attachments)
 struct WatchConversation: Codable, Identifiable {
     let id: UUID

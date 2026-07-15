@@ -14,8 +14,322 @@ import Testing
 struct ConversationSummaryServiceTests {
     // MARK: - Summary Generation
 
-    @Test("Generate summary extracts title and timestamp")
-    func generateSummaryExtractsTitleAndTimestamp() {
+    @Test
+    func `clear invalidates a summary load already in flight`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let staleDigest = {
+            var digest = RecentConversationsDigest()
+            digest.upsertSummary(ConversationSummary(id: UUID(), title: "Cleared History"))
+            return digest
+        }()
+        let loadGate = ConversationSummaryLoadGate(digest: staleDigest)
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { try await loadGate.load() },
+            summaryClearOperation: {}
+        )
+
+        let loadTask = Task { @MainActor in
+            await service.loadSummaries()
+        }
+        await loadGate.waitUntilStarted()
+
+        try await service.clearAllSummaries()
+        await loadGate.release()
+        await loadTask.value
+
+        #expect(service.isLoaded)
+        #expect(service.summaryCount == 0)
+        #expect(service.formattedForContext() == nil)
+    }
+
+    @Test
+    func `conversation clear blocks summary loads until cleanup completes`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let staleDigest = {
+            var digest = RecentConversationsDigest()
+            digest.upsertSummary(ConversationSummary(id: UUID(), title: "Cleared History"))
+            return digest
+        }()
+        let persistenceProbe = SummaryPersistenceProbe()
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { staleDigest },
+            summarySaveOperation: { digest in
+                persistenceProbe.save(digest)
+            },
+            summaryClearOperation: {
+                persistenceProbe.clear()
+            }
+        )
+
+        _ = service.invalidateForConversationClear()
+        await service.loadSummaries()
+        try await service.clearAllSummaries(
+            preservingCurrentDigest: true,
+            completingConversationClear: true
+        )
+
+        #expect(service.summaryCount == 0)
+        #expect(service.formattedForContext() == nil)
+        #expect(persistenceProbe.persistedDigest == nil)
+    }
+
+    @Test
+    func `earlier summary cleanup cannot unblock a newer conversation clear`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let staleDigest = {
+            var digest = RecentConversationsDigest()
+            digest.upsertSummary(ConversationSummary(id: UUID(), title: "Cleared History"))
+            return digest
+        }()
+        let clearGate = BlockingSummaryClearOperationGate()
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { staleDigest },
+            summaryClearOperation: {
+                clearGate.run()
+            }
+        )
+
+        _ = service.invalidateForConversationClear()
+        let firstCleanup = Task { @MainActor in
+            try await service.clearAllSummaries(
+                preservingCurrentDigest: true,
+                completingConversationClear: true
+            )
+        }
+        while !clearGate.hasStarted() {
+            await Task.yield()
+        }
+
+        _ = service.invalidateForConversationClear()
+        clearGate.release()
+        try await firstCleanup.value
+        await service.loadSummaries()
+
+        #expect(service.summaryCount == 0)
+        #expect(service.formattedForContext() == nil)
+    }
+
+    @Test
+    func `clear waits for an immediate summary save before deleting storage`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let saveGate = ConversationSummarySaveGate()
+        let persistenceProbe = SummaryPersistenceProbe()
+        let service = ConversationSummaryService(
+            store: store,
+            summarySaveOperation: { digest in
+                await saveGate.wait()
+                persistenceProbe.save(digest)
+            },
+            summaryClearOperation: {
+                persistenceProbe.clear()
+            }
+        )
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Must Stay Cleared"))
+
+        let saveTask = Task { @MainActor in
+            await service.saveImmediately()
+        }
+        await saveGate.waitUntilStarted()
+        let clearTask = Task { @MainActor in
+            try await service.clearAllSummaries()
+        }
+
+        for _ in 0 ..< 100 where !persistenceProbe.wasCleared {
+            await Task.yield()
+        }
+        await saveGate.release()
+        await saveTask.value
+        try await clearTask.value
+
+        #expect(service.summaryCount == 0)
+        #expect(persistenceProbe.persistedDigest == nil)
+    }
+
+    @Test
+    func `local summary mutation wins over an in-flight stale load`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let loadGate = ConversationSummaryLoadGate(digest: RecentConversationsDigest())
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { try await loadGate.load() },
+            summarySaveOperation: { _ in }
+        )
+        let loadTask = Task { @MainActor in
+            await service.loadSummaries()
+        }
+        await loadGate.waitUntilStarted()
+
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "New Local Summary"))
+        await loadGate.release()
+        await loadTask.value
+
+        #expect(service.summaryCount == 1)
+        #expect(service.digest.summaries.first?.title == "New Local Summary")
+    }
+
+    @Test
+    func `failed conversation clear restores summaries durably`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let persistenceProbe = SummaryPersistenceProbe()
+        let service = ConversationSummaryService(
+            store: store,
+            summarySaveOperation: { digest in
+                persistenceProbe.save(digest)
+            }
+        )
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Rollback Summary"))
+
+        let snapshot = service.invalidateForConversationClear()
+        try await service.restoreAfterFailedConversationClear(snapshot)
+
+        #expect(service.digest.summaries.first?.title == "Rollback Summary")
+        #expect(persistenceProbe.persistedDigest?.summaries.first?.title == "Rollback Summary")
+    }
+
+    @Test
+    func `failed clear merges summaries created while the clear was running`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let service = ConversationSummaryService(
+            store: store,
+            summarySaveOperation: { _ in }
+        )
+        let original = TestHelpers.sampleConversation(title: "Original Summary")
+        service.updateSummary(for: original)
+        let snapshot = service.invalidateForConversationClear()
+
+        var recreated = original
+        recreated.title = "Newer Summary"
+        recreated.updatedAt = Date().addingTimeInterval(1)
+        service.updateSummary(for: recreated)
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Created During Clear"))
+
+        try await service.restoreAfterFailedConversationClear(snapshot)
+
+        #expect(service.digest.summaries.contains { $0.title == "Newer Summary" })
+        #expect(service.digest.summaries.contains { $0.title == "Created During Clear" })
+        #expect(!service.digest.summaries.contains { $0.title == "Original Summary" })
+    }
+
+    @Test
+    func `failed clear reloads persisted summaries when the digest was not loaded`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let persistedDigest = {
+            var digest = RecentConversationsDigest()
+            digest.upsertSummary(ConversationSummary(id: UUID(), title: "Persisted Summary"))
+            return digest
+        }()
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { persistedDigest },
+            summarySaveOperation: { _ in }
+        )
+
+        let snapshot = service.invalidateForConversationClear()
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Created During Clear"))
+        try await service.restoreAfterFailedConversationClear(snapshot)
+
+        #expect(service.digest.summaries.contains { $0.title == "Persisted Summary" })
+        #expect(service.digest.summaries.contains { $0.title == "Created During Clear" })
+    }
+
+    @Test
+    func `explicit memory clear supersedes an older conversation rollback snapshot`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let service = ConversationSummaryService(
+            store: store,
+            summarySaveOperation: { _ in },
+            summaryClearOperation: {}
+        )
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Explicitly Cleared"))
+        let rollbackSnapshot = service.invalidateForConversationClear()
+
+        try await service.clearAllSummaries()
+
+        await #expect(throws: CancellationError.self) {
+            try await service.restoreAfterFailedConversationClear(rollbackSnapshot)
+        }
+        #expect(service.summaryCount == 0)
+    }
+
+    @Test
+    func `failed summary rollback save keeps the clear barrier active`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let service = ConversationSummaryService(
+            store: store,
+            summaryLoader: { RecentConversationsDigest() },
+            summarySaveOperation: { _ in
+                throw CocoaError(.fileWriteUnknown)
+            }
+        )
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Unsaved Rollback Summary"))
+        let snapshot = service.invalidateForConversationClear()
+
+        do {
+            try await service.restoreAfterFailedConversationClear(snapshot)
+            Issue.record("Expected summary rollback persistence to fail")
+        } catch {
+            // Expected: the transactional restore must report the persistence failure.
+        }
+        await service.loadSummaries()
+
+        #expect(service.digest.summaries.first?.title == "Unsaved Rollback Summary")
+    }
+
+    @Test
+    func `generate summary extracts title and timestamp`() {
         let service = ConversationSummaryService()
         let conversation = TestHelpers.sampleConversation(title: "Test Conversation")
 
@@ -26,8 +340,8 @@ struct ConversationSummaryServiceTests {
         #expect(summary.timestamp == conversation.updatedAt)
     }
 
-    @Test("Generate summary extracts user message snippets")
-    func generateSummaryExtractsUserMessageSnippets() {
+    @Test
+    func `generate summary extracts user message snippets`() {
         let service = ConversationSummaryService()
 
         var conversation = Conversation(title: "Chat")
@@ -42,8 +356,8 @@ struct ConversationSummaryServiceTests {
         #expect(summary.userMessageSnippets.contains { $0.contains("Swift") })
     }
 
-    @Test("Generate summary limits snippet count")
-    func generateSummaryLimitsSnippetCount() {
+    @Test
+    func `generate summary limits snippet count`() {
         let service = ConversationSummaryService()
 
         var conversation = Conversation(title: "Long Chat")
@@ -57,8 +371,8 @@ struct ConversationSummaryServiceTests {
         #expect(summary.userMessageSnippets.count <= ConversationSummary.maxSnippets)
     }
 
-    @Test("Generate summary extracts topics from content")
-    func generateSummaryExtractsTopics() {
+    @Test
+    func `generate summary extracts topics from content`() {
         let service = ConversationSummaryService()
 
         var conversation = Conversation(title: "Swift Discussion")
@@ -74,8 +388,8 @@ struct ConversationSummaryServiceTests {
 
     // MARK: - Digest Management
 
-    @Test("Update summary adds to digest")
-    func updateSummaryAddsToDigest() {
+    @Test
+    func `update summary adds to digest`() {
         let service = ConversationSummaryService()
         let conversation = TestHelpers.sampleConversation(title: "New Chat")
 
@@ -85,8 +399,8 @@ struct ConversationSummaryServiceTests {
         #expect(service.digest.summaries.first?.title == "New Chat")
     }
 
-    @Test("Update summary replaces existing summary for same conversation")
-    func updateSummaryReplacesExisting() {
+    @Test
+    func `update summary replaces existing summary for same conversation`() {
         let service = ConversationSummaryService()
 
         var conversation = TestHelpers.sampleConversation(title: "Original Title")
@@ -100,8 +414,8 @@ struct ConversationSummaryServiceTests {
         #expect(service.digest.summaries.first?.title == "Updated Title")
     }
 
-    @Test("Remove summary deletes from digest")
-    func removeSummaryDeletesFromDigest() {
+    @Test
+    func `remove summary deletes from digest`() {
         let service = ConversationSummaryService()
         let conversation = TestHelpers.sampleConversation()
 
@@ -112,8 +426,8 @@ struct ConversationSummaryServiceTests {
         #expect(service.summaryCount == 0)
     }
 
-    @Test("Digest enforces max summaries limit")
-    func digestEnforcesMaxSummariesLimit() {
+    @Test
+    func `digest enforces max summaries limit`() {
         let service = ConversationSummaryService()
 
         // Add more than max summaries
@@ -127,8 +441,8 @@ struct ConversationSummaryServiceTests {
 
     // MARK: - Context Formatting
 
-    @Test("Formatted for context returns nil when empty")
-    func formattedForContextReturnsNilWhenEmpty() {
+    @Test
+    func `formatted for context returns nil when empty`() {
         let service = ConversationSummaryService()
 
         let formatted = service.formattedForContext()
@@ -136,8 +450,8 @@ struct ConversationSummaryServiceTests {
         #expect(formatted == nil)
     }
 
-    @Test("Formatted for context includes summaries")
-    func formattedForContextIncludesSummaries() {
+    @Test
+    func `formatted for context includes summaries`() {
         let service = ConversationSummaryService()
 
         let conversation = TestHelpers.sampleConversation(title: "Important Discussion")
@@ -150,8 +464,8 @@ struct ConversationSummaryServiceTests {
         #expect(formatted?.contains("Important Discussion") == true)
     }
 
-    @Test("Formatted for context excludes specified conversation")
-    func formattedForContextExcludesSpecifiedConversation() {
+    @Test
+    func `formatted for context excludes specified conversation`() {
         let service = ConversationSummaryService()
 
         let conversation1 = TestHelpers.sampleConversation(title: "First Chat")
@@ -166,8 +480,8 @@ struct ConversationSummaryServiceTests {
         #expect(formatted?.contains("Second Chat") == true)
     }
 
-    @Test("Formatted for context respects token budget")
-    func formattedForContextRespectsTokenBudget() {
+    @Test
+    func `formatted for context respects token budget`() {
         let service = ConversationSummaryService()
 
         // Add several summaries
@@ -188,8 +502,8 @@ struct ConversationSummaryServiceTests {
 
     // MARK: - Backfill
 
-    @Test("Backfill summaries creates summaries for existing conversations")
-    func backfillSummariesCreatesForExistingConversations() {
+    @Test
+    func `backfill summaries creates summaries for existing conversations`() {
         let service = ConversationSummaryService()
 
         let conversations = [
@@ -203,8 +517,8 @@ struct ConversationSummaryServiceTests {
         #expect(service.summaryCount == 3)
     }
 
-    @Test("Backfill summaries respects limit")
-    func backfillSummariesRespectsLimit() {
+    @Test
+    func `backfill summaries respects limit`() {
         let service = ConversationSummaryService()
 
         let conversations = (1 ... 20).map { index in
@@ -221,8 +535,8 @@ struct ConversationSummaryServiceTests {
 
 @Suite("ConversationSummary Tests")
 struct ConversationSummaryTests {
-    @Test("Formatted for context includes date and title")
-    func formattedForContextIncludesDateAndTitle() {
+    @Test
+    func `formatted for context includes date and title`() {
         let summary = ConversationSummary(
             id: UUID(),
             title: "Test Chat",
@@ -242,8 +556,8 @@ struct ConversationSummaryTests {
 
 @Suite("RecentConversationsDigest Tests")
 struct RecentConversationsDigestTests {
-    @Test("Upsert summary adds new summary")
-    func upsertSummaryAddsNewSummary() {
+    @Test
+    func `upsert summary adds new summary`() {
         var digest = RecentConversationsDigest()
 
         let summary = ConversationSummary(id: UUID(), title: "New Chat")
@@ -253,8 +567,8 @@ struct RecentConversationsDigestTests {
         #expect(digest.summaries.first?.title == "New Chat")
     }
 
-    @Test("Upsert summary updates existing summary")
-    func upsertSummaryUpdatesExisting() {
+    @Test
+    func `upsert summary updates existing summary`() {
         var digest = RecentConversationsDigest()
 
         let id = UUID()
@@ -268,8 +582,8 @@ struct RecentConversationsDigestTests {
         #expect(digest.summaries.first?.title == "Updated")
     }
 
-    @Test("Prune older removes old summaries")
-    func pruneOlderRemovesOldSummaries() throws {
+    @Test
+    func `prune older removes old summaries`() throws {
         var digest = RecentConversationsDigest()
 
         let oldDate = try #require(Calendar.current.date(byAdding: .day, value: -10, to: Date()))
@@ -283,5 +597,137 @@ struct RecentConversationsDigestTests {
 
         #expect(digest.summaries.count == 1)
         #expect(digest.summaries.first?.title == "New")
+    }
+}
+
+private actor ConversationSummaryLoadGate {
+    private let digest: RecentConversationsDigest
+    private var started = false
+    private var released = false
+    private var startedContinuations: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+    init(digest: RecentConversationsDigest) {
+        self.digest = digest
+    }
+
+    func load() async throws -> RecentConversationsDigest {
+        started = true
+        for continuation in startedContinuations {
+            continuation.resume()
+        }
+        startedContinuations.removeAll()
+        if !released {
+            await withCheckedContinuation { continuation in
+                releaseContinuations.append(continuation)
+            }
+        }
+        return digest
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuations.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        for continuation in releaseContinuations {
+            continuation.resume()
+        }
+        releaseContinuations.removeAll()
+    }
+}
+
+private actor ConversationSummarySaveGate {
+    private var started = false
+    private var released = false
+    private var startedContinuations: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        started = true
+        for continuation in startedContinuations {
+            continuation.resume()
+        }
+        startedContinuations.removeAll()
+        if !released {
+            await withCheckedContinuation { continuation in
+                releaseContinuations.append(continuation)
+            }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuations.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        for continuation in releaseContinuations {
+            continuation.resume()
+        }
+        releaseContinuations.removeAll()
+    }
+}
+
+private final class SummaryPersistenceProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var digest: RecentConversationsDigest?
+    private var clearCalled = false
+
+    var persistedDigest: RecentConversationsDigest? {
+        lock.withLock { digest }
+    }
+
+    var wasCleared: Bool {
+        lock.withLock { clearCalled }
+    }
+
+    func save(_ digest: RecentConversationsDigest) {
+        lock.withLock {
+            self.digest = digest
+        }
+    }
+
+    func clear() {
+        lock.withLock {
+            digest = nil
+            clearCalled = true
+        }
+    }
+}
+
+private final class BlockingSummaryClearOperationGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var started = false
+    private var released = false
+
+    func run() {
+        condition.lock()
+        started = true
+        condition.broadcast()
+        while !released {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func hasStarted() -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return started
+    }
+
+    func release() {
+        condition.lock()
+        released = true
+        condition.broadcast()
+        condition.unlock()
     }
 }

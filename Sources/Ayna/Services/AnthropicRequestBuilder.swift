@@ -73,9 +73,13 @@ enum AnthropicRequestBuilder {
         messages: [Message],
         config: AnthropicRequestConfig,
         stream: Bool,
-        tools: RequestBuilderToolDefinitions = .none
+        tools: RequestBuilderToolDefinitions = .none,
+        attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async throws -> URLRequest {
-        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        let resolvedMessages = try await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
+            in: messages,
+            attachmentDataLoader: attachmentDataLoader
+        )
         let buildTask = Task.detached(priority: .userInitiated) {
             try createMessagesRequest(
                 url: url,
@@ -113,6 +117,7 @@ enum AnthropicRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]?
     ) throws -> URLRequest {
+        try Task.checkCancellation()
         var request = URLRequest(url: url)
         configureHeaders(&request, config: config)
 
@@ -123,9 +128,11 @@ enum AnthropicRequestBuilder {
             tools: tools
         )
 
+        try Task.checkCancellation()
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             throw AynaError.encodingFailed(detail: "Failed to encode request body")
         }
+        try Task.checkCancellation()
 
         request.httpBody = bodyData
         return request
@@ -167,6 +174,7 @@ enum AnthropicRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]?
     ) throws -> [String: Any] {
+        try Task.checkCancellation()
         // Extract system prompt and convert remaining messages
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
@@ -192,10 +200,15 @@ enum AnthropicRequestBuilder {
 
         // Convert and add tools if provided
         if let tools, !tools.isEmpty {
+            try Task.checkCancellation()
             body["tools"] = convertToolsToAnthropicFormat(tools)
-            body["tool_choice"] = ["type": "auto"]
+            body["tool_choice"] = [
+                "type": "auto",
+                "disable_parallel_tool_use": true
+            ]
         }
 
+        try Task.checkCancellation()
         return body
     }
 
@@ -217,6 +230,7 @@ enum AnthropicRequestBuilder {
             // Build a set of valid tool_call_ids that have matching tool responses
             var toolResponseIds = Set<String>()
             for message in messages {
+                try Task.checkCancellation()
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
                     toolResponseIds.insert(toolCallId)
                 }
@@ -224,6 +238,7 @@ enum AnthropicRequestBuilder {
         #endif
 
         for (index, message) in messages.enumerated() {
+            try Task.checkCancellation()
             // Extract system prompt (don't include in messages array)
             if message.role == .system {
                 if systemPrompt == nil {
@@ -340,6 +355,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Tuple of (converted message, image count in this message)
     /// - Throws: `AynaError` if validation fails
     static func convertMessage(_ message: Message) throws -> (converted: [String: Any], imageCount: Int) {
+        try Task.checkCancellation()
         var payload: [String: Any] = [:]
         var imageCount = 0
 
@@ -362,10 +378,12 @@ enum AnthropicRequestBuilder {
 
             // Add images first
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+                try Task.checkCancellation()
                 guard let data = attachment.data else { continue }
 
                 // Validate image
                 let imageBlock = try validateAndBuildImageBlock(data: data, fileName: attachment.fileName)
+                try Task.checkCancellation()
                 contentArray.append(imageBlock)
                 imageCount += 1
             }
@@ -399,6 +417,7 @@ enum AnthropicRequestBuilder {
 
                 // Add tool use blocks
                 for toolCall in toolCalls {
+                    try Task.checkCancellation()
                     var argumentsDict: [String: Any] = [:]
                     for (key, anyCodable) in toolCall.arguments {
                         argumentsDict[key] = anyCodable.value
@@ -416,6 +435,7 @@ enum AnthropicRequestBuilder {
             }
         #endif
 
+        try Task.checkCancellation()
         return (payload, imageCount)
     }
 
@@ -429,6 +449,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Image content block dictionary
     /// - Throws: `AynaError` if validation fails
     static func validateAndBuildImageBlock(data: Data, fileName _: String?) throws -> [String: Any] {
+        try Task.checkCancellation()
         // Check size
         if data.count > maxImageSizeBytes {
             let sizeMB = Double(data.count) / 1_048_576.0
@@ -441,13 +462,17 @@ enum AnthropicRequestBuilder {
             throw AynaError.apiError(message: "Unsupported image format. Supported: JPEG, PNG, GIF, WebP")
         }
 
+        try Task.checkCancellation()
+        let encodedData = data.base64EncodedString()
+        try Task.checkCancellation()
+
         // Build image block
         return [
             "type": "image",
             "source": [
                 "type": "base64",
                 "media_type": type,
-                "data": data.base64EncodedString()
+                "data": encodedData
             ]
         ]
     }
@@ -497,6 +522,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Tools in Anthropic format
     static func convertToolsToAnthropicFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
+            guard !Task.isCancelled else { return nil }
             guard let type = tool["type"] as? String, type == "function",
                   let function = tool["function"] as? [String: Any],
                   let name = function["name"] as? String

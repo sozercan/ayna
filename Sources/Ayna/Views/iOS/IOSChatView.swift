@@ -66,8 +66,12 @@ struct IOSChatView: View {
                 return false
             }
 
-            // Always show tool messages when they have content
+            // Web search results are carried in history for protocol correctness,
+            // but citations provide the user-facing result presentation.
             if message.role == .tool {
+                if message.toolCalls?.first?.toolName == "web_search" {
+                    return false
+                }
                 return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
 

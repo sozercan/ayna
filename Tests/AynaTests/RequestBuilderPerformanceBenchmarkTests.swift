@@ -8,8 +8,8 @@ struct RequestBuilderPerformanceBenchmarkTests {
     private static let responsesURL = URL(string: "https://api.openai.com/v1/responses")!
     private static let anthropicURL = URL(string: "https://api.anthropic.com/v1/messages")!
 
-    @Test("OpenAI async builder constructs large text chat request", .timeLimit(.minutes(1)))
-    func openAIAsyncBuilderConstructsLargeTextChatRequest() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func `openAI async builder constructs large text chat request`() async throws {
         let messages = Self.largeTextMessages(messageCount: 240, repeatedWordsPerMessage: 240)
 
         let start = CFAbsoluteTimeGetCurrent()
@@ -33,8 +33,8 @@ struct RequestBuilderPerformanceBenchmarkTests {
         #expect(body["stream"] as? Bool == true)
     }
 
-    @Test("OpenAI async builder constructs large tools chat request", .timeLimit(.minutes(1)))
-    func openAIAsyncBuilderConstructsLargeToolsChatRequest() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func `openAI async builder constructs large tools chat request`() async throws {
         let messages = [Message(role: .user, content: "Use the right tool for this request.")]
         let tools = Self.largeToolDefinitions(toolCount: 120, propertyCount: 18)
 
@@ -58,10 +58,11 @@ struct RequestBuilderPerformanceBenchmarkTests {
         print("BENCH request_builder.openai.chat.large_tools.async seconds=\(elapsed) bytes=\(bodyData.count) tools=\(payloadTools.count)")
         #expect(payloadTools.count == tools.count)
         #expect(body["tool_choice"] as? String == "auto")
+        #expect(body["parallel_tool_calls"] as? Bool == false)
     }
 
-    @Test("OpenAI async builder constructs image chat request", .timeLimit(.minutes(1)))
-    func openAIAsyncBuilderConstructsImageChatRequest() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func `openAI async builder constructs image chat request`() async throws {
         let attachments = Self.imageAttachments(count: 4, bytesPerImage: 768 * 1024)
         let messages = [
             Message(
@@ -93,8 +94,8 @@ struct RequestBuilderPerformanceBenchmarkTests {
         #expect(content.count(where: { $0["type"] as? String == "image_url" }) == attachments.count)
     }
 
-    @Test("OpenAI async builder constructs Responses request with large text tools and images", .timeLimit(.minutes(1)))
-    func openAIAsyncBuilderConstructsResponsesRequestWithLargeTextToolsAndImages() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func `openAI async builder constructs Responses request with large text tools and images`() async throws {
         let attachments = Self.imageAttachments(count: 2, bytesPerImage: 512 * 1024)
         var messages = Self.largeTextMessages(messageCount: 80, repeatedWordsPerMessage: 160)
         messages.append(
@@ -126,10 +127,11 @@ struct RequestBuilderPerformanceBenchmarkTests {
         print("BENCH request_builder.openai.responses.mixed.async seconds=\(elapsed) bytes=\(bodyData.count) input=\(input.count) tools=\(payloadTools.count)")
         #expect(input.count == messages.count)
         #expect(payloadTools.count == tools.count)
+        #expect(body["parallel_tool_calls"] as? Bool == false)
     }
 
-    @Test("Anthropic async builder constructs image and tools request", .timeLimit(.minutes(1)))
-    func anthropicAsyncBuilderConstructsImageAndToolsRequest() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func `anthropic async builder constructs image and tools request`() async throws {
         let attachments = Self.imageAttachments(count: 3, bytesPerImage: 768 * 1024)
         let messages = [
             Message(role: .system, content: "You are concise."),
@@ -162,6 +164,8 @@ struct RequestBuilderPerformanceBenchmarkTests {
         #expect(body["system"] as? String == "You are concise.")
         #expect(content.count(where: { $0["type"] as? String == "image" }) == attachments.count)
         #expect(payloadTools.count == tools.count)
+        let toolChoice = try #require(body["tool_choice"] as? [String: Any])
+        #expect(toolChoice["disable_parallel_tool_use"] as? Bool == true)
     }
 
     private static func largeTextMessages(messageCount: Int, repeatedWordsPerMessage: Int) -> [Message] {

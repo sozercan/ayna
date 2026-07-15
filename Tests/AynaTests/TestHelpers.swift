@@ -3,6 +3,9 @@ import Foundation
 import Security
 import Testing
 
+@Suite("AIService Global State Tests", .serialized)
+struct AIServiceGlobalStateTests {}
+
 // MARK: - CustomTestStringConvertible Extensions
 
 /// Provides better test failure diagnostics per Swift Testing Playbook Section 10
@@ -83,5 +86,29 @@ enum TestHelpers {
         EncryptedConversationStore(
             directoryURL: directory, keyIdentifier: keyIdentifier, keychain: keychain
         )
+    }
+}
+
+/// Waits for one callback without relying on scheduler-sensitive sleeps.
+final class TestCallbackWaiter: @unchecked Sendable {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        var capturedContinuation: AsyncStream<Void>.Continuation?
+        stream = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            capturedContinuation = continuation
+        }
+        continuation = capturedContinuation!
+    }
+
+    func signal() {
+        continuation.yield(())
+        continuation.finish()
+    }
+
+    func wait() async {
+        var iterator = stream.makeAsyncIterator()
+        _ = await iterator.next()
     }
 }

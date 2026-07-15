@@ -128,7 +128,27 @@
         }
 
         /// Update conversations from WatchConnectivity sync
-        func updateConversations(_ newConversations: [WatchConversation]) {
+        func updateConversations(
+            _ newConversations: [WatchConversation],
+            discardingLocalOnlyConversations: Bool = false
+        ) {
+            if discardingLocalOnlyConversations {
+                conversations = newConversations.sorted { $0.updatedAt > $1.updatedAt }
+                if let selectedConversationId,
+                   !conversations.contains(where: { $0.id == selectedConversationId })
+                {
+                    self.selectedConversationId = nil
+                }
+                saveToDisk()
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .info,
+                    message: "⌚ Replaced local conversations after iPhone clear",
+                    metadata: ["count": "\(conversations.count)"]
+                )
+                return
+            }
+
             // Merge with existing, preserving local state that may be ahead of iPhone
             var updatedConversations: [WatchConversation] = []
 

@@ -66,6 +66,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(config.customEndpoint)
+        let supportsParallelToolCalls = usesAzureEndpoint
+            || url.host?.caseInsensitiveCompare("api.openai.com") == .orderedSame
 
         currentRequestBuildTask?.cancel()
         if stream {
@@ -84,7 +86,8 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                 tools: toolDefinitions,
                 apiKey: config.apiKey,
                 isAzure: usesAzureEndpoint,
-                isGitHubModels: false
+                isGitHubModels: false,
+                supportsParallelToolCalls: supportsParallelToolCalls
             ) else {
                 guard !Task.isCancelled else { return }
                 self.currentRequestBuildTask = nil

@@ -27,6 +27,11 @@ enum EncryptedMemoryStoreError: LocalizedError {
     }
 }
 
+private struct StoredConversationSummaries: Codable {
+    var digest: RecentConversationsDigest
+    var completedCleanupToken: String?
+}
+
 /// Encrypted storage for user memory facts.
 /// Uses the same encryption pattern as EncryptedConversationStore.
 final class EncryptedMemoryStore: Sendable {
@@ -198,7 +203,11 @@ final class EncryptedMemoryStore: Sendable {
             let key = try encryptionKeyCache.key()
             let box = try AES.GCM.SealedBox(combined: encryptedData)
             let plaintext = try AES.GCM.open(box, using: key)
-            return try JSONDecoder().decode(RecentConversationsDigest.self, from: plaintext)
+            let decoder = JSONDecoder()
+            if let stored = try? decoder.decode(StoredConversationSummaries.self, from: plaintext) {
+                return stored.digest
+            }
+            return try decoder.decode(RecentConversationsDigest.self, from: plaintext)
         }.value
     }
 
@@ -208,8 +217,21 @@ final class EncryptedMemoryStore: Sendable {
         let encryptionKeyCache = encryptionKeyCache
 
         try await Task.detached(priority: .userInitiated) {
-            let encoded = try JSONEncoder().encode(digest)
             let key = try encryptionKeyCache.key()
+            var cleanupToken: String?
+            if FileManager.default.fileExists(atPath: summaryFileURL.path),
+               let encryptedData = try? Data(contentsOf: summaryFileURL),
+               let box = try? AES.GCM.SealedBox(combined: encryptedData),
+               let plaintext = try? AES.GCM.open(box, using: key),
+               let stored = try? JSONDecoder().decode(StoredConversationSummaries.self, from: plaintext)
+            {
+                cleanupToken = stored.completedCleanupToken
+            }
+            let stored = StoredConversationSummaries(
+                digest: digest,
+                completedCleanupToken: cleanupToken
+            )
+            let encoded = try JSONEncoder().encode(stored)
             let sealed = try AES.GCM.seal(encoded, using: key)
 
             guard let combined = sealed.combined else {
@@ -224,6 +246,67 @@ final class EncryptedMemoryStore: Sendable {
                 message: "✅ Saved conversation summaries",
                 metadata: ["summaryCount": "\(digest.summaries.count)"]
             )
+        }.value
+    }
+
+    func replaceSummariesAfterCleanup(
+        preserving digest: RecentConversationsDigest,
+        cleanupToken: String,
+        survivingConversationIds: Set<UUID>? = nil
+    ) async throws -> RecentConversationsDigest {
+        let summaryFileURL = summaryFileURL
+        let encryptionKeyCache = encryptionKeyCache
+
+        return try await Task.detached(priority: .userInitiated) {
+            let key = try encryptionKeyCache.key()
+            var existingDigest: RecentConversationsDigest?
+            if FileManager.default.fileExists(atPath: summaryFileURL.path) {
+                let encryptedData = try Data(contentsOf: summaryFileURL)
+                let box = try AES.GCM.SealedBox(combined: encryptedData)
+                let plaintext = try AES.GCM.open(box, using: key)
+                if let stored = try? JSONDecoder().decode(
+                    StoredConversationSummaries.self,
+                    from: plaintext
+                ) {
+                    if stored.completedCleanupToken == cleanupToken {
+                        return stored.digest
+                    }
+                    existingDigest = stored.digest
+                } else {
+                    existingDigest = try? JSONDecoder().decode(
+                        RecentConversationsDigest.self,
+                        from: plaintext
+                    )
+                }
+            }
+
+            var reconciledDigest = digest
+            if let survivingConversationIds, let existingDigest {
+                var mergedDigest = RecentConversationsDigest(
+                    maxSummaries: max(digest.maxSummaries, existingDigest.maxSummaries)
+                )
+                for summary in existingDigest.summaries
+                    where survivingConversationIds.contains(summary.id)
+                {
+                    mergedDigest.upsertSummary(summary)
+                }
+                for summary in digest.summaries {
+                    mergedDigest.upsertSummary(summary)
+                }
+                reconciledDigest = mergedDigest
+            }
+
+            let stored = StoredConversationSummaries(
+                digest: reconciledDigest,
+                completedCleanupToken: cleanupToken
+            )
+            let encoded = try JSONEncoder().encode(stored)
+            let sealed = try AES.GCM.seal(encoded, using: key)
+            guard let combined = sealed.combined else {
+                throw EncryptedMemoryStoreError.encodingFailed
+            }
+            try combined.write(to: summaryFileURL, options: .atomic)
+            return reconciledDigest
         }.value
     }
 

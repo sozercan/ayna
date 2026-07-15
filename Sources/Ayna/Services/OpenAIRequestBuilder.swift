@@ -34,14 +34,16 @@ enum RequestBuilderAttachmentResolver {
     static func resolvingImageAttachmentData(
         in messages: [Message],
         attachmentDataLoader: AttachmentDataLoader? = nil
-    ) async -> [Message] {
+    ) async throws -> [Message] {
         var resolvedMessages = messages
 
         for messageIndex in resolvedMessages.indices {
+            try Task.checkCancellation()
             guard var attachments = resolvedMessages[messageIndex].attachments else { continue }
 
             var didUpdateAttachments = false
             for attachmentIndex in attachments.indices {
+                try Task.checkCancellation()
                 guard attachments[attachmentIndex].mimeType.starts(with: "image/"),
                       attachments[attachmentIndex].data == nil,
                       let localPath = attachments[attachmentIndex].localPath
@@ -54,6 +56,7 @@ enum RequestBuilderAttachmentResolver {
                 } else {
                     attachments[attachmentIndex].data = await attachments[attachmentIndex].loadContent()
                 }
+                try Task.checkCancellation()
                 didUpdateAttachments = true
             }
 
@@ -86,7 +89,8 @@ enum OpenAIRequestBuilder {
     ///
     /// - Parameter message: The message to convert
     /// - Returns: Dictionary suitable for JSON serialization
-    static func buildMessagePayload(from message: Message) -> [String: Any] {
+    static func buildMessagePayload(from message: Message) -> [String: Any]? {
+        guard !Task.isCancelled else { return nil }
         var payload: [String: Any] = ["role": message.role.rawValue]
 
         #if !os(watchOS)
@@ -111,6 +115,7 @@ enum OpenAIRequestBuilder {
 
                 // Add tool_calls array
                 let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+                    guard !Task.isCancelled else { return nil }
                     // Convert AnyCodable arguments to JSON string safely
                     var argumentsDict: [String: Any] = [:]
                     for (key, anyCodable) in toolCall.arguments {
@@ -160,8 +165,10 @@ enum OpenAIRequestBuilder {
 
             // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+                guard !Task.isCancelled else { return nil }
                 if let data = attachment.data {
                     let base64Image = data.base64EncodedString()
+                    guard !Task.isCancelled else { return nil }
                     contentArray.append([
                         "type": "image_url",
                         "image_url": [
@@ -177,7 +184,7 @@ enum OpenAIRequestBuilder {
             payload["content"] = message.content
         }
 
-        return payload
+        return Task.isCancelled ? nil : payload
     }
 
     /// Build a chat completions request body.
@@ -192,13 +199,16 @@ enum OpenAIRequestBuilder {
         messages: [Message],
         model: String,
         stream: Bool,
-        tools: [[String: Any]]? = nil
-    ) -> [String: Any] {
+        tools: [[String: Any]]? = nil,
+        supportsParallelToolCalls: Bool = true
+    ) -> [String: Any]? {
+        guard !Task.isCancelled else { return nil }
         #if !os(watchOS)
             // Build a set of valid tool_call_ids that have matching tool responses
             // First, collect all tool messages and their tool_call_ids
             var toolResponseIds = Set<String>()
             for message in messages {
+                guard !Task.isCancelled else { return nil }
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
                     toolResponseIds.insert(toolCallId)
                 }
@@ -210,6 +220,7 @@ enum OpenAIRequestBuilder {
             // 3. For tool messages, only keep if preceding assistant has the matching tool_call
             var filteredMessages: [Message] = []
             for (index, message) in messages.enumerated() {
+                guard !Task.isCancelled else { return nil }
                 if message.role == .tool {
                     // Get the tool_call_id from this tool message
                     guard let toolCallId = message.toolCalls?.first?.id else {
@@ -301,10 +312,20 @@ enum OpenAIRequestBuilder {
                 }
             }
 
-            let messagePayloads: [[String: Any]] = filteredMessages.map { buildMessagePayload(from: $0) }
+            var messagePayloads: [[String: Any]] = []
+            messagePayloads.reserveCapacity(filteredMessages.count)
+            for message in filteredMessages {
+                guard let payload = buildMessagePayload(from: message) else { return nil }
+                messagePayloads.append(payload)
+            }
         #else
             // watchOS: No tool support, just pass messages through
-            let messagePayloads: [[String: Any]] = messages.map { buildMessagePayload(from: $0) }
+            var messagePayloads: [[String: Any]] = []
+            messagePayloads.reserveCapacity(messages.count)
+            for message in messages {
+                guard let payload = buildMessagePayload(from: message) else { return nil }
+                messagePayloads.append(payload)
+            }
         #endif
 
         var body: [String: Any] = [
@@ -317,9 +338,12 @@ enum OpenAIRequestBuilder {
         if let tools, !tools.isEmpty {
             body["tools"] = tools
             body["tool_choice"] = "auto"
+            if supportsParallelToolCalls {
+                body["parallel_tool_calls"] = false
+            }
         }
 
-        return body
+        return Task.isCancelled ? nil : body
     }
 
     // MARK: - Responses API
@@ -336,10 +360,12 @@ enum OpenAIRequestBuilder {
     ///
     /// - Parameter messages: Messages to convert
     /// - Returns: Array of input items for the Responses API
-    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
+    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]]? {
+        guard !Task.isCancelled else { return nil }
         var inputArray: [[String: Any]] = []
 
         for message in messages {
+            guard !Task.isCancelled else { return nil }
             // Skip system messages - Responses API handles them differently
             if message.role == .system {
                 continue
@@ -375,6 +401,7 @@ enum OpenAIRequestBuilder {
 
                     // Then add each tool call as a function_call item
                     for toolCall in toolCalls {
+                        guard !Task.isCancelled else { return nil }
                         // Convert AnyCodable arguments to JSON string
                         var argumentsDict: [String: Any] = [:]
                         for (key, anyCodable) in toolCall.arguments {
@@ -419,8 +446,10 @@ enum OpenAIRequestBuilder {
             // Add image attachments for user messages
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
+                    guard !Task.isCancelled else { return nil }
                     if let data = attachment.data {
                         let base64Data = data.base64EncodedString()
+                        guard !Task.isCancelled else { return nil }
                         contentArray.append([
                             "type": "input_image",
                             "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
@@ -433,7 +462,7 @@ enum OpenAIRequestBuilder {
             inputArray.append(messageItem)
         }
 
-        return inputArray
+        return Task.isCancelled ? nil : inputArray
     }
 
     /// Convert tools from Chat Completions format to Responses API format.
@@ -445,6 +474,7 @@ enum OpenAIRequestBuilder {
     /// - Returns: Tools in Responses API format
     static func convertToolsToResponsesFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
+            guard !Task.isCancelled else { return nil }
             // Check if it's already in Responses format (has top-level "name")
             if tool["name"] != nil {
                 return tool
@@ -490,9 +520,10 @@ enum OpenAIRequestBuilder {
     static func buildResponsesBody(
         model: String,
         messages: [Message],
-        tools: [[String: Any]]? = nil
-    ) -> [String: Any] {
-        let inputArray = buildResponsesInput(from: messages)
+        tools: [[String: Any]]? = nil,
+        supportsParallelToolCalls: Bool = true
+    ) -> [String: Any]? {
+        guard let inputArray = buildResponsesInput(from: messages) else { return nil }
 
         var body: [String: Any] = [
             "model": model,
@@ -507,6 +538,9 @@ enum OpenAIRequestBuilder {
             if !responsesTools.isEmpty {
                 body["tools"] = responsesTools
                 body["tool_choice"] = "auto"
+                if supportsParallelToolCalls {
+                    body["parallel_tool_calls"] = false
+                }
 
                 DiagnosticsLogger.log(
                     .aiService,
@@ -517,7 +551,7 @@ enum OpenAIRequestBuilder {
             }
         }
 
-        return body
+        return Task.isCancelled ? nil : body
     }
 
     /// Result from parsing Responses API output
@@ -660,12 +694,20 @@ enum OpenAIRequestBuilder {
         apiKey: String,
         isAzure: Bool,
         isGitHubModels: Bool = false,
+        supportsParallelToolCalls: Bool = true,
         attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async -> URLRequest? {
-        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
-            in: messages,
-            attachmentDataLoader: attachmentDataLoader
-        )
+        let resolvedMessages: [Message]
+        do {
+            resolvedMessages = try await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
+                in: messages,
+                attachmentDataLoader: attachmentDataLoader
+            )
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return nil
+        }
         let buildTask = Task.detached(priority: .userInitiated) {
             createChatCompletionsRequest(
                 url: url,
@@ -675,7 +717,8 @@ enum OpenAIRequestBuilder {
                 tools: tools.value,
                 apiKey: apiKey,
                 isAzure: isAzure,
-                isGitHubModels: isGitHubModels
+                isGitHubModels: isGitHubModels,
+                supportsParallelToolCalls: supportsParallelToolCalls
             )
         }
 
@@ -711,21 +754,27 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil,
         apiKey: String,
         isAzure: Bool,
-        isGitHubModels: Bool = false
+        isGitHubModels: Bool = false,
+        supportsParallelToolCalls: Bool = true
     ) -> URLRequest? {
         var request = URLRequest(url: url)
         configureRequest(&request, apiKey: apiKey, isAzure: isAzure, isGitHubModels: isGitHubModels)
 
-        let body = buildChatCompletionsBody(
+        guard let body = buildChatCompletionsBody(
             messages: messages,
             model: model,
             stream: stream,
-            tools: tools
-        )
+            tools: tools,
+            supportsParallelToolCalls: supportsParallelToolCalls && !isGitHubModels
+        ) else {
+            return nil
+        }
 
+        guard !Task.isCancelled else { return nil }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
 
         request.httpBody = bodyData
         return request
@@ -742,9 +791,21 @@ enum OpenAIRequestBuilder {
         model: String,
         tools: RequestBuilderToolDefinitions = .none,
         apiKey: String,
-        isAzure: Bool
+        isAzure: Bool,
+        supportsParallelToolCalls: Bool = true,
+        attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async -> URLRequest? {
-        let resolvedMessages = await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(in: messages)
+        let resolvedMessages: [Message]
+        do {
+            resolvedMessages = try await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
+                in: messages,
+                attachmentDataLoader: attachmentDataLoader
+            )
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return nil
+        }
         let buildTask = Task.detached(priority: .userInitiated) {
             createResponsesRequest(
                 url: url,
@@ -752,7 +813,8 @@ enum OpenAIRequestBuilder {
                 model: model,
                 tools: tools.value,
                 apiKey: apiKey,
-                isAzure: isAzure
+                isAzure: isAzure,
+                supportsParallelToolCalls: supportsParallelToolCalls
             )
         }
 
@@ -784,13 +846,22 @@ enum OpenAIRequestBuilder {
         model: String,
         tools: [[String: Any]]? = nil,
         apiKey: String,
-        isAzure: Bool
+        isAzure: Bool,
+        supportsParallelToolCalls: Bool = true
     ) -> URLRequest? {
         var request = URLRequest(url: url)
         configureRequest(&request, apiKey: apiKey, isAzure: isAzure)
 
-        let body = buildResponsesBody(model: model, messages: messages, tools: tools)
+        guard let body = buildResponsesBody(
+            model: model,
+            messages: messages,
+            tools: tools,
+            supportsParallelToolCalls: supportsParallelToolCalls
+        ) else {
+            return nil
+        }
 
+        guard !Task.isCancelled else { return nil }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             DiagnosticsLogger.log(
                 .aiService,
@@ -800,6 +871,7 @@ enum OpenAIRequestBuilder {
             )
             return nil
         }
+        guard !Task.isCancelled else { return nil }
 
         request.httpBody = bodyData
         return request

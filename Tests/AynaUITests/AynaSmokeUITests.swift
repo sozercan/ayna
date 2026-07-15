@@ -79,26 +79,14 @@ final class AynaSmokeUITests: AynaUITestCase {
         searchField.click()
         searchField.typeText(uniqueKeyword)
 
-        // SwiftUI can recycle the accessibility element for a removed List row,
-        // so re-query all current sidebar row identifiers until only the matching
-        // conversation remains.
-        let rowIdentifierPredicate = NSPredicate(
-            format: "identifier BEGINSWITH %@",
-            rowIdentifierPrefix
+        // Wait on the query count rather than a resolved element because SwiftUI
+        // can recycle the accessibility object for a removed List row.
+        let titleDisappeared = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "count == 0"),
+            object: nonMatchingTitles
         )
-        let rowsFiltered = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                let visibleRowIdentifiers = Set(
-                    self.app.staticTexts
-                        .matching(rowIdentifierPredicate)
-                        .allElementsBoundByIndex
-                        .map(\.identifier)
-                )
-                return visibleRowIdentifiers == Set([matchingRowIdentifier])
-            },
-            object: app
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [rowsFiltered], timeout: 5), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [titleDisappeared], timeout: 5), .completed)
+        XCTAssertTrue(app.staticTexts.matching(identifier: matchingRowIdentifier).firstMatch.exists)
         XCTAssertFalse(app.staticTexts["No results found"].exists)
     }
 

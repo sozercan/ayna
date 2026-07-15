@@ -76,7 +76,8 @@ final class GitHubModelsProvider: AIProviderProtocol, @unchecked Sendable {
                 tools: toolDefinitions,
                 apiKey: config.apiKey,
                 isAzure: false,
-                isGitHubModels: true
+                isGitHubModels: true,
+                supportsParallelToolCalls: false
             ) else {
                 guard !Task.isCancelled else { return }
                 self.currentRequestBuildTask = nil

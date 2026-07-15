@@ -152,6 +152,10 @@ actor GitHubModelsRequestGate {
         }
     }
 
+    func waiterCount(for key: String) -> Int {
+        waiters[key]?.count ?? 0
+    }
+
     func release(key: String) {
         if var queue = waiters[key], !queue.isEmpty {
             let next = queue.removeFirst()

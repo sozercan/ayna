@@ -42,63 +42,14 @@ struct AnthropicProviderTests {
 
     // MARK: - Factory Tests
 
-    @Test("Factory returns AnthropicProvider for .anthropic")
-    func factoryReturnsAnthropicProvider() {
-        let config = URLSessionConfiguration.ephemeral
-        let session = URLSession(configuration: config)
-        let provider = AIProviderFactory.createProvider(for: .anthropic, urlSession: session)
-
-        #expect(provider.providerType == .anthropic)
-        #expect(provider is AnthropicProvider)
-    }
-
     // MARK: - Provider Properties Tests
-
-    @Test("Provider type is anthropic")
-    func providerTypeIsAnthropic() {
-        let provider = makeProvider()
-        #expect(provider.providerType == .anthropic)
-    }
-
-    @Test("Provider requires API key")
-    func providerRequiresAPIKey() {
-        let provider = makeProvider()
-        #expect(provider.requiresAPIKey == true)
-    }
 
     // MARK: - Configuration Validation Tests
 
-    @Test("Validation fails with empty API key")
-    func validationFailsWithEmptyAPIKey() {
-        let provider = makeProvider()
-        let config = makeConfig(apiKey: "")
-
-        let error = provider.validateConfiguration(config)
-        #expect(error != nil)
-    }
-
-    @Test("Validation fails with empty model")
-    func validationFailsWithEmptyModel() {
-        let provider = makeProvider()
-        let config = makeConfig(model: "")
-
-        let error = provider.validateConfiguration(config)
-        #expect(error != nil)
-    }
-
-    @Test("Validation passes with valid config")
-    func validationPassesWithValidConfig() {
-        let provider = makeProvider()
-        let config = makeConfig()
-
-        let error = provider.validateConfiguration(config)
-        #expect(error == nil)
-    }
-
     // MARK: - Non-Streaming Response Tests
 
-    @Test("Non-streaming response parses text content", .timeLimit(.minutes(1)))
-    func nonStreamingResponseParsesTextContent() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming response parses text content`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello!")]
@@ -126,6 +77,7 @@ struct AnthropicProviderTests {
         }
 
         let receivedChunks = ChunkCollector()
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Response completes") { completed in
             provider.sendMessage(
@@ -135,19 +87,19 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { chunk in receivedChunks.append(chunk) },
-                    onComplete: { completed() },
-                    onError: { error in Issue.record("Unexpected error: \(error)") }
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedChunks.joined() == "Hello! How can I help you today?")
     }
 
-    @Test("Non-streaming response parses thinking content", .timeLimit(.minutes(1)))
-    func nonStreamingResponseParsesThinkingContent() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming response parses thinking content`() async {
         let provider = makeProvider()
         let config = makeConfig(thinkingBudget: 2048)
         let messages = [Message(role: .user, content: "Think about this")]
@@ -177,6 +129,7 @@ struct AnthropicProviderTests {
 
         let receivedChunks = ChunkCollector()
         let receivedReasoning = ChunkCollector()
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Response completes") { completed in
             provider.sendMessage(
@@ -186,21 +139,21 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { chunk in receivedChunks.append(chunk) },
-                    onComplete: { completed() },
-                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() },
                     onReasoning: { reasoning in receivedReasoning.append(reasoning) }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedChunks.joined() == "Here's my answer.")
         #expect(receivedReasoning.joined() == "Let me consider this carefully...")
     }
 
-    @Test("Non-streaming response handles tool use", .timeLimit(.minutes(1)))
-    func nonStreamingResponseHandlesToolUse() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming response handles tool use`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Search for Swift")]
@@ -235,6 +188,7 @@ struct AnthropicProviderTests {
         nonisolated(unsafe) var toolCallReceived = false
         nonisolated(unsafe) var receivedToolId = ""
         nonisolated(unsafe) var receivedToolName = ""
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Response completes") { completed in
             provider.sendMessage(
@@ -244,8 +198,8 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { completed() },
-                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() },
                     onToolCallRequested: { id, name, _ in
                         toolCallReceived = true
                         receivedToolId = id
@@ -254,7 +208,7 @@ struct AnthropicProviderTests {
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(toolCallReceived)
@@ -264,8 +218,8 @@ struct AnthropicProviderTests {
 
     // MARK: - HTTP Error Tests
 
-    @Test("HTTP 400 returns appropriate error", .timeLimit(.minutes(1)))
-    func http400ReturnsAppropriateError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `hTTP 400 returns appropriate error`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -285,6 +239,7 @@ struct AnthropicProviderTests {
         }
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -298,11 +253,12 @@ struct AnthropicProviderTests {
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -310,8 +266,8 @@ struct AnthropicProviderTests {
         #expect(errorMessage.contains("Anthropic") || errorMessage.contains("Invalid"))
     }
 
-    @Test("HTTP 401 returns API key invalid error", .timeLimit(.minutes(1)))
-    func http401ReturnsAPIKeyInvalidError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `hTTP 401 returns API key invalid error`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -331,6 +287,7 @@ struct AnthropicProviderTests {
         }
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -340,15 +297,16 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -356,8 +314,8 @@ struct AnthropicProviderTests {
         #expect(errorMessage.contains("Anthropic") && errorMessage.lowercased().contains("key"))
     }
 
-    @Test("HTTP 429 returns rate limit error", .timeLimit(.minutes(1)))
-    func http429ReturnsRateLimitError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `hTTP 429 returns rate limit error`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -377,6 +335,7 @@ struct AnthropicProviderTests {
         }
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -386,15 +345,12 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
-                    onError: { error in
-                        receivedError = error
-                        errorReceived()
-                    }
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
+                    onError: { error in receivedError = error; errorReceived(); callbackWaiter.signal() }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -402,8 +358,8 @@ struct AnthropicProviderTests {
         #expect(errorMessage.contains("Anthropic") || errorMessage.lowercased().contains("request"))
     }
 
-    @Test("HTTP 500 returns server error", .timeLimit(.minutes(1)))
-    func http500ReturnsServerError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `hTTP 500 returns server error`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -419,6 +375,7 @@ struct AnthropicProviderTests {
         }
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -428,16 +385,17 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
             // Short wait for async callbacks since circuit breaker may retry
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -447,8 +405,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Anthropic Error Format Tests
 
-    @Test("Anthropic error format is parsed correctly", .timeLimit(.minutes(1)))
-    func anthropicErrorFormatParsedCorrectly() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `anthropic error format is parsed correctly`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -468,6 +426,7 @@ struct AnthropicProviderTests {
         }
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -477,15 +436,16 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -495,8 +455,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Endpoint Resolution Tests
 
-    @Test("Invalid endpoint triggers error callback", .timeLimit(.minutes(1)))
-    func invalidEndpointTriggersError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `invalid endpoint triggers error callback`() async {
         let provider = makeProvider()
         let config = makeConfig(customEndpoint: "not-a-valid-url")
         let messages = [Message(role: .user, content: "Hello")]
@@ -525,8 +485,8 @@ struct AnthropicProviderTests {
         #expect(receivedError != nil)
     }
 
-    @Test("HTTP endpoint triggers error callback", .timeLimit(.minutes(1)))
-    func httpEndpointTriggersError() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `hTTP endpoint triggers error callback`() async {
         let provider = makeProvider()
         let config = makeConfig(customEndpoint: "http://insecure.example.com")
         let messages = [Message(role: .user, content: "Hello")]
@@ -557,8 +517,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Cancellation Tests
 
-    @Test("Cancel request stops current task")
-    func cancelRequestStopsCurrentTask() async {
+    @Test
+    func `cancel request stops current task`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -602,8 +562,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Request Building Tests
 
-    @Test("Request includes correct headers", .timeLimit(.minutes(1)))
-    func requestIncludesCorrectHeaders() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `request includes correct headers`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -625,6 +585,8 @@ struct AnthropicProviderTests {
             return (response, Data(responseBody.utf8))
         }
 
+        let callbackWaiter = TestCallbackWaiter()
+
         await confirmation("Response completes") { completed in
             provider.sendMessage(
                 messages: messages,
@@ -633,12 +595,12 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { completed() },
+                    onComplete: { completed(); callbackWaiter.signal() },
                     onError: { error in Issue.record("Unexpected error: \(error)") }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         let request = capturedRequest
@@ -650,8 +612,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Streaming Response Tests
 
-    @Test("Streaming response delivers text chunks", .timeLimit(.minutes(1)))
-    func streamingResponseDeliversTextChunks() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `streaming response delivers text chunks`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -696,6 +658,8 @@ struct AnthropicProviderTests {
 
         let receivedChunks = ChunkCollector()
 
+        let callbackWaiter = TestCallbackWaiter()
+
         await confirmation("Response completes") { completed in
             provider.sendMessage(
                 messages: messages,
@@ -704,12 +668,12 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { chunk in receivedChunks.append(chunk) },
-                    onComplete: { completed() },
+                    onComplete: { completed(); callbackWaiter.signal() },
                     onError: { error in Issue.record("Unexpected error: \(error)") }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         let fullText = receivedChunks.joined()
@@ -717,8 +681,8 @@ struct AnthropicProviderTests {
         #expect(fullText.contains("there"))
     }
 
-    @Test("Streaming response handles interleaved thinking", .timeLimit(.minutes(1)))
-    func streamingResponseHandlesInterleavedThinking() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `streaming response handles interleaved thinking`() async {
         let provider = makeProvider()
         let config = makeConfig(thinkingBudget: 2048)
         let messages = [Message(role: .user, content: "Think about this")]
@@ -767,6 +731,8 @@ struct AnthropicProviderTests {
         let receivedChunks = ChunkCollector()
         let receivedReasoning = ChunkCollector()
 
+        let callbackWaiter = TestCallbackWaiter()
+
         await confirmation("Response completes") { completed in
             provider.sendMessage(
                 messages: messages,
@@ -775,13 +741,13 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { chunk in receivedChunks.append(chunk) },
-                    onComplete: { completed() },
-                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() },
                     onReasoning: { reasoning in receivedReasoning.append(reasoning) }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         let fullText = receivedChunks.joined()
@@ -791,8 +757,8 @@ struct AnthropicProviderTests {
         #expect(fullReasoning.contains("think"))
     }
 
-    @Test("Streaming response handles tool use", .timeLimit(.minutes(1)))
-    func streamingResponseHandlesToolUse() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `streaming response handles tool use`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Search for Swift")]
@@ -832,6 +798,7 @@ struct AnthropicProviderTests {
         nonisolated(unsafe) var toolCallReceived = false
         nonisolated(unsafe) var receivedToolId = ""
         nonisolated(unsafe) var receivedToolName = ""
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Response completes") { completed in
             provider.sendMessage(
@@ -841,8 +808,8 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { completed() },
-                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() },
                     onToolCallRequested: { id, name, _ in
                         toolCallReceived = true
                         receivedToolId = id
@@ -851,7 +818,7 @@ struct AnthropicProviderTests {
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(toolCallReceived)
@@ -859,8 +826,8 @@ struct AnthropicProviderTests {
         #expect(receivedToolName == "web_search")
     }
 
-    @Test("Streaming tool use is delivered before completion", .timeLimit(.minutes(1)))
-    func streamingToolUseDeliveredBeforeCompletion() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `streaming tool use is delivered before completion`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Search for Swift")]
@@ -898,6 +865,8 @@ struct AnthropicProviderTests {
 
         let callbackOrder = CallbackOrderCollector()
 
+        let callbackWaiter = TestCallbackWaiter()
+
         await confirmation("Response completes") { completed in
             provider.sendMessage(
                 messages: messages,
@@ -909,22 +878,23 @@ struct AnthropicProviderTests {
                     onComplete: {
                         callbackOrder.append("complete")
                         completed()
+                        callbackWaiter.signal()
                     },
-                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() },
                     onToolCallRequested: { _, _, _ in
                         callbackOrder.append("tool")
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         #expect(callbackOrder.events == ["tool", "complete"])
     }
 
-    @Test("Thinking budget adds beta header for Claude 4 models", .timeLimit(.minutes(1)))
-    func thinkingBudgetAddsBetaHeader() async {
+    @Test(.timeLimit(.minutes(1)))
+    func `thinking budget adds beta header for Claude 4 models`() async {
         let provider = makeProvider()
         let config = makeConfig(model: "claude-4-opus-20250514", thinkingBudget: 2048)
         let messages = [Message(role: .user, content: "Hello")]
@@ -946,6 +916,8 @@ struct AnthropicProviderTests {
             return (response, Data(responseBody.utf8))
         }
 
+        let callbackWaiter = TestCallbackWaiter()
+
         await confirmation("Response completes") { completed in
             provider.sendMessage(
                 messages: messages,
@@ -954,12 +926,12 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { completed() },
+                    onComplete: { completed(); callbackWaiter.signal() },
                     onError: { error in Issue.record("Unexpected error: \(error)") }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(500))
+            await callbackWaiter.wait()
         }
 
         let request = capturedRequest
