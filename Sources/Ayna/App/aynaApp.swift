@@ -23,6 +23,7 @@ private var uiTestFallbackWindow: NSWindow?
 struct aynaApp: App {
     @NSApplicationDelegateAdaptor(AynaAppDelegate.self) private var appDelegate
     @StateObject private var conversationManager: ConversationManager
+    @StateObject private var projectManager: ProjectManager
     @StateObject private var floatingPanelController = FloatingPanelController.shared
     @State private var updaterService = UpdaterService()
 
@@ -43,12 +44,13 @@ struct aynaApp: App {
         } else {
             ConversationManager()
         }
+        let projects = ProjectManager(conversationManager: manager)
         _conversationManager = StateObject(wrappedValue: manager)
+        _projectManager = StateObject(wrappedValue: projects)
 
         if UITestEnvironment.isEnabled {
-            Task { await prepareWindowsForUITests(using: manager) }
+            Task { await prepareWindowsForUITests(using: manager, projectManager: projects) }
         }
-
         guard !UITestEnvironment.shouldSkipMCPInitialization else { return }
 
         // Initialize MCP servers on app launch and log availability
@@ -74,9 +76,11 @@ struct aynaApp: App {
         WindowGroup {
             MacContentView()
                 .environmentObject(conversationManager)
+                .environmentObject(projectManager)
                 .onAppear {
                     // Pass conversation manager to app delegate for deep link handling
                     AynaAppDelegate.conversationManager = conversationManager
+                    AynaAppDelegate.projectManager = projectManager
 
                     // If running UI tests, ensure window is ready
                     if UITestEnvironment.isEnabled {
@@ -189,6 +193,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Reference to the conversation manager for window creation
     weak static var conversationManager: ConversationManager?
+    weak static var projectManager: ProjectManager?
 
     /// Shared instance for window delegate
     static let shared = AynaAppDelegate()
@@ -217,6 +222,9 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
                     await Self.conversationManager?.flushPendingSaves()
+                }
+                group.addTask {
+                    await Self.projectManager?.flushPendingSaves()
                 }
                 group.addTask {
                     try? await Task.sleep(for: .seconds(5))
@@ -299,6 +307,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let contentView = AnyView(
             MacContentView()
                 .environmentObject(manager)
+                .environmentObject(projectManager ?? ProjectManager(conversationManager: manager))
         )
 
         let hostingController = NSHostingController(rootView: contentView)
@@ -558,7 +567,10 @@ extension Notification.Name {
 }
 
 @MainActor
-private func prepareWindowsForUITests(using manager: ConversationManager) async {
+private func prepareWindowsForUITests(
+    using manager: ConversationManager,
+    projectManager: ProjectManager
+) async {
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
 
@@ -574,6 +586,7 @@ private func prepareWindowsForUITests(using manager: ConversationManager) async 
         fallbackWindow.contentView = NSHostingView(
             rootView: MacContentView()
                 .environmentObject(manager)
+                .environmentObject(projectManager)
                 .frame(minWidth: 900, minHeight: 600)
         )
         fallbackWindow.center()

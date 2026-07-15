@@ -6,25 +6,57 @@
 //  Created on 11/2/25.
 //
 
+import AppKit
 import Combine
 import SwiftUI
 
 struct MacSidebarView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @EnvironmentObject var projectManager: ProjectManager
     @ObservedObject private var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var selectedConversations = Set<UUID>()
     @State private var searchText = ""
     @State private var searchResults: [Conversation] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var expandedProjectIds = Self.loadExpandedProjectIds()
+    @State private var projectPendingRename: Project?
+    @State private var renameTitle = ""
+    @State private var projectPendingDeletion: Project?
 
-    private var filteredConversations: [Conversation] {
+    private var visibleConversations: [Conversation] {
         let source = searchText.isEmpty ? conversationManager.conversations : searchResults
         return source.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    private var matchingConversationIds: Set<UUID> {
+        Set(visibleConversations.map(\.id))
+    }
+
+    private var unassignedConversations: [Conversation] {
+        visibleConversations.filter { $0.projectId == nil }
+    }
+
     private var timelineSections: [ConversationTimelineSection] {
-        ConversationTimelineGrouper.sections(from: filteredConversations)
+        ConversationTimelineGrouper.sections(from: unassignedConversations)
+    }
+
+    private var visibleProjects: [Project] {
+        let filteredProjects: [Project]
+
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            filteredProjects = projectManager.projects
+        } else {
+            filteredProjects = projectManager.projects.filter { project in
+                projectMatchesQuery(project) || projectHasSearchHits(project)
+            }
+        }
+
+        return filteredProjects.sorted { projectSortDate(for: $0) > projectSortDate(for: $1) }
+    }
+
+    private var hasVisibleContent: Bool {
+        !timelineSections.isEmpty || !visibleProjects.isEmpty
     }
 
     private func performSearch() {
@@ -70,7 +102,7 @@ struct MacSidebarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .accessibilityIdentifier(TestIdentifiers.Sidebar.searchField)
-                        .onChange(of: searchText) {
+                        .onChange(of: searchText) { _, _ in
                             performSearch()
                         }
                 }
@@ -94,22 +126,22 @@ struct MacSidebarView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.md)
             .padding(.bottom, Spacing.sm)
-            .onChange(of: conversationManager.conversations) {
+            .onChange(of: conversationManager.conversations) { _, _ in
                 if !searchText.isEmpty {
                     performSearch()
                 }
             }
 
             // Conversation List
-            if filteredConversations.isEmpty {
+            if !hasVisibleContent {
                 VStack(spacing: Spacing.md) {
                     Spacer()
-                    Image(systemName: searchText.isEmpty ? "message" : "magnifyingglass")
+                    Image(systemName: searchText.isEmpty ? "folder.badge.questionmark" : "magnifyingglass")
                         .font(.system(size: Typography.IconSize.hero))
                         .foregroundStyle(Theme.textTertiary)
                         .symbolEffect(.pulse, options: .repeating.speed(0.5))
 
-                    Text(searchText.isEmpty ? "No conversations yet" : "No results found")
+                    Text(searchText.isEmpty ? "No conversations or projects yet" : "No results found")
                         .font(Typography.bodySecondary)
                         .foregroundStyle(Theme.textSecondary)
                     Spacer()
@@ -117,47 +149,15 @@ struct MacSidebarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $selectedConversations) {
+                    sectionTitleRow("Conversations")
+
                     ForEach(timelineSections) { section in
                         Section {
                             ForEach(Array(section.conversations.enumerated()), id: \.element.id) { index, conversation in
-                                VStack(spacing: 0) {
-                                    ConversationRow(conversation: conversation)
-
-                                    // Add divider between conversations (not after the last one in section)
-                                    if index < section.conversations.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 64) // Align with text, past the avatar (44 + 12 + 8)
-                                    }
-                                }
-                                .tag(conversation.id)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                                .listRowSeparator(.hidden)
-                                .contextMenu {
-                                    if selectedConversations.count > 1 {
-                                        Button(
-                                            role: .destructive,
-                                            action: {
-                                                deleteConversations(with: selectedConversations)
-                                            }
-                                        ) {
-                                            Label(
-                                                "Delete \(selectedConversations.count) Conversations",
-                                                systemImage: "trash"
-                                            )
-                                        }
-                                        .accessibilityIdentifier("contextMenu.delete")
-                                    } else {
-                                        Button(
-                                            role: .destructive,
-                                            action: {
-                                                deleteConversation(with: conversation.id)
-                                            }
-                                        ) {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                        .accessibilityIdentifier("contextMenu.delete")
-                                    }
-                                }
+                                conversationListRow(
+                                    conversation,
+                                    showDivider: index < section.conversations.count - 1
+                                )
                             }
                         } header: {
                             Text(section.title)
@@ -168,6 +168,41 @@ struct MacSidebarView: View {
                                 .padding(.top, section.id == timelineSections.first?.id ? 0 : Spacing.xs)
                         }
                     }
+
+                    dividerRow
+                    projectsHeaderRow
+
+                    ForEach(visibleProjects) { project in
+                        DisclosureGroup(isExpanded: expansionBinding(for: project)) {
+                            let projectConversations = conversationsForVisibleProject(project)
+
+                            if projectConversations.isEmpty {
+                                Text(searchText.isEmpty ? "No conversations yet" : "No matching conversations")
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, Spacing.sm)
+                                    .padding(.vertical, Spacing.sm)
+                            } else {
+                                ForEach(Array(projectConversations.enumerated()), id: \.element.id) { index, conversation in
+                                    conversationListRow(
+                                        conversation,
+                                        showDivider: index < projectConversations.count - 1,
+                                        leadingInset: 28
+                                    )
+                                }
+                            }
+                        } label: {
+                            projectRow(project: project)
+                        }
+                        .contextMenu {
+                            projectContextMenu(for: project)
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            selectProject(project)
+                        })
+                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                        .listRowSeparator(.hidden)
+                    }
                 }
                 .listStyle(.sidebar)
                 .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
@@ -176,6 +211,19 @@ struct MacSidebarView: View {
                     // Keep single selection in sync for chat view
                     if let firstId = newSelection.first, newSelection.count == 1 {
                         selectedConversationId = firstId
+                        projectManager.selectedProjectId = conversationManager
+                            .conversation(byId: firstId)?
+                            .projectId
+                    }
+                }
+                .onChange(of: selectedConversationId) { _, newSelection in
+                    if let newSelection {
+                        selectedConversations = [newSelection]
+                        if let conversation = conversationManager.conversation(byId: newSelection) {
+                            projectManager.selectedProjectId = conversation.projectId
+                        }
+                    } else {
+                        selectedConversations.removeAll()
                     }
                 }
                 .onDeleteCommand(perform: handleDeleteCommand)
@@ -186,6 +234,55 @@ struct MacSidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
             selectedConversationId = nil
             selectedConversations.removeAll()
+        }
+        .alert(
+            "Rename Project",
+            isPresented: Binding(
+                get: { projectPendingRename != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        projectPendingRename = nil
+                    }
+                }
+            )
+        ) {
+            TextField("Project Name", text: $renameTitle)
+            Button("Cancel", role: .cancel) {
+                projectPendingRename = nil
+            }
+            Button("Rename") {
+                renameProject()
+            }
+            .disabled(renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("Update the project name shown in the sidebar.")
+        }
+        .confirmationDialog(
+            "Delete Project?",
+            isPresented: Binding(
+                get: { projectPendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        projectPendingDeletion = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Project Only") {
+                confirmProjectDeletion(.unassignConversations)
+            }
+            Button("Delete Project and Conversations", role: .destructive) {
+                confirmProjectDeletion(.deleteProjectAndConversations)
+            }
+            Button("Cancel", role: .cancel) {
+                projectPendingDeletion = nil
+            }
+        } message: {
+            if let projectPendingDeletion {
+                let conversationCount = projectManager.conversationsForProject(projectPendingDeletion.id).count
+                Text("\"\(projectPendingDeletion.title)\" has \(conversationCount) conversation\(conversationCount == 1 ? "" : "s").")
+            }
         }
     }
 
@@ -224,6 +321,273 @@ struct MacSidebarView: View {
 
     private func deleteConversation(with id: UUID) {
         deleteConversations(with: Set([id]))
+    }
+
+    private func projectSortDate(for project: Project) -> Date {
+        projectManager.conversationsForProject(project.id).map(\.updatedAt).max() ?? project.updatedAt
+    }
+
+    private func projectMatchesQuery(_ project: Project) -> Bool {
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return false }
+
+        return project.title.localizedCaseInsensitiveContains(trimmedQuery)
+            || project.workspaceRoot.localizedCaseInsensitiveContains(trimmedQuery)
+    }
+
+    private func conversationsForVisibleProject(_ project: Project) -> [Conversation] {
+        let conversations = projectManager.conversationsForProject(project.id)
+
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return conversations
+        }
+
+        if projectMatchesQuery(project) {
+            return conversations
+        }
+
+        return conversations.filter { matchingConversationIds.contains($0.id) }
+    }
+
+    private func projectHasSearchHits(_ project: Project) -> Bool {
+        !conversationsForVisibleProject(project).isEmpty
+    }
+
+    private func isExpanded(_ project: Project) -> Bool {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           projectMatchesQuery(project) || projectHasSearchHits(project)
+        {
+            return true
+        }
+
+        return expandedProjectIds.contains(project.id)
+    }
+
+    private func expansionBinding(for project: Project) -> Binding<Bool> {
+        Binding(
+            get: { isExpanded(project) },
+            set: { newValue in
+                if newValue {
+                    expandedProjectIds.insert(project.id)
+                } else {
+                    expandedProjectIds.remove(project.id)
+                }
+                Self.saveExpandedProjectIds(expandedProjectIds)
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func conversationListRow(
+        _ conversation: Conversation,
+        showDivider: Bool,
+        leadingInset: CGFloat = 0
+    ) -> some View {
+        VStack(spacing: 0) {
+            ConversationRow(conversation: conversation)
+                .padding(.leading, leadingInset)
+
+            if showDivider {
+                Divider()
+                    .padding(.leading, 64 + leadingInset)
+            }
+        }
+        .tag(conversation.id)
+        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+        .listRowSeparator(.hidden)
+        .contextMenu {
+            if selectedConversations.count > 1 {
+                Button(
+                    role: .destructive,
+                    action: {
+                        deleteConversations(with: selectedConversations)
+                    }
+                ) {
+                    Label(
+                        "Delete \(selectedConversations.count) Conversations",
+                        systemImage: "trash"
+                    )
+                }
+                .accessibilityIdentifier("contextMenu.delete")
+            } else {
+                Button(
+                    role: .destructive,
+                    action: {
+                        deleteConversation(with: conversation.id)
+                    }
+                ) {
+                    Label("Delete", systemImage: "trash")
+                }
+                .accessibilityIdentifier("contextMenu.delete")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sectionTitleRow(_ title: String) -> some View {
+        Text(title)
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(Theme.textSecondary)
+            .textCase(nil)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.top, Spacing.xs)
+            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+            .listRowSeparator(.hidden)
+            .selectionDisabled(true)
+    }
+
+    private var dividerRow: some View {
+        Divider()
+            .padding(.vertical, Spacing.sm)
+            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+            .listRowSeparator(.hidden)
+            .selectionDisabled(true)
+    }
+
+    private var projectsHeaderRow: some View {
+        HStack {
+            Text("Projects")
+                .font(Typography.caption.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+
+            Spacer()
+
+            Button {
+                createProjectFromFolderPicker()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add Project")
+        }
+        .padding(.horizontal, Spacing.sm)
+        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+        .listRowSeparator(.hidden)
+        .selectionDisabled(true)
+    }
+
+    @ViewBuilder
+    private func projectRow(project: Project) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "folder")
+                .foregroundStyle(Theme.accent)
+            Text(project.title)
+                .font(Typography.body.weight(.semibold))
+                .lineLimit(1)
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            projectManager.selectedProjectId == project.id
+                ? Theme.accent.opacity(0.12)
+                : .clear
+        )
+        .clipShape(.rect(cornerRadius: 10))
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func projectContextMenu(for project: Project) -> some View {
+        Button {
+            renameTitle = project.title
+            projectPendingRename = project
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        Button {
+            expandedProjectIds.insert(project.id)
+            Self.saveExpandedProjectIds(expandedProjectIds)
+            selectProject(project)
+            startNewConversation()
+        } label: {
+            Label("New Conversation", systemImage: "square.and.pencil")
+        }
+
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.workspaceRoot)])
+        } label: {
+            Label("Open in Finder", systemImage: "folder")
+        }
+
+        Button(role: .destructive) {
+            projectPendingDeletion = project
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    private func selectProject(_ project: Project) {
+        projectManager.selectedProjectId = project.id
+    }
+
+    private func renameProject() {
+        guard let projectPendingRename else { return }
+
+        var renamedProject = projectPendingRename
+        renamedProject.title = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        projectManager.updateProject(renamedProject)
+        self.projectPendingRename = nil
+    }
+
+    private func confirmProjectDeletion(_ behavior: ProjectManager.DeletionBehavior) {
+        guard let projectPendingDeletion else { return }
+
+        let deletedConversationIds = Set(
+            projectManager.conversationsForProject(projectPendingDeletion.id).map(\.id)
+        )
+
+        projectManager.deleteProject(projectPendingDeletion, behavior: behavior)
+
+        if let selectedConversationId, deletedConversationIds.contains(selectedConversationId),
+           behavior == .deleteProjectAndConversations
+        {
+            self.selectedConversationId = nil
+        }
+
+        selectedConversations.subtract(deletedConversationIds)
+        self.projectPendingDeletion = nil
+    }
+
+    private func createProjectFromFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add Project"
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        if let existingProject = projectManager.project(forWorkspaceRoot: url.path) {
+            expandedProjectIds.insert(existingProject.id)
+            Self.saveExpandedProjectIds(expandedProjectIds)
+            selectProject(existingProject)
+            return
+        }
+
+        let defaultModel = aiService.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let project = projectManager.createProject(
+            title: url.lastPathComponent,
+            workspaceRoot: url.path,
+            defaultModel: defaultModel.isEmpty ? nil : defaultModel
+        )
+        expandedProjectIds.insert(project.id)
+        Self.saveExpandedProjectIds(expandedProjectIds)
+    }
+
+    private static func loadExpandedProjectIds() -> Set<UUID> {
+        let storedIds = AppPreferences.storage.array(forKey: "expandedProjectIds") as? [String] ?? []
+        return Set(storedIds.compactMap(UUID.init(uuidString:)))
+    }
+
+    private static func saveExpandedProjectIds(_ ids: Set<UUID>) {
+        let encodedIds = ids.map(\.uuidString).sorted()
+        AppPreferences.storage.set(encodedIds, forKey: "expandedProjectIds")
     }
 }
 
@@ -357,8 +721,12 @@ private struct IMessageSearchBarStyle: ViewModifier {
 }
 
 #Preview {
-    MacSidebarView(selectedConversationId: .constant(nil))
-        .environmentObject(ConversationManager())
+    let conversationManager = ConversationManager()
+    let projectManager = ProjectManager(conversationManager: conversationManager)
+
+    return MacSidebarView(selectedConversationId: .constant(nil))
+        .environmentObject(conversationManager)
+        .environmentObject(projectManager)
         .frame(width: 300, height: 600)
 }
 #endif
