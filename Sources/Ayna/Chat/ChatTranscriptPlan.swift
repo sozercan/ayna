@@ -156,6 +156,10 @@ struct ChatTranscriptPlan: Equatable, Sendable {
             return hasContent ? .text : nil
         }
 
+        if message.role == .assistant, let reasoning = message.reasoning, !reasoning.isEmpty {
+            return .text
+        }
+
         if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
             if message.content.isEmpty {
                 return message.id == conversation.messages.last?.id && isGenerating ? .typingPlaceholder : .citationsOnly

@@ -32,6 +32,17 @@ struct ChatTranscriptPlanTests {
         #endif
     }
 
+    @Test("Plan shows reasoning-only assistant messages")
+    func showsReasoningOnlyAssistantMessages() {
+        let message = Message(role: .assistant, content: "", reasoning: "Thinking through this")
+        let conversation = Conversation(messages: [message])
+
+        let plan = ChatTranscriptPlan(conversation: conversation, isGenerating: false)
+
+        #expect(plan.visibleMessages == [ChatTranscriptMessage(message: message, displayKind: .text)])
+        #expect(plan.items == [.message(ChatTranscriptMessage(message: message, displayKind: .text))])
+    }
+
     @Test("Plan shows citations-only assistant messages")
     func showsCitationsOnlyAssistantMessages() {
         let message = Message(
