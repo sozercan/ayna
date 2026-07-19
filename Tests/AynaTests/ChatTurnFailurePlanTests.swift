@@ -21,8 +21,8 @@ struct ChatTurnFailurePlanTests {
         #expect(plan.retryPrompt == nil)
     }
 
-    @Test("Plan can remove failed user message for retry policies that re-add it")
-    func removesFailedUserForRetryPoliciesThatReaddIt() {
+    @Test("Plan preserves failed user message and offers retry text")
+    func preservesFailedUserAndOffersRetryText() {
         let user = Message(role: .user, content: "Retry me")
         let assistant = Message(role: .assistant, content: "")
 
@@ -33,7 +33,7 @@ struct ChatTurnFailurePlanTests {
             failedUserMessagePolicy: .removeForRetry
         )
 
-        #expect(plan.messagesAfterFailure.isEmpty)
+        #expect(plan.messagesAfterFailure == [user])
         #expect(plan.retryPrompt == "Retry me")
     }
 

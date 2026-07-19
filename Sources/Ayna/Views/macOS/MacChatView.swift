@@ -38,6 +38,7 @@ struct MacChatView: View {
     @State var errorMessage: String?
     @State var errorRecoverySuggestion: String?
     @State private var failedMessage: String?
+    @State private var failedMessageId: UUID?
     @State private var selectedModel: String
     @State private var attachedFiles: [URL] = []
     @State var toolCallDepth = 0
@@ -567,10 +568,17 @@ struct MacChatView: View {
 
         logChat("🔄 Retrying failed message", level: .info, metadata: ["messageLength": "\(message.count)"])
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId {
+            _ = conversationManager.removeMessage(conversationId: currentConversation.id, messageId: messageId)
+        }
 
         // Set message text and send
         messageText = message
@@ -580,6 +588,7 @@ struct MacChatView: View {
     /// Dismiss the current error without retrying
     private func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -699,6 +708,7 @@ struct MacChatView: View {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = promptText // Store for retry in case of failure
+        failedMessageId = nil
         isGenerating = true
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
@@ -967,6 +977,7 @@ struct MacChatView: View {
                         logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
                         isGenerating = false
                         failedMessage = nil // Clear failed message on success
+                        failedMessageId = nil
                         toolChainTimeoutTask?.cancel()
                         toolChainTimeoutTask = nil
                     } else {
@@ -1005,6 +1016,7 @@ struct MacChatView: View {
                         conversationManager.conversations[index].updatedAt = Date()
                         conversationManager.save(conversationManager.conversations[index])
                         failedMessage = plan.retryPrompt
+                        failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
                     }
 
                     // Only update UI state if we're viewing this conversation

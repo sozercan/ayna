@@ -40,6 +40,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// The last failed message content, stored for retry functionality
     @Published var failedMessage: String?
+    private var failedMessageId: UUID?
 
     /// Recovery suggestion for the current error (if available)
     @Published var errorRecoverySuggestion: String?
@@ -165,6 +166,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
         selectedModel = aiService.selectedModel
@@ -218,10 +220,17 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             metadata: ["messageLength": "\(message.count)"]
         )
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId, let conversation {
+            _ = conversationManager.removeMessage(conversationId: conversation.id, messageId: messageId)
+        }
 
         // Set message text and send
         messageText = message
@@ -231,6 +240,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Dismiss the current error without retrying
     func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -459,6 +469,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
 
         // Play message sent sound
         SoundEngine.messageSent()
@@ -613,6 +624,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
                         // Clear pending message on success
                         self.pendingUserMessage = nil
+                        self.failedMessageId = nil
 
                         // Play message received sound
                         SoundEngine.messageReceived()
@@ -694,8 +706,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         updatedConversation.messages = plan.messagesAfterFailure
                         self.conversationManager.updateConversation(updatedConversation)
                         self.failedMessage = plan.retryPrompt
+                        self.failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
                     } else {
                         self.failedMessage = self.pendingUserMessage
+                        self.failedMessageId = nil
                     }
                     self.pendingUserMessage = nil
 

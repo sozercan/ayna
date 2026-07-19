@@ -22,6 +22,7 @@
         @Published var errorMessage: String?
         @Published var streamingContent = ""
         @Published var failedMessage: String?
+        private var failedMessageId: UUID?
 
         private let conversationStore: WatchConversationStore
         private let connectivityService: WatchConnectivityService
@@ -49,6 +50,7 @@
             errorMessage = nil
             streamingContent = ""
             failedMessage = nil
+            failedMessageId = nil
             pendingContent = ""
         }
 
@@ -70,6 +72,7 @@
             // Clear any previous error
             errorMessage = nil
             failedMessage = nil
+            failedMessageId = nil
             isLoading = true
             isStreaming = false
             streamingContent = ""
@@ -287,10 +290,12 @@
                                 failedUserMessagePolicy: failedUserMessagePolicy
                             )
                             self.failedMessage = plan.retryPrompt
+                            self.failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
                             conv.messages = plan.messagesAfterFailure.map { WatchMessage(from: $0) }
                             _ = self.conversationStore.replaceConversation(conv)
                         } else {
                             self.failedMessage = nil
+                            self.failedMessageId = nil
                         }
 
                         // Play failure haptic
@@ -321,14 +326,26 @@
         /// Retry the last failed message
         func retryFailedMessage() {
             guard let message = failedMessage else { return }
+            let messageId = failedMessageId
             failedMessage = nil
+            failedMessageId = nil
             errorMessage = nil
+
+            if let messageId,
+               let conversationId = currentConversationId,
+               var conversation = conversationStore.conversation(for: conversationId)
+            {
+                conversation.messages.removeAll { $0.id == messageId }
+                _ = conversationStore.replaceConversation(conversation)
+            }
+
             sendMessage(message)
         }
 
         /// Clear the failed message without retrying
         func dismissError() {
             failedMessage = nil
+            failedMessageId = nil
             errorMessage = nil
         }
 
