@@ -126,4 +126,67 @@ struct ChatTurnFailurePlanTests {
         #expect(plan.retryPrompt == nil)
     }
 
+    @Test("Remove-for-retry preserves user when assistant placeholder is missing")
+    func removeForRetryPreservesUserWhenAssistantPlaceholderIsMissing() {
+        let user = Message(role: .user, content: "Retry me")
+
+        let plan = ChatTurnFailurePlan(
+            messages: [user],
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: UUID(),
+            failedUserMessagePolicy: .removeForRetry
+        )
+
+        #expect(plan.messagesAfterFailure == [user])
+        #expect(plan.retryPrompt == nil)
+    }
+
+    @Test("Plan preserves empty assistant messages with reasoning or citations")
+    func preservesEmptyAssistantMessagesWithReasoningOrCitations() {
+        let user = Message(role: .user, content: "Hello")
+        let reasoningAssistant = Message(role: .assistant, content: "", reasoning: "Thinking")
+        let citedAssistant = Message(
+            role: .assistant,
+            content: "",
+            citations: [CitationReference(number: 1, title: "Source", url: "https://example.com")]
+        )
+
+        let reasoningPlan = ChatTurnFailurePlan(
+            messages: [user, reasoningAssistant],
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: reasoningAssistant.id,
+            failedUserMessagePolicy: .removeForRetry
+        )
+        let citationPlan = ChatTurnFailurePlan(
+            messages: [user, citedAssistant],
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: citedAssistant.id,
+            failedUserMessagePolicy: .preserve
+        )
+
+        #expect(reasoningPlan.messagesAfterFailure == [user, reasoningAssistant])
+        #expect(reasoningPlan.retryPrompt == nil)
+        #expect(citationPlan.messagesAfterFailure == [user, citedAssistant])
+        #expect(citationPlan.retryPrompt == nil)
+    }
+
+    @Test("Plan preserves empty assistant messages with tool metadata")
+    func preservesEmptyAssistantMessagesWithToolMetadata() {
+        #if !os(watchOS)
+            let user = Message(role: .user, content: "Hello")
+            var assistant = Message(role: .assistant, content: "")
+            assistant.toolCalls = [MCPToolCall(toolName: "web_search", arguments: [:])]
+
+            let plan = ChatTurnFailurePlan(
+                messages: [user, assistant],
+                failedUserMessageId: user.id,
+                assistantPlaceholderId: assistant.id,
+                failedUserMessagePolicy: .removeForRetry
+            )
+
+            #expect(plan.messagesAfterFailure == [user, assistant])
+            #expect(plan.retryPrompt == nil)
+        #endif
+    }
+
 }

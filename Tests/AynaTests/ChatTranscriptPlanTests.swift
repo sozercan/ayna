@@ -115,6 +115,25 @@ struct ChatTranscriptPlanTests {
         ])
     }
 
+    @Test("Plan keeps non-empty standalone image messages visible")
+    func keepsNonEmptyStandaloneImageMessagesVisible() {
+        let failedAssistant = Message(role: .assistant, content: "Image generation failed", mediaType: .image)
+        let userImage = Message(role: .user, content: "Uploaded image context", mediaType: .image)
+        let oldPlaceholder = Message(role: .assistant, content: "", mediaType: .image)
+        let conversation = Conversation(messages: [failedAssistant, userImage, oldPlaceholder])
+
+        let plan = ChatTranscriptPlan(conversation: conversation, isGenerating: false)
+
+        #expect(plan.visibleMessages == [
+            ChatTranscriptMessage(message: failedAssistant, displayKind: .text),
+            ChatTranscriptMessage(message: userImage, displayKind: .text)
+        ])
+        #expect(plan.items == [
+            .message(ChatTranscriptMessage(message: failedAssistant, displayKind: .text)),
+            .message(ChatTranscriptMessage(message: userImage, displayKind: .text))
+        ])
+    }
+
     @Test("Plan shows only the last empty assistant while generating")
     func showsOnlyLastEmptyAssistantWhileGenerating() {
         let hidden = Message(role: .assistant, content: "")

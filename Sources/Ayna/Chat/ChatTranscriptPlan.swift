@@ -148,7 +148,12 @@ struct ChatTranscriptPlan: Equatable, Sendable {
             if message.responseGroupId != nil {
                 return .image
             }
-            return message.id == conversation.messages.last?.id && isGenerating ? .image : nil
+
+            let hasContent = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if message.role == .assistant, !hasContent {
+                return message.id == conversation.messages.last?.id && isGenerating ? .image : nil
+            }
+            return hasContent ? .text : nil
         }
 
         if message.role == .assistant, let citations = message.citations, !citations.isEmpty {

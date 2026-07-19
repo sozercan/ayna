@@ -34,7 +34,7 @@ struct ChatTurnFailurePlan: Equatable, Sendable {
         let assistantMessage = assistantPlaceholderId.flatMap { assistantId in
             messages.first { $0.id == assistantId && $0.role == .assistant }
         }
-        let canRemoveAssistant = assistantMessage.map { $0.content.isEmpty } ?? true
+        let canRemoveAssistant = assistantMessage.map(Self.isRemovableAssistantPlaceholder) ?? false
         let shouldRemoveFailedUser = failedUserMessagePolicy == .removeForRetry
             && canRecreateFailedUserFromText
             && canRemoveAssistant
@@ -49,7 +49,7 @@ struct ChatTurnFailurePlan: Equatable, Sendable {
                 if shouldRemoveFailedUser {
                     return false
                 }
-                return !message.content.isEmpty
+                return !Self.isRemovableAssistantPlaceholder(message)
             }
 
             if shouldRemoveFailedUser,
@@ -68,6 +68,30 @@ struct ChatTurnFailurePlan: Equatable, Sendable {
         let hasAttachments = !(message.attachments?.isEmpty ?? true)
         return !message.content.isEmpty
             && !hasAttachments
+            && message.mediaType == nil
+            && message.imageData == nil
+            && message.imagePath == nil
+    }
+
+    private static func isRemovableAssistantPlaceholder(_ message: Message) -> Bool {
+        guard message.role == .assistant, message.content.isEmpty else { return false }
+
+        let hasAttachments = !(message.attachments?.isEmpty ?? true)
+        let hasReasoning = !(message.reasoning?.isEmpty ?? true)
+        let hasCitations = !(message.citations?.isEmpty ?? true)
+        #if os(watchOS)
+            let hasToolCalls = false
+            let hasPendingToolCalls = false
+        #else
+            let hasToolCalls = !(message.toolCalls?.isEmpty ?? true)
+            let hasPendingToolCalls = !(message.pendingToolCalls?.isEmpty ?? true)
+        #endif
+
+        return !hasAttachments
+            && !hasReasoning
+            && !hasCitations
+            && !hasToolCalls
+            && !hasPendingToolCalls
             && message.mediaType == nil
             && message.imageData == nil
             && message.imagePath == nil
