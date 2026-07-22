@@ -80,6 +80,40 @@ struct ChatGenerationFinalizerTests {
     }
 
     @Test
+    func `cancelled partial multi-model response remains in effective history`() {
+        let groupID = UUID()
+        let user = Message(role: .user, content: "Question")
+        let partial = Message(
+            role: .assistant,
+            content: "Saved partial answer",
+            model: "model-a",
+            responseGroupId: groupID
+        )
+        var conversation = Conversation(
+            messages: [user, partial],
+            model: "model-a",
+            responseGroups: [
+                ResponseGroup(
+                    id: groupID,
+                    userMessageId: user.id,
+                    responses: [
+                        .init(id: partial.id, modelName: "model-a", status: .streaming)
+                    ]
+                )
+            ]
+        )
+
+        ChatGenerationFinalizer.finalize(
+            conversation: &conversation,
+            activeAssistantMessageID: partial.id,
+            activeResponseGroupID: groupID
+        )
+
+        #expect(conversation.responseGroups[0].responses[0].status == .failed)
+        #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, partial.id])
+    }
+
+    @Test
     func `reasoning-only assistant output is preserved`() {
         let assistantID = UUID()
         var conversation = Conversation(messages: [
@@ -94,8 +128,66 @@ struct ChatGenerationFinalizerTests {
 
         #expect(conversation.messages.map(\.id) == [assistantID])
     }
-    @Test("Citation-only assistant output is preserved")
-    func preservesCitationOnlyOutput() {
+
+    @Test
+    func `tool-call-only assistant output is preserved`() {
+        let assistantID = UUID()
+        var conversation = Conversation(messages: [
+            Message(
+                id: assistantID,
+                role: .assistant,
+                content: "",
+                toolCalls: [
+                    MCPToolCall(
+                        id: "call-1",
+                        toolName: "write_file",
+                        arguments: [:]
+                    )
+                ]
+            )
+        ])
+
+        ChatGenerationFinalizer.finalize(
+            conversation: &conversation,
+            activeAssistantMessageID: assistantID,
+            activeResponseGroupID: nil
+        )
+
+        #expect(conversation.messages.map(\.id) == [assistantID])
+        #expect(conversation.messages.first?.toolCalls?.first?.id == "call-1")
+    }
+
+    @Test
+    func `attachment-only assistant output is preserved`() {
+        let assistantID = UUID()
+        var conversation = Conversation(messages: [
+            Message(
+                id: assistantID,
+                role: .assistant,
+                content: "",
+                attachments: [
+                    Message.FileAttachment(
+                        fileName: "result.txt",
+                        mimeType: "text/plain",
+                        data: Data("result".utf8),
+                        localPath: nil
+                    )
+                ]
+            )
+        ])
+
+        ChatGenerationFinalizer.finalize(
+            conversation: &conversation,
+            activeAssistantMessageID: assistantID,
+            activeResponseGroupID: nil
+        )
+
+        #expect(conversation.messages.map(\.id) == [assistantID])
+        #expect(conversation.messages.first?.attachments?.first?.fileName == "result.txt")
+    }
+
+    @Test
+    func `citation-only assistant output is preserved`() {
         let assistantID = UUID()
         var conversation = Conversation(messages: [
             Message(
@@ -115,5 +207,4 @@ struct ChatGenerationFinalizerTests {
         #expect(conversation.messages.map(\.id) == [assistantID])
         #expect(conversation.messages.first?.citations?.first?.title == "Source")
     }
-
 }

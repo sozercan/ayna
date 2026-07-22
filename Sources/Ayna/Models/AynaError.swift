@@ -402,6 +402,19 @@ struct AnyCodable: Codable, Equatable, @unchecked Sendable {
             value = bool
         } else if let int = try? container.decode(Int.self) {
             value = int
+        } else if let uint = try? container.decode(UInt64.self) {
+            value = NSNumber(value: uint)
+        } else if let decimal = try? container.decode(Decimal.self) {
+            if let double = try? container.decode(Double.self),
+               Decimal(
+                   string: String(double),
+                   locale: Locale(identifier: "en_US_POSIX")
+               ) == decimal
+            {
+                value = double
+            } else {
+                value = NSDecimalNumber(decimal: decimal)
+            }
         } else if let double = try? container.decode(Double.self) {
             value = double
         } else if let string = try? container.decode(String.self) {
@@ -466,7 +479,19 @@ struct AnyCodable: Codable, Equatable, @unchecked Sendable {
     }
 
     static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
-        switch (lhs.value, rhs.value) {
+        let lhsBoolean = jsonBooleanValue(lhs.value)
+        let rhsBoolean = jsonBooleanValue(rhs.value)
+        if lhsBoolean != nil || rhsBoolean != nil {
+            return lhsBoolean == rhsBoolean
+        }
+
+        let lhsNumber = jsonNumberValue(lhs.value)
+        let rhsNumber = jsonNumberValue(rhs.value)
+        if lhsNumber != nil || rhsNumber != nil {
+            return lhsNumber == rhsNumber
+        }
+
+        return switch (lhs.value, rhs.value) {
         case let (lhs as Bool, rhs as Bool):
             lhs == rhs
         case let (lhs as Int, rhs as Int):
@@ -479,10 +504,51 @@ struct AnyCodable: Codable, Equatable, @unchecked Sendable {
             lhs == rhs
         case let (lhs as [String: AnyCodable], rhs as [String: AnyCodable]):
             lhs == rhs
+        case let (lhs as [Any], rhs as [Any]):
+            lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
+                AnyCodable($0) == AnyCodable($1)
+            }
+        case let (lhs as [String: Any], rhs as [String: Any]):
+            lhs.count == rhs.count && lhs.allSatisfy { key, value in
+                guard let rhsValue = rhs[key] else { return false }
+                return AnyCodable(value) == AnyCodable(rhsValue)
+            }
         case (is NSNull, is NSNull):
             true
         default:
             false
+        }
+    }
+
+    private static func jsonBooleanValue(_ value: Any) -> Bool? {
+        if Mirror(reflecting: value).displayStyle == .class,
+           let number = value as? NSNumber
+        {
+            guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+            return number.boolValue
+        }
+        return value as? Bool
+    }
+
+    private static func jsonNumberValue(_ value: Any) -> Decimal? {
+        if Mirror(reflecting: value).displayStyle == .class,
+           let number = value as? NSNumber
+        {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            let decimal = number.decimalValue
+            return decimal.isNaN ? nil : decimal
+        }
+
+        return switch value {
+        case let int as Int:
+            Decimal(int)
+        case let double as Double where double.isFinite:
+            Decimal(
+                string: String(double),
+                locale: Locale(identifier: "en_US_POSIX")
+            )
+        default:
+            nil
         }
     }
 }

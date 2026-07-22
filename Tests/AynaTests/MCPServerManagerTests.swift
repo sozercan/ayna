@@ -457,21 +457,39 @@ struct MCPServerManagerTests {
         let config = MCPServerConfig(name: "cancel-reconnect", command: "cmd", enabled: true)
         let primaryService = StubMCPService(config: config)
         let reconnectService = StubMCPService(config: config)
+        let reconnectSleepEntered = FlightTestSignal()
+        let releaseReconnectSleep = FlightTestSignal()
+        let reconnectSleepCancelled = FlightTestSignal()
         var services = [primaryService, reconnectService]
         let manager = MCPServerManager(
             serviceFactory: { _ in services.removeFirst() },
             retryDelayProvider: { _ in 0 },
-            reconnectDelayProvider: { 60 }
+            reconnectDelayProvider: { 60 },
+            reconnectSleeper: { _ in
+                reconnectSleepEntered.signal()
+                do {
+                    try await withTaskCancellationHandler {
+                        await releaseReconnectSleep.wait()
+                        try Task.checkCancellation()
+                    } onCancel: {
+                        releaseReconnectSleep.signal()
+                    }
+                } catch {
+                    reconnectSleepCancelled.signal()
+                    throw error
+                }
+            }
         )
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
 
         await manager.connectToServer(config)
         primaryService.simulateUnexpectedTermination(error: "boom")
+        await reconnectSleepEntered.wait()
         #expect(manager.getServerStatus(config.name)?.state == .reconnecting)
 
         manager.disconnectServer(config.name)
-        try? await Task.sleep(for: .milliseconds(50))
+        await reconnectSleepCancelled.wait()
 
         #expect(reconnectService.connectCallCount == 0)
         #expect(manager.getServerStatus(config.name)?.state == .idle)

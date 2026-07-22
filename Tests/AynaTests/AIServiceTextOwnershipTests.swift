@@ -213,6 +213,33 @@ extension AIServiceTests {
         #expect(replacementCompleted.value)
     }
 
+    @Test("Detached simulator callbacks hop safely to the main actor")
+    func detachedSimulatorCallbacksHopSafelyToMainActor() async throws {
+        let capturedCallbacks = FlightTestBox<AIServiceResponseSimulationCallbacks?>(nil)
+        let service = AIService(responseSimulator: { _, callbacks in
+            capturedCallbacks.value = callbacks
+        })
+        let chunks = FlightTestBox<[String]>([])
+        let completed = FlightTestSignal()
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Detached")],
+            model: "simulator-model",
+            onChunk: { chunk in chunks.update { $0.append(chunk) } },
+            onComplete: { completed.signal() },
+            onError: { error in Issue.record("Unexpected error: \(error)") }
+        )
+
+        let callbacks = try #require(capturedCallbacks.value)
+        await Task.detached {
+            await callbacks.onChunk("detached")
+            await callbacks.onComplete()
+        }.value
+
+        #expect(chunks.value == ["detached"])
+        #expect(await completed.wait(timeout: .seconds(1)))
+    }
+
     @Test("Cancelling an owned Responses API request suppresses callbacks", .timeLimit(.minutes(1)))
     func cancellingOwnedResponsesAPIRequestSuppressesCallbacks() async {
         let server = FlightTestURLProtocolServer()

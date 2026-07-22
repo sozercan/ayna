@@ -405,17 +405,21 @@ final class ConversationPersistenceCoordinator {
         }
 
         ensureRewriteScheduled()
-        let pendingSaves = dirty.compactMap { id, intent -> (UUID, UInt64)? in
+        let pendingIntents = dirty.compactMap { id, intent -> (UUID, UInt64, DesiredState)? in
             guard proposedSaves[id] == nil,
-                  !intent.isScheduled, rewriteCoveredTokens[id] != intent.token,
-                  case .saved = intent.desired
+                  !intent.isScheduled, rewriteCoveredTokens[id] != intent.token
             else {
                 return nil
             }
-            return (id, intent.token)
+            return (id, intent.token, intent.desired)
         }
-        for (id, token) in pendingSaves {
-            activateSave(id: id, token: token)
+        for (id, token, desired) in pendingIntents {
+            switch desired {
+            case .saved:
+                activateSave(id: id, token: token)
+            case .deleted:
+                activateDelete(id: id, token: token)
+            }
         }
 
         let cutoff = nextTokenValue

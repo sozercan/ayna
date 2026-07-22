@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Conversation Effective History Tests", .tags(.fast))
 struct ConversationEffectiveHistoryTests {
-    @Test("Selected response linearizes a group and excludes every other status")
-    func selectedResponseLinearizesGroup() {
+    @Test
+    func `selected response linearizes a group and excludes every other status`() {
         let groupID = UUID()
         let user = Message(role: .user, content: "Question")
         let failed = Message(id: UUID(), role: .assistant, content: "Failure text", responseGroupId: groupID)
@@ -34,8 +34,8 @@ struct ConversationEffectiveHistoryTests {
         #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, selected.id, nextUser.id])
     }
 
-    @Test("Fallback uses response entry order and skips incomplete or empty responses")
-    func deterministicCompletedNonemptyFallback() {
+    @Test
+    func `fallback uses response entry order and skips incomplete or empty responses`() {
         let groupID = UUID()
         let user = Message(role: .user, content: "Question")
         let laterCompleted = Message(
@@ -81,8 +81,81 @@ struct ConversationEffectiveHistoryTests {
         #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, preferredCompleted.id])
     }
 
-    @Test("Unselected groups prefer the conversation model shown as the UI default")
-    func unselectedGroupPrefersConversationModel() {
+    @Test
+    func `failed partial response is the final fallback for an otherwise unsuccessful group`() {
+        let groupID = UUID()
+        let user = Message(role: .user, content: "Question")
+        let emptyDefault = Message(
+            id: UUID(),
+            role: .assistant,
+            content: "",
+            responseGroupId: groupID
+        )
+        let partialFallback = Message(
+            id: UUID(),
+            role: .assistant,
+            content: "Saved partial answer",
+            responseGroupId: groupID
+        )
+        let streaming = Message(
+            id: UUID(),
+            role: .assistant,
+            content: "Still in flight",
+            responseGroupId: groupID
+        )
+        let group = ResponseGroup(
+            id: groupID,
+            userMessageId: user.id,
+            responses: [
+                .init(id: emptyDefault.id, modelName: "model-a", status: .failed),
+                .init(id: partialFallback.id, modelName: "model-b", status: .failed),
+                .init(id: streaming.id, modelName: "model-c", status: .streaming),
+            ]
+        )
+        let conversation = Conversation(
+            messages: [user, emptyDefault, partialFallback, streaming],
+            model: "model-a",
+            responseGroups: [group]
+        )
+
+        #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, partialFallback.id])
+    }
+
+    @Test
+    func `failed fallback prefers the conversation model`() {
+        let groupID = UUID()
+        let user = Message(role: .user, content: "Question")
+        let firstFailure = Message(
+            id: UUID(),
+            role: .assistant,
+            content: "First saved partial",
+            responseGroupId: groupID
+        )
+        let defaultFailure = Message(
+            id: UUID(),
+            role: .assistant,
+            content: "Default model partial",
+            responseGroupId: groupID
+        )
+        let group = ResponseGroup(
+            id: groupID,
+            userMessageId: user.id,
+            responses: [
+                .init(id: firstFailure.id, modelName: "model-b", status: .failed),
+                .init(id: defaultFailure.id, modelName: "model-a", status: .failed),
+            ]
+        )
+        let conversation = Conversation(
+            messages: [user, firstFailure, defaultFailure],
+            model: "model-a",
+            responseGroups: [group]
+        )
+
+        #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, defaultFailure.id])
+    }
+
+    @Test
+    func `unselected groups prefer the conversation model shown as the UI default`() {
         let groupID = UUID()
         let user = Message(role: .user, content: "Question")
         let arbitraryFirst = Message(
@@ -116,8 +189,8 @@ struct ConversationEffectiveHistoryTests {
         #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, displayedDefault.id])
     }
 
-    @Test("Meaningful metadata survives history filtering while empty assistants do not")
-    func meaningfulMetadataSurvives() {
+    @Test
+    func `meaningful metadata survives history filtering while empty assistants do not`() {
         let groupID = UUID()
         let user = Message(role: .user, content: "Question")
         let emptyPlaceholder = Message(role: .assistant, content: "", mediaType: .image)

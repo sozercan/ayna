@@ -798,6 +798,51 @@
         }
 
         @Test
+        func `Rejected counterpart reset restores legacy coverage and clears durably on retry`() throws {
+            let fixture = makeFixture()
+            let conversation = try #require(fixture.store.createConversation(model: "model"))
+            let message = makeMessage(role: .user, content: "Pending counterpart delivery")
+            #expect(fixture.store.addMessage(message, to: conversation.id))
+            let mutation = try #require(fixture.store.pendingMutationsForSync.first)
+            let component = WatchLegacyEchoComponent.message(
+                id: message.id,
+                revision: mutation.messageChangeRevisions[message.id] ?? mutation.revision
+            )
+            #expect(fixture.store.markLegacyComponentsDelivered([component], for: mutation))
+            let coverage = try #require(
+                fixture.store.durableLegacyDeliveryCoverage(for: conversation.id)
+            )
+            fixture.allowsPersistence = false
+
+            #expect(!fixture.store.clearLegacyDeliveryCoverage())
+            #expect(fixture.store.durableLegacyDeliveryCoverage(for: conversation.id) == coverage)
+            #expect(fixture.store.pendingMutationsForSync == [mutation])
+            #expect(
+                try persistedFixtureState(in: fixture).legacyDeliveryCoverage?[conversation.id] == coverage
+            )
+
+            let restartedAfterFailure = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            #expect(restartedAfterFailure.durableLegacyDeliveryCoverage(for: conversation.id) == coverage)
+            #expect(restartedAfterFailure.pendingMutationsForSync == [mutation])
+
+            fixture.allowsPersistence = true
+            #expect(fixture.store.clearLegacyDeliveryCoverage())
+            #expect(fixture.store.durableLegacyDeliveryCoverage(for: conversation.id) == nil)
+
+            let restartedAfterRetry = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            #expect(restartedAfterRetry.durableLegacyDeliveryCoverage(for: conversation.id) == nil)
+            #expect(restartedAfterRetry.pendingMutationsForSync == [mutation])
+        }
+
+        @Test
         func `Deletion is durable and emits a revisioned deletion mutation`() throws {
             let fixture = makeFixture()
             let conversation = try #require(fixture.store.createConversation(model: "model"))

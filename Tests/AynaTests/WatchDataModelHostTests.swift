@@ -191,6 +191,40 @@ struct WatchDataModelHostTests {
     }
 
     @Test
+    func `Conversation conversion preserves a failed partial response fallback`() {
+        let groupID = UUID()
+        let timestamp = Date(timeIntervalSince1970: 1000)
+        let user = Message(role: .user, content: "Question", timestamp: timestamp)
+        let failed = Message(
+            role: .assistant,
+            content: "Saved partial",
+            timestamp: timestamp.addingTimeInterval(1),
+            model: "model-a",
+            responseGroupId: groupID
+        )
+        let group = ResponseGroup(
+            id: groupID,
+            userMessageId: user.id,
+            responses: [
+                ResponseGroupEntry(id: failed.id, modelName: "model-a", status: .failed)
+            ],
+            createdAt: timestamp
+        )
+        let conversation = Conversation(
+            messages: [user, failed],
+            createdAt: timestamp,
+            updatedAt: timestamp.addingTimeInterval(2),
+            model: "model-a",
+            responseGroups: [group]
+        )
+
+        let watch = WatchConversation(from: conversation)
+
+        #expect(watch.messages.map(\.id) == [user.id, failed.id])
+        #expect(watch.effectiveHistory.last?.content == "Saved partial")
+    }
+
+    @Test
     func `Conversation conversion keeps only the newest bounded messages`() {
         let base = Date(timeIntervalSince1970: 1000)
         let messages = (0 ..< 30).map { index in

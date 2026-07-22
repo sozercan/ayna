@@ -344,6 +344,29 @@ struct ConversationPersistenceCoordinatorTests {
     }
 
     @Test
+    func `Flush retries a failed ID-only deletion`() async {
+        let hidden = conversation(title: "Hidden backing record")
+        let store = ScriptedConversationStore(conversations: [hidden])
+        _ = await store.enqueue(.delete(hidden.id), outcome: .fail)
+        _ = await store.enqueue(.delete(hidden.id))
+        let coordinator = makeCoordinator(store)
+
+        let deletion = coordinator.delete(id: hidden.id)
+        guard case .failed(nil, _) = await deletion.value else {
+            Issue.record("Expected an ID-only delete failure")
+            return
+        }
+
+        await coordinator.flush().value
+
+        #expect(await store.persistedConversations().isEmpty)
+        #expect(await store.operations() == [
+            .delete(hidden.id),
+            .delete(hidden.id),
+        ])
+    }
+
+    @Test
     func `Newer clear supersedes an in-flight proposed save in physical order`() async {
         let proposed = conversation(title: "Proposed")
         let store = ScriptedConversationStore()

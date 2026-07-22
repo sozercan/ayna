@@ -46,6 +46,8 @@ final class UserMemoryService {
     private var durableGeneration: UInt64?
     /// Prevents a load retry from replacing optimistic local or synced facts with stale disk state.
     private var hasInMemoryAuthority = false
+    /// True after stored facts were loaded successfully or intentionally replaced in full.
+    private var hasReconciledStoredFacts = false
     private var initialLoadID: UUID?
     private var initialLoadMutations: [InitialLoadMutation] = []
     private var initialLoadWasSuperseded = false
@@ -81,7 +83,7 @@ final class UserMemoryService {
             return
         }
 
-        if hasInMemoryAuthority {
+        if isLoaded, hasInMemoryAuthority, hasReconciledStoredFacts {
             if !hasAuthoritativeFacts {
                 await saveImmediately()
             }
@@ -91,7 +93,6 @@ final class UserMemoryService {
         let loadID = UUID()
         let store = store
         initialLoadID = loadID
-        initialLoadMutations = []
         initialLoadWasSuperseded = false
 
         let operation = Task { @MainActor [weak self] in
@@ -118,6 +119,7 @@ final class UserMemoryService {
         supersedeInitialLoad()
         facts = Array(syncedFacts.prefix(Self.maxFacts))
         isLoaded = true
+        hasReconciledStoredFacts = true
         scheduleSave() // Persist to disk for offline access
 
         DiagnosticsLogger.log(
@@ -190,14 +192,11 @@ final class UserMemoryService {
     func clearAllFacts() async {
         saveTask?.cancel()
         saveTask = nil
+        supersedeInitialLoad()
         facts.removeAll()
-        let generation = recordFactsChange(initialLoadMutation: .clear)
-        await waitForInitialLoad()
-
-        guard factsGeneration == generation, facts.isEmpty else {
-            await saveImmediately()
-            return
-        }
+        isLoaded = true
+        hasReconciledStoredFacts = true
+        let generation = recordFactsChange()
 
         let operation = enqueueClear(generation: generation)
         await operation.value
@@ -329,7 +328,7 @@ final class UserMemoryService {
             }
 
             guard let self else { return }
-            await self.waitForInitialLoad()
+            guard await self.waitForInitialLoad() else { return }
             guard !Task.isCancelled else { return }
 
             let operation = self.enqueueSave(self.facts, generation: self.factsGeneration)
@@ -344,7 +343,7 @@ final class UserMemoryService {
         hasAuthoritativeFacts = false
 
         if let initialLoadMutation,
-           initialLoadID != nil,
+           initialLoadID != nil || !hasReconciledStoredFacts,
            !initialLoadWasSuperseded
         {
             initialLoadMutations.append(initialLoadMutation)
@@ -353,9 +352,16 @@ final class UserMemoryService {
         return factsGeneration
     }
 
-    private func waitForInitialLoad() async {
-        let operation = initialLoadTask
-        await operation?.value
+    private func waitForInitialLoad() async -> Bool {
+        if hasReconciledStoredFacts {
+            return true
+        }
+        if let initialLoadTask {
+            await initialLoadTask.value
+        } else {
+            await loadFacts()
+        }
+        return hasReconciledStoredFacts
     }
 
     private func finishInitialLoad(
@@ -371,6 +377,7 @@ final class UserMemoryService {
 
         isLoaded = true
         hasInMemoryAuthority = true
+        hasReconciledStoredFacts = true
 
         if mutations.isEmpty {
             facts = memoryStore.facts
@@ -395,7 +402,10 @@ final class UserMemoryService {
 
         let hadLocalMutations = !initialLoadMutations.isEmpty
         let wasSuperseded = initialLoadWasSuperseded
-        resetInitialLoad(loadID: loadID)
+        resetInitialLoad(
+            loadID: loadID,
+            preserveMutations: hadLocalMutations && !wasSuperseded
+        )
         guard !wasSuperseded else { return }
 
         if !hadLocalMutations {
@@ -407,15 +417,21 @@ final class UserMemoryService {
     }
 
     private func supersedeInitialLoad() {
-        guard initialLoadID != nil else { return }
-        initialLoadWasSuperseded = true
+        if initialLoadID != nil {
+            initialLoadWasSuperseded = true
+        }
         initialLoadMutations.removeAll()
     }
 
-    private func resetInitialLoad(loadID: UUID) {
+    private func resetInitialLoad(
+        loadID: UUID,
+        preserveMutations: Bool = false
+    ) {
         guard initialLoadID == loadID else { return }
         initialLoadID = nil
-        initialLoadMutations.removeAll()
+        if !preserveMutations {
+            initialLoadMutations.removeAll()
+        }
         initialLoadWasSuperseded = false
         initialLoadTask = nil
     }
@@ -502,6 +518,9 @@ final class UserMemoryService {
 
             do {
                 try await store.clearMemory()
+                self?.hasReconciledStoredFacts = true
+                self?.isLoaded = true
+                self?.initialLoadMutations.removeAll()
                 self?.finishPersistence(factsSnapshot: [], generation: generation)
                 DiagnosticsLogger.log(
                     .conversationManager,
@@ -543,7 +562,7 @@ final class UserMemoryService {
     func saveImmediately() async {
         saveTask?.cancel()
         saveTask = nil
-        await waitForInitialLoad()
+        guard await waitForInitialLoad() else { return }
         let operation = enqueueSave(facts, generation: factsGeneration)
         await operation.value
     }

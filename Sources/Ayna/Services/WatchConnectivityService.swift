@@ -1854,15 +1854,16 @@
                     do {
                         let snapshot = try JSONDecoder().decode(WatchSyncSnapshot.self, from: data)
                         if WatchSyncSnapshot.supportsSchemaVersion(snapshot.schemaVersion) {
-                            peerSyncMode = .revisioned
-                            legacyDeliveryTracker.reset()
-                            legacyAcknowledgementRetryTracker.reset()
-                            legacyOperationTracker.reset()
-                            _ = conversationStore?.clearLegacyDeliveryCoverage()
                             let pageMetadata = (context[WatchContextKeys.syncPageCycle] as? Data)
                                 .flatMap {
                                     try? JSONDecoder().decode(WatchSyncPageCycleMetadata.self, from: $0)
                                 }
+                            guard prepareRevisionedSnapshotApplication(
+                                snapshot,
+                                pageMetadata: pageMetadata
+                            ) else {
+                                return .ignore
+                            }
                             let pendingBefore = Set(
                                 conversationStore?.pendingMutationsForSync.map(\.operationID) ?? []
                             )
@@ -1989,6 +1990,37 @@
                     metadataIsComplete: WatchModelMetadataCompleteness
                         .legacyContextIsComplete(in: context)
                 )
+            }
+
+            private func prepareRevisionedSnapshotApplication(
+                _ snapshot: WatchSyncSnapshot,
+                pageMetadata: WatchSyncPageCycleMetadata?
+            ) -> Bool {
+                guard conversationStore?.clearLegacyDeliveryCoverage() == true else {
+                    if let pageMetadata, pageMetadata.isValid(for: snapshot) {
+                        let pageUpdate = pageCycleCoordinator.receive(
+                            pageMetadata,
+                            after: .persistenceFailed
+                        )
+                        retainSyncRequest(pageUpdate.pendingRequest.map {
+                            WatchSyncRequestIdentity.pageCycle($0)
+                        })
+                    }
+                    requestSync()
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "⌚ Revisioned snapshot deferred because legacy delivery reset was not durable",
+                        metadata: ["snapshotRevision": "\(snapshot.revision)"]
+                    )
+                    return false
+                }
+
+                peerSyncMode = .revisioned
+                legacyDeliveryTracker.reset()
+                legacyAcknowledgementRetryTracker.reset()
+                legacyOperationTracker.reset()
+                return true
             }
 
             private func reconcileLegacyDeliveryEchoes(_ echoedConversations: [WatchConversation]) {

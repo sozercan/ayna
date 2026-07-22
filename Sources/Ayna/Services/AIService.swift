@@ -289,8 +289,8 @@ private enum MultiModelBatchCallback: @unchecked Sendable {
 #endif
 
 struct AIServiceResponseSimulationCallbacks: Sendable {
-    let onChunk: @Sendable (String) -> Void
-    let onComplete: @Sendable () -> Void
+    let onChunk: @MainActor @Sendable (String) -> Void
+    let onComplete: @MainActor @Sendable () -> Void
 }
 
 typealias AIServiceResponseSimulator = @MainActor @Sendable (
@@ -2025,35 +2025,31 @@ class AIService: ObservableObject {
     ) -> AIServiceResponseSimulationCallbacks {
         AIServiceResponseSimulationCallbacks(
             onChunk: { [weak self] chunk in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let ownsRequest = self.ownsSimulatedTextRequest(
-                        flightID,
-                        isMultiModelRequest: isMultiModelRequest,
-                        modelName: modelName
-                    )
-                    if isMultiModelRequest {
-                        self.requestFlightObserver.record(.multiModelCallback, ownsRequest)
-                    }
-                    guard ownsRequest else { return }
-                    onChunk(chunk)
+                guard let self else { return }
+                let ownsRequest = self.ownsSimulatedTextRequest(
+                    flightID,
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: modelName
+                )
+                if isMultiModelRequest {
+                    self.requestFlightObserver.record(.multiModelCallback, ownsRequest)
                 }
+                guard ownsRequest else { return }
+                onChunk(chunk)
             },
             onComplete: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let finishedRequest = self.finishSimulatedTextRequest(
-                        flightID,
-                        isMultiModelRequest: isMultiModelRequest,
-                        modelName: modelName,
-                        requestHandle: requestHandle
-                    )
-                    if isMultiModelRequest {
-                        self.requestFlightObserver.record(.multiModelCallback, finishedRequest)
-                    }
-                    guard finishedRequest else { return }
-                    onComplete()
+                guard let self else { return }
+                let finishedRequest = self.finishSimulatedTextRequest(
+                    flightID,
+                    isMultiModelRequest: isMultiModelRequest,
+                    modelName: modelName,
+                    requestHandle: requestHandle
+                )
+                if isMultiModelRequest {
+                    self.requestFlightObserver.record(.multiModelCallback, finishedRequest)
                 }
+                guard finishedRequest else { return }
+                onComplete()
             }
         )
     }

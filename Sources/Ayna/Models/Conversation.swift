@@ -203,9 +203,8 @@ struct Conversation: Identifiable, Equatable, Sendable {
         in group: ResponseGroup,
         messagesByID: [UUID: Message]
     ) -> UUID? {
-        func eligibleMessageID(for entry: ResponseGroupEntry) -> UUID? {
-            guard entry.status == .selected || entry.status == .completed,
-                  let message = messagesByID[entry.id],
+        func meaningfulMessageID(for entry: ResponseGroupEntry) -> UUID? {
+            guard let message = messagesByID[entry.id],
                   message.responseGroupId == group.id,
                   message.role == .assistant,
                   message.hasMeaningfulHistoryContent
@@ -217,13 +216,14 @@ struct Conversation: Identifiable, Equatable, Sendable {
 
         if let selectedResponseID = group.selectedResponseId,
            let selectedEntry = group.responses.first(where: { $0.id == selectedResponseID }),
-           let selectedMessageID = eligibleMessageID(for: selectedEntry)
+           selectedEntry.status == .selected || selectedEntry.status == .completed,
+           let selectedMessageID = meaningfulMessageID(for: selectedEntry)
         {
             return selectedMessageID
         }
 
         for entry in group.responses where entry.status == .selected {
-            if let selectedMessageID = eligibleMessageID(for: entry) {
+            if let selectedMessageID = meaningfulMessageID(for: entry) {
                 return selectedMessageID
             }
         }
@@ -231,14 +231,35 @@ struct Conversation: Identifiable, Equatable, Sendable {
         for entry in group.responses
             where entry.modelName == model && (entry.status == .selected || entry.status == .completed)
         {
-            if let defaultModelMessageID = eligibleMessageID(for: entry) {
+            if let defaultModelMessageID = meaningfulMessageID(for: entry) {
                 return defaultModelMessageID
             }
         }
 
         for entry in group.responses where entry.status == .completed {
-            if let completedMessageID = eligibleMessageID(for: entry) {
+            if let completedMessageID = meaningfulMessageID(for: entry) {
                 return completedMessageID
+            }
+        }
+
+        if let selectedResponseID = group.selectedResponseId,
+           let selectedEntry = group.responses.first(where: {
+               $0.id == selectedResponseID && $0.status == .failed
+           }),
+           let selectedMessageID = meaningfulMessageID(for: selectedEntry)
+        {
+            return selectedMessageID
+        }
+
+        for entry in group.responses where entry.modelName == model && entry.status == .failed {
+            if let defaultModelMessageID = meaningfulMessageID(for: entry) {
+                return defaultModelMessageID
+            }
+        }
+
+        for entry in group.responses where entry.status == .failed {
+            if let failedMessageID = meaningfulMessageID(for: entry) {
+                return failedMessageID
             }
         }
 

@@ -778,10 +778,11 @@
         @discardableResult
         func clearLegacyDeliveryCoverage() -> Bool {
             guard !legacyDeliveryCoverage.isEmpty else { return true }
+            let previousState = captureRuntimeState()
             legacyDeliveryCoverage.removeAll()
-            let persisted = persistState()
+            guard persistOrRestore(previousState) else { return false }
             rebuildPublishedConversations()
-            return persisted
+            return true
         }
 
         func previewText(for conversation: WatchConversation) -> String {

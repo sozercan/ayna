@@ -1342,8 +1342,8 @@
                 titleRequest.onChunk("Generated Title")
                 titleRequest.onComplete()
             }.value
-            viewModel.cancelOwnedRequest()
             await Task.yield()
+            #expect(!viewModel.cancelOwnedRequest())
 
             let fencedConversation = try #require(fixture.store.conversation(for: phoneConversation.id))
             #expect(fencedConversation.title == "New Chat")

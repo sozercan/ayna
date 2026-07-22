@@ -661,39 +661,39 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
 
             let request = aiService.sendMessage(
-            messages: messages,
-            model: model,
-            stream: true,
-            tools: tools,
-            onChunk: { [weak self] chunk in
-                    MainActor.assumeIsolated {
+                messages: messages,
+                model: model,
+                stream: true,
+                tools: tools,
+                onChunk: { [weak self] chunk in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self,
                               coordinator.owns(operationID, conversationID: conversationId),
                               self.activeAssistantMessageId == assistantMessageId
                         else {
                             return
                         }
-                    if !chunk.isEmpty {
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .debug,
-                            message: "📥 onChunk received",
-                            metadata: [
-                                "chunkLength": "\(chunk.count)",
-                                "assistantMessageId": assistantMessageId.uuidString
-                            ]
+                        if !chunk.isEmpty {
+                            DiagnosticsLogger.log(
+                                .chatView,
+                                level: .debug,
+                                message: "📥 onChunk received",
+                                metadata: [
+                                    "chunkLength": "\(chunk.count)",
+                                    "assistantMessageId": assistantMessageId.uuidString
+                                ]
+                            )
+                        }
+                        self.currentToolName = nil
+                        self.updateAssistantMessage(
+                            assistantMessageId,
+                            appendingChunk: chunk,
+                            conversationId: conversationId
                         )
                     }
-                        self.currentToolName = nil
-                    self.updateAssistantMessage(
-                        assistantMessageId,
-                        appendingChunk: chunk,
-                        conversationId: conversationId
-                    )
-                }
-            },
-            onComplete: { [weak self] in
-                    MainActor.assumeIsolated {
+                },
+                onComplete: { [weak self] in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self,
                               coordinator.owns(operationID, conversationID: conversationId),
                               self.activeAssistantMessageId == assistantMessageId
@@ -701,15 +701,15 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             return
                         }
 
-                    DiagnosticsLogger.log(
-                        .chatView,
-                        level: .info,
-                        message: "✅ onComplete called",
-                        metadata: [
-                            "currentToolName": self.currentToolName ?? "none",
-                            "assistantMessageId": assistantMessageId.uuidString
-                        ]
-                    )
+                        DiagnosticsLogger.log(
+                            .chatView,
+                            level: .info,
+                            message: "✅ onComplete called",
+                            metadata: [
+                                "currentToolName": self.currentToolName ?? "none",
+                                "assistantMessageId": assistantMessageId.uuidString
+                            ]
+                        )
 
                         let resolution = roundCoordinator.providerDidComplete(
                             operationID: operationID,
@@ -724,21 +724,21 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             tools: toolsWrapper.value
                         )
                     }
-            },
-            onError: { [weak self] error in
-                    MainActor.assumeIsolated {
+                },
+                onError: { [weak self] error in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self else { return }
                         self.handleToolRequestError(
                             error,
                             operationID: operationID,
                             assistantMessageId: assistantMessageId,
                             conversationId: conversationId
-                    )
-                }
-            },
-            onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
-                let argumentsWrapper = UncheckedSendable(arguments)
-                    MainActor.assumeIsolated {
+                        )
+                    }
+                },
+                onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                    let argumentsWrapper = UncheckedSendable(arguments)
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self,
                               coordinator.owns(operationID, conversationID: conversationId),
                               self.activeAssistantMessageId == assistantMessageId,
@@ -746,21 +746,21 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                               let toolToken = roundCoordinator.registerTool(
                                   for: operationID,
                                   requestRoundID: requestRoundID
-                        )
+                              )
                         else {
-                        return
-                    }
+                            return
+                        }
 
                         if toolToken.registrationIndex == 0 {
-                    guard self.toolCallDepth < self.maxToolCallDepth else {
+                            guard self.toolCallDepth < self.maxToolCallDepth else {
                                 self.stopToolChainAtDepthLimit(
                                     operationID: operationID,
                                     assistantMessageId: assistantMessageId,
                                     conversationId: conversationId
-                        )
-                        return
-                    }
-                    self.toolCallDepth += 1
+                                )
+                                return
+                            }
+                            self.toolCallDepth += 1
                         }
 
                         self.currentToolName = toolName
@@ -807,8 +807,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             conversationId: conversationId,
                             tools: toolsWrapper
                         )
-                        }
-                        }
+                    }
+                }
             )
             coordinator.onCancel(for: operationID) {
                 request.cancel()

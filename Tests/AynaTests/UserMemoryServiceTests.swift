@@ -65,6 +65,74 @@ struct UserMemoryServiceTests {
     }
 
     @Test
+    func `pre-load mutation preserves seeded facts when persistence initiates load`() async {
+        let seededFact = UserMemoryFact(content: "Seeded fact")
+        let store = ScriptedUserMemoryStore(loadFacts: [seededFact])
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+
+        let localFact = service.addFact("Local fact")
+        await service.saveImmediately()
+
+        #expect(await store.loadAttemptCount == 1)
+        #expect(await store.saveAttemptCount == 1)
+        #expect(service.isLoaded)
+        #expect(service.facts == [localFact, seededFact])
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.saveAttempts == [[localFact, seededFact]])
+        #expect(await store.persistedFacts == [localFact, seededFact])
+    }
+
+    @Test
+    func `failed pre-load reconciliation never overwrites stored facts and retries safely`() async {
+        let seededFact = UserMemoryFact(content: "Seeded fact")
+        let store = ScriptedUserMemoryStore(
+            loadFacts: [seededFact],
+            loadPlans: [
+                .init(outcome: .failure),
+                .init(outcome: .success),
+            ]
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(
+            store: store,
+            saveDebounceDuration: .seconds(60),
+            notificationCenter: center
+        )
+
+        let firstLocalFact = service.addFact("First local fact")
+        await service.saveImmediately()
+
+        #expect(await store.loadAttemptCount == 1)
+        #expect(await store.saveAttemptCount == 0)
+        #expect(await store.persistedFacts == [seededFact])
+        #expect(service.facts == [firstLocalFact])
+        #expect(!service.hasAuthoritativeFacts)
+        #expect(notifications.received == 0)
+
+        let secondLocalFact = service.addFact("Second local fact")
+        await service.saveImmediately()
+
+        let expected = [secondLocalFact, firstLocalFact, seededFact]
+        #expect(await store.loadAttemptCount == 2)
+        #expect(await store.saveAttemptCount == 1)
+        #expect(await store.saveAttempts == [expected])
+        #expect(await store.persistedFacts == expected)
+        #expect(service.facts == expected)
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+    }
+
+    @Test
     func `local CRUD during initial load merges stored facts before publishing`() async {
         let persistedFact = UserMemoryFact(content: "Persisted fact")
         let deletedPersistedFact = UserMemoryFact(content: "Delete this persisted fact")
@@ -134,24 +202,54 @@ struct UserMemoryServiceTests {
         #expect(await eventually { await store.loadAttemptCount == 1 })
 
         service.loadFactsFromSync([syncedFact])
-        await loadGate.open()
-        await load.value
-
-        #expect(service.isLoaded)
-        #expect(service.facts == [syncedFact])
-        #expect(!service.hasAuthoritativeFacts)
-        #expect(notifications.received == 0)
-
         let save = Task { await service.saveImmediately() }
         #expect(await eventually { await store.saveAttemptCount == 1 })
         #expect(await store.saveAttempts == [[syncedFact]])
 
         await saveGate.open()
         await save.value
+        await loadGate.open()
+        await load.value
 
+        #expect(service.isLoaded)
+        #expect(service.facts == [syncedFact])
         #expect(service.hasAuthoritativeFacts)
         #expect(notifications.received == 1)
         #expect(await store.persistedFacts == [syncedFact])
+    }
+
+    @Test
+    func `clear supersedes a blocked initial load without waiting`() async {
+        let staleDiskFact = UserMemoryFact(content: "Stale disk fact")
+        let loadGate = TestGate()
+        let store = ScriptedUserMemoryStore(
+            loadFacts: [staleDiskFact],
+            loadPlan: .init(gate: loadGate)
+        )
+        let center = NotificationCenter()
+        let notifications = NotificationCounter(name: .watchSyncContextDidChange, center: center)
+        defer { notifications.stop() }
+        let service = UserMemoryService(store: store, notificationCenter: center)
+
+        let load = Task { await service.loadFacts() }
+        #expect(await eventually { await store.loadAttemptCount == 1 })
+
+        let clear = Task { await service.clearAllFacts() }
+        #expect(await eventually { await store.clearAttemptCount == 1 })
+        await clear.value
+
+        #expect(service.isLoaded)
+        #expect(service.facts.isEmpty)
+        #expect(service.hasAuthoritativeFacts)
+        #expect(notifications.received == 1)
+        #expect(await store.persistedFacts.isEmpty)
+
+        await loadGate.open()
+        await load.value
+
+        #expect(service.facts.isEmpty)
+        #expect(service.hasAuthoritativeFacts)
+        #expect(await store.persistedFacts.isEmpty)
     }
 
     @Test
@@ -628,7 +726,7 @@ private actor TestGate {
 
 private actor ScriptedUserMemoryStore: UserMemoryStoreAdapter {
     private let loadFactsValue: [UserMemoryFact]
-    private let loadPlan: ScriptedOperationPlan
+    private let loadPlans: [ScriptedOperationPlan]
     private let savePlans: [ScriptedOperationPlan]
     private let clearPlans: [ScriptedOperationPlan]
 
@@ -644,19 +742,22 @@ private actor ScriptedUserMemoryStore: UserMemoryStoreAdapter {
     init(
         loadFacts: [UserMemoryFact] = [],
         loadPlan: ScriptedOperationPlan = .init(),
+        loadPlans: [ScriptedOperationPlan]? = nil,
         savePlans: [ScriptedOperationPlan] = [],
         clearPlans: [ScriptedOperationPlan] = []
     ) {
         loadFactsValue = loadFacts
-        self.loadPlan = loadPlan
+        self.loadPlans = loadPlans ?? [loadPlan]
         self.savePlans = savePlans
         self.clearPlans = clearPlans
         persistedFacts = loadFacts
     }
 
     func loadMemory() async throws -> UserMemoryStore {
+        let attempt = loadAttemptCount
         loadAttemptCount += 1
-        try await execute(loadPlan)
+        let plan = attempt < loadPlans.count ? loadPlans[attempt] : loadPlans.last ?? .init()
+        try await execute(plan)
         return UserMemoryStore(facts: loadFactsValue)
     }
 

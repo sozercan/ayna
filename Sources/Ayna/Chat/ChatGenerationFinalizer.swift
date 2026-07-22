@@ -77,6 +77,8 @@ enum ChatGenerationFinalizer {
             message.responseGroupId == nil &&
             message.mediaType == nil &&
             message.content.isEmpty &&
+            (message.toolCalls?.isEmpty ?? true) &&
+            (message.attachments?.isEmpty ?? true) &&
             (message.reasoning?.isEmpty ?? true) &&
             (message.citations?.isEmpty ?? true) &&
             message.imageData == nil &&

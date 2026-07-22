@@ -61,6 +61,7 @@ class MCPServerManager: ObservableObject {
     private let serviceFactory: (MCPServerConfig) -> MCPServicing
     private let retryDelayProvider: (Int) -> TimeInterval
     private let reconnectDelayProvider: () -> TimeInterval
+    private let reconnectSleeper: @MainActor @Sendable (TimeInterval) async throws -> Void
 
     @Published var serverConfigs: [MCPServerConfig] = []
     @Published var availableTools: [MCPTool] = []
@@ -86,11 +87,15 @@ class MCPServerManager: ObservableObject {
     init(
         serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
         retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
-        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 }
+        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
+        reconnectSleeper: @escaping @MainActor @Sendable (TimeInterval) async throws -> Void = { delay in
+            try await Task.sleep(for: .seconds(delay))
+        }
     ) {
         self.serviceFactory = serviceFactory
         self.retryDelayProvider = retryDelayProvider
         self.reconnectDelayProvider = reconnectDelayProvider
+        self.reconnectSleeper = reconnectSleeper
         loadServerConfigs()
         initializeStatusEntries()
         MCPProcessTracker.shared.cleanupOrphanedProcesses()
@@ -535,7 +540,7 @@ class MCPServerManager: ObservableObject {
             guard let self else { return }
                 do {
             if delaySeconds > 0 {
-                        try await Task.sleep(for: .seconds(delaySeconds))
+                        try await reconnectSleeper(delaySeconds)
             }
                     try Task.checkCancellation()
                 } catch {

@@ -62,6 +62,7 @@
                     .padding(.horizontal, 4)
                 }
                 .defaultScrollAnchor(.bottom)
+                .accessibilityIdentifier(TestIdentifiers.Watch.newChatView)
             }
 
             private var composerBar: some View {

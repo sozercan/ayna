@@ -1037,12 +1037,13 @@ final class WatchToolCallRoundRegistry {
         }
 
         /// Cancels active owned work without producing feedback or discarding promotion retries.
-        func cancelOwnedRequest() {
+        @discardableResult
+        func cancelOwnedRequest() -> Bool {
             let cancelledToolRequest = toolChainCoordinator.cancelCurrentOperation {
                 finalizeCancelledAssistant()
             }
             let cancelledTitleRequest = cancelTitleRequest()
-            guard cancelledToolRequest || cancelledTitleRequest else { return }
+            guard cancelledToolRequest || cancelledTitleRequest else { return false }
             activeAssistantMessageId = nil
             isLoading = false
             isStreaming = false
@@ -1051,6 +1052,7 @@ final class WatchToolCallRoundRegistry {
             if !hasPendingResponsePromotionForCurrentConversation {
                 pendingContent = ""
             }
+            return true
         }
 
         private var hasPendingResponsePromotionForCurrentConversation: Bool {
