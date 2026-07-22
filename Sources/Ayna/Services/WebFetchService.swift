@@ -298,9 +298,9 @@ private struct WebFetchRequestDeadline: Sendable {
 
 // MARK: - Shared SSRF Protection
 
-/// Shared private-host detection used by both redirect validation and fetch-path validation.
+/// Shared private, local, and non-unicast host detection used by redirect and fetch validation.
 enum SSRFProtection {
-    /// Checks whether a host string is a loopback, link-local, or private IP address.
+    /// Checks whether a host is loopback, link-local, private, multicast, or reserved non-unicast.
     static func isPrivateHost(_ host: String) -> Bool {
         let normalizedHost = normalizedIPAddressCandidate(host)
         if normalizedHost == "localhost" {
@@ -372,6 +372,9 @@ enum SSRFProtection {
         if first == 198, (18 ... 19).contains(second) {
             return true
         }
+        if first >= 224 {
+            return true
+        }
         return false
     }
 
@@ -391,6 +394,9 @@ enum SSRFProtection {
             return true
         }
         if bytes[0] == 0xFE, bytes[1] & 0xC0 == 0xC0 {
+            return true
+        }
+        if bytes[0] == 0xFF {
             return true
         }
 

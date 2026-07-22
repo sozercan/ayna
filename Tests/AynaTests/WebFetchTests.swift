@@ -52,6 +52,32 @@ struct WebFetchTests {
         #expect(!SSRFProtection.isPrivateHost("64:ff9b::808:808"))
     }
 
+    @Test("Rejects multicast, broadcast, and reserved non-unicast addresses")
+    func rejectsNonUnicastAddresses() {
+        let blockedAddresses = [
+            "224.0.0.1",
+            "239.1.1.1",
+            "240.0.0.1",
+            "255.255.255.255",
+            "ff02::1",
+            "::ffff:239.1.1.1",
+            "64:ff9b::ef01:101",
+        ]
+
+        for address in blockedAddresses {
+            #expect(SSRFProtection.isPrivateHost(address))
+            #expect(throws: WebFetchError.self) {
+                try SSRFProtection.validateConnectedAddresses(
+                    [address],
+                    reportedAs: "http://\(address)/"
+                )
+            }
+        }
+
+        #expect(!SSRFProtection.isPrivateHost("223.255.255.255"))
+        #expect(!SSRFProtection.isPrivateHost("2001:4860:4860::8888"))
+    }
+
     @Test("Fails closed when hostname resolution fails")
     func failsClosedWhenHostnameResolutionFails() async {
         let url = "https://resolution-failure.example/content"
