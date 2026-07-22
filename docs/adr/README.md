@@ -52,6 +52,7 @@ What trade-offs are we accepting?
 | [0004](0004-sparkle-auto-updates.md) | Sparkle Auto-Updates | Accepted |
 | [0005](0005-anthropic-provider.md) | Anthropic Provider Architecture | Accepted |
 | [0006](0006-native-agentic-tools.md) | Native Agentic Tools Architecture | Proposed |
+| [0007](0007-revisioned-watch-sync.md) | Revisioned Durable Watch Sync | Accepted |
 
 ## When to Create an ADR
 

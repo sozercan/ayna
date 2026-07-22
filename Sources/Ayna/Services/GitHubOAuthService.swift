@@ -102,29 +102,6 @@ struct GitHubRateLimitInfo {
 
 // MARK: - Concurrency Gate
 
-/// Runs an action at most once.
-final class OneShot: Sendable {
-    private let state = OSAllocatedUnfairLock(initialState: false)
-    private let action: @Sendable () -> Void
-
-    nonisolated init(_ action: @escaping @Sendable () -> Void) {
-        self.action = action
-    }
-
-    nonisolated func run() {
-        let shouldRun = state.withLock { didRun -> Bool in
-            if didRun {
-                return false
-            }
-            didRun = true
-            return true
-        }
-        if shouldRun {
-            action()
-        }
-    }
-}
-
 /// Serializes GitHub Models requests per token identity.
 ///
 /// Purpose: avoid parallel bursts in multi-model mode that trigger 429s.
@@ -134,7 +111,10 @@ actor GitHubModelsRequestGate {
     private var activeKeys: Set<String> = []
     private var waiters: [String: [(id: UUID, cont: CheckedContinuation<Void, any Error>)]] = [:]
 
-    func acquire(key: String) async throws {
+    func acquire(
+        key: String,
+        onQueued: @escaping @Sendable () -> Void = {}
+    ) async throws {
         try Task.checkCancellation()
 
         if !activeKeys.contains(key) {
@@ -143,6 +123,7 @@ actor GitHubModelsRequestGate {
         }
 
         let id = UUID()
+        onQueued()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
                 waiters[key, default: []].append((id: id, cont: cont))
@@ -340,6 +321,11 @@ class GitHubOAuthService: NSObject, ObservableObject {
             refreshTask = nil
             throw error
         }
+    }
+
+    func isCurrentAccessTokenValid(_ accessToken: String) -> Bool {
+        guard let tokenInfo = loadTokenInfo() else { return false }
+        return tokenInfo.accessToken == accessToken && !tokenInfo.isExpired
     }
 
     func signOut() {

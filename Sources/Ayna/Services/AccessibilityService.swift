@@ -254,9 +254,15 @@
 
         // MARK: - Window Enumeration
 
+        /// Stable identity for an enumerated application window.
+        struct WindowIdentity: Hashable {
+            let processIdentifier: pid_t
+            let enumerationIndex: Int
+        }
+
         /// Information about a window
         struct WindowInfo: Identifiable, Hashable {
-            let id: CGWindowID
+            let id: WindowIdentity
             let title: String
             let appPID: pid_t
             let appName: String
@@ -392,11 +398,13 @@
                     continue
                 }
 
-                // Create a unique ID using index since we can't easily get CGWindowID from AXUIElement
-                let windowId = CGWindowID(app.processIdentifier * 100_000 + Int32(index))
+                let windowIdentity = WindowIdentity(
+                    processIdentifier: app.processIdentifier,
+                    enumerationIndex: index
+                )
 
                 let windowInfo = WindowInfo(
-                    id: windowId,
+                    id: windowIdentity,
                     title: title,
                     appPID: app.processIdentifier,
                     appName: app.localizedName ?? "Unknown",

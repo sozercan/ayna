@@ -14,11 +14,14 @@ enum EncryptedStoreError: LocalizedError {
     /// The encryption key was previously created but is now missing (e.g., after device restore/migration)
     /// This indicates the key was deleted or corrupted, and existing encrypted data cannot be recovered
     case keyLost
+    case unreadableConversationFiles(count: Int)
 
     var errorDescription: String? {
         switch self {
         case .keyLost:
             "Encryption key was lost. Previously encrypted conversations cannot be recovered. Please contact support if you need assistance."
+        case let .unreadableConversationFiles(count):
+            "Failed to load \(count) encrypted conversation file(s)."
         }
     }
 }
@@ -160,7 +163,7 @@ final class EncryptedConversationStore: Sendable {
 
             let keyData = try keyCache.keyData()
 
-            return await withTaskGroup(of: Conversation?.self) { group in
+            let loadResult = await withTaskGroup(of: Conversation?.self) { group in
                 for url in encryptedFileURLs {
                     group.addTask {
                         do {
@@ -186,15 +189,18 @@ final class EncryptedConversationStore: Sendable {
                         failedCount += 1
                     }
                 }
-                if failedCount > 0 && conversations.isEmpty {
-                    DiagnosticsLogger.log(
-                        .encryptedStore, level: .error,
-                        message: "❌ All conversations failed to decrypt",
-                        metadata: ["failedCount": "\(failedCount)"]
-                    )
-                }
-                return conversations
+                return (conversations, failedCount)
             }
+
+            guard loadResult.1 == 0 else {
+                DiagnosticsLogger.log(
+                    .encryptedStore, level: .error,
+                    message: "❌ Refusing partial conversation load",
+                    metadata: ["failedCount": "\(loadResult.1)"]
+                )
+                throw EncryptedStoreError.unreadableConversationFiles(count: loadResult.1)
+            }
+            return loadResult.0
         }.value
     }
 
@@ -253,8 +259,7 @@ final class EncryptedConversationStore: Sendable {
         return try JSONDecoder().decode([Conversation].self, from: plaintext)
     }
 
-    private nonisolated static func load(from url: URL, keyData: Data) throws -> Conversation
-    {
+    private nonisolated static func load(from url: URL, keyData: Data) throws -> Conversation {
         let encryptedData = try Data(contentsOf: url)
         let box = try AES.GCM.SealedBox(combined: encryptedData)
         let key = SymmetricKey(data: keyData)

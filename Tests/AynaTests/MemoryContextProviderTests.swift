@@ -14,8 +14,8 @@ import Testing
 struct MemoryContextProviderTests {
     // MARK: - Context Building
 
-    @Test("Build context returns empty when memory disabled")
-    func buildContextReturnsEmptyWhenDisabled() {
+    @Test
+    func `build context returns empty when memory disabled`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()
@@ -36,8 +36,8 @@ struct MemoryContextProviderTests {
         #expect(context.conversationSummaries == nil)
     }
 
-    @Test("Build context includes user memory when enabled")
-    func buildContextIncludesUserMemoryWhenEnabled() {
+    @Test
+    func `build context includes user memory when enabled`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()
@@ -59,8 +59,8 @@ struct MemoryContextProviderTests {
         #expect(context.userMemory?.contains("Swift") == true)
     }
 
-    @Test("Build context excludes current conversation from summaries")
-    func buildContextExcludesCurrentConversation() {
+    @Test
+    func `build context excludes current conversation from summaries`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()
@@ -92,8 +92,8 @@ struct MemoryContextProviderTests {
 
     // MARK: - Memory Command Processing
 
-    @Test("Process memory command returns nil when disabled")
-    func processMemoryCommandReturnsNilWhenDisabled() {
+    @Test
+    func `process memory command returns nil when disabled`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()
@@ -112,8 +112,8 @@ struct MemoryContextProviderTests {
         #expect(memoryService.activeFacts().isEmpty)
     }
 
-    @Test("Process memory command stores fact when enabled")
-    func processMemoryCommandStoresFactWhenEnabled() {
+    @Test
+    func `process memory command stores fact when enabled`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()
@@ -134,16 +134,16 @@ struct MemoryContextProviderTests {
 
     // MARK: - Context Allocation
 
-    @Test("Context allocation adapts to small context window")
-    func contextAllocationAdaptsToSmallContextWindow() {
+    @Test
+    func `context allocation adapts to small context window`() {
         let allocation = MemoryContextProvider.ContextAllocation(availableTokens: 4000)
 
         #expect(allocation.conversationSummary == 0) // Disabled for small context
         #expect(allocation.userMemory < 1000)
     }
 
-    @Test("Context allocation uses full budget for large context window")
-    func contextAllocationUsesFullBudgetForLargeContextWindow() {
+    @Test
+    func `context allocation uses full budget for large context window`() {
         let allocation = MemoryContextProvider.ContextAllocation(availableTokens: 128_000)
 
         #expect(allocation.sessionMetadata == 200)
@@ -153,8 +153,24 @@ struct MemoryContextProviderTests {
 
     // MARK: - Accessors
 
-    @Test("Memory fact count reflects service state")
-    func memoryFactCountReflectsServiceState() {
+    @Test
+    func `enabled memory requires an authoritative load even when unchanged`() {
+        #expect(MemoryContextProvider.requiresAuthoritativeLoad(
+            isEnabled: true,
+            hasAuthoritativeFacts: false
+        ))
+        #expect(!MemoryContextProvider.requiresAuthoritativeLoad(
+            isEnabled: true,
+            hasAuthoritativeFacts: true
+        ))
+        #expect(!MemoryContextProvider.requiresAuthoritativeLoad(
+            isEnabled: false,
+            hasAuthoritativeFacts: false
+        ))
+    }
+
+    @Test
+    func `memory fact count reflects service state`() {
         let memoryService = UserMemoryService()
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService()

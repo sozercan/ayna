@@ -80,6 +80,7 @@ enum TestIdentifiers {
         static let emptyState = "watch.emptyState"
         static let newChatButton = "watch.newChatButton"
         static let modelSelectorButton = "watch.modelSelectorButton"
+        static let newChatView = "watch.newChat.view"
 
         // Chat view identifiers (flattened to avoid nesting violation)
         static let chatMessagesList = "watch.chat.messagesList"

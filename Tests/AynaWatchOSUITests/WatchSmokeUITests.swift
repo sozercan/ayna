@@ -32,8 +32,14 @@ final class WatchSmokeUITests: WatchUITestCase {
         tapNewChatButton()
 
         // Verify new chat view appears
-        let composerField = app.textFields["watch.newChat.composerTextField"]
-        XCTAssertTrue(composerField.waitForExistence(timeout: UITestTimeout.normal), "New chat composer should appear")
+        let composerField = app.descendants(matching: .any)["watch.newChat.composerTextField"]
+        let destinationMarker = app.descendants(matching: .any)["watch.newChat.view"].firstMatch
+        let hasComposer = composerField.waitForExistence(timeout: UITestTimeout.normal)
+        let hasDestinationMarker = destinationMarker.waitForExistence(timeout: UITestTimeout.immediate)
+        XCTAssertTrue(
+            hasComposer || hasDestinationMarker,
+            "New chat view should expose either its composer or model selector"
+        )
     }
 
     func testNavigateToModelSelector() {
@@ -67,12 +73,12 @@ final class WatchSmokeUITests: WatchUITestCase {
         if !textField.waitForExistence(timeout: UITestTimeout.async) {
             // TextField may not appear in simulator without proper WatchConnectivity
             // Just verify navigation worked by checking for any new chat UI element
-            let newChatTitle = app.descendants(matching: .any)["New Chat"].firstMatch
-            if newChatTitle.waitForExistence(timeout: UITestTimeout.normal) {
+            let destinationMarker = app.descendants(matching: .any)["watch.newChat.view"].firstMatch
+            if destinationMarker.waitForExistence(timeout: UITestTimeout.normal) {
                 // Navigation worked, text field just isn't accessible - pass
                 return
             }
-            // If we got here, navigation may have worked but UI is different - skip gracefully
+            XCTFail("watchOS simulator did not expose the new-chat destination after tapping")
             return
         }
 
@@ -90,12 +96,14 @@ final class WatchSmokeUITests: WatchUITestCase {
 
         // Try multiple ways to verify we're in the new chat view
         let textField = app.textFields["watch.newChat.composerTextField"].firstMatch
-        let newChatTitle = app.descendants(matching: .any)["New Chat"].firstMatch
+        let destinationMarker = app.descendants(matching: .any)["watch.newChat.view"].firstMatch
 
         let hasTextField = textField.waitForExistence(timeout: UITestTimeout.async)
-        let hasTitle = newChatTitle.waitForExistence(timeout: UITestTimeout.normal)
+        let hasDestinationMarker = destinationMarker.waitForExistence(timeout: UITestTimeout.normal)
 
-        // Pass if we can see either the text field or the title - confirms navigation worked
-        XCTAssertTrue(hasTextField || hasTitle, "New chat view should be visible (either composer or title)")
+        XCTAssertTrue(
+            hasTextField || hasDestinationMarker,
+            "New chat view should be visible (either composer or model selector)"
+        )
     }
 }

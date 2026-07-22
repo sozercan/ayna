@@ -30,9 +30,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
     var content: String
     let timestamp: Date
     var isLiked: Bool
-    #if !os(watchOS)
         var toolCalls: [MCPToolCall]?
-    #endif
     var model: String? // Track which model generated this message
 
     // Multi-model response support
@@ -102,6 +100,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             content: String,
             timestamp: Date = Date(),
             isLiked: Bool = false,
+            toolCalls: [MCPToolCall]? = nil,
             model: String? = nil,
             responseGroupId: UUID? = nil,
             isSelectedResponse: Bool? = nil,
@@ -119,6 +118,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             self.content = content
             self.timestamp = timestamp
             self.isLiked = isLiked
+            self.toolCalls = toolCalls
             self.model = model
             self.responseGroupId = responseGroupId
             self.isSelectedResponse = isSelectedResponse
@@ -177,7 +177,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
 
     #if os(watchOS)
         private enum CodingKeys: String, CodingKey {
-            case id, role, content, timestamp, isLiked, model
+            case id, role, content, timestamp, isLiked, toolCalls, model
             case responseGroupId, isSelectedResponse
             case mediaType, imageData, imagePath, attachments, reasoning, citations
             case isEdited, editedAt
@@ -190,6 +190,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             content = try container.decode(String.self, forKey: .content)
             timestamp = try container.decode(Date.self, forKey: .timestamp)
             isLiked = try container.decode(Bool.self, forKey: .isLiked)
+            toolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .toolCalls)
             model = try container.decodeIfPresent(String.self, forKey: .model)
             // Multi-model fields (backward compatibility)
             responseGroupId = try container.decodeIfPresent(UUID.self, forKey: .responseGroupId)

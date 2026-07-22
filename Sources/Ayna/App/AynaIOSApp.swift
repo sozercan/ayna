@@ -52,17 +52,18 @@ struct AynaIOSApp: App {
                 .environmentObject(aiService)
                 .onOpenURL { url in
                     Task {
+                        await conversationManager.loadingTask?.value
+
                         // Handle deep links (including OAuth callbacks)
                         await DeepLinkManager.shared.handle(url: url)
 
-                        // Handle chat deep links by starting a conversation
-                        if let chatRequest = DeepLinkManager.shared.pendingChat {
+                        // Handle the chat request that became ready during this URL.
+                        if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {
                             _ = conversationManager.startConversation(
                                 model: chatRequest.model,
                                 prompt: chatRequest.prompt,
                                 systemPrompt: chatRequest.systemPrompt
                             )
-                            DeepLinkManager.shared.clearPendingChat()
                         }
                     }
                 }

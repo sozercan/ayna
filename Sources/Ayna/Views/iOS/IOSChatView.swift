@@ -69,10 +69,17 @@ struct IOSChatView: View {
                 return false
             }
 
-            // Always show tool messages when they have content
+                // Web search results remain in model history but are presented as citations instead.
             if message.role == .tool {
+                    if message.toolCalls?.contains(where: { $0.toolName == WebSearchCoordinator.toolName }) == true {
+                        return false
+                    }
                 return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+
+                if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
+                    return true
+                }
 
             // Don't show empty assistant messages unless we're actively generating
             if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
@@ -121,13 +128,13 @@ struct IOSChatView: View {
                                     case let .message(message):
                                         IOSMessageView(
                                             message: message,
-                                            onRetry: message.role == .assistant ? {
+                                            onRetry: message.role == .assistant && !viewModel.isGenerating ? {
                                                 viewModel.retryMessage(beforeMessage: message)
                                             } : nil,
-                                            onSwitchModel: message.role == .assistant ? { newModel in
+                                            onSwitchModel: message.role == .assistant && !viewModel.isGenerating ? { newModel in
                                                 viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
                                             } : nil,
-                                            onEdit: message.role == .user ? { newContent in
+                                            onEdit: message.role == .user && !viewModel.isGenerating ? { newContent in
                                                 let edited = conversationManager.editMessage(
                                                     in: conversation,
                                                     messageId: message.id,
@@ -155,7 +162,7 @@ struct IOSChatView: View {
                                                     messageId: messageId
                                                 )
                                             },
-                                            onRetry: { message in
+                                            onRetry: viewModel.isGenerating ? nil : { message in
                                                 viewModel.retryMessage(beforeMessage: message)
                                             },
                                             defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
@@ -190,7 +197,13 @@ struct IOSChatView: View {
                         updateDisplayableItems()
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
+                        .onChange(of: conversation.updatedAt) {
+                            // Message content, tool metadata, citations, and response status can change
+                            // without changing the message count. Refresh copied display items for all.
+                            updateDisplayableItems()
+                        }
                     .onChange(of: conversation.messages.last?.content) {
+                            updateDisplayableItems()
                         // Only scroll during generation - use transaction to disable animations
                         // This prevents janky scrolling during rapid streaming updates
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
@@ -353,6 +366,9 @@ struct IOSChatView: View {
             viewModel.configure(with: conversationManager, conversationId: conversationId)
             // Initialize selectedModels with current conversation model
             initializeSelectedModelsIfNeeded()
+        }
+        .onDisappear {
+                viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
             // Re-initialize if the conversation model changes and selectedModels is empty
