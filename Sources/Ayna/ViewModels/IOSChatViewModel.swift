@@ -40,6 +40,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// The last failed message content, stored for retry functionality
     @Published var failedMessage: String?
+    private var failedMessageId: UUID?
 
     /// Recovery suggestion for the current error (if available)
     @Published var errorRecoverySuggestion: String?
@@ -165,6 +166,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
         selectedModel = aiService.selectedModel
@@ -218,10 +220,17 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             metadata: ["messageLength": "\(message.count)"]
         )
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId, let conversation {
+            _ = conversationManager.removeMessage(conversationId: conversation.id, messageId: messageId)
+        }
 
         // Set message text and send
         messageText = message
@@ -231,6 +240,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Dismiss the current error without retrying
     func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -459,6 +469,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
 
         // Play message sent sound
         SoundEngine.messageSent()
@@ -504,13 +515,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Messages to send (exclude the empty assistant message we just added)
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools (Tavily web search on iOS)
         let tools = aiService.getAllAvailableTools()
@@ -533,7 +542,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: updatedConversation.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: userMessage.id,
+            failedUserMessagePolicy: onConversationCreated == nil ? .removeForRetry : .preserve
         )
     }
 
@@ -543,7 +554,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         model: String,
         conversationId: UUID,
         assistantMessageId: UUID,
-        tools: [[String: Any]]?
+        tools: [[String: Any]]?,
+        failedUserMessageId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let toolsWrapper = UncheckedSendable(tools)
 
@@ -611,6 +624,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
                         // Clear pending message on success
                         self.pendingUserMessage = nil
+                        self.failedMessageId = nil
 
                         // Play message received sound
                         SoundEngine.messageReceived()
@@ -680,15 +694,24 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     self.errorMessage = ErrorPresenter.userMessage(for: error)
                     self.errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
 
-                    // Store the failed message for retry
-                    self.failedMessage = self.pendingUserMessage
+                    // Apply shared failure cleanup policy and store retry text.
+                    if let current = self.conversationManager.conversation(byId: conversationId) {
+                        let plan = ChatTurnFailurePlan(
+                            messages: current.messages,
+                            failedUserMessageId: failedUserMessageId,
+                            assistantPlaceholderId: assistantMessageId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
+                        )
+                        var updatedConversation = current
+                        updatedConversation.messages = plan.messagesAfterFailure
+                        self.conversationManager.updateConversation(updatedConversation)
+                        self.failedMessage = plan.retryPrompt
+                        self.failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
+                    } else {
+                        self.failedMessage = self.pendingUserMessage
+                        self.failedMessageId = nil
+                    }
                     self.pendingUserMessage = nil
-
-                    // Remove the empty assistant placeholder message since we show error in banner
-                    self.conversationManager.removeMessage(
-                        conversationId: conversationId,
-                        messageId: assistantMessageId
-                    )
 
                     // Still notify for navigation even on error if conversation was created
                     if self.isNewChatMode {
@@ -758,19 +781,18 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                        let lastMessage = conv.messages.last,
                        lastMessage.role == .assistant
                     {
-                        let anyCodableArgs = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                            result[pair.key] = AnyCodable(pair.value)
-                        }
-                        let toolCall = MCPToolCall(
-                            id: toolCallId,
+                        let annotationPlan = ToolCallAnnotationPlan(
+                            existingToolCalls: lastMessage.toolCalls,
+                            toolCallId: toolCallId,
                             toolName: toolName,
-                            arguments: anyCodableArgs
+                            arguments: arguments,
+                            mergePolicy: .replace
                         )
                         self.conversationManager.updateMessage(
                             conversationId: conversationId,
                             messageId: lastMessage.id
                         ) { message in
-                            message.toolCalls = [toolCall]
+                            message.toolCalls = annotationPlan.toolCalls
                         }
                         if let updatedConv = self.conversationManager.conversation(byId: conversationId) {
                             self.conversationManager.save(updatedConv)
@@ -798,33 +820,6 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         )
 
                         await MainActor.run {
-                            let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
-                                result[pair.key] = AnyCodable(pair.value)
-                            }
-
-                            // For web_search, skip creating a tool message and attach citations to assistant
-                            let isWebSearch = toolName == "web_search"
-
-                            if !isWebSearch {
-                                // For non-web-search tools, create the tool message as before
-                                var toolMessage = Message(role: .tool, content: result)
-                                toolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
-                                    )
-                                ]
-                                guard let conv = self.conversationManager.conversation(byId: conversationId) else {
-                                    self.isGenerating = false
-                                    self.currentToolName = nil
-                                    self.toolCallDepth = 0
-                                    return
-                                }
-                                self.conversationManager.addMessage(to: conv, message: toolMessage)
-                            }
-
                             // Continue conversation with tool result
                             guard let updatedConv = self.conversationManager.conversation(byId: conversationId) else {
                                 self.isGenerating = false
@@ -833,44 +828,29 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 return
                             }
 
-                            // Add a new empty assistant message for the model's response
-                            // For web_search, attach citations to this message
-                            var continuationAssistantMessage = Message(role: .assistant, content: "", model: model)
-                            if isWebSearch, let citations {
-                                continuationAssistantMessage.citations = citations
-                            }
-                            self.conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
+                            let continuationPlan = ToolContinuationPlan(
+                                existingMessages: updatedConv.messages,
+                                toolCallId: toolCallId,
+                                toolName: toolName,
+                                arguments: argumentsWrapper.value,
+                                result: result,
+                                model: model,
+                                citations: citations,
+                                systemPrompt: self.conversationManager.effectiveSystemPrompt(for: updatedConv)
+                            )
 
-                            // Get conversation again with new assistant message
-                            guard let convWithAssistant = self.conversationManager.conversation(byId: conversationId) else {
-                                self.isGenerating = false
-                                self.currentToolName = nil
-                                self.toolCallDepth = 0
-                                return
-                            }
-
-                            // Build messages for API - exclude the continuation assistant message
-                            // The continuation message is just a placeholder for where we'll store the response
-                            var continuationMessages = Array(convWithAssistant.messages.dropLast())
-                            if isWebSearch {
-                                // Append a synthetic tool message for the API only
-                                var syntheticToolMessage = Message(role: .tool, content: result)
-                                syntheticToolMessage.toolCalls = [
-                                    MCPToolCall(
-                                        id: toolCallId,
-                                        toolName: toolName,
-                                        arguments: anyCodableArgs,
-                                        result: result
-                                    )
-                                ]
-                                // Append the tool message at the end (after the assistant with tool_calls)
-                                continuationMessages.append(syntheticToolMessage)
+                            if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                self.conversationManager.addMessage(to: updatedConv, message: visibleToolMessage)
                             }
 
-                            if let sysPrompt = self.conversationManager.effectiveSystemPrompt(for: convWithAssistant) {
-                                let sysMessage = Message(role: .system, content: sysPrompt)
-                                continuationMessages.insert(sysMessage, at: 0)
-                            }
+                            let conversationForAssistant = self.conversationManager.conversation(byId: conversationId) ?? updatedConv
+                            self.conversationManager.addMessage(
+                                to: conversationForAssistant,
+                                message: continuationPlan.continuationAssistantMessage
+                            )
+
+                            let continuationMessages = continuationPlan.requestMessages
+                            let continuationAssistantMessage = continuationPlan.continuationAssistantMessage
 
                             // Clear tool name since tool execution is complete
                             // The continuation is now a regular API call
@@ -881,7 +861,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 model: model,
                                 conversationId: conversationId,
                                 assistantMessageId: continuationAssistantMessage.id,
-                                tools: toolsWrapper.value
+                                tools: toolsWrapper.value,
+                                failedUserMessageId: nil,
+                                failedUserMessagePolicy: .preserve
                             )
                         }
                     }
@@ -938,13 +920,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -955,7 +935,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: updatedConversation.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -978,13 +960,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(refreshed.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: refreshed,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: refreshed),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
@@ -994,7 +974,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: refreshed.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -1039,13 +1021,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             isGenerating = false
             return
         }
-        var messagesToSend = Array(updatedConversation.messages.dropLast())
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -1057,7 +1037,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             model: newModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -1145,24 +1127,25 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        let responseGroupId = UUID()
         let models = Array(selectedModels)
-        var messageIds: [String: UUID] = [:]
-        var placeholderMessages: [Message] = []
-        let responseGroup = createPlaceholderMessagesForMultiModel(
-            models: models, userMessageId: userMessage.id, responseGroupId: responseGroupId,
-            messageIds: &messageIds, placeholderMessages: &placeholderMessages
+        let responsePlan = createResponsePlanForMultiModel(models: models, userMessageId: userMessage.id)
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
+        conversationManager.addMultiModelResponse(
+            to: targetConversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
         )
-        conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
 
         guard let updatedConversation = conversation else {
             isGenerating = false
             return
         }
-        var messagesToSend = updatedConversation.getEffectiveHistory().filter { $0.responseGroupId != responseGroupId }
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingResponseGroupId: responseGroupId
+        )
 
         // Send to all models
         aiService.sendToMultipleModels(
@@ -1248,22 +1231,19 @@ extension IOSChatViewModel {
         return updatedConv
     }
 
-    /// Creates placeholder messages for each model in a multi-model request
-    func createPlaceholderMessagesForMultiModel(
+    /// Creates the immutable setup for a multi-model request.
+    func createResponsePlanForMultiModel(
         models: [String],
         userMessageId: UUID,
-        responseGroupId: UUID,
-        messageIds: inout [String: UUID],
-        placeholderMessages: inout [Message]
-    ) -> ResponseGroup {
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-            placeholderMessages.append(Message(id: messageId, role: .assistant, content: "", model: model, responseGroupId: responseGroupId))
-        }
-        return responseGroup
+        responseGroupId: UUID = UUID(),
+        mediaType: Message.MediaType? = nil
+    ) -> MultiModelResponsePlan {
+        MultiModelResponsePlan(
+            models: models,
+            userMessageId: userMessageId,
+            responseGroupId: responseGroupId,
+            mediaType: mediaType
+        )
     }
 
     /// Processes a streaming chunk for a specific model in multi-model mode
@@ -1512,40 +1492,19 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId,
-                mediaType: .image
-            )
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
-        }
-
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
+        let responsePlan = createResponsePlanForMultiModel(
+            models: models,
             userMessageId: userMessage.id,
-            responses: responseEntries
+            mediaType: .image
         )
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
 
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-            conversationManager.conversations[index].responseGroups.append(responseGroup)
+        for placeholderMessage in responsePlan.placeholderMessages {
+            conversationManager.addMessage(to: conversation, message: placeholderMessage)
         }
+
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         final class CompletionTracker: @unchecked Sendable {
             var count = 0
@@ -1645,7 +1604,12 @@ extension IOSChatViewModel {
             }
         }
 
-        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .completed
+        )
 
         completedCount += 1
         if completedCount >= totalCount {
@@ -1670,7 +1634,12 @@ extension IOSChatViewModel {
             metadata: ["model": model]
         )
 
-        updateImageResponseGroupStatus(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: .failed
+        )
 
         conversationManager.updateMessage(conversationId: conversationId, messageId: messageId) { message in
             message.content = "Image generation failed: \(error.localizedDescription)"
@@ -1679,16 +1648,6 @@ extension IOSChatViewModel {
         completedCount += 1
         if completedCount >= totalCount {
             finalizeImageGenerationBatch(conversationId: conversationId)
-        }
-    }
-
-    /// Updates the status of a response in a response group for image generation
-    func updateImageResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let groupIndex = conversationManager.conversations[convIndex].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let entryIndex = conversationManager.conversations[convIndex].responseGroups[groupIndex].responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[convIndex].responseGroups[groupIndex].responses[entryIndex].status = status
         }
     }
 

@@ -119,12 +119,10 @@ extension MacChatView {
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentMessages,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
@@ -141,7 +139,10 @@ extension MacChatView {
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: nil,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -170,12 +171,10 @@ extension MacChatView {
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentMessages,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with the specified model
         let assistantMessage = Message(role: .assistant, content: "", model: model)
@@ -192,7 +191,10 @@ extension MacChatView {
             model: model,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: nil,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .preserve
         )
     }
 

@@ -68,8 +68,8 @@ class AIService: ObservableObject {
         private var appleIntelligenceTask: Task<Void, Never>?
     #endif
 
-    /// Holds the Anthropic provider during streaming to prevent deallocation
-    private var currentAnthropicProvider: AnthropicProvider?
+    /// Owns provider adapters for in-flight provider-backed requests.
+    private let inFlightProviderRequests = InFlightProviderRequests()
 
     @Published var provider: AIProvider {
         didSet {
@@ -634,9 +634,8 @@ class AIService: ObservableObject {
             )
         }
         multiModelStreamTasks.removeAll()
-        // Cancel Anthropic provider and clear reference to prevent memory leak
-        currentAnthropicProvider?.cancelRequest()
-        currentAnthropicProvider = nil
+        // Cancel provider adapters retained for in-flight provider-backed requests.
+        inFlightProviderRequests.cancelAll()
         #if !os(watchOS)
             appleIntelligenceTask?.cancel()
             appleIntelligenceTask = nil
@@ -918,6 +917,7 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
+                tools: tools,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning
             )
@@ -1258,6 +1258,7 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
+        tools: [[String: Any]]?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0
@@ -1288,9 +1289,9 @@ class AIService: ObservableObject {
             return
         }
 
-        // Get available tools for the Responses API
-        let tools = getAllAvailableTools()
-
+        // Use caller-provided tools for the Responses API. A nil value means tools
+        // are intentionally disabled for this request (for example on watchOS).
+        let toolsWrapper = UncheckedSendableWrapper(tools)
         if let tools, !tools.isEmpty {
             DiagnosticsLogger.log(
                 .aiService,
@@ -1357,6 +1358,7 @@ class AIService: ObservableObject {
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
+                                tools: toolsWrapper.value,
                                 onToolCallRequested: onToolCallRequested,
                                 onReasoning: onReasoning,
                                 attempt: attempt + 1
@@ -2209,23 +2211,24 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        // Get provider and send request
-        // Store provider to prevent deallocation during streaming
+        // Create a provider adapter for this request and retain it until completion/error.
+        // Provider adapters own their current stream task, so each concurrent request needs
+        // independent ownership instead of a shared singleton.
         let provider = AnthropicProvider(urlSession: urlSession)
-        currentAnthropicProvider = provider
+        let lease = inFlightProviderRequests.retain(provider)
 
-        // Wrap callbacks to clear provider reference on completion
+        // Wrap callbacks to release provider ownership exactly once on terminal callbacks.
         let wrappedCallbacks = AIProviderStreamCallbacks(
             onChunk: callbacks.onChunk,
-            onComplete: { [weak self] in
+            onComplete: {
                 Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
+                    lease.release()
                 }
                 callbacks.onComplete()
             },
-            onError: { [weak self] error in
+            onError: { error in
                 Task { @MainActor in
-                    self?.currentAnthropicProvider = nil
+                    lease.release()
                 }
                 callbacks.onError(error)
             },
@@ -2514,22 +2517,14 @@ extension AIService {
     }
 
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
-    /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
+    /// Tool calls are disabled on watchOS because watch messages cannot represent tool-call ids/results.
     func getAllAvailableTools() -> [[String: Any]]? {
-        var tools: [[String: Any]] = []
-
-        // Add web search tool (Tavily if configured, else DuckDuckGo)
         #if os(watchOS)
-            // On watchOS, use synced settings
-            if webSearchEnabled {
-                tools.append(WebSearchCoordinator.shared.toolDefinition())
-                DiagnosticsLogger.log(
-                    .aiService,
-                    level: .info,
-                    message: "🔧 Added web_search tool (watchOS)"
-                )
-            }
+            return nil
         #else
+            var tools: [[String: Any]] = []
+
+            // Add web search tool (Tavily if configured, else DuckDuckGo)
             if WebSearchCoordinator.shared.isAvailable {
                 tools.append(WebSearchCoordinator.shared.toolDefinition())
                 DiagnosticsLogger.log(
@@ -2538,9 +2533,8 @@ extension AIService {
                     message: "🔧 Added web_search tool (\(WebSearchCoordinator.shared.activeProvider))"
                 )
             }
-        #endif
 
-        // Add web_fetch tool (available on all platforms)
+        // Add web_fetch tool (available on non-watch platforms)
         if WebFetchService.shared.isEnabled {
             tools.append(WebFetchService.shared.toolDefinition())
             DiagnosticsLogger.log(
@@ -2601,6 +2595,7 @@ extension AIService {
         )
 
         return tools.isEmpty ? nil : tools
+        #endif
     }
 
     /// Checks if a tool call is for a built-in tool (like web_search) that we handle internally.

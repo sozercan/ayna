@@ -15,6 +15,8 @@ struct MultiModelResponseView: View {
     let responseGroupId: UUID
     let responses: [Message]
     let conversation: Conversation
+    /// ID of the response that would be auto-selected if user continues without choosing.
+    var defaultCandidateId: UUID? = nil
     var onSelectResponse: ((UUID) -> Void)?
     var onRetry: ((Message) -> Void)?
 
@@ -30,15 +32,6 @@ struct MultiModelResponseView: View {
 
     private var isSelectionMade: Bool {
         selectedResponseId != nil
-    }
-
-    private var defaultCandidateId: UUID? {
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == conversation.model }) {
-            return match.id
-        }
-        // 2. Fallback: First model
-        return responses.first?.id
     }
 
     /// Determines the grid layout based on number of responses

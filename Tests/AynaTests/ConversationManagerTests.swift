@@ -186,6 +186,244 @@ struct ConversationManagerTests {
         manager.clearAllConversations()
     }
 
+    @Test("ID-based message update persists through reload")
+    @MainActor
+    func idBasedMessageUpdatePersistsThroughReload() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-id-update-persistence-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let original = TestHelpers.sampleConversation(title: "Terminal Update")
+        let messageId = try #require(original.messages.last?.id)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let updated = manager.updateMessage(conversationId: original.id, messageId: messageId) { message in
+            message.content = "Saved terminal content"
+        }
+        #expect(updated)
+
+        try await Task.sleep(for: .milliseconds(100))
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        #expect(reloadedConversation.messages.last?.content == "Saved terminal content")
+    }
+
+    @Test("ID-based message removal persists through reload")
+    @MainActor
+    func idBasedMessageRemovalPersistsThroughReload() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-id-remove-persistence-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let original = TestHelpers.sampleConversation(title: "Terminal Remove")
+        let messageIdToRemove = try #require(original.messages.last?.id)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let removed = manager.removeMessage(conversationId: original.id, messageId: messageIdToRemove)
+        #expect(removed)
+
+        try await Task.sleep(for: .milliseconds(100))
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        #expect(!reloadedConversation.messages.contains(where: { $0.id == messageIdToRemove }))
+    }
+
+    @Test("ID-based response group status update persists through reload")
+    @MainActor
+    func idBasedResponseGroupStatusUpdatePersistsThroughReload() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-id-response-group-persistence-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let assistantMessage = Message(role: .assistant, content: "Streaming", model: "test-model")
+        var original = Conversation(title: "Terminal Group", model: "test-model")
+        let userMessage = Message(role: .user, content: "Compare")
+        original.addMessage(userMessage)
+        original.addMessage(assistantMessage)
+        let responseGroup = ResponseGroup(
+            userMessageId: userMessage.id,
+            responses: [
+                ResponseGroup.ResponseEntry(
+                    id: assistantMessage.id,
+                    modelName: "test-model",
+                    status: .streaming
+                )
+            ]
+        )
+        original.addResponseGroup(responseGroup)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let updated = manager.updateResponseGroupStatus(
+            conversationId: original.id,
+            responseGroupId: responseGroup.id,
+            messageId: assistantMessage.id,
+            status: .completed
+        )
+        #expect(updated)
+
+        try await Task.sleep(for: .milliseconds(100))
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        let reloadedGroup = try #require(reloadedConversation.getResponseGroup(responseGroup.id))
+        #expect(reloadedGroup.responses.first?.status == .completed)
+    }
+
+
+    @Test("Terminal response-group status persists accumulated streamed chunks")
+    @MainActor
+    func terminalResponseGroupStatusPersistsAccumulatedStreamedChunks() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-terminal-status-saves-streamed-content-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let assistantMessage = Message(role: .assistant, content: "", model: "test-model")
+        var original = Conversation(title: "Stream Then Complete", model: "test-model")
+        let userMessage = Message(role: .user, content: "Compare")
+        original.addMessage(userMessage)
+        original.addMessage(assistantMessage)
+        let responseGroup = ResponseGroup(
+            userMessageId: userMessage.id,
+            responses: [
+                ResponseGroup.ResponseEntry(
+                    id: assistantMessage.id,
+                    modelName: "test-model",
+                    status: .streaming
+                )
+            ]
+        )
+        original.addResponseGroup(responseGroup)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        #expect(manager.appendToMessage(conversationId: original.id, messageId: assistantMessage.id, chunk: "Hello"))
+        #expect(manager.appendToMessage(conversationId: original.id, messageId: assistantMessage.id, chunk: " world"))
+        #expect(manager.updateResponseGroupStatus(
+            conversationId: original.id,
+            responseGroupId: responseGroup.id,
+            messageId: assistantMessage.id,
+            status: .completed
+        ))
+
+        try await Task.sleep(for: .milliseconds(100))
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        let reloadedMessage = try #require(reloadedConversation.messages.first(where: { $0.id == assistantMessage.id }))
+        let reloadedGroup = try #require(reloadedConversation.getResponseGroup(responseGroup.id))
+        #expect(reloadedMessage.content == "Hello world")
+        #expect(reloadedGroup.responses.first?.status == .completed)
+    }
+
+    @Test("Response-group status update fails for a message outside the group")
+    @MainActor
+    func responseGroupStatusUpdateFailsForMessageOutsideGroup() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-response-group-member-guard-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let assistantMessage = Message(role: .assistant, content: "Streaming", model: "test-model")
+        var original = Conversation(title: "Missing Entry", model: "test-model")
+        let userMessage = Message(role: .user, content: "Compare")
+        original.addMessage(userMessage)
+        original.addMessage(assistantMessage)
+        let responseGroup = ResponseGroup(
+            userMessageId: userMessage.id,
+            responses: [
+                ResponseGroup.ResponseEntry(
+                    id: assistantMessage.id,
+                    modelName: "test-model",
+                    status: .streaming
+                )
+            ]
+        )
+        original.addResponseGroup(responseGroup)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let updated = manager.updateResponseGroupStatus(
+            conversationId: original.id,
+            responseGroupId: responseGroup.id,
+            messageId: UUID(),
+            status: .completed
+        )
+        #expect(!updated)
+
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        let reloadedGroup = try #require(reloadedConversation.getResponseGroup(responseGroup.id))
+        #expect(reloadedGroup.responses.first?.status == .streaming)
+    }
+
+    @Test("Streaming append remains deferred until explicit save")
+    @MainActor
+    func streamingAppendRemainsDeferredUntilExplicitSave() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let keychain = InMemoryKeychainStorage()
+        let keyId = "test-streaming-append-deferred-key"
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
+        let original = TestHelpers.sampleConversation(title: "Streaming Deferred")
+        let messageId = try #require(original.messages.last?.id)
+        try await store.save(original)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+
+        let appended = manager.appendToMessage(
+            conversationId: original.id,
+            messageId: messageId,
+            chunk: " plus streamed chunk"
+        )
+        #expect(appended)
+
+        try await Task.sleep(for: .milliseconds(100))
+        await manager.flushPendingSaves()
+
+        let reloadedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await reloadedManager.loadingTask?.value
+        let reloadedConversation = try #require(reloadedManager.conversation(byId: original.id))
+        #expect(reloadedConversation.messages.last?.content == original.messages.last?.content)
+
+        let currentConversation = try #require(manager.conversation(byId: original.id))
+        _ = await manager.saveImmediately(currentConversation).value
+
+        let savedManager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        _ = await savedManager.loadingTask?.value
+        let savedConversation = try #require(savedManager.conversation(byId: original.id))
+        #expect(savedConversation.messages.last?.content == "Hi there plus streamed chunk")
+    }
+
     // MARK: - Edit Message Tests
 
     @Test("Edit message updates content and marks as edited")

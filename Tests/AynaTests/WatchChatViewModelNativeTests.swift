@@ -32,7 +32,6 @@ struct WatchChatViewModelNativeTests {
         #expect(!viewModel.isStreaming)
         #expect(viewModel.errorMessage == nil)
         #expect(viewModel.streamingContent.isEmpty)
-        #expect(viewModel.currentToolName == nil)
         #expect(viewModel.failedMessage == nil)
     }
 
@@ -54,7 +53,6 @@ struct WatchChatViewModelNativeTests {
         // State should be reset
         #expect(viewModel.errorMessage == nil)
         #expect(viewModel.streamingContent.isEmpty)
-        #expect(viewModel.currentToolName == nil)
         #expect(viewModel.failedMessage == nil)
     }
 
@@ -107,7 +105,6 @@ struct WatchChatViewModelNativeTests {
 
         #expect(!viewModel.isLoading)
         #expect(!viewModel.isStreaming)
-        #expect(viewModel.currentToolName == nil)
     }
 
     // MARK: - State Management Tests

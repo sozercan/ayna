@@ -48,16 +48,15 @@ Decomposed into single-responsibility components:
 
 | File | Responsibility |
 |------|----------------|
-| `AIService.swift` | Coordinator/Facade, manages all AI requests |
-| `OpenAIEndpointResolver.swift` | URL resolution for different providers |
+| `AIService.swift` | Coordinator/Facade for active AI requests. OpenAI-compatible chat routing currently lives here while the provider Adapter seam is being deepened safely. |
+| `OpenAIEndpointResolver.swift` | URL resolution for OpenAI-compatible providers |
 | `OpenAIRequestBuilder.swift` | Request factory, handles Chat Completions & Responses API formats |
 | `OpenAIStreamParser.swift` | SSE parsing, tool call handling |
 | `AIRetryPolicy.swift` | Exponential backoff for transient failures |
 | `OpenAIImageService.swift` | DALL·E image generation |
-| `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
-| `Providers/OpenAIProvider.swift` | OpenAI API implementation |
-| `Providers/AzureOpenAIProvider.swift` | Azure OpenAI implementation |
-| `Providers/GitHubModelsProvider.swift` | GitHub Models implementation |
+| `InFlightProviderRequests.swift` | Owns per-request provider Adapters so concurrent same-provider streams do not cancel each other |
+| `Providers/AIProviderProtocol.swift` | Protocol defining the provider Adapter interface |
+| `Providers/AnthropicProvider.swift` | Active Anthropic API adapter implementation |
 
 ### Apple Intelligence Service
 

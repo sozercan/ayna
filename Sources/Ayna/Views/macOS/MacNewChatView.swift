@@ -48,75 +48,13 @@ struct MacNewChatView: View {
 
     // MARK: - Multi-Model Display
 
-    /// Represents either a single message or a group of parallel responses
-    private enum DisplayableItem: Identifiable {
-        case message(Message)
-        case responseGroup(groupId: UUID, responses: [Message])
-
-        var id: String {
-            switch self {
-            case let .message(msg):
-                msg.id.uuidString
-            case let .responseGroup(groupId, _):
-                "group-\(groupId.uuidString)"
-            }
-        }
-    }
-
-    /// Get visible messages (filtering out system and tool messages)
-    private var visibleMessages: [Message] {
+    /// Converts the pending conversation into displayable transcript items.
+    private var displayableItems: [ChatTranscriptItem] {
         guard let conversation = currentConversation else { return [] }
-        return conversation.messages.filter { message in
-            if message.role == .system {
-                return false
-            }
-
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                return message.id == conversation.messages.last?.id && isGenerating
-            }
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
-        }
-    }
-
-    /// Converts visible messages into displayable items, grouping multi-model responses together
-    private var displayableItems: [DisplayableItem] {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        return items
+        return ChatTranscriptPlan(
+            conversation: conversation,
+            isGenerating: isGenerating
+        ).items
     }
 
     private var needsModelSetup: Bool {
@@ -182,9 +120,11 @@ struct MacNewChatView: View {
                             LazyVStack(spacing: 0) {
                                 ForEach(displayableItems) { item in
                                     switch item {
-                                    case let .message(message):
+                                    case let .message(item):
+                                        let message = item.message
                                         MacMessageView(
                                             message: message,
+                                            displayKind: item.displayKind,
                                             modelName: message.model,
                                             onRetry: nil,
                                             onSwitchModel: nil,
@@ -203,16 +143,17 @@ struct MacNewChatView: View {
                                                 } : nil
                                         )
                                         .id(message.id)
-                                    case let .responseGroup(groupId, responses):
+                                    case let .responseGroup(group):
                                         if let conversation = currentConversation {
                                             MultiModelResponseView(
-                                                responseGroupId: groupId,
-                                                responses: responses,
+                                                responseGroupId: group.id,
+                                                responses: group.messages,
                                                 conversation: conversation,
+                                                defaultCandidateId: group.defaultCandidateId,
                                                 onSelectResponse: { messageId in
                                                     conversationManager.selectResponse(
                                                         in: conversation,
-                                                        groupId: groupId,
+                                                        groupId: group.id,
                                                         messageId: messageId
                                                     )
                                                 },
@@ -416,24 +357,6 @@ struct MacNewChatView: View {
         DiagnosticsLogger.log(.contentView, level: level, message: message, metadata: metadata)
     }
 
-    func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
-        }
-    }
-
-    func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId)
-        {
-            group.updateStatus(for: messageId, status: status)
-            conversationManager.conversations[ci].updateResponseGroup(group)
-        }
-    }
-
     func saveImageAndUpdateMessage(imageData: Data, conversation: Conversation, messageId: UUID) {
         // Save image to disk off MainActor to avoid blocking the UI
         Task {
@@ -607,7 +530,10 @@ struct MacNewChatView: View {
             metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        let currentMessages = updatedConversation.messages
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: updatedConversation.messages,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
@@ -619,7 +545,7 @@ struct MacNewChatView: View {
 
         sendMessageWithToolSupport(
             conversation: conversation,
-            messages: currentMessages,
+            messages: messagesToSend,
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools
@@ -679,44 +605,20 @@ struct MacNewChatView: View {
 
     /// Generates images from multiple models in parallel for comparison
     private func generateMultiModelImages(prompt: String, models: [String], conversation: Conversation) {
-        // Create a response group for the multi-model comparison
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        // Create placeholder messages for each model
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId,
-                mediaType: .image
-            )
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
-        }
-
-        // Create response group
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
+        let responsePlan = MultiModelResponsePlan(
+            models: models,
             userMessageId: conversation.messages.last(where: { $0.role == .user })?.id ?? UUID(),
-            responses: responseEntries
+            mediaType: .image
         )
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
+
+        for placeholderMessage in responsePlan.placeholderMessages {
+            conversationManager.addMessage(to: conversation, message: placeholderMessage)
+        }
 
         // Add response group to conversation
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = messageIds
 
@@ -733,7 +635,12 @@ struct MacNewChatView: View {
                 onComplete: { imageData in
                     Task { @MainActor in
                         saveImageAndUpdateMessage(imageData: imageData, conversation: conversation, messageId: messageId)
-                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .completed
+                        )
                         counter.increment()
                         if counter.isComplete { isGenerating = false; selectedConversationId = conversation.id }
                     }
@@ -746,7 +653,12 @@ struct MacNewChatView: View {
                             metadata: ["model": model]
                         )
 
-                        updateResponseGroupStatus(conversationId: conversation.id, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                        conversationManager.updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .failed
+                        )
 
                         // Update message with error
                         conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
@@ -785,37 +697,24 @@ struct MacNewChatView: View {
             return
         }
 
-        // Create response group
-        let responseGroupId = UUID()
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
+        let responsePlan = MultiModelResponsePlan(models: models, userMessageId: userMessageId)
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
 
-        // Create placeholder messages for each model
-        let messageIds = Dictionary(uniqueKeysWithValues: models.map { ($0, UUID()) })
-        for model in models {
-            guard let messageId = messageIds[model] else { continue }
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId
-            )
+        for placeholderMessage in responsePlan.placeholderMessages {
             conversationManager.addMessage(to: updatedConversation, message: placeholderMessage)
         }
 
         // Add response group to conversation
-        conversationManager.addResponseGroup(to: updatedConversation, group: responseGroup)
+        conversationManager.addResponseGroup(to: updatedConversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = messageIds
 
         // Prepare messages for API
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
+        )
 
         // Send to all models in parallel
         aiService.sendToMultipleModels(
@@ -842,7 +741,12 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIdsByModel[model] else { return }
 
-                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .completed)
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .completed
+                    )
                     logNewChat("✅ Model completed in multi-model", level: .info, metadata: ["model": model])
                 }
             },
@@ -866,7 +770,12 @@ struct MacNewChatView: View {
                 Task { @MainActor in
                     guard let messageId = messageIdsByModel[model] else { return }
 
-                    updateResponseGroupViaGroup(conversationId: conversationId, responseGroupId: responseGroupId, messageId: messageId, status: .failed)
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .failed
+                    )
                     logNewChat("❌ Model failed in multi-model", level: .error, metadata: ["model": model, "error": error.localizedDescription])
 
                     if errorMessage == nil {
@@ -1004,12 +913,14 @@ struct MacNewChatView: View {
                        var lastMessage = conversationManager.conversations[index].messages.last,
                        lastMessage.role == .assistant
                     {
-                        let toolCall = ToolCallHandler.createToolCall(
-                            id: toolCallId,
+                        let annotationPlan = ToolCallAnnotationPlan(
+                            existingToolCalls: lastMessage.toolCalls,
+                            toolCallId: toolCallId,
                             toolName: toolName,
-                            arguments: arguments
+                            arguments: arguments,
+                            mergePolicy: .replace
                         )
-                        lastMessage.toolCalls = [toolCall]
+                        lastMessage.toolCalls = annotationPlan.toolCalls
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
@@ -1046,21 +957,7 @@ struct MacNewChatView: View {
                                 )
                             }
 
-                            // For web_search, skip creating a visible tool message
-                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
-
                             await MainActor.run {
-                                if !isWebSearch {
-                                    // For non-web-search tools, create the tool message
-                                    let toolMessage = ToolCallHandler.createToolMessage(
-                                        toolCallId: toolCallId,
-                                        toolName: toolName,
-                                        arguments: argumentsWrapper.value,
-                                        result: result
-                                    )
-                                    conversationManager.addMessage(to: conversation, message: toolMessage)
-                                }
-
                                 guard let updatedConversation = conversationManager.conversations
                                     .first(where: { $0.id == conversationId })
                                 else {
@@ -1070,25 +967,27 @@ struct MacNewChatView: View {
                                     return
                                 }
 
-                                // For web_search, attach citations to the new assistant message
-                                let newAssistantMessage = ToolCallHandler.createContinuationMessage(
+                                let continuationPlan = ToolContinuationPlan(
+                                    existingMessages: updatedConversation.messages,
+                                    toolCallId: toolCallId,
+                                    toolName: toolName,
+                                    arguments: argumentsWrapper.value,
+                                    result: result,
                                     model: model,
-                                    citations: isWebSearch ? citations : nil
-                                )
-                                conversationManager.addMessage(
-                                    to: updatedConversation,
-                                    message: newAssistantMessage
+                                    citations: citations,
+                                    systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
                                 )
 
-                                // Re-fetch conversation AFTER adding the new assistant message
-                                guard let convWithAssistant = conversationManager.conversations
-                                    .first(where: { $0.id == conversationId })
-                                else {
-                                    currentToolName = nil
-                                    isGenerating = false
-                                    selectedConversationId = conversationId
-                                    return
+                                if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                    conversationManager.addMessage(to: updatedConversation, message: visibleToolMessage)
                                 }
+
+                                let conversationForAssistant = conversationManager.conversations
+                                    .first(where: { $0.id == conversationId }) ?? updatedConversation
+                                conversationManager.addMessage(
+                                    to: conversationForAssistant,
+                                    message: continuationPlan.continuationAssistantMessage
+                                )
 
                                 currentToolName = "Analyzing \(toolName) results"
 
@@ -1101,16 +1000,7 @@ struct MacNewChatView: View {
                                     ]
                                 )
 
-                                // Build messages for API using ToolCallHandler
-                                let messagesForAPI = ToolCallHandler.buildContinuationMessages(
-                                    conversationMessages: convWithAssistant.messages,
-                                    toolCallId: toolCallId,
-                                    toolName: toolName,
-                                    arguments: argumentsWrapper.value,
-                                    result: result,
-                                    isWebSearch: isWebSearch,
-                                    systemPrompt: nil // MacNewChatView doesn't add system prompts here
-                                )
+                                let messagesForAPI = continuationPlan.requestMessages
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call

@@ -21,19 +21,13 @@
         @Published var isStreaming = false // True once first chunk received
         @Published var errorMessage: String?
         @Published var streamingContent = ""
-        @Published var currentToolName: String?
         @Published var failedMessage: String?
+        private var failedMessageId: UUID?
 
         private let conversationStore: WatchConversationStore
         private let connectivityService: WatchConnectivityService
         private let aiService: AIService
         private var currentConversationId: UUID?
-        private var toolCallDepth = 0
-
-        /// Maximum tool chain depth for watchOS.
-        /// Intentionally low (5) due to watchOS resource constraints (memory, battery, network).
-        /// Sufficient for simple tool operations while preventing resource exhaustion.
-        private let maxToolCallDepth = 5
 
         // Streaming throttle for performance
         private var lastUIUpdateTime: Date = .distantPast
@@ -55,9 +49,8 @@
             currentConversationId = id
             errorMessage = nil
             streamingContent = ""
-            currentToolName = nil
-            toolCallDepth = 0
             failedMessage = nil
+            failedMessageId = nil
             pendingContent = ""
         }
 
@@ -79,12 +72,11 @@
             // Clear any previous error
             errorMessage = nil
             failedMessage = nil
+            failedMessageId = nil
             isLoading = true
             isStreaming = false
             streamingContent = ""
             pendingContent = ""
-            currentToolName = nil
-            toolCallDepth = 0
             lastUIUpdateTime = .distantPast
 
             // Play haptic for message sent
@@ -120,8 +112,12 @@
                 return
             }
 
-            // Convert to Message array for API
-            let messagesForAPI = updatedConversation.messages.dropLast().map { $0.toMessage() }
+            // Convert to Message array for API, excluding the UI-only assistant placeholder
+            let messagesForAPI = ChatTurnRequestPlan.messages(
+                from: updatedConversation.messages.map { $0.toMessage() },
+                systemPrompt: nil,
+                excludingAssistantPlaceholderId: assistantMessage.id
+            )
 
             // Get model from settings or conversation, but validate it's usable on watchOS
             var model = connectivityService.selectedModel.isEmpty
@@ -156,34 +152,34 @@
                 return
             }
 
-            // Get available tools (Tavily web search if configured)
-            let tools = aiService.getAllAvailableTools()
-
-            sendMessageWithToolSupport(
+            sendStreamingMessage(
                 messages: Array(messagesForAPI),
                 model: model,
                 conversationId: conversationId,
-                tools: tools,
                 isFirstMessage: isFirstMessage,
-                userContent: userContent
+                userContent: userContent,
+                failedUserMessageId: userMessage.id,
+                assistantPlaceholderId: assistantMessage.id,
+                failedUserMessagePolicy: .removeForRetry
             )
         }
 
-        /// Send message with tool support for recursive tool calling.
-        private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
+        /// Send a streaming message request.
+        private func sendStreamingMessage( // swiftlint:disable:this function_body_length
             messages: [Message],
             model: String,
             conversationId: UUID,
-            tools: [[String: Any]]?,
             isFirstMessage: Bool,
-            userContent: String
+            userContent: String,
+            failedUserMessageId: UUID?,
+            assistantPlaceholderId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
-            nonisolated(unsafe) let tools = tools
             aiService.sendMessage(
                 messages: messages,
                 model: model,
                 stream: true,
-                tools: tools,
+                tools: nil,
                 conversationId: conversationId,
                 onChunk: { [weak self] chunk in
                     Task { @MainActor in
@@ -207,26 +203,12 @@
                             self.lastUIUpdateTime = now
                         }
 
-                        // Clear tool indicator when we start receiving content
-                        if self.currentToolName != nil {
-                            self.currentToolName = nil
-                        }
                     }
                 },
                 onComplete: { [weak self] in
                     Task { @MainActor in
                         guard let self else { return }
 
-                        // Only complete if no tool call is pending
-                        guard self.currentToolName == nil else {
-                            DiagnosticsLogger.log(
-                                .chatView,
-                                level: .info,
-                                message: "⌚ onComplete: keeping isLoading TRUE (tool call pending)",
-                                metadata: ["toolName": self.currentToolName ?? "unknown"]
-                            )
-                            return
-                        }
 
                         // Flush any remaining pending content
                         if !self.pendingContent.isEmpty {
@@ -241,7 +223,6 @@
 
                         self.isLoading = false
                         self.isStreaming = false
-                        self.toolCallDepth = 0
 
                         // Play success haptic
                         self.playHaptic(.success)
@@ -291,37 +272,34 @@
                             self.conversationStore.persistCurrentState()
                             self.isLoading = false
                             self.isStreaming = false
-                            self.currentToolName = nil
-                            self.toolCallDepth = 0
                             self.pendingContent = ""
                             return
                         }
 
                         self.isLoading = false
                         self.isStreaming = false
-                        self.currentToolName = nil
-                        self.toolCallDepth = 0
                         self.errorMessage = ErrorPresenter.userMessage(for: error)
 
-                        // Store the failed message for retry
-                        self.failedMessage = userContent
+                        // Apply shared failure cleanup policy for this turn.
+                        self.pendingContent = ""
+                        if var conv = self.conversationStore.conversation(for: conversationId) {
+                            let plan = ChatTurnFailurePlan(
+                                messages: conv.messages.map { $0.toMessage() },
+                                failedUserMessageId: failedUserMessageId,
+                                assistantPlaceholderId: assistantPlaceholderId,
+                                failedUserMessagePolicy: failedUserMessagePolicy
+                            )
+                            self.failedMessage = plan.retryPrompt
+                            self.failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
+                            conv.messages = plan.messagesAfterFailure.map { WatchMessage(from: $0) }
+                            _ = self.conversationStore.replaceConversation(conv)
+                        } else {
+                            self.failedMessage = nil
+                            self.failedMessageId = nil
+                        }
 
                         // Play failure haptic
                         self.playHaptic(.failure)
-
-                        // Remove the empty assistant message and the user message
-                        self.pendingContent = ""
-                        if var conv = self.conversationStore.conversation(for: conversationId),
-                           !conv.messages.isEmpty
-                        {
-                            // Remove assistant placeholder
-                            conv.messages.removeLast()
-                            // Remove user message (will be re-added on retry)
-                            if !conv.messages.isEmpty {
-                                conv.messages.removeLast()
-                            }
-                            _ = self.conversationStore.replaceConversation(conv)
-                        }
 
                         DiagnosticsLogger.log(
                             .chatView,
@@ -332,89 +310,7 @@
                     }
                 },
                 onToolCall: nil,
-                onToolCallRequested: { [weak self] _, toolName, arguments in
-                    nonisolated(unsafe) let arguments = arguments
-                    let toolNameCopy = toolName
-                    Task { @MainActor in
-                        guard let self else { return }
-                        // Set currentToolName first thing to prevent race condition with onComplete
-                        // checking if tool call is pending. The stream may send [DONE] immediately
-                        // after finish_reason: "tool_calls".
-                        self.currentToolName = toolNameCopy
-
-                        // Check depth limit
-                        guard self.toolCallDepth < self.maxToolCallDepth else {
-                            DiagnosticsLogger.log(
-                                .chatView,
-                                level: .error,
-                                message: "⌚ Max tool call depth reached"
-                            )
-                            self.isLoading = false
-                            self.isStreaming = false
-                            self.currentToolName = nil
-                            self.playHaptic(.failure)
-                            return
-                        }
-
-                        self.toolCallDepth += 1
-
-                        // Play haptic for tool execution
-                        self.playHaptic(.click)
-
-                        DiagnosticsLogger.log(
-                            .chatView,
-                            level: .info,
-                            message: "⌚ Tool call requested: \(toolName)",
-                            metadata: ["toolName": toolName]
-                        )
-
-                        // Execute the tool
-                        Task { @MainActor in
-                            let result: String = if self.aiService.isBuiltInTool(toolName) {
-                                await self.aiService.executeBuiltInTool(name: toolName, arguments: arguments)
-                            } else {
-                                "Tool not available on Apple Watch"
-                            }
-
-                            // Add tool result message to local store for history consistency
-                            let toolMessage = WatchMessage(
-                                from: Message(role: .tool, content: result)
-                            )
-                            self.conversationStore.addMessage(toolMessage, to: conversationId)
-                            // Sync tool message to iPhone to maintain conversation parity
-                            self.connectivityService.sendMessage(toolMessage, conversationId: conversationId)
-
-                            // Add new assistant message placeholder
-                            let newAssistantMessage = WatchMessage(
-                                from: Message(role: .assistant, content: "")
-                            )
-                            self.conversationStore.addMessage(newAssistantMessage, to: conversationId)
-
-                            // Get updated messages
-                            guard let updatedConv = self.conversationStore.conversation(for: conversationId) else {
-                                self.isLoading = false
-                                self.isStreaming = false
-                                self.currentToolName = nil
-                                return
-                            }
-
-                            // Build continuation messages (tool message is now in the store)
-                            let continuationMessages = updatedConv.messages.dropLast().map { $0.toMessage() }
-
-                            self.streamingContent = ""
-                            self.pendingContent = ""
-
-                            self.sendMessageWithToolSupport(
-                                messages: Array(continuationMessages),
-                                model: model,
-                                conversationId: conversationId,
-                                tools: tools,
-                                isFirstMessage: false,
-                                userContent: userContent
-                            )
-                        }
-                    }
-                },
+                onToolCallRequested: nil,
                 onReasoning: nil
             )
         }
@@ -424,22 +320,32 @@
             aiService.cancelCurrentRequest()
             isLoading = false
             isStreaming = false
-            currentToolName = nil
-            toolCallDepth = 0
             playHaptic(.click)
         }
 
         /// Retry the last failed message
         func retryFailedMessage() {
             guard let message = failedMessage else { return }
+            let messageId = failedMessageId
             failedMessage = nil
+            failedMessageId = nil
             errorMessage = nil
+
+            if let messageId,
+               let conversationId = currentConversationId,
+               var conversation = conversationStore.conversation(for: conversationId)
+            {
+                conversation.messages.removeAll { $0.id == messageId }
+                _ = conversationStore.replaceConversation(conversation)
+            }
+
             sendMessage(message)
         }
 
         /// Clear the failed message without retrying
         func dismissError() {
             failedMessage = nil
+            failedMessageId = nil
             errorMessage = nil
         }
 

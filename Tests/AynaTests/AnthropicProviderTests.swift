@@ -40,18 +40,6 @@ struct AnthropicProviderTests {
         )
     }
 
-    // MARK: - Factory Tests
-
-    @Test("Factory returns AnthropicProvider for .anthropic")
-    func factoryReturnsAnthropicProvider() {
-        let config = URLSessionConfiguration.ephemeral
-        let session = URLSession(configuration: config)
-        let provider = AIProviderFactory.createProvider(for: .anthropic, urlSession: session)
-
-        #expect(provider.providerType == .anthropic)
-        #expect(provider is AnthropicProvider)
-    }
-
     // MARK: - Provider Properties Tests
 
     @Test("Provider type is anthropic")

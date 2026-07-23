@@ -38,13 +38,8 @@
 
                             // Typing indicator only when waiting for response (not during streaming)
                             if viewModel.isLoading, !viewModel.isStreaming {
-                                if let toolName = viewModel.currentToolName {
-                                    toolIndicator(toolName)
-                                        .id("tool")
-                                } else {
-                                    typingIndicator
-                                        .id("typing")
-                                }
+                                typingIndicator
+                                    .id("typing")
                             }
 
                             // Error message with retry if any
@@ -69,11 +64,7 @@
                     withAnimation {
                         if viewModel.isLoading, !viewModel.isStreaming {
                             // Waiting for response - scroll to typing indicator
-                            if viewModel.currentToolName != nil {
-                                proxy.scrollTo("tool", anchor: .bottom)
-                            } else {
-                                proxy.scrollTo("typing", anchor: .bottom)
-                            }
+                            proxy.scrollTo("typing", anchor: .bottom)
                         } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
                             // Streaming or idle - scroll to last message
                             proxy.scrollTo(lastId, anchor: .bottom)
@@ -174,22 +165,6 @@
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityIdentifier(TestIdentifiers.Watch.chatTypingIndicator)
-        }
-
-        private func toolIndicator(_: String) -> some View {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.blue)
-                Text("Searching...")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.blue.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         private func errorView(_ message: String) -> some View {

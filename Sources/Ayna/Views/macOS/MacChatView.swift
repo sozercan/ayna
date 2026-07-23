@@ -38,6 +38,7 @@ struct MacChatView: View {
     @State var errorMessage: String?
     @State var errorRecoverySuggestion: String?
     @State private var failedMessage: String?
+    @State private var failedMessageId: UUID?
     @State private var selectedModel: String
     @State private var attachedFiles: [URL] = []
     @State var toolCallDepth = 0
@@ -64,9 +65,8 @@ struct MacChatView: View {
     // Performance optimizations
     @State private var pendingChunks: [String] = []
     @State private var batchUpdateTask: Task<Void, Never>?
-    @State private var visibleMessages: [Message] = []
     @State private var cachedConversationIndex: Int?
-    @State private var cachedDisplayableItems: [DisplayableItem] = []
+    @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
     /// Cache the current conversation to avoid repeated lookups
     var currentConversation: Conversation {
         if let index = getConversationIndex() {
@@ -100,76 +100,15 @@ struct MacChatView: View {
         DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
     }
 
-    /// Helper to filter visible messages
+    /// Helper to refresh visible transcript items.
     private func updateVisibleMessages() {
-        visibleMessages = currentConversation.messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-            // Always show tool messages when they have content (tool replies are the "first" assistant response)
-            if message.role == .tool {
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            // Always show assistant messages that have citations (from web search)
-            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                return true
-            }
-
-            // Show if: has content, has image data, or is generating image
-            // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == currentConversation.messages.last?.id && isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
-        }
-
-        // Update displayable items after visible messages change
-        updateDisplayableItems()
+        cachedDisplayableItems = ChatTranscriptPlan(
+            conversation: currentConversation,
+            isGenerating: isGenerating
+        ).items
     }
 
     // MARK: - Multi-Model Display
-
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
-    private func updateDisplayableItems() {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
-            }
-        }
-
-        cachedDisplayableItems = items
-    }
 
     private var normalizedSelectedModel: String {
         let explicitSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -247,6 +186,7 @@ struct MacChatView: View {
                     },
                     onModelChange: {
                         syncSelectedModelWithConversation()
+                        updateVisibleMessages()
                     },
                     onGeneratingChange: {
                         updateVisibleMessages()
@@ -412,12 +352,11 @@ struct MacChatView: View {
 
         isGenerating = true
 
-        // Build messages for API using the same pattern as sendMessage
-        var messagesToSend = currentConversation.messages
-        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        // Build messages for API using the shared chat-turn planner
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentConversation.messages,
+            systemPrompt: buildFullSystemPrompt(for: currentConversation)
+        )
 
         // Create assistant placeholder
         let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
@@ -432,7 +371,10 @@ struct MacChatView: View {
             model: currentConversation.model,
             temperature: currentConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: nil,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -606,30 +548,16 @@ struct MacChatView: View {
 
     /// Auto-select response if we are continuing from a multi-model state without selection
     private func autoSelectResponseIfNeeded() {
-        guard let lastMessage = currentConversation.messages.last,
-              let groupId = lastMessage.responseGroupId,
-              let group = currentConversation.getResponseGroup(groupId),
-              group.selectedResponseId == nil
-        else {
+        guard let candidate = ChatTranscriptPlan.autoSelectionCandidate(in: currentConversation) else {
             return
         }
 
-        let responses = currentConversation.messages.filter { $0.responseGroupId == groupId }
-        var candidateId: UUID?
-
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == currentConversation.model }) {
-            candidateId = match.id
-        }
-        // 2. Fallback: First model
-        else if let first = responses.first {
-            candidateId = first.id
-        }
-
-        if let id = candidateId {
-            logChat("🤖 Auto-selecting response before sending new message", metadata: ["messageId": id.uuidString])
-            conversationManager.selectResponse(in: currentConversation, groupId: groupId, messageId: id)
-        }
+        logChat("🤖 Auto-selecting response before sending new message", metadata: ["messageId": candidate.messageId.uuidString])
+        conversationManager.selectResponse(
+            in: currentConversation,
+            groupId: candidate.groupId,
+            messageId: candidate.messageId
+        )
     }
 
     // MARK: - Error Handling
@@ -640,10 +568,17 @@ struct MacChatView: View {
 
         logChat("🔄 Retrying failed message", level: .info, metadata: ["messageLength": "\(message.count)"])
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId {
+            _ = conversationManager.removeMessage(conversationId: currentConversation.id, messageId: messageId)
+        }
 
         // Set message text and send
         messageText = message
@@ -653,6 +588,7 @@ struct MacChatView: View {
     /// Dismiss the current error without retrying
     private func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -772,6 +708,7 @@ struct MacChatView: View {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = promptText // Store for retry in case of failure
+        failedMessageId = nil
         isGenerating = true
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
@@ -809,12 +746,10 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.messages(
+            from: currentMessages,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
@@ -904,7 +839,10 @@ struct MacChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
-            isInitialRequest: true
+            isInitialRequest: true,
+            failedUserMessageId: userMessage.id,
+            assistantPlaceholderId: assistantMessage.id,
+            failedUserMessagePolicy: .removeForRetry
         )
     }
 
@@ -915,7 +853,10 @@ struct MacChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
-        isInitialRequest _: Bool
+        isInitialRequest _: Bool,
+        failedUserMessageId: UUID?,
+        assistantPlaceholderId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
@@ -1036,6 +977,7 @@ struct MacChatView: View {
                         logChat("✅ onComplete: isGenerating set to FALSE (no tool calls pending)", level: .info)
                         isGenerating = false
                         failedMessage = nil // Clear failed message on success
+                        failedMessageId = nil
                         toolChainTimeoutTask?.cancel()
                         toolChainTimeoutTask = nil
                     } else {
@@ -1059,17 +1001,22 @@ struct MacChatView: View {
                         metadata: ["error": error.localizedDescription]
                     )
 
-                    // Remove the empty assistant placeholder message since we show error in banner
+                    // Apply shared failure cleanup policy for this turn.
                     if let index = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversation.id
                     }) {
-                        let lastIndex = conversationManager.conversations[index].messages.count - 1
-                        if lastIndex >= 0,
-                           conversationManager.conversations[index].messages[lastIndex].role == .assistant,
-                           conversationManager.conversations[index].messages[lastIndex].content.isEmpty
-                        {
-                            conversationManager.conversations[index].messages.remove(at: lastIndex)
-                        }
+                        let current = conversationManager.conversations[index]
+                        let plan = ChatTurnFailurePlan(
+                            messages: current.messages,
+                            failedUserMessageId: failedUserMessageId,
+                            assistantPlaceholderId: assistantPlaceholderId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
+                        )
+                        conversationManager.conversations[index].messages = plan.messagesAfterFailure
+                        conversationManager.conversations[index].updatedAt = Date()
+                        conversationManager.save(conversationManager.conversations[index])
+                        failedMessage = plan.retryPrompt
+                        failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
                     }
 
                     // Only update UI state if we're viewing this conversation
@@ -1138,15 +1085,14 @@ struct MacChatView: View {
                         var lastMessage = conversationManager.conversations[index].messages.last,
                         lastMessage.role == .assistant
                     {
-                        // Convert arguments to AnyCodable
-                        let toolCall = ToolCallHandler.createToolCall(
-                            id: toolCallId,
+                        let annotationPlan = ToolCallAnnotationPlan(
+                            existingToolCalls: lastMessage.toolCalls,
+                            toolCallId: toolCallId,
                             toolName: toolName,
-                            arguments: arguments
+                            arguments: arguments,
+                            mergePolicy: .append
                         )
-                        var existingToolCalls = lastMessage.toolCalls ?? []
-                        existingToolCalls.append(toolCall)
-                        lastMessage.toolCalls = existingToolCalls
+                        lastMessage.toolCalls = annotationPlan.toolCalls
                         conversationManager.conversations[index].messages[
                             conversationManager.conversations[index].messages.count - 1
                         ] = lastMessage
@@ -1186,23 +1132,7 @@ struct MacChatView: View {
                                 metadata: ["resultLength": "\(result.count)"]
                             )
 
-                            // For web_search, skip creating a visible tool message
-                            let isWebSearch = ToolCallHandler.isWebSearchTool(toolName)
-
-                            // Create a tool message with the result
                             await MainActor.run {
-                                if !isWebSearch {
-                                    // For non-web-search tools, create the tool message
-                                    let toolMessage = ToolCallHandler.createToolMessage(
-                                        toolCallId: toolCallId,
-                                        toolName: toolName,
-                                        arguments: argumentsWrapper.value,
-                                        result: result
-                                    )
-                                    conversationManager.addMessage(to: conversation, message: toolMessage)
-                                }
-
-                                // Get updated conversation with tool result
                                 guard
                                     let updatedConv = conversationManager.conversations.first(where: {
                                         $0.id == conversation.id
@@ -1219,33 +1149,31 @@ struct MacChatView: View {
                                     return
                                 }
 
-                                // Continue conversation with tool result
-                                // Add a new empty assistant message for the model's response
-                                let continuationAssistantMessage = ToolCallHandler.createContinuationMessage(
-                                    model: model,
-                                    citations: isWebSearch ? citations : nil
-                                )
-                                conversationManager.addMessage(to: updatedConv, message: continuationAssistantMessage)
-
-                                // Get the conversation again with the new assistant message
-                                guard
-                                    let convWithAssistant = conversationManager.conversations.first(where: {
-                                        $0.id == conversation.id
-                                    })
-                                else {
-                                    return
-                                }
-
-                                // Build messages for API using ToolCallHandler
-                                let continuationMessages = ToolCallHandler.buildContinuationMessages(
-                                    conversationMessages: convWithAssistant.messages,
+                                let continuationPlan = ToolContinuationPlan(
+                                    existingMessages: updatedConv.messages,
                                     toolCallId: toolCallId,
                                     toolName: toolName,
                                     arguments: argumentsWrapper.value,
                                     result: result,
-                                    isWebSearch: isWebSearch,
-                                    systemPrompt: buildFullSystemPrompt(for: convWithAssistant)
+                                    model: model,
+                                    citations: citations,
+                                    systemPrompt: buildFullSystemPrompt(for: updatedConv)
                                 )
+
+                                if let visibleToolMessage = continuationPlan.visibleToolMessage {
+                                    conversationManager.addMessage(to: updatedConv, message: visibleToolMessage)
+                                }
+
+                                let conversationForAssistant = conversationManager.conversations.first(where: {
+                                    $0.id == conversation.id
+                                }) ?? updatedConv
+                                conversationManager.addMessage(
+                                    to: conversationForAssistant,
+                                    message: continuationPlan.continuationAssistantMessage
+                                )
+
+                                let continuationMessages = continuationPlan.requestMessages
+                                let continuationAssistantMessage = continuationPlan.continuationAssistantMessage
 
                                 // Clear tool name since tool execution is complete
                                 // The continuation is now a regular API call
@@ -1256,7 +1184,10 @@ struct MacChatView: View {
                                     model: model,
                                     temperature: temperature,
                                     tools: toolsWrapper.value,
-                                    isInitialRequest: false
+                                    isInitialRequest: false,
+                                    failedUserMessageId: nil,
+                                    assistantPlaceholderId: continuationAssistantMessage.id,
+                                    failedUserMessagePolicy: .preserve
                                 )
                             }
                         } catch {
