@@ -60,17 +60,18 @@ struct IOSChatView: View {
             return
         }
 
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
         let visibleMessages = conversation.messages.filter { message in
             // Hide system messages entirely
             if message.role == .system {
                 return false
             }
 
-            // Always show tool messages when they have content
+            // Web search results are carried in history for protocol correctness,
+            // but citations provide the user-facing result presentation.
             if message.role == .tool {
+                if message.toolCalls?.first?.toolName == "web_search" {
+                    return false
+                }
                 return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
 
@@ -93,20 +94,14 @@ struct IOSChatView: View {
             return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
 
-        for message in visibleMessages {
-            if let groupId = message.responseGroupId {
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
+        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
                 // Always show response groups as multi-model view to prevent UI jumping
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                items.append(.message(message))
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        cachedDisplayableItems = items
+        )
     }
 
     var body: some View {
@@ -190,7 +185,8 @@ struct IOSChatView: View {
                         updateDisplayableItems()
                         scrollToBottom(proxy: proxy, conversation: conversation)
                     }
-                    .onChange(of: conversation.messages.last?.content) {
+                    .onChange(of: viewModel.messageContentRevision) {
+                        updateDisplayableItems()
                         // Only scroll during generation - use transaction to disable animations
                         // This prevents janky scrolling during rapid streaming updates
                         if viewModel.isGenerating, let lastId = conversation.messages.last?.id {

@@ -20,6 +20,7 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
     let requiresAPIKey: Bool = true
 
     private let urlSession: URLSession
+    private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentNonStreamTask: URLSessionDataTask?
 
@@ -65,46 +66,67 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(config.customEndpoint)
+        let supportsParallelToolCalls = usesAzureEndpoint
+            || url.host?.caseInsensitiveCompare("api.openai.com") == .orderedSame
 
-        guard let request = OpenAIRequestBuilder.createChatCompletionsRequest(
-            url: url,
-            messages: messages,
-            model: config.model,
-            stream: stream,
-            tools: tools,
-            apiKey: config.apiKey,
-            isAzure: usesAzureEndpoint,
-            isGitHubModels: false
-        ) else {
+        currentRequestBuildTask?.cancel()
+        if stream {
+            currentStreamTask?.cancel()
+        }
+
+        let toolDefinitions = RequestBuilderToolDefinitions(tools)
+        let buildTask = Task { [weak self] in
+            guard let self else { return }
+
+            guard let request = await OpenAIRequestBuilder.createChatCompletionsRequestAsync(
+                url: url,
+                messages: messages,
+                model: config.model,
+                stream: stream,
+                tools: toolDefinitions,
+                apiKey: config.apiKey,
+                isAzure: usesAzureEndpoint,
+                isGitHubModels: false,
+                supportsParallelToolCalls: supportsParallelToolCalls
+            ) else {
+                guard !Task.isCancelled else { return }
+                self.currentRequestBuildTask = nil
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "❌ Failed to create request"
+                )
+                callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            self.currentRequestBuildTask = nil
+
             DiagnosticsLogger.log(
                 .aiService,
-                level: .error,
-                message: "❌ Failed to create request"
+                level: .info,
+                message: "🌐 OpenAIProvider: Starting request",
+                metadata: [
+                    "url": url.absoluteString,
+                    "model": config.model,
+                    "stream": "\(stream)",
+                    "isAzure": "\(usesAzureEndpoint)"
+                ]
             )
-            callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
-            return
-        }
 
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🌐 OpenAIProvider: Starting request",
-            metadata: [
-                "url": url.absoluteString,
-                "model": config.model,
-                "stream": "\(stream)",
-                "isAzure": "\(usesAzureEndpoint)"
-            ]
-        )
-
-        if stream {
-            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
-        } else {
-            nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            if stream {
+                self.streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            } else {
+                self.nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey)
+            }
         }
+        currentRequestBuildTask = buildTask
     }
 
     func cancelRequest() {
+        currentRequestBuildTask?.cancel()
+        currentRequestBuildTask = nil
         currentStreamTask?.cancel()
         currentStreamTask = nil
         currentNonStreamTask?.cancel()
@@ -193,52 +215,51 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
                         }
 
                         if byte == 0x0A {
-                            if let line = String(data: buffer, encoding: .utf8) {
-                                let result = await OpenAIStreamParser.processStreamLine(
-                                    line,
-                                    toolCallBuffers: currentToolCallBuffers,
-                                    toolCallIds: toolCallIds,
-                                    onToolCall: onToolCall,
-                                    onToolCallRequested: onToolCallRequested
+                            let result = await OpenAIStreamParser.processStreamLine(
+                                buffer,
+                                toolCallBuffers: currentToolCallBuffers,
+                                toolCallIds: toolCallIds,
+                                onToolCall: onToolCall,
+                                onToolCallRequested: onToolCallRequested
+                            )
+                            currentToolCallBuffers = result.toolCallBuffers
+                            toolCallIds = result.toolCallIds
+
+                            if let content = result.content {
+                                contentBuffer += content
+                            }
+                            if let reasoning = result.reasoning {
+                                reasoningBuffer += reasoning
+                            }
+
+                            if result.shouldComplete {
+                                await self.flushBuffers(
+                                    contentBuffer: contentBuffer,
+                                    reasoningBuffer: reasoningBuffer,
+                                    callbacks: callbacks
                                 )
-                                currentToolCallBuffers = result.toolCallBuffers
-                                toolCallIds = result.toolCallIds
-
-                                if let content = result.content {
-                                    contentBuffer += content
+                                await MainActor.run {
+                                    self.currentStreamTask = nil
+                                    callbacks.onComplete()
                                 }
-                                if let reasoning = result.reasoning {
-                                    reasoningBuffer += reasoning
-                                }
+                                return
+                            }
 
-                                if result.shouldComplete {
+                            // Batch updates
+                            if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
+                                let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
+                                if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
                                     await self.flushBuffers(
                                         contentBuffer: contentBuffer,
                                         reasoningBuffer: reasoningBuffer,
                                         callbacks: callbacks
                                     )
-                                    await MainActor.run {
-                                        self.currentStreamTask = nil
-                                        callbacks.onComplete()
-                                    }
-                                    return
-                                }
-
-                                // Batch updates
-                                if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
-                                    let timeSinceLastUpdate = CFAbsoluteTimeGetCurrent() - lastUpdateTime
-                                    if timeSinceLastUpdate > 0.05 || contentBuffer.count > 100 || reasoningBuffer.count > 100 {
-                                        await self.flushBuffers(
-                                            contentBuffer: contentBuffer,
-                                            reasoningBuffer: reasoningBuffer,
-                                            callbacks: callbacks
-                                        )
-                                        contentBuffer = ""
-                                        reasoningBuffer = ""
-                                        lastUpdateTime = CFAbsoluteTimeGetCurrent()
-                                    }
+                                    contentBuffer = ""
+                                    reasoningBuffer = ""
+                                    lastUpdateTime = CFAbsoluteTimeGetCurrent()
                                 }
                             }
+
                             buffer.removeAll(keepingCapacity: true)
                         }
                     }
@@ -392,7 +413,9 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         do {
             for try await byte in bytes {
                 errorData.append(byte)
-                if errorData.count > 4096 { break }
+                if errorData.count > 4096 {
+                    break
+                }
             }
         } catch {
             // Ignore errors reading error body
@@ -492,8 +515,12 @@ final class OpenAIProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks
     ) async {
         await MainActor.run {
-            if !contentBuffer.isEmpty { callbacks.onChunk(contentBuffer) }
-            if !reasoningBuffer.isEmpty { callbacks.onReasoning?(reasoningBuffer) }
+            if !contentBuffer.isEmpty {
+                callbacks.onChunk(contentBuffer)
+            }
+            if !reasoningBuffer.isEmpty {
+                callbacks.onReasoning?(reasoningBuffer)
+            }
         }
     }
 

@@ -128,6 +128,7 @@ struct WatchConversationStoreNativeTests {
 
         store.addMessage(message, to: conversation.id)
         store.updateLastMessage(in: conversation.id, content: "Persist me")
+        store.persistCurrentState()
 
         guard let data = UserDefaults.standard.data(forKey: persistenceKey) else {
             Issue.record("Expected persisted watch conversations data")

@@ -169,10 +169,105 @@ struct MCPServerManagerTests {
         #expect(restartedService.connectCallCount == 1)
         #expect(manager.getServerStatus(updatedConfig.name)?.state == .connected)
     }
+
+    @Test("Discovery lists tools and resources concurrently", .timeLimit(.minutes(1)))
+    func discoveryListsToolsAndResourcesConcurrently() async {
+        let config = MCPServerConfig(name: "catalog", command: "cmd", enabled: true)
+        let tool = makeTool(name: "search", serverName: config.name)
+        let resource = MCPResource(uri: "file:///tmp/example.txt", name: "Example", serverName: config.name)
+        let stub = StubMCPService(config: config)
+        stub.listToolsResult = .success([tool])
+        stub.listResourcesResult = .success([resource])
+        let overlapProbe = DiscoveryOverlapProbe()
+        stub.discoveryOverlapProbe = overlapProbe
+
+        let manager = MCPServerManager(
+            serviceFactory: { _ in stub },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        await manager.connectToServer(config)
+        let didOverlap = await overlapProbe.didOverlap()
+
+        #expect(didOverlap)
+        #expect(stub.listToolsCallCount == 1)
+        #expect(stub.listResourcesCallCount == 1)
+        #expect(manager.availableTools == [tool])
+        #expect(manager.availableResources == [resource])
+        #expect(manager.getServerStatus(config.name)?.toolsCount == 1)
+    }
+
+    @Test("Enabled tool cache refresh handles bulk configs", .timeLimit(.minutes(1)))
+    func enabledToolCacheRefreshHandlesBulkConfigs() {
+        let configCount = 1_000
+        let toolsPerServer = 5
+        let configs = (0 ..< configCount).map { index in
+            MCPServerConfig(name: "server-\(index)", command: "cmd", enabled: index.isMultiple(of: 2))
+        }
+        let tools = configs.flatMap { config in
+            (0 ..< toolsPerServer).map { toolIndex in
+                makeTool(name: "\(config.name)-tool-\(toolIndex)", serverName: config.name)
+            }
+        }
+
+        let manager = MCPServerManager(
+            serviceFactory: { StubMCPService(config: $0) },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = configs
+        manager.availableTools = tools
+
+        let start = Date()
+        let enabledTools = manager.getEnabledTools()
+        let elapsed = Date().timeIntervalSince(start)
+
+        print("BENCH mcp.cache.enabledTools tools=\(tools.count) configs=\(configs.count) seconds=\(elapsed)")
+        #expect(enabledTools.count == (configCount / 2) * toolsPerServer)
+    }
+}
+
+private func makeTool(name: String, serverName: String) -> MCPTool {
+    MCPTool(
+        name: name,
+        description: "Test tool",
+        inputSchema: JSONSchema(type: "object", properties: nil, required: nil, items: nil),
+        serverName: serverName
+    )
 }
 
 private enum MCPTestError: Error {
     case expected
+    case discoveryDidNotOverlap
+}
+
+private actor DiscoveryOverlapProbe {
+    enum Operation: CaseIterable, Hashable {
+        case tools
+        case resources
+    }
+
+    private var enteredOperations: Set<Operation> = []
+
+    func enterAndWaitForOverlap(_ operation: Operation) async throws {
+        enteredOperations.insert(operation)
+
+        for _ in 0 ..< 100 {
+            if enteredOperations.count == Operation.allCases.count {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        throw MCPTestError.discoveryDidNotOverlap
+    }
+
+    func didOverlap() -> Bool {
+        enteredOperations.count == Operation.allCases.count
+    }
 }
 
 private final class StubMCPService: MCPServicing, @unchecked Sendable {
@@ -185,8 +280,11 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
 
     var connectCallCount = 0
     var disconnectCallCount = 0
+    var listToolsCallCount = 0
+    var listResourcesCallCount = 0
     var listToolsResult: Result<[MCPTool], Error> = .success([])
     var listResourcesResult: Result<[MCPResource], Error> = .success([])
+    var discoveryOverlapProbe: DiscoveryOverlapProbe?
     var onConnect: (() -> Void)?
 
     init(config: MCPServerConfig, connectResults: [Result<Void, Error>] = [.success(())]) {
@@ -213,11 +311,15 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
     }
 
     func listTools() async throws -> [MCPTool] {
-        try listToolsResult.get()
+        listToolsCallCount += 1
+        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.tools)
+        return try listToolsResult.get()
     }
 
     func listResources() async throws -> [MCPResource] {
-        try listResourcesResult.get()
+        listResourcesCallCount += 1
+        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.resources)
+        return try listResourcesResult.get()
     }
 
     func callTool(name _: String, arguments _: [String: Any]) async throws -> String {

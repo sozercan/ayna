@@ -46,7 +46,6 @@ struct AnthropicRequestConfig: Sendable {
 /// - Tool conversion (function -> input_schema)
 /// - Image attachment conversion with validation
 /// - Required headers and authentication
-@MainActor
 enum AnthropicRequestBuilder {
     // MARK: - Constants
 
@@ -63,6 +62,43 @@ enum AnthropicRequestBuilder {
     static let apiVersion = "2023-06-01"
 
     // MARK: - Public API
+
+    /// Create a configured URLRequest for the Anthropic Messages API off the MainActor.
+    ///
+    /// This async entry point resolves image attachment data, builds the JSON
+    /// body, and serializes it from a non-actor-isolated executor when awaited
+    /// by MainActor provider code.
+    static func createMessagesRequestAsync(
+        url: URL,
+        messages: [Message],
+        config: AnthropicRequestConfig,
+        stream: Bool,
+        tools: RequestBuilderToolDefinitions = .none,
+        attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
+    ) async throws -> URLRequest {
+        let resolvedMessages = try await RequestBuilderAttachmentResolver.resolvingImageAttachmentData(
+            in: messages,
+            attachmentDataLoader: attachmentDataLoader
+        )
+        let buildTask = Task.detached(priority: .userInitiated) {
+            try createMessagesRequest(
+                url: url,
+                messages: resolvedMessages,
+                config: config,
+                stream: stream,
+                tools: tools.value
+            )
+        }
+
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let request = try await buildTask.value
+            try Task.checkCancellation()
+            return request
+        } onCancel: {
+            buildTask.cancel()
+        }
+    }
 
     /// Create a configured URLRequest for the Anthropic Messages API.
     ///
@@ -81,6 +117,7 @@ enum AnthropicRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]?
     ) throws -> URLRequest {
+        try Task.checkCancellation()
         var request = URLRequest(url: url)
         configureHeaders(&request, config: config)
 
@@ -91,9 +128,11 @@ enum AnthropicRequestBuilder {
             tools: tools
         )
 
+        try Task.checkCancellation()
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
             throw AynaError.encodingFailed(detail: "Failed to encode request body")
         }
+        try Task.checkCancellation()
 
         request.httpBody = bodyData
         return request
@@ -135,6 +174,7 @@ enum AnthropicRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]?
     ) throws -> [String: Any] {
+        try Task.checkCancellation()
         // Extract system prompt and convert remaining messages
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
@@ -160,10 +200,15 @@ enum AnthropicRequestBuilder {
 
         // Convert and add tools if provided
         if let tools, !tools.isEmpty {
+            try Task.checkCancellation()
             body["tools"] = convertToolsToAnthropicFormat(tools)
-            body["tool_choice"] = ["type": "auto"]
+            body["tool_choice"] = [
+                "type": "auto",
+                "disable_parallel_tool_use": true
+            ]
         }
 
+        try Task.checkCancellation()
         return body
     }
 
@@ -185,6 +230,7 @@ enum AnthropicRequestBuilder {
             // Build a set of valid tool_call_ids that have matching tool responses
             var toolResponseIds = Set<String>()
             for message in messages {
+                try Task.checkCancellation()
                 if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
                     toolResponseIds.insert(toolCallId)
                 }
@@ -192,6 +238,7 @@ enum AnthropicRequestBuilder {
         #endif
 
         for (index, message) in messages.enumerated() {
+            try Task.checkCancellation()
             // Extract system prompt (don't include in messages array)
             if message.role == .system {
                 if systemPrompt == nil {
@@ -212,13 +259,16 @@ enum AnthropicRequestBuilder {
                     }
 
                     // Verify a preceding assistant message has matching tool_call
-                    if index == 0 { continue }
+                    if index == 0 {
+                        continue
+                    }
                     var foundAssistant = false
                     for prevIdx in stride(from: index - 1, through: 0, by: -1) {
                         let prevMessage = messages[prevIdx]
                         if prevMessage.role == .assistant {
                             if let toolCalls = prevMessage.toolCalls,
-                               toolCalls.contains(where: { $0.id == toolCallId }) {
+                               toolCalls.contains(where: { $0.id == toolCallId })
+                            {
                                 foundAssistant = true
                             }
                             break
@@ -228,7 +278,9 @@ enum AnthropicRequestBuilder {
                             break
                         }
                     }
-                    if !foundAssistant { continue } // Skip orphaned tool message
+                    if !foundAssistant {
+                        continue
+                    } // Skip orphaned tool message
 
                     // Convert to Anthropic tool_result format (user role with tool_result content)
                     let toolResultBlock = buildToolResultContent(
@@ -303,6 +355,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Tuple of (converted message, image count in this message)
     /// - Throws: `AynaError` if validation fails
     static func convertMessage(_ message: Message) throws -> (converted: [String: Any], imageCount: Int) {
+        try Task.checkCancellation()
         var payload: [String: Any] = [:]
         var imageCount = 0
 
@@ -325,10 +378,12 @@ enum AnthropicRequestBuilder {
 
             // Add images first
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                guard let data = attachment.content else { continue }
+                try Task.checkCancellation()
+                guard let data = attachment.data else { continue }
 
                 // Validate image
                 let imageBlock = try validateAndBuildImageBlock(data: data, fileName: attachment.fileName)
+                try Task.checkCancellation()
                 contentArray.append(imageBlock)
                 imageCount += 1
             }
@@ -362,6 +417,7 @@ enum AnthropicRequestBuilder {
 
                 // Add tool use blocks
                 for toolCall in toolCalls {
+                    try Task.checkCancellation()
                     var argumentsDict: [String: Any] = [:]
                     for (key, anyCodable) in toolCall.arguments {
                         argumentsDict[key] = anyCodable.value
@@ -379,6 +435,7 @@ enum AnthropicRequestBuilder {
             }
         #endif
 
+        try Task.checkCancellation()
         return (payload, imageCount)
     }
 
@@ -392,6 +449,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Image content block dictionary
     /// - Throws: `AynaError` if validation fails
     static func validateAndBuildImageBlock(data: Data, fileName _: String?) throws -> [String: Any] {
+        try Task.checkCancellation()
         // Check size
         if data.count > maxImageSizeBytes {
             let sizeMB = Double(data.count) / 1_048_576.0
@@ -404,13 +462,17 @@ enum AnthropicRequestBuilder {
             throw AynaError.apiError(message: "Unsupported image format. Supported: JPEG, PNG, GIF, WebP")
         }
 
+        try Task.checkCancellation()
+        let encodedData = data.base64EncodedString()
+        try Task.checkCancellation()
+
         // Build image block
         return [
             "type": "image",
             "source": [
                 "type": "base64",
                 "media_type": type,
-                "data": data.base64EncodedString()
+                "data": encodedData
             ]
         ]
     }
@@ -460,6 +522,7 @@ enum AnthropicRequestBuilder {
     /// - Returns: Tools in Anthropic format
     static func convertToolsToAnthropicFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
+            guard !Task.isCancelled else { return nil }
             guard let type = tool["type"] as? String, type == "function",
                   let function = tool["function"] as? [String: Any],
                   let name = function["name"] as? String

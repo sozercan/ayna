@@ -89,6 +89,14 @@ import os.log
         /// Maximum search results
         private let maxSearchResults: Int = 100
 
+        /// Reused formatter for directory listings to avoid allocating one per file entry.
+        private let fileSizeFormatter: ByteCountFormatter = {
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useKB, .useMB, .useGB]
+            formatter.countStyle = .file
+            return formatter
+        }()
+
         // MARK: - Tool Names
 
         enum ToolName {
@@ -248,17 +256,13 @@ import os.log
             let expandedPath = (path as NSString).expandingTildeInPath
             let expandedURL = URL(fileURLWithPath: expandedPath)
             let url: URL
-            do {
-                // For new files, resolve the parent directory's symlinks
-                if FileManager.default.fileExists(atPath: expandedURL.path) {
-                    url = try expandedURL.resolvingSymlinksInPath()
-                } else {
-                    // File doesn't exist yet - resolve parent and append filename
-                    let parent = try expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
-                    url = parent.appendingPathComponent(expandedURL.lastPathComponent)
-                }
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
+            // For new files, resolve the parent directory's symlinks
+            if FileManager.default.fileExists(atPath: expandedURL.path) {
+                url = expandedURL.resolvingSymlinksInPath()
+            } else {
+                // File doesn't exist yet - resolve parent and append filename
+                let parent = expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                url = parent.appendingPathComponent(expandedURL.lastPathComponent)
             }
 
             // Re-validate the resolved path to catch symlink changes
@@ -370,12 +374,7 @@ import os.log
             // Resolve path with symlink resolution to prevent TOCTOU attacks
             let expandedPath = (path as NSString).expandingTildeInPath
             let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL
-            do {
-                url = try expandedURL.resolvingSymlinksInPath()
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
-            }
+            let url = expandedURL.resolvingSymlinksInPath()
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)
@@ -508,22 +507,24 @@ import os.log
             }
 
             var results: [SearchResult] = []
+            results.reserveCapacity(maxSearchResults)
 
             // Search recursively
             let enumerator = FileManager.default.enumerator(
                 at: resolvedURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
             )
 
             while let fileURL = enumerator?.nextObject() as? URL {
                 guard results.count < maxSearchResults else { break }
 
-                let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 guard resourceValues?.isRegularFile == true else { continue }
 
-                let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                if let size = attrs?[.size] as? Int, size > maxReadSize { continue }
+                if let size = resourceValues?.fileSize, size > maxReadSize {
+                    continue
+                }
 
                 // Read file
                 guard let data = try? Data(contentsOf: fileURL),
@@ -544,7 +545,9 @@ import os.log
                             matchEnd: match.range.location + match.range.length
                         ))
 
-                        if results.count >= maxSearchResults { break }
+                        if results.count >= maxSearchResults {
+                            break
+                        }
                     }
                 }
             }
@@ -744,8 +747,12 @@ import os.log
                             var stdout = String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
                             var stderr = String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
                             let truncationNote = "\n[Output truncated at \(self.maxOutputSize / 1024 / 1024)MB]"
-                            if stdoutAccumulator.truncated { stdout += truncationNote }
-                            if stderrAccumulator.truncated { stderr += truncationNote }
+                            if stdoutAccumulator.truncated {
+                                stdout += truncationNote
+                            }
+                            if stderrAccumulator.truncated {
+                                stderr += truncationNote
+                            }
 
                             let commandResult = CommandResult(
                                 exitCode: process.terminationStatus,
@@ -942,10 +949,7 @@ import os.log
         }
 
         func formatFileSize(_ bytes: Int64) -> String {
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useKB, .useMB, .useGB]
-            formatter.countStyle = .file
-            return formatter.string(fromByteCount: bytes)
+            fileSizeFormatter.string(fromByteCount: bytes)
         }
 
         func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

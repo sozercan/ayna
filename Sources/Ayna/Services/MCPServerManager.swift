@@ -33,6 +33,8 @@ class MCPServerManager: ObservableObject {
     private var cachedEnabledTools: [MCPTool] = []
     private var cachedOpenAIFunctions: [[String: Any]] = []
     private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
+    private var isToolCacheValid = false
+    private var isOpenAIFunctionCacheValid = false
     private var cacheVersion = 0
 
     init(
@@ -53,6 +55,7 @@ class MCPServerManager: ObservableObject {
     func addServerConfig(_ config: MCPServerConfig) {
         serverConfigs.append(config)
         saveServerConfigs()
+        invalidateToolCaches()
         setStatus(for: config, state: config.enabled ? .idle : .disabled, clearExistingError: true)
 
         if config.enabled {
@@ -82,8 +85,7 @@ class MCPServerManager: ObservableObject {
         }
 
         // Invalidate cache when server configs change
-        cachedEnabledTools = []
-        cachedOpenAIFunctions = []
+        invalidateToolCaches()
 
         let requiresRestart = shouldRestartServer(previousConfig: previousConfig, updatedConfig: config)
 
@@ -112,6 +114,7 @@ class MCPServerManager: ObservableObject {
         serverConfigs.removeAll { $0.id == config.id }
         saveServerConfigs()
         serverStatuses.removeValue(forKey: config.name)
+        invalidateToolCaches()
     }
 
     private func saveServerConfigs() {
@@ -314,8 +317,7 @@ class MCPServerManager: ObservableObject {
 
                 availableTools.removeAll { $0.serverName == config.name }
                 availableResources.removeAll { $0.serverName == config.name }
-                cachedEnabledTools = []
-                cachedOpenAIFunctions = []
+                invalidateToolCaches()
                 refreshStatusToolCount(for: config.name)
                 break
             }
@@ -404,6 +406,7 @@ class MCPServerManager: ObservableObject {
         // Remove tools from this server
         availableTools.removeAll { $0.serverName == serverName }
         availableResources.removeAll { $0.serverName == serverName }
+        invalidateToolCaches()
         refreshStatusToolCount(for: serverName)
 
         if let config = serverConfigs.first(where: { $0.name == serverName }) {
@@ -446,58 +449,53 @@ class MCPServerManager: ObservableObject {
 
     // MARK: - Tool Discovery
 
+    private struct DiscoveryResult: Sendable {
+        let serverName: String
+        let tools: [MCPTool]
+        let resources: [MCPResource]
+    }
+
     func discoverAllTools() async {
-        await MainActor.run {
-            isDiscovering = true
-        }
+        isDiscovering = true
 
         // Capture services snapshot to avoid concurrency issues
-        let servicesSnapshot = services
+        let servicesSnapshot = services.filter { $0.value.isConnected }
 
-        let results = await withTaskGroup(of: (String, [MCPTool], [MCPResource]).self) { group in
-            for (serverName, service) in servicesSnapshot where service.isConnected {
+        let results = await withTaskGroup(of: DiscoveryResult.self) { group in
+            for (serverName, service) in servicesSnapshot {
                 group.addTask {
-                    let tools = await (try? service.listTools()) ?? []
-                    let resources = await (try? service.listResources()) ?? []
-                    return (serverName, tools, resources)
+                    await Self.discoverCatalog(from: service, serverName: serverName)
                 }
             }
 
-            var allTools: [MCPTool] = []
-            var allResources: [MCPResource] = []
-
-            for await (serverName, tools, resources) in group {
+            var discoveredResults: [DiscoveryResult] = []
+            for await result in group {
                 DiagnosticsLogger.log(
                     .mcpServerManager,
                     level: .info,
-                    message: "Discovered tools from server",
-                    metadata: ["server": serverName, "tools": "\(tools.count)"]
+                    message: "Discovered MCP catalog from server",
+                    metadata: [
+                        "server": result.serverName,
+                        "tools": "\(result.tools.count)",
+                        "resources": "\(result.resources.count)"
+                    ]
                 )
-                allTools.append(contentsOf: tools)
-                allResources.append(contentsOf: resources)
+                discoveredResults.append(result)
             }
 
-            return (allTools, allResources)
+            return discoveredResults
         }
 
-        await MainActor.run {
-            self.availableTools = results.0
-            self.availableResources = results.1
-            self.isDiscovering = false
-            // Invalidate cache when tools change
-            self.cachedEnabledTools = []
-            self.cachedOpenAIFunctions = []
-            self.refreshAllStatusToolCounts()
-        }
+        availableTools = results.flatMap(\.tools)
+        availableResources = results.flatMap(\.resources)
+        isDiscovering = false
+        // Invalidate cache when tools change
+        invalidateToolCaches()
+        refreshAllStatusToolCounts()
     }
 
     func discoverTools(for serverName: String) async {
-        // Thread-safe access to services dictionary
-        let service = await MainActor.run {
-            services[serverName]
-        }
-
-        guard let service, service.isConnected else {
+        guard let service = services[serverName], service.isConnected else {
             DiagnosticsLogger.log(
                 .mcpServerManager,
                 level: .error,
@@ -508,57 +506,19 @@ class MCPServerManager: ObservableObject {
         }
 
         // Discover tools and resources independently - don't let one failure block the other
-        var tools: [MCPTool] = []
-        var resources: [MCPResource] = []
+        let result = await Self.discoverCatalog(from: service, serverName: serverName)
 
-        do {
-            tools = try await service.listTools()
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .info,
-                message: "Discovered tools",
-                metadata: ["server": serverName, "count": "\(tools.count)"]
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .error,
-                message: "Failed to list tools",
-                metadata: ["server": serverName, "error": error.localizedDescription]
-            )
-        }
+        // Remove old tools/resources from this server
+        availableTools.removeAll { $0.serverName == serverName }
+        availableResources.removeAll { $0.serverName == serverName }
 
-        do {
-            resources = try await service.listResources()
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .info,
-                message: "Discovered resources",
-                metadata: ["server": serverName, "count": "\(resources.count)"]
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .error,
-                message: "Failed to list resources",
-                metadata: ["server": serverName, "error": error.localizedDescription]
-            )
-        }
+        // Add newly discovered items
+        availableTools.append(contentsOf: result.tools)
+        availableResources.append(contentsOf: result.resources)
 
-        await MainActor.run {
-            // Remove old tools/resources from this server
-            self.availableTools.removeAll { $0.serverName == serverName }
-            self.availableResources.removeAll { $0.serverName == serverName }
-
-            // Add newly discovered items
-            self.availableTools.append(contentsOf: tools)
-            self.availableResources.append(contentsOf: resources)
-
-            // Invalidate cache when tools change
-            self.cachedEnabledTools = []
-            self.cachedOpenAIFunctions = []
-            self.refreshStatusToolCount(for: serverName)
-        }
+        // Invalidate cache when tools change
+        invalidateToolCaches()
+        refreshStatusToolCount(for: serverName)
 
         DiagnosticsLogger.log(
             .mcpServerManager,
@@ -566,10 +526,72 @@ class MCPServerManager: ObservableObject {
             message: "Discovery complete",
             metadata: [
                 "server": serverName,
-                "tools": "\(tools.count)",
-                "resources": "\(resources.count)"
+                "tools": "\(result.tools.count)",
+                "resources": "\(result.resources.count)"
             ]
         )
+    }
+
+    private nonisolated static func discoverCatalog(
+        from service: MCPServicing,
+        serverName: String
+    ) async -> DiscoveryResult {
+        async let tools = listTools(from: service, serverName: serverName)
+        async let resources = listResources(from: service, serverName: serverName)
+
+        return await DiscoveryResult(
+            serverName: serverName,
+            tools: tools,
+            resources: resources
+        )
+    }
+
+    private nonisolated static func listTools(
+        from service: MCPServicing,
+        serverName: String
+    ) async -> [MCPTool] {
+        do {
+            let tools = try await service.listTools()
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Discovered tools",
+                metadata: ["server": serverName, "count": "\(tools.count)"]
+            )
+            return tools
+        } catch {
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to list tools",
+                metadata: ["server": serverName, "error": error.localizedDescription]
+            )
+            return []
+        }
+    }
+
+    private nonisolated static func listResources(
+        from service: MCPServicing,
+        serverName: String
+    ) async -> [MCPResource] {
+        do {
+            let resources = try await service.listResources()
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Discovered resources",
+                metadata: ["server": serverName, "count": "\(resources.count)"]
+            )
+            return resources
+        } catch {
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Failed to list resources",
+                metadata: ["server": serverName, "error": error.localizedDescription]
+            )
+            return []
+        }
     }
 
     // MARK: - Tool Execution
@@ -643,7 +665,7 @@ class MCPServerManager: ObservableObject {
 
     /// Returns all tools from enabled servers (cached for performance)
     func getEnabledTools() -> [MCPTool] {
-        if cachedEnabledTools.isEmpty {
+        if !isToolCacheValid {
             refreshToolCache()
         }
         return cachedEnabledTools
@@ -651,20 +673,35 @@ class MCPServerManager: ObservableObject {
 
     /// Returns enabled tools in OpenAI function format (cached for performance)
     func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
-        if cachedOpenAIFunctions.isEmpty {
+        if !isToolCacheValid {
             refreshToolCache()
+        }
+        if !isOpenAIFunctionCacheValid {
             cachedOpenAIFunctions = cachedEnabledTools.map { $0.toOpenAIFunction() }
+            isOpenAIFunctionCacheValid = true
         }
         return cachedOpenAIFunctions
     }
 
-    /// Refresh the enabled tools cache
+    /// Mark tool-derived caches stale after config or discovery changes.
+    private func invalidateToolCaches() {
+        cachedEnabledTools = []
+        cachedOpenAIFunctions = []
+        toolLookup = [:]
+        isToolCacheValid = false
+        isOpenAIFunctionCacheValid = false
+    }
+
+    /// Refresh the enabled tools cache.
     private func refreshToolCache() {
+        let enabledServerNames = Set(serverConfigs.lazy.filter(\.enabled).map(\.name))
         cachedEnabledTools = availableTools.filter { tool in
-            serverConfigs.first(where: { $0.name == tool.serverName })?.enabled ?? false
+            enabledServerNames.contains(tool.serverName)
         }
         toolLookup = Dictionary(cachedEnabledTools.map { ($0.name, $0) }, uniquingKeysWith: { _, last in last })
         cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
+        isToolCacheValid = true
+        isOpenAIFunctionCacheValid = false
         cacheVersion += 1
     }
 }
@@ -703,8 +740,7 @@ extension MCPServerManager: MCPServiceDelegate {
         services.removeValue(forKey: serverName)
         availableTools.removeAll { $0.serverName == serverName }
         availableResources.removeAll { $0.serverName == serverName }
-        cachedEnabledTools = []
-        cachedOpenAIFunctions = []
+        invalidateToolCaches()
 
         guard let config = serverConfigs.first(where: { $0.name == serverName }), config.enabled else {
             if let config = serverConfigs.first(where: { $0.name == serverName }) {

@@ -51,11 +51,27 @@ final class AynaSmokeUITests: AynaUITestCase {
         // Title should be the message content
         let title = "Message with \(uniqueKeyword)"
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10))
+        let rowIdentifierPrefix = "sidebar.conversationRow."
+        let matchingTitlePrefix = String(title.prefix(16))
+        let matchingRowTitlePredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value BEGINSWITH %@",
+            rowIdentifierPrefix,
+            matchingTitlePrefix
+        )
+        let matchingRowTitle = app.staticTexts.matching(matchingRowTitlePredicate).firstMatch
+        XCTAssertTrue(matchingRowTitle.waitForExistence(timeout: 10))
+        let matchingRowIdentifier = matchingRowTitle.identifier
 
         // Create another one
         composeInitialMessageAndSend("Another conversation")
         let otherTitle = "Another conversation"
-        XCTAssertTrue(app.staticTexts[otherTitle].waitForExistence(timeout: 10))
+        let sidebarTitlePredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value == %@",
+            rowIdentifierPrefix,
+            otherTitle
+        )
+        let nonMatchingTitles = app.staticTexts.matching(sidebarTitlePredicate)
+        XCTAssertTrue(nonMatchingTitles.firstMatch.waitForExistence(timeout: 10))
 
         // Search
         let searchField = app.textFields[TestIdentifiers.Sidebar.searchField]
@@ -63,9 +79,15 @@ final class AynaSmokeUITests: AynaUITestCase {
         searchField.click()
         searchField.typeText(uniqueKeyword)
 
-        // Verify filtering
-        XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts[otherTitle].exists)
+        // Wait on the query count rather than a resolved element because SwiftUI
+        // can recycle the accessibility object for a removed List row.
+        let titleDisappeared = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "count == 0"),
+            object: nonMatchingTitles
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [titleDisappeared], timeout: 5), .completed)
+        XCTAssertTrue(app.staticTexts.matching(identifier: matchingRowIdentifier).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["No results found"].exists)
     }
 
     func testDeleteConversation() {

@@ -66,8 +66,23 @@
             WKInterfaceDevice.current().play(type)
         }
 
+        private func resetAfterConversationSyncInvalidation() {
+            isLoading = false
+            isStreaming = false
+            currentToolName = nil
+            toolCallDepth = 0
+            pendingContent = ""
+            streamingContent = ""
+        }
+
         /// Send a message in the current conversation
         func sendMessage(_ content: String) {
+            guard connectivityService.isConversationSyncReady else {
+                connectivityService.requestSync()
+                errorMessage = "Sync with iPhone before sending"
+                playHaptic(.failure)
+                return
+            }
             guard let conversationId = currentConversationId,
                   let conversation = conversationStore.conversation(for: conversationId)
             else {
@@ -75,6 +90,8 @@
                 playHaptic(.failure)
                 return
             }
+
+            let syncIdentity = connectivityService.currentConversationSyncIdentity
 
             // Clear any previous error
             errorMessage = nil
@@ -103,7 +120,11 @@
             conversationStore.addMessage(userMessage, to: conversationId)
 
             // Sync to iPhone
-            connectivityService.sendMessage(userMessage, conversationId: conversationId)
+            connectivityService.sendMessage(
+                userMessage,
+                conversationId: conversationId,
+                expectedIdentity: syncIdentity
+            )
 
             // Create placeholder assistant message for streaming
             let assistantMessage = WatchMessage(
@@ -165,7 +186,8 @@
                 conversationId: conversationId,
                 tools: tools,
                 isFirstMessage: isFirstMessage,
-                userContent: userContent
+                userContent: userContent,
+                syncIdentity: syncIdentity
             )
         }
 
@@ -176,8 +198,13 @@
             conversationId: UUID,
             tools: [[String: Any]]?,
             isFirstMessage: Bool,
-            userContent: String
+            userContent: String,
+            syncIdentity: WatchConversationSyncIdentity
         ) {
+            guard connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                resetAfterConversationSyncInvalidation()
+                return
+            }
             nonisolated(unsafe) let tools = tools
             aiService.sendMessage(
                 messages: messages,
@@ -188,6 +215,10 @@
                 onChunk: { [weak self] chunk in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                            self.resetAfterConversationSyncInvalidation()
+                            return
+                        }
 
                         // Mark as streaming once we receive the first chunk
                         if !self.isStreaming {
@@ -216,6 +247,10 @@
                 onComplete: { [weak self] in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                            self.resetAfterConversationSyncInvalidation()
+                            return
+                        }
 
                         // Only complete if no tool call is pending
                         guard self.currentToolName == nil else {
@@ -250,7 +285,11 @@
                         let finalMessage = WatchMessage(
                             from: Message(role: .assistant, content: self.streamingContent)
                         )
-                        self.connectivityService.sendMessage(finalMessage, conversationId: conversationId)
+                        self.connectivityService.sendMessage(
+                            finalMessage,
+                            conversationId: conversationId,
+                            expectedIdentity: syncIdentity
+                        )
 
                         // Generate title if this was the first message
                         if isFirstMessage,
@@ -273,6 +312,10 @@
                 onError: { [weak self] error in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                            self.resetAfterConversationSyncInvalidation()
+                            return
+                        }
 
                         // Handle cancellation silently - don't show error UI for user-initiated cancels
                         if error is CancellationError {
@@ -337,6 +380,10 @@
                     let toolNameCopy = toolName
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                            self.resetAfterConversationSyncInvalidation()
+                            return
+                        }
                         // Set currentToolName first thing to prevent race condition with onComplete
                         // checking if tool call is pending. The stream may send [DONE] immediately
                         // after finish_reason: "tool_calls".
@@ -370,10 +417,19 @@
 
                         // Execute the tool
                         Task { @MainActor in
+                            guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                                self.resetAfterConversationSyncInvalidation()
+                                return
+                            }
                             let result: String = if self.aiService.isBuiltInTool(toolName) {
                                 await self.aiService.executeBuiltInTool(name: toolName, arguments: arguments)
                             } else {
                                 "Tool not available on Apple Watch"
+                            }
+
+                            guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
+                                self.resetAfterConversationSyncInvalidation()
+                                return
                             }
 
                             // Add tool result message to local store for history consistency
@@ -382,7 +438,11 @@
                             )
                             self.conversationStore.addMessage(toolMessage, to: conversationId)
                             // Sync tool message to iPhone to maintain conversation parity
-                            self.connectivityService.sendMessage(toolMessage, conversationId: conversationId)
+                            self.connectivityService.sendMessage(
+                                toolMessage,
+                                conversationId: conversationId,
+                                expectedIdentity: syncIdentity
+                            )
 
                             // Add new assistant message placeholder
                             let newAssistantMessage = WatchMessage(
@@ -410,7 +470,8 @@
                                 conversationId: conversationId,
                                 tools: tools,
                                 isFirstMessage: false,
-                                userContent: userContent
+                                userContent: userContent,
+                                syncIdentity: syncIdentity
                             )
                         }
                     }
@@ -444,7 +505,13 @@
         }
 
         /// Create a new conversation
-        func createNewConversation() -> UUID {
+        func createNewConversation() -> UUID? {
+            guard connectivityService.isConversationSyncReady else {
+                connectivityService.requestSync()
+                errorMessage = "Sync with iPhone before starting a chat"
+                playHaptic(.failure)
+                return nil
+            }
             // Filter to only models usable on watchOS (exclude Apple Intelligence)
             let usableModels = connectivityService.availableModels.filter { model in
                 let provider = aiService.modelProviders[model]
@@ -495,7 +562,7 @@
                         }
                     }
                 },
-                onComplete: { },
+                onComplete: {},
                 onError: { [weak self] _ in
                     Task { @MainActor in
                         // Fallback to simple title on error

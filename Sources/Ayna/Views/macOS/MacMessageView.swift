@@ -1343,25 +1343,30 @@ struct SyntaxHighlightedCodeView: View {
     let code: String
     let language: String
 
+    /// Above this size, skip regex syntax highlighting on first render. The view still
+    /// shows selectable monospaced text immediately, but avoids multiple full-string
+    /// regex passes that can stall the main thread on very large code blocks.
+    static let largeCodeFastPathByteLimit = 32_000
+    static let largeCodeFastPathLineLimit = 600
+
     var body: some View {
         Text(highlightedCode())
             .font(Typography.codeBlock)
             .textSelection(.enabled)
     }
 
-    private func highlightedCode() -> AttributedString {
+    func highlightedCode() -> AttributedString {
         if let cached = SyntaxHighlightCache.value(for: code, language: language) {
             return cached
         }
 
-        let attributedString = NSMutableAttributedString(string: code)
-        let fullRange = NSRange(location: 0, length: code.utf16.count)
+        let attributedString = Self.baseAttributedString(for: code)
 
-        // Base styling
-        let baseFont = NSFont.monospacedSystemFont(ofSize: Typography.Size.body, weight: .regular)
-        let baseColor = NSColor.labelColor
-        attributedString.addAttribute(.font, value: baseFont, range: fullRange)
-        attributedString.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
+        if Self.usesLargeCodeFastPath(code) {
+            let highlighted = AttributedString(NSAttributedString(attributedString: attributedString))
+            SyntaxHighlightCache.insert(highlighted, for: code, language: language)
+            return highlighted
+        }
 
         // Apply syntax highlighting based on language
         let normalizedLang = language.lowercased()
@@ -1400,6 +1405,43 @@ struct SyntaxHighlightedCodeView: View {
         let highlighted = AttributedString(NSAttributedString(attributedString: attributedString))
         SyntaxHighlightCache.insert(highlighted, for: code, language: language)
         return highlighted
+    }
+
+    private static func baseAttributedString(for code: String) -> NSMutableAttributedString {
+        let attributedString = NSMutableAttributedString(string: code)
+        let fullRange = NSRange(location: 0, length: code.utf16.count)
+
+        guard fullRange.length > 0 else {
+            return attributedString
+        }
+
+        let baseFont = NSFont.monospacedSystemFont(ofSize: Typography.Size.body, weight: .regular)
+        let baseColor = NSColor.labelColor
+        attributedString.addAttribute(.font, value: baseFont, range: fullRange)
+        attributedString.addAttribute(.foregroundColor, value: baseColor, range: fullRange)
+        return attributedString
+    }
+
+    static func usesLargeCodeFastPath(_ code: String) -> Bool {
+        guard !code.isEmpty else { return false }
+
+        if code.utf8.count > largeCodeFastPathByteLimit {
+            return true
+        }
+
+        var lineCount = 1
+        for byte in code.utf8 where byte == 10 {
+            lineCount += 1
+            if lineCount > largeCodeFastPathLineLimit {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    static func isHighlightCached(for code: String, language: String) -> Bool {
+        SyntaxHighlightCache.value(for: code, language: language) != nil
     }
 
     private func highlightSwift(_ attributedString: NSMutableAttributedString) {
