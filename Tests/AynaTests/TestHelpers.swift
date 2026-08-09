@@ -12,6 +12,12 @@ extension Conversation: CustomTestStringConvertible {
     }
 }
 
+extension Project: CustomTestStringConvertible {
+    public var testDescription: String {
+        "Project(\(id.uuidString.prefix(8))..., title: \"\(title)\", workspaceRoot: \"\(workspaceRoot)\")"
+    }
+}
+
 extension Message: CustomTestStringConvertible {
     public var testDescription: String {
         let contentPreview = content.prefix(30)
@@ -75,12 +81,36 @@ enum TestHelpers {
         return conversation
     }
 
+    static func sampleProject(
+        id: UUID = UUID(),
+        title: String = "Ayna",
+        workspaceRoot: String = "/tmp/ayna",
+        defaultModel: String? = "gpt-4o"
+    ) -> Project {
+        Project(
+            id: id,
+            title: title,
+            workspaceRoot: workspaceRoot,
+            defaultModel: defaultModel
+        )
+    }
+
     static func makeTestStore(
         directory: URL,
         keyIdentifier: String = UUID().uuidString,
         keychain: KeychainStoring = InMemoryKeychainStorage()
     ) -> EncryptedConversationStore {
         EncryptedConversationStore(
+            directoryURL: directory, keyIdentifier: keyIdentifier, keychain: keychain
+        )
+    }
+
+    static func makeTestProjectStore(
+        directory: URL,
+        keyIdentifier: String = UUID().uuidString,
+        keychain: KeychainStoring = InMemoryKeychainStorage()
+    ) -> ProjectStore {
+        ProjectStore(
             directoryURL: directory, keyIdentifier: keyIdentifier, keychain: keychain
         )
     }

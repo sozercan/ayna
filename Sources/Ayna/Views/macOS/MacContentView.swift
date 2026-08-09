@@ -18,6 +18,7 @@ extension Notification.Name {
 
 struct MacContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
+    @EnvironmentObject var projectManager: ProjectManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
 
     var body: some View {
@@ -87,6 +88,21 @@ struct MacContentView: View {
                 .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
             }
         }
+        .onAppear {
+            updateProjectScopedServices()
+        }
+        .onChange(of: conversationManager.selectedConversationId) { _, _ in
+            updateProjectScopedServices()
+        }
+        .onChange(of: conversationManager.conversations) { _, _ in
+            updateProjectScopedServices()
+        }
+        .onChange(of: projectManager.selectedProjectId) { _, _ in
+            updateProjectScopedServices()
+        }
+        .onChange(of: projectManager.projects) { _, _ in
+            updateProjectScopedServices()
+        }
         // Add model confirmation sheet
         .sheet(isPresented: .init(
             get: { deepLinkManager.pendingAddModel != nil },
@@ -119,6 +135,26 @@ struct MacContentView: View {
                 deepLinkManager.clearPendingChat()
             }
         }
+    }
+
+    private func updateProjectScopedServices() {
+        let projectRootURL: URL?
+
+        if let conversationId = conversationManager.selectedConversationId,
+           let conversation = conversationManager.conversation(byId: conversationId),
+           let conversationProjectId = conversation.projectId,
+           let project = projectManager.project(byId: conversationProjectId)
+        {
+            projectRootURL = URL(fileURLWithPath: project.workspaceRoot)
+        } else if let selectedProjectId = projectManager.selectedProjectId,
+                  let project = projectManager.project(byId: selectedProjectId)
+        {
+            projectRootURL = URL(fileURLWithPath: project.workspaceRoot)
+        } else {
+            projectRootURL = nil
+        }
+
+        AIService.shared.configureProjectRoot(projectRootURL)
     }
 }
 
@@ -213,7 +249,11 @@ private struct DetailRow: View {
 }
 
 #Preview {
-    MacContentView()
-        .environmentObject(ConversationManager())
+    let conversationManager = ConversationManager()
+    let projectManager = ProjectManager(conversationManager: conversationManager)
+
+    return MacContentView()
+        .environmentObject(conversationManager)
+        .environmentObject(projectManager)
 }
 #endif
