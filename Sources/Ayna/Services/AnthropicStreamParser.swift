@@ -141,14 +141,22 @@ final class AnthropicStreamParser {
         }
 
         // Handle event: lines
-        if trimmedLine.hasPrefix("event: ") {
-            pendingEventType = String(trimmedLine.dropFirst(7))
+        if trimmedLine.hasPrefix(Self.eventFieldPrefix) {
+            var eventType = trimmedLine.dropFirst(Self.eventFieldPrefix.count)
+            if eventType.first == " " {
+                eventType = eventType.dropFirst()
+            }
+            pendingEventType = String(eventType)
             return .empty
         }
 
         // Handle data: lines
-        if trimmedLine.hasPrefix("data: ") {
-            let dataString = String(trimmedLine.dropFirst(6))
+        if trimmedLine.hasPrefix(Self.dataFieldPrefix) {
+            var dataValue = trimmedLine.dropFirst(Self.dataFieldPrefix.count)
+            if dataValue.first == " " {
+                dataValue = dataValue.dropFirst()
+            }
+            let dataString = String(dataValue)
 
             // Skip empty data
             if dataString.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -176,14 +184,22 @@ final class AnthropicStreamParser {
         // Handle event: lines. Only the event name becomes a String because it is
         // carried as parser state for the following data line.
         if Self.hasPrefix(Self.eventLinePrefix, in: lineData, range: trimmedRange) {
-            let eventStart = trimmedRange.lowerBound + Self.eventLinePrefix.count
+            let eventStart = Self.fieldValueStart(
+                after: Self.eventLinePrefix,
+                in: lineData,
+                range: trimmedRange
+            )
             pendingEventType = String(data: lineData[eventStart ..< trimmedRange.upperBound], encoding: .utf8)
             return .empty
         }
 
         // Handle data: lines by passing the JSON payload bytes straight to JSONSerialization.
         if Self.hasPrefix(Self.dataLinePrefix, in: lineData, range: trimmedRange) {
-            let dataStart = trimmedRange.lowerBound + Self.dataLinePrefix.count
+            let dataStart = Self.fieldValueStart(
+                after: Self.dataLinePrefix,
+                in: lineData,
+                range: trimmedRange
+            )
             let data = lineData[dataStart ..< trimmedRange.upperBound]
             let result = processDataLine(data, eventType: pendingEventType)
             pendingEventType = nil
@@ -193,8 +209,10 @@ final class AnthropicStreamParser {
         return .empty
     }
 
-    private static let eventLinePrefix: [UInt8] = Array("event: ".utf8)
-    private static let dataLinePrefix: [UInt8] = Array("data: ".utf8)
+    private static let eventFieldPrefix = "event:"
+    private static let dataFieldPrefix = "data:"
+    private static let eventLinePrefix: [UInt8] = Array(eventFieldPrefix.utf8)
+    private static let dataLinePrefix: [UInt8] = Array(dataFieldPrefix.utf8)
 
     private static func asciiTrimmedRange(in data: Data) -> Range<Data.Index>? {
         var start = data.startIndex
@@ -223,6 +241,18 @@ final class AnthropicStreamParser {
             return false
         }
         return true
+    }
+
+    private static func fieldValueStart(
+        after prefix: [UInt8],
+        in data: Data,
+        range: Range<Data.Index>
+    ) -> Data.Index {
+        let start = range.lowerBound + prefix.count
+        guard start < range.upperBound, data[start] == 0x20 else {
+            return start
+        }
+        return data.index(after: start)
     }
 
     private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {

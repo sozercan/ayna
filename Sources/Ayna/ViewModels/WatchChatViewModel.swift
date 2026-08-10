@@ -32,6 +32,27 @@ struct WatchChatRequestOwnership {
         defer { activeRequestID = nil }
         return activeRequestID
     }
+
+    @discardableResult
+    mutating func prepareForConversationSelection(
+        currentConversationID: UUID?,
+        selectedConversationID: UUID,
+        flush: () -> Void,
+        persist: () -> Void,
+        cancel: (UUID) -> Void
+    ) -> Bool {
+        if currentConversationID == selectedConversationID, activeRequestID != nil {
+            return false
+        }
+
+        if let activeRequestID {
+            flush()
+            persist()
+            cancel(activeRequestID)
+        }
+        activeRequestID = nil
+        return true
+    }
 }
 
 #if os(watchOS)
@@ -81,7 +102,17 @@ struct WatchChatRequestOwnership {
 
         /// Set the current conversation being viewed
         func setConversation(_ id: UUID) {
-            requestOwnership.invalidate()
+            var updatedOwnership = requestOwnership
+            let shouldReset = updatedOwnership.prepareForConversationSelection(
+                currentConversationID: currentConversationId,
+                selectedConversationID: id,
+                flush: { flushPendingContent() },
+                persist: { conversationStore.persistCurrentState() },
+                cancel: { aiService.cancelCurrentRequest(ifOwnedBy: $0) }
+            )
+            guard shouldReset else { return }
+
+            requestOwnership = updatedOwnership
             currentConversationId = id
             isLoading = false
             isStreaming = false
@@ -91,6 +122,15 @@ struct WatchChatRequestOwnership {
             toolCallDepth = 0
             failedMessage = nil
             pendingContent = ""
+        }
+
+        private func flushPendingContent() {
+            guard !pendingContent.isEmpty, let conversationId = currentConversationId else { return }
+            streamingContent = pendingContent
+            conversationStore.updateLastMessage(
+                in: conversationId,
+                content: streamingContent
+            )
         }
 
         /// Play haptic feedback
@@ -536,13 +576,7 @@ struct WatchChatRequestOwnership {
         /// Cancel the current request
         func cancelRequest() {
             let requestID = requestOwnership.invalidate()
-            if !pendingContent.isEmpty, let conversationId = currentConversationId {
-                streamingContent = pendingContent
-                conversationStore.updateLastMessage(
-                    in: conversationId,
-                    content: streamingContent
-                )
-            }
+            flushPendingContent()
             if requestID != nil {
                 conversationStore.persistCurrentState()
             }

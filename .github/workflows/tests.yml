@@ -45,8 +45,10 @@ jobs:
     - name: Clear SPM artifacts cache
       run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
-    - name: Run unit tests
-      run: swift test -q
+    # Suite-local `.serialized` traits do not isolate unrelated suites that
+    # share process-wide preferences, service singletons, and URLProtocol mocks.
+    - name: Run unit tests serially
+      run: swift test --no-parallel
 
   ios_build_check:
     name: iOS Build Check
