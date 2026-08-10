@@ -2775,10 +2775,43 @@ struct WatchSyncProtocolTests {
         #expect(bodyIDs == Array(expectedManifest.prefix(bodyIDs.count)))
         #expect(first.snapshot.conversations.map(\.updatedAt) == first.snapshot.conversations.map(\.updatedAt).sorted(by: >))
         #expect(first.snapshot.conversations.allSatisfy { $0.title.count <= 40 })
-        #expect(first.snapshot.conversations.flatMap(\.messages).allSatisfy { $0.content.count <= 80 })
+        let retainedMessages = first.snapshot.conversations.flatMap(\.messages)
+        #expect(retainedMessages.allSatisfy { $0.content.count <= 80 })
         #expect(first.snapshot.conversations.flatMap(\.messages).flatMap { $0.toolCalls ?? [] }.allSatisfy {
             (try? JSONEncoder().encode($0).count) ?? .max <= 180
         })
+    }
+
+    @Test
+    func `Payload builder bounds reasoning with the content limit`() throws {
+        let reasoning = String(repeating: "reasoning", count: 20)
+        let conversation = Conversation(
+            id: UUID(),
+            title: "Reasoning",
+            messages: [
+                Message(
+                    role: .assistant,
+                    content: "",
+                    reasoning: reasoning
+                ),
+            ],
+            model: "model"
+        )
+        let configuration = WatchSyncPayloadConfiguration(
+            byteBudget: 100_000,
+            maximumConversations: 1,
+            maximumMessagesPerConversation: 1,
+            maximumContentCharacters: 32
+        )
+
+        let result = try WatchSyncPayloadBuilder.build(
+            conversations: [conversation],
+            snapshotRevision: 1,
+            configuration: configuration
+        )
+        let message = try #require(result.snapshot.conversations.first?.messages.first)
+
+        #expect(message.reasoning == String(reasoning.prefix(32)))
     }
 
     @Test

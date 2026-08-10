@@ -34,7 +34,7 @@
                                         }) == true
                                     // Keep web-search output in provider history but present citations instead.
                                     if !isWebSearchToolResult,
-                                       !message.content.isEmpty ||
+                                       !message.visibleContent.isEmpty ||
                                        message.role.lowercased() == "user" ||
                                        !(message.citations?.isEmpty ?? true)
                                     {

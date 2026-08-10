@@ -23,6 +23,7 @@ struct WatchDataModelHostTests {
             timestamp: timestamp,
             toolCalls: [call],
             model: "gpt-test",
+            reasoning: "Checked the source first.",
             citations: [CitationReference(number: 1, title: "Source", url: "https://example.com")]
         )
 
@@ -36,7 +37,30 @@ struct WatchDataModelHostTests {
         #expect(restored.timestamp == timestamp)
         #expect(restored.model == "gpt-test")
         #expect(restored.toolCalls == [call])
+        #expect(restored.reasoning == "Checked the source first.")
         #expect(restored.citations == original.citations)
+    }
+
+    @Test
+    func `Watch message exposes reasoning when final content is empty`() {
+        let reasoningOnly = WatchMessage(
+            id: UUID(),
+            role: Message.Role.assistant.rawValue,
+            content: "",
+            reasoning: "Compare the constraints.",
+            timestamp: Date(timeIntervalSince1970: 1)
+        )
+        var completed = reasoningOnly
+        completed.content = "Use the smaller option."
+        var whitespaceContent = reasoningOnly
+        whitespaceContent.content = " \n"
+        var whitespaceReasoning = reasoningOnly
+        whitespaceReasoning.reasoning = " \n"
+
+        #expect(reasoningOnly.visibleContent == "Compare the constraints.")
+        #expect(completed.visibleContent == "Use the smaller option.")
+        #expect(whitespaceContent.visibleContent == "Compare the constraints.")
+        #expect(whitespaceReasoning.visibleContent.isEmpty)
     }
 
     @Test

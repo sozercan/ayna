@@ -421,6 +421,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var role: String
     var content: String
+    var reasoning: String?
     var timestamp: Date
     var model: String?
     var toolCalls: [MCPToolCall]?
@@ -430,6 +431,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         id: UUID,
         role: String,
         content: String,
+        reasoning: String? = nil,
         timestamp: Date,
         model: String? = nil,
         toolCalls: [MCPToolCall]? = nil,
@@ -438,6 +440,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         self.id = id
         self.role = role
         self.content = content
+        self.reasoning = reasoning
         self.timestamp = timestamp
         self.model = model
         self.toolCalls = toolCalls
@@ -448,6 +451,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         id = message.id
         role = message.role.rawValue
         content = message.content
+        reasoning = message.reasoning
         timestamp = message.timestamp
         model = message.model
         toolCalls = message.toolCalls
@@ -475,8 +479,22 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
             timestamp: timestamp,
             toolCalls: toolCalls,
             model: model,
+            reasoning: reasoning,
             citations: citations
         )
+    }
+
+    /// Text shown when a reasoning-only response has no final answer content.
+    var visibleContent: String {
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return content
+        }
+        guard let reasoning,
+              !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return ""
+        }
+        return reasoning
     }
 }
 

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 #if os(watchOS) || WATCH_STORE_HOST_TESTING
 
     // swiftlint:disable identifier_name
@@ -66,6 +67,37 @@
             let restored = try #require(reloaded.conversation(for: conversation.id))
             #expect(restored.messages.map(\.content) == ["Prompt"])
             #expect(reloaded.pendingMutationsForSync.isEmpty)
+        }
+
+        @Test
+        func `Restart recovers and previews a reasoning-only assistant draft`() throws {
+            let fixture = makeFixture()
+            let conversation = makeConversation(messages: [makeMessage(role: .user, content: "Prompt")])
+            fixture.store.applySyncSnapshot(snapshot(revision: 1, conversations: [conversation]))
+
+            var draft = conversation
+            draft.messages.append(
+                makeMessage(
+                    role: .assistant,
+                    content: "",
+                    reasoning: "Compare the constraints first.",
+                    model: conversation.model
+                )
+            )
+            #expect(fixture.store.syncDraft(draft))
+
+            let reloaded = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            let restored = try #require(reloaded.conversation(for: conversation.id))
+
+            #expect(restored.messages.last?.content.isEmpty == true)
+            #expect(restored.messages.last?.reasoning == "Compare the constraints first.")
+            #expect(restored.messages.last?.visibleContent == "Compare the constraints first.")
+            #expect(reloaded.previewText(for: restored) == "Compare the constraints first.")
+            #expect(reloaded.pendingMutationsForSync.first?.messageChanges.last?.reasoning == "Compare the constraints first.")
         }
 
         @Test
@@ -1383,12 +1415,14 @@
     private func makeMessage(
         role: Message.Role,
         content: String,
+        reasoning: String? = nil,
         model: String? = nil
     ) -> WatchMessage {
         WatchMessage(
             id: UUID(),
             role: role.rawValue,
             content: content,
+            reasoning: reasoning,
             timestamp: Date(timeIntervalSince1970: 20),
             model: model
         )

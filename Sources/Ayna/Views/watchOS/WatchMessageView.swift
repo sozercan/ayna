@@ -25,7 +25,7 @@
         init(message: WatchMessage, showTimestamp: Bool = false) {
             self.message = message
             self.showTimestamp = showTimestamp
-            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(message.content))
+            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(message.visibleContent))
         }
 
         private static let timeFormatter: DateFormatter = {
@@ -47,7 +47,7 @@
 
                     // Message content and web-search sources.
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        if !message.content.isEmpty {
+                        if !message.visibleContent.isEmpty {
                     Text(renderedContent)
                         .font(Typography.body)
                         .foregroundStyle(isUser ? Theme.userBubbleText : .primary)
@@ -87,7 +87,7 @@
                         .padding(.horizontal, Spacing.xxs)
                 }
             }
-            .onChange(of: message.content) { _, newContent in
+            .onChange(of: message.visibleContent) { _, newContent in
                 renderedContent = WatchMarkdownRenderer.render(newContent)
             }
         }

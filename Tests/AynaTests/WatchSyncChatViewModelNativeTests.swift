@@ -57,6 +57,47 @@
         }
 
         @Test
+        func `Reasoning-only response streams promotes and survives reload`() async throws {
+            let expectedReasoning = "Compare the constraints first."
+            let fixture = makeViewModelFixture(title: "Existing")
+            let aiService = configuredCapturingAIService(model: fixture.conversation.model)
+            let viewModel = WatchChatViewModel(
+                conversationStore: fixture.store,
+                connectivityService: .shared,
+                aiService: aiService
+            )
+            WatchConnectivityService.shared.availableModels = [fixture.conversation.model]
+
+            viewModel.setConversation(fixture.conversation.id)
+            #expect(viewModel.sendMessage("Think carefully") == .started)
+            let request = try #require(aiService.capturedRequests.value.first)
+            let onReasoning = try #require(request.onReasoning)
+
+            onReasoning("Compare the ")
+            onReasoning("constraints first.")
+            request.onComplete()
+
+            #expect(await waitUntil { !viewModel.isLoading })
+            let assistant = try #require(
+                fixture.store.conversation(for: fixture.conversation.id)?.messages.last
+            )
+            #expect(assistant.content.isEmpty)
+            #expect(assistant.reasoning == expectedReasoning)
+            #expect(fixture.store.pendingMutationsForSync.flatMap(\.messageChanges).contains {
+                $0.id == assistant.id && $0.reasoning == expectedReasoning
+            })
+
+            let reloaded = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            let reloadedConversation = try #require(reloaded.conversation(for: fixture.conversation.id))
+            #expect(reloadedConversation.messages.last?.reasoning == expectedReasoning)
+            #expect(reloaded.previewText(for: reloadedConversation) == expectedReasoning)
+        }
+
+        @Test
         func `Re-selecting the same conversation preserves generation and cancellation syncs partial once`() throws {
             let fixture = makeViewModelFixture()
             let callbacks = FlightTestBox<AIServiceResponseSimulationCallbacks?>(nil)
@@ -262,6 +303,64 @@
             #expect(promotedConversation.messages.last?.content == "Partial")
             #expect(fixture.store.pendingMutationsForSync.flatMap(\.messageChanges).contains {
                 $0.id == assistantMessageID && $0.content == "Partial"
+            })
+        }
+
+        @Test
+        func `Cancelled reasoning-only promotion failure retries the same draft`() async throws {
+            let persistence = PersistenceTestWriter()
+            let fixture = makeViewModelFixture(
+                title: "Existing",
+                persistenceWriter: { persistence.write($0) }
+            )
+            let aiService = configuredCapturingAIService(model: fixture.conversation.model)
+            let viewModel = WatchChatViewModel(
+                conversationStore: fixture.store,
+                connectivityService: .shared,
+                aiService: aiService
+            )
+            WatchConnectivityService.shared.availableModels = [fixture.conversation.model]
+            persistence.rejectNextWrite { data in
+                isPromotionWrite(data, assistantReasoning: "Compare the constraints first.")
+            }
+
+            viewModel.setConversation(fixture.conversation.id)
+            #expect(viewModel.sendMessage("Prompt") == .started)
+            let request = try #require(aiService.capturedRequests.value.first)
+            let onReasoning = try #require(request.onReasoning)
+            onReasoning("Compare the constraints first.")
+            #expect(await waitUntil {
+                fixture.store.conversation(for: fixture.conversation.id)?.messages.last?.reasoning ==
+                    "Compare the constraints first."
+            })
+            let draft = try #require(fixture.store.conversation(for: fixture.conversation.id))
+            let userMessageID = try #require(draft.messages.first?.id)
+            let assistantMessageID = try #require(draft.messages.last?.id)
+
+            viewModel.cancelRequest()
+
+            #expect(persistence.rejectedWriteCount == 1)
+            #expect(viewModel.errorMessage == "Failed to save response. Please try again.")
+            #expect(viewModel.failedMessage == "Prompt")
+            let failedConversation = try #require(fixture.store.conversation(for: fixture.conversation.id))
+            #expect(failedConversation.messages.map(\.id) == [userMessageID, assistantMessageID])
+            #expect(failedConversation.messages.last?.content.isEmpty == true)
+            #expect(failedConversation.messages.last?.reasoning == "Compare the constraints first.")
+            #expect(!fixture.store.pendingMutationsForSync.flatMap(\.messageChanges).contains {
+                $0.id == assistantMessageID
+            })
+
+            viewModel.retryFailedMessage()
+
+            #expect(viewModel.errorMessage == nil)
+            #expect(viewModel.failedMessage == nil)
+            #expect(aiService.capturedRequests.value.count == 1)
+            let promotedConversation = try #require(fixture.store.conversation(for: fixture.conversation.id))
+            #expect(promotedConversation.messages.map(\.id) == [userMessageID, assistantMessageID])
+            #expect(promotedConversation.messages.last?.content.isEmpty == true)
+            #expect(promotedConversation.messages.last?.reasoning == "Compare the constraints first.")
+            #expect(fixture.store.pendingMutationsForSync.flatMap(\.messageChanges).contains {
+                $0.id == assistantMessageID && $0.reasoning == "Compare the constraints first."
             })
         }
 
@@ -1131,7 +1230,9 @@
         }
 
         @Test
-        func `Tool depth promotion failure retries the same partial draft`() async throws {
+        func `Tool depth flushes multi-chunk response before promotion retry`() async throws {
+            let expectedContent = "Depth partial"
+            let expectedReasoning = "Depth reasoning"
             let persistence = PersistenceTestWriter()
             let fixture = makeViewModelFixture(
                 title: "Existing",
@@ -1158,19 +1259,23 @@
             }
 
             let depthRequest = try #require(aiService.capturedRequests.value.last)
-            depthRequest.onChunk("Depth partial")
-            #expect(await waitUntil {
-                fixture.store.conversation(for: fixture.conversation.id)?.messages.last?.content ==
-                    "Depth partial"
-            })
             let draft = try #require(fixture.store.conversation(for: fixture.conversation.id))
             let messageIDs = draft.messages.map(\.id)
             let assistantMessageID = try #require(draft.messages.last?.id)
             persistence.rejectNextWrite { data in
-                isPromotionWrite(data, assistantContent: "Depth partial")
+                isPromotionWrite(
+                    data,
+                    assistantContent: expectedContent,
+                    assistantReasoning: expectedReasoning
+                )
             }
 
+            let onReasoning = try #require(depthRequest.onReasoning)
             let onToolCallRequested = try #require(depthRequest.onToolCallRequested)
+            depthRequest.onChunk("Depth ")
+            depthRequest.onChunk("partial")
+            onReasoning("Depth ")
+            onReasoning("reasoning")
             onToolCallRequested("depth-limit-call", "unavailable_watch_tool", [:])
 
             #expect(await waitUntil { !viewModel.isLoading })
@@ -1186,9 +1291,12 @@
             #expect(aiService.capturedRequests.value.count == 6)
             let promotedConversation = try #require(fixture.store.conversation(for: fixture.conversation.id))
             #expect(promotedConversation.messages.map(\.id) == messageIDs)
-            #expect(promotedConversation.messages.last?.content == "Depth partial")
+            #expect(promotedConversation.messages.last?.content == expectedContent)
+            #expect(promotedConversation.messages.last?.reasoning == expectedReasoning)
             #expect(fixture.store.pendingMutationsForSync.flatMap(\.messageChanges).contains {
-                $0.id == assistantMessageID && $0.content == "Depth partial"
+                $0.id == assistantMessageID &&
+                    $0.content == expectedContent &&
+                    $0.reasoning == expectedReasoning
             })
         }
 
@@ -1519,7 +1627,11 @@
         }
     }
 
-    private func isPromotionWrite(_ data: Data, assistantContent: String) -> Bool {
+    private func isPromotionWrite(
+        _ data: Data,
+        assistantContent: String? = nil,
+        assistantReasoning: String? = nil
+    ) -> Bool {
         guard let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let pendingMutations = state["pendingMutations"] as? [[String: Any]]
         else {
@@ -1530,8 +1642,12 @@
                 return false
             }
             return messageChanges.contains { message in
-                message["role"] as? String == Message.Role.assistant.rawValue &&
-                    message["content"] as? String == assistantContent
+                guard message["role"] as? String == Message.Role.assistant.rawValue else {
+                    return false
+                }
+                let contentMatches = assistantContent.map { message["content"] as? String == $0 } ?? true
+                let reasoningMatches = assistantReasoning.map { message["reasoning"] as? String == $0 } ?? true
+                return contentMatches && reasoningMatches
             }
         }
     }
@@ -1578,6 +1694,7 @@
         let onComplete: @Sendable () -> Void
         let onError: @Sendable (Error) -> Void
         let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
+        let onReasoning: (@Sendable (String) -> Void)?
     }
 
     @MainActor
@@ -1613,7 +1730,8 @@
                         onChunk: onChunk,
                         onComplete: onComplete,
                         onError: onError,
-                        onToolCallRequested: onToolCallRequested
+                        onToolCallRequested: onToolCallRequested,
+                        onReasoning: onReasoning
                     )
                 )
             }

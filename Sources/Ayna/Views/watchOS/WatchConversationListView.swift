@@ -122,7 +122,7 @@
 
             private var previewText: String {
                 if let lastMessage = conversation.messages.last {
-                    let stripped = WatchMarkdownRenderer.stripMarkdown(lastMessage.content)
+                    let stripped = WatchMarkdownRenderer.stripMarkdown(lastMessage.visibleContent)
                     return stripped.isEmpty ? "..." : stripped
                 }
                 return "No messages"

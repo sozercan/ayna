@@ -787,8 +787,9 @@
 
         func previewText(for conversation: WatchConversation) -> String {
             guard let lastMessage = conversation.messages.last else { return "No messages" }
-            let preview = lastMessage.content.prefix(50)
-            return preview.count < lastMessage.content.count ? "\(preview)..." : String(preview)
+            let visibleContent = lastMessage.visibleContent
+            let preview = visibleContent.prefix(50)
+            return preview.count < visibleContent.count ? "\(preview)..." : String(preview)
         }
 
         // MARK: - Private state management
@@ -1135,6 +1136,7 @@
 
         private func isMeaningfulDraftMessage(_ message: WatchMessage) -> Bool {
             !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                !(message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
                 !(message.citations?.isEmpty ?? true) ||
                 !(message.toolCalls?.isEmpty ?? true) ||
                 message.role == Message.Role.tool.rawValue

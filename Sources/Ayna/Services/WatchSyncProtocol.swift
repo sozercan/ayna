@@ -2296,6 +2296,9 @@ enum WatchSyncPayloadBuilder {
     ) -> WatchMessage {
         var result = message
         result.content = bounded(message.content, maximum: configuration.maximumContentCharacters)
+        result.reasoning = message.reasoning.map {
+            bounded($0, maximum: configuration.maximumContentCharacters)
+        }
         result.toolCalls = message.toolCalls.map { calls in
             Array(calls.prefix(max(0, configuration.maximumToolCallsPerMessage))).compactMap {
                 boundedToolCall($0, configuration: configuration)
