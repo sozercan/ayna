@@ -271,8 +271,8 @@ import Testing
             #expect(cancellationCount == 0)
         }
 
-        @Test
-        func `resetting a new chat flushes and persists buffered content`() async throws {
+        @Test(.timeLimit(.minutes(1)))
+        func `resetting a new chat preserves a queued streaming callback`() async throws {
             let directory = try TestHelpers.makeTemporaryDirectory()
             let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
             let manager = ConversationManager(
@@ -282,38 +282,65 @@ import Testing
             )
             _ = await manager.loadingTask?.value
 
-            let model = "test-model"
-            let messageId = UUID()
-            let conversation = Conversation(
-                title: "New Chat Reset",
-                messages: [Message(id: messageId, role: .assistant, content: "", model: model)],
-                model: model
-            )
-            manager.conversations = [conversation]
+            IOSChatMockURLProtocol.requestHandler = { request in
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"]
+                )!
+                let body = Data(
+                    """
+                    data: {"choices":[{"delta":{"content":"queued before reset"}}]}
 
-            let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+                    data: [DONE]
+
+                    """.utf8
+                )
+                return (response, body)
+            }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [IOSChatMockURLProtocol.self]
+            let service = AIService(urlSession: URLSession(configuration: configuration))
+            let models = ["model-a", "model-b"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .openai
+                service.modelAPIKeys[model] = "sk-unit-test"
+            }
+
             let viewModel = IOSChatViewModel(conversationManager: manager, aiService: service)
-            viewModel.conversationId = conversation.id
-            viewModel.processMultiModelChunk(
-                model: model,
-                chunk: "buffered before onAppear reset",
-                messageIds: [model: messageId],
-                conversationId: conversation.id
-            )
+            viewModel.selectedModels = Set(models)
+            viewModel.multiModelChunkWillProcess = { [weak viewModel] in
+                guard let viewModel else { return }
+                viewModel.multiModelChunkWillProcess = nil
+                viewModel.resetForNewChat()
+            }
+            viewModel.messageText = "Reset while streaming"
+            viewModel.sendMessage()
 
-            #expect(manager.conversation(byId: conversation.id)?.messages.first?.content == "")
+            let conversationId = try #require(viewModel.conversationId)
+            let responseGroupId = try #require(manager.conversation(byId: conversationId)?.responseGroups.last?.id)
 
-            viewModel.resetForNewChat()
+            for _ in 0 ..< 100 where viewModel.conversationId != nil {
+                try await Task.sleep(for: .milliseconds(20))
+            }
 
             #expect(viewModel.conversationId == nil)
             #expect(
-                manager.conversation(byId: conversation.id)?.messages.first?.content
-                    == "buffered before onAppear reset"
+                manager.conversation(byId: conversationId)?.messages.contains { message in
+                    message.responseGroupId == responseGroupId && message.content == "queued before reset"
+                } == true
             )
 
             await manager.flushPendingSaves()
-            let persisted = try #require(try await store.loadConversation(id: conversation.id))
-            #expect(persisted.messages.first?.content == "buffered before onAppear reset")
+            let persisted = try #require(try await store.loadConversation(id: conversationId))
+            #expect(
+                persisted.messages.contains { message in
+                    message.responseGroupId == responseGroupId && message.content == "queued before reset"
+                }
+            )
         }
 
         @Test(.timeLimit(.minutes(1)))

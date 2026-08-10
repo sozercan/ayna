@@ -139,6 +139,7 @@
         private var activeStreamingCallbackState: StreamingRequestCallbackState?
         private var activeStreamingCallbackQueue: OrderedMainActorEventQueue?
         private var activeMultiModelCallbackQueue: OrderedMainActorEventQueue?
+        var multiModelChunkWillProcess: (@MainActor () -> Void)?
         private var toolContinuationTask: Task<Void, Never>?
         private var toolContinuationVersion: UInt64 = 0
         private var conversationClearObserver: AnyCancellable?
@@ -344,7 +345,24 @@
 
         /// Reset state for a fresh new chat session.
         func resetForNewChat() {
-            invalidateActiveRequests()
+            localCancellationBarrierPending = true
+            cancelToolContinuationTask()
+            if let requestOwnerID = activeAIRequestID {
+                cancelCurrentAIRequest(requestOwnerID)
+            }
+
+            let transition = { @MainActor [weak self] in
+                self?.finalizeResetForNewChat()
+            }
+            if let callbackQueue = activeStreamingCallbackQueue ?? activeMultiModelCallbackQueue {
+                callbackQueue.enqueue(transition)
+            } else {
+                transition()
+            }
+        }
+
+        private func finalizeResetForNewChat() {
+            invalidateActiveRequests(cancelCurrentRequest: false)
             if let conversationId {
                 flushAllStreamingChunks(conversationId: conversationId)
                 persistConversationAfterStreamingFlush(conversationId: conversationId)
@@ -793,7 +811,7 @@
             }
         }
 
-        private func invalidateActiveRequests() {
+        private func invalidateActiveRequests(cancelCurrentRequest: Bool = true) {
             localCancellationBarrierPending = false
             let requestOwnerID = activeAIRequestID
             finalizeActiveStreamingCallbackState()
@@ -803,7 +821,7 @@
             cancelMultiModelRequest()
             cancelImageRequest()
             activeAIRequestID = nil
-            if let requestOwnerID {
+            if cancelCurrentRequest, let requestOwnerID {
                 cancelCurrentAIRequest(requestOwnerID)
             }
         }
@@ -1953,7 +1971,9 @@
                 requestOwnerID: requestOwnerID,
                 onChunk: { [weak self] model, chunk in
                     callbackQueue.enqueue { [weak self] in
-                        guard let self, self.isActiveMultiModelRequest(requestVersion) else { return }
+                        guard let self else { return }
+                        self.multiModelChunkWillProcess?()
+                        guard self.isActiveMultiModelRequest(requestVersion) else { return }
                         self.processMultiModelChunk(
                             model: model,
                             chunk: chunk,
