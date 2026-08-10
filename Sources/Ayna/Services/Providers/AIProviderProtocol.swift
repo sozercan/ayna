@@ -70,7 +70,7 @@ struct AIProviderStreamCallbacks: Sendable {
 
 /// Protocol defining the interface for AI providers
 ///
-/// Each provider (OpenAI, GitHub Models, etc.) implements this protocol
+/// Each provider implements this protocol
 /// to handle chat completions with their specific API requirements.
 protocol AIProviderProtocol: AnyObject, Sendable {
     /// The provider type this implementation handles
@@ -138,8 +138,6 @@ enum AIProviderFactory {
         switch type {
         case .openai:
             OpenAIProvider(urlSession: urlSession)
-        case .githubModels:
-            GitHubModelsProvider(urlSession: urlSession)
         case .appleIntelligence:
             // Apple Intelligence is handled separately by its dedicated service
             // Return OpenAI provider as fallback (should not be used)

@@ -152,22 +152,6 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel?.provider == .openai)
     }
 
-    @Test("Parse provider GitHub")
-    func parseProviderGitHub() async throws {
-        let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://add-model?name=test&provider=github"))
-        await manager.handle(url: url)
-        #expect(manager.pendingAddModel?.provider == .githubModels)
-    }
-
-    @Test("Parse provider githubmodels")
-    func parseProviderGitHubModels() async throws {
-        let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://add-model?name=test&provider=githubmodels"))
-        await manager.handle(url: url)
-        #expect(manager.pendingAddModel?.provider == .githubModels)
-    }
-
     @Test("Parse provider Apple")
     func parseProviderApple() async throws {
         let (manager, _) = makeManager()
@@ -696,7 +680,7 @@ struct DeepLinkManagerTests {
     @Test("Confirm add model without endpoint does not set endpoint")
     func confirmAddModelWithoutEndpointDoesNotSetEndpoint() async throws {
         let (manager, service) = makeManager()
-        let url = try #require(URL(string: "ayna://add-model?name=test-model&provider=github"))
+        let url = try #require(URL(string: "ayna://add-model?name=test-model&provider=anthropic"))
         await manager.handle(url: url)
 
         try confirmPendingModel(in: manager)
@@ -799,10 +783,10 @@ struct DeepLinkManagerTests {
     @Test("Add model request display properties")
     func addModelRequestDisplayProperties() async throws {
         let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://add-model?name=test&provider=github&type=responses"))
+        let url = try #require(URL(string: "ayna://add-model?name=test&provider=anthropic&type=responses"))
         await manager.handle(url: url)
 
-        #expect(manager.pendingAddModel?.displayProvider == AIProvider.githubModels.displayName)
+        #expect(manager.pendingAddModel?.displayProvider == AIProvider.anthropic.displayName)
         #expect(manager.pendingAddModel?.displayEndpointType == APIEndpointType.responses.displayName)
     }
 
@@ -851,7 +835,7 @@ struct DeepLinkManagerTests {
     @Test("Unified flow confirm adds model and preserves chat")
     func unifiedFlowConfirmAddsModelAndPreservesChat() async throws {
         let (manager, service) = makeManager()
-        let url = try #require(URL(string: "ayna://chat?model=unified-model&provider=github&key=test-key&prompt=Test%20prompt"))
+        let url = try #require(URL(string: "ayna://chat?model=unified-model&provider=anthropic&key=test-key&prompt=Test%20prompt"))
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel != nil)
@@ -861,7 +845,7 @@ struct DeepLinkManagerTests {
 
         // Model should be added
         #expect(service.customModels.contains("unified-model"))
-        #expect(service.modelProviders["unified-model"] == .githubModels)
+        #expect(service.modelProviders["unified-model"] == .anthropic)
         #expect(service.modelAPIKeys["unified-model"] == "test-key")
 
         // Add model confirmation cleared, and chat released exactly once
@@ -928,14 +912,14 @@ struct DeepLinkManagerTests {
     @Test("Unified flow model config is stored")
     func unifiedFlowModelConfigIsStored() async throws {
         let (manager, _) = makeManager()
-        let url = try #require(URL(string: "ayna://chat?model=config-test&provider=github&prompt=Hello"))
+        let url = try #require(URL(string: "ayna://chat?model=config-test&provider=anthropic&prompt=Hello"))
 
         await manager.handle(url: url)
 
         // Verify modelConfig is set on the chat request
         #expect(manager.pendingChat?.modelConfig != nil)
         #expect(manager.pendingChat?.modelConfig?.name == "config-test")
-        #expect(manager.pendingChat?.modelConfig?.provider == .githubModels)
+        #expect(manager.pendingChat?.modelConfig?.provider == .anthropic)
     }
 
     @Test("Unified flow invalid provider shows error")

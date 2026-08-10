@@ -51,7 +51,7 @@ enum DeepLinkError: LocalizedError {
         case let .missingRequiredParameter(param):
             "Add the '\(param)' parameter to the URL"
         case .invalidProvider:
-            "Valid providers: OpenAI, GitHub Models, Apple Intelligence"
+            "Valid providers: OpenAI, Anthropic, Apple Intelligence"
         case .invalidEndpointType:
             "Valid types: Chat Completions, Responses, Image Generation"
         case .modelAlreadyExists:
@@ -103,7 +103,6 @@ struct ChatRequest: Equatable {
 enum DeepLinkAction: Equatable {
     case addModel(AddModelRequest)
     case chat(ChatRequest)
-    case oauthCallback(URL)
 }
 
 // MARK: - Deep Link Manager
@@ -225,10 +224,6 @@ final class DeepLinkManager: ObservableObject {
                         ]
                     )
                 }
-
-            case let .oauthCallback(callbackURL):
-                // Delegate to GitHubOAuthService
-                await GitHubOAuthService.shared.handleCallbackURL(callbackURL)
             }
         } catch let error as DeepLinkError {
             errorMessage = error.errorDescription
@@ -364,11 +359,6 @@ final class DeepLinkManager: ObservableObject {
             throw DeepLinkError.invalidURL
         }
 
-        // Handle OAuth callbacks (GitHub auth)
-        if host == "auth" || host == "callback" || url.path.contains("callback") {
-            return .oauthCallback(url)
-        }
-
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
             throw DeepLinkError.invalidURL
         }
@@ -414,8 +404,8 @@ final class DeepLinkManager: ObservableObject {
             switch normalizedProvider {
             case "openai", "open ai":
                 provider = .openai
-            case "github", "github models", "githubmodels":
-                provider = .githubModels
+            case "anthropic":
+                provider = .anthropic
             case "apple", "apple intelligence", "appleintelligence":
                 provider = .appleIntelligence
             default:
@@ -494,8 +484,8 @@ final class DeepLinkManager: ObservableObject {
                     switch normalizedProvider {
                     case "openai", "open ai":
                         provider = .openai
-                    case "github", "github models", "githubmodels":
-                        provider = .githubModels
+                    case "anthropic":
+                        provider = .anthropic
                     case "apple", "apple intelligence", "appleintelligence":
                         provider = .appleIntelligence
                     default:

@@ -25,11 +25,10 @@
 
             /// Filter models to only show those usable on watchOS
             private var watchUsableModels: [String] {
-                connectivityService.availableModels.filter { model in
-                    // Filter out Apple Intelligence - it can't run on watchOS
-                    let provider = aiService.modelProviders[model]
-                    return provider != .appleIntelligence
-                }
+                WatchLiveModelPolicy.usableModels(
+                    availableModels: connectivityService.availableModels,
+                    modelProviders: aiService.modelProviders
+                )
             }
 
             /// Check if a model should show as selected

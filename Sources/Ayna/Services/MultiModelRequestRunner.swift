@@ -2,42 +2,6 @@ import os
 
 /// Bridges one callback-driven multi-model request into structured concurrency.
 struct MultiModelRequestRunner: Sendable {
-    /// A GitHub Models gate acquisition paired with its explicit release.
-    struct GitHubPermit: Sendable {
-        private let acquireAction: @Sendable () async throws -> Void
-        private let releaseAction: @Sendable () async -> Void
-
-        init(
-            acquire: @escaping @Sendable () async throws -> Void,
-            release: @escaping @Sendable () async -> Void
-        ) {
-            acquireAction = acquire
-            releaseAction = release
-        }
-
-        static func shared(
-            key: String,
-            onQueued: @escaping @Sendable () -> Void = {}
-        ) -> GitHubPermit {
-            GitHubPermit(
-                acquire: {
-                    try await GitHubModelsRequestGate.shared.acquire(key: key, onQueued: onQueued)
-                },
-                release: {
-                    await GitHubModelsRequestGate.shared.release(key: key)
-                }
-            )
-        }
-
-        fileprivate func acquire() async throws {
-            try await acquireAction()
-        }
-
-        fileprivate func release() async {
-            await releaseAction()
-        }
-    }
-
     private enum ContinuationPhase {
         case pending
         case preparing(CheckedContinuation<Void, Never>)
@@ -158,32 +122,13 @@ struct MultiModelRequestRunner: Sendable {
         }
     }
 
-    /// Acquires an optional GitHub permit, synchronously commits `start` on the
-    /// main actor, then waits for either callback completion or cancellation.
+    /// Synchronously commits `start` on the main actor, then waits for either
+    /// callback completion or cancellation.
     @MainActor
     static func run(
-        gitHubPermit: GitHubPermit? = nil,
         start: @escaping @MainActor @Sendable (Completion) -> Void
     ) async {
         guard !Task.isCancelled else { return }
-
-        if let gitHubPermit {
-            do {
-                try await gitHubPermit.acquire()
-            } catch {
-                return
-            }
-
-            guard !Task.isCancelled else {
-                await gitHubPermit.release()
-                return
-            }
-
-            await waitForCompletion(start: start)
-            await gitHubPermit.release()
-            return
-        }
-
         await waitForCompletion(start: start)
     }
 

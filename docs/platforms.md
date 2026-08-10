@@ -9,7 +9,6 @@ This document details platform-specific capabilities, limitations, and implement
 | **Core Chat** | ✅ | ✅ | ✅ |
 | **Multi-Model Responses** | ✅ | ✅ | ❌ |
 | **OpenAI / Azure / Custom** | ✅ | ✅ | ✅ |
-| **GitHub Models (OAuth)** | ✅ | ✅ | ✅ (via iPhone) |
 | **Apple Intelligence** | ✅ (26.0+) | ✅ (26.0+) | ❌ |
 | **MCP Tools** | ✅ | ❌ | ❌ |
 | **Web Search (Tavily)** | ✅ | ✅ | ✅ (via iPhone) |

@@ -353,9 +353,6 @@
                 let endpointTypes = AIService.shared.modelEndpointTypes
                     .filter { configured.contains($0.key) }
                     .mapValues(\.rawValue)
-                let gitHubOAuth = AIService.shared.modelUsesGitHubOAuth.filter {
-                    configured.contains($0.key)
-                }
                 let apiKeys = AIService.shared.modelAPIKeys.filter {
                     configured.contains($0.key) && !$0.value.isEmpty
                 }
@@ -364,13 +361,11 @@
                     providerModelIDs: providers.keys.sorted(),
                     endpointModelIDs: endpoints.keys.sorted(),
                     endpointTypeModelIDs: endpointTypes.keys.sorted(),
-                    gitHubOAuthModelIDs: gitHubOAuth.keys.sorted(),
                     apiKeyModelIDs: apiKeys.keys.sorted(),
                     valueDigests: WatchModelMetadataValueDigests.hashing(
                         providers: providers,
                         endpoints: endpoints,
                         endpointTypes: endpointTypes,
-                        gitHubOAuth: gitHubOAuth,
                         apiKeys: apiKeys
                     )
                 )
@@ -426,9 +421,6 @@
                         from: AIService.shared.modelEndpointTypes
                     )
                     .mapValues(\.rawValue),
-                    WatchContextKeys.modelUsesGitHubOAuth: modelPublication.metadataValues(
-                        from: AIService.shared.modelUsesGitHubOAuth
-                    ),
                     WatchContextKeys.modelAPIKeys: modelPublication.metadataValues(
                         from: AIService.shared.modelAPIKeys
                     ),
@@ -436,11 +428,9 @@
                     WatchContextKeys.removedModelProviderDigests: options.modelRemovalPublication.removedProviderDigests,
                     WatchContextKeys.removedModelEndpointDigests: options.modelRemovalPublication.removedEndpointDigests,
                     WatchContextKeys.removedModelEndpointTypeDigests: options.modelRemovalPublication.removedEndpointTypeDigests,
-                    WatchContextKeys.removedModelGitHubOAuthDigests: options.modelRemovalPublication.removedGitHubOAuthDigests,
                     WatchContextKeys.removedModelAPIKeyDigests: options.modelRemovalPublication.removedAPIKeyDigests,
                     WatchContextKeys.modelMetadataEpoch: options.modelMetadataEpoch.uuidString,
                     WatchContextKeys.modelMetadataComplete: modelMetadataComplete,
-                    WatchContextKeys.githubAccessToken: GitHubOAuthService.shared.getAccessToken() ?? "",
                     WatchContextKeys.tavilyAPIKey: TavilyService.shared.apiKey,
                     WatchContextKeys.tavilyEnabled: TavilyService.shared.isEnabled,
                     WatchContextKeys.webFetchEnabled: WebFetchService.shared.isEnabled,
@@ -1824,7 +1814,6 @@
                 let applicationMode = processConversationsFromContext(context)
                 guard applicationMode.appliesSnapshotSettings else { return }
                 processModelSettingsFromContext(context, mode: applicationMode)
-                processAPIKeysFromContext(context, mode: applicationMode)
                 processTavilySettingsFromContext(context, mode: applicationMode)
                 processWebFetchSettingsFromContext(context)
                 processMemoryFromContext(context)
@@ -2110,7 +2099,6 @@
                     modelProviders: AIService.shared.modelProviders.mapValues(\.rawValue),
                     modelEndpoints: AIService.shared.modelEndpoints,
                     modelEndpointTypes: AIService.shared.modelEndpointTypes.mapValues(\.rawValue),
-                    modelUsesGitHubOAuth: AIService.shared.modelUsesGitHubOAuth,
                     modelAPIKeys: AIService.shared.modelAPIKeys
                 )
             }
@@ -2134,23 +2122,7 @@
                         result[pair.key] = endpointType
                     }
                 }
-                AIService.shared.modelUsesGitHubOAuth = state.modelUsesGitHubOAuth
                 AIService.shared.modelAPIKeys = state.modelAPIKeys
-            }
-
-            private func processAPIKeysFromContext(
-                _ context: [String: Any],
-                mode: WatchContextApplicationMode
-            ) {
-                if let githubToken = context[WatchContextKeys.githubAccessToken] as? String {
-                    if githubToken.isEmpty {
-                        GitHubOAuthService.shared.signOut()
-                    } else {
-                        GitHubOAuthService.shared.setAccessTokenFromWatch(githubToken)
-                    }
-                } else if mode.treatsOmittedCredentialsAsRemoved {
-                    GitHubOAuthService.shared.signOut()
-                }
             }
 
             private func processTavilySettingsFromContext(

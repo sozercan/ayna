@@ -352,12 +352,33 @@ final class ConversationManager: ObservableObject {
     private func applyLoadedConversations(_ loaded: [Conversation]) {
         var repaired = loaded
         let availableModels = AIService.shared.customModels
+        let availableModelSet = Set(availableModels)
         let defaultModel = AIService.shared.selectedModel
         var repairedIDs: [UUID] = []
 
-        for index in repaired.indices where !availableModels.contains(repaired[index].model) {
-            repaired[index].model = defaultModel
-            repairedIDs.append(repaired[index].id)
+        for index in repaired.indices {
+            var didRepair = false
+
+            if !availableModelSet.contains(repaired[index].model) {
+                repaired[index].model = defaultModel
+                didRepair = true
+            }
+
+            let supportedActiveModels = repaired[index].activeModels.filter {
+                availableModelSet.contains($0)
+            }
+            if supportedActiveModels != repaired[index].activeModels {
+                repaired[index].activeModels = supportedActiveModels
+                didRepair = true
+            }
+            if repaired[index].multiModelEnabled, supportedActiveModels.count < 2 {
+                repaired[index].multiModelEnabled = false
+                didRepair = true
+            }
+
+            if didRepair {
+                repairedIDs.append(repaired[index].id)
+            }
         }
 
         repaired.sort { lhs, rhs in

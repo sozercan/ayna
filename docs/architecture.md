@@ -38,7 +38,6 @@ The app supports multiple AI providers via the `AIProvider` enum.
 |----------|-----------|----------------|----------|
 | OpenAI | All | API Key | `api.openai.com` or custom |
 | Azure OpenAI | All | API Key | `<resource>.openai.azure.com` |
-| GitHub Models | All | OAuth (PKCE) | `models.github.ai` |
 | Apple Intelligence | macOS/iOS 26.0+ | None (on-device) | Local |
 | Anthropic | All | API Key | `api.anthropic.com` or custom |
 
@@ -57,7 +56,6 @@ Decomposed into single-responsibility components:
 | `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
 | `Providers/OpenAIProvider.swift` | OpenAI API implementation |
 | `Providers/AzureOpenAIProvider.swift` | Azure OpenAI implementation |
-| `Providers/GitHubModelsProvider.swift` | GitHub Models implementation |
 
 ### Apple Intelligence Service
 
@@ -66,13 +64,6 @@ Decomposed into single-responsibility components:
 - **Not available on watchOS**
 - Uses the on-device Foundation Models framework
 - No API key required — runs entirely locally
-
-### GitHub Models
-
-- **Authentication**: OAuth Web Flow with PKCE (`GitHubOAuthService.swift`)
-- **Token Exchange**: Proxied via Cloudflare Worker to secure `client_secret`
-- **Headers**: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
-- **Model Catalog**: Fetched from `https://models.github.ai/catalog/models`
 
 ### Anthropic Service
 
@@ -156,7 +147,7 @@ Handles URL scheme (`ayna://`) for automation and external app integration.
 | Parameter | Required | Values | Description |
 |-----------|:--------:|--------|-------------|
 | `name` | ✅ | String | Model identifier (e.g., `gpt-4o`) |
-| `provider` | | `openai`, `github`, `azure`, `apple` | API provider |
+| `provider` | | `openai`, `anthropic`, `apple` | API provider |
 | `endpoint` | | URL | Custom API endpoint |
 | `key` | | String | API key |
 | `type` | | `chat`, `responses`, `image` | Model capability type |

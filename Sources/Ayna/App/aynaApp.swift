@@ -125,11 +125,6 @@ struct aynaApp: App {
         Settings {
             MacSettingsView()
                 .environmentObject(conversationManager)
-                .onOpenURL { url in
-                    Task {
-                        await GitHubOAuthService.shared.handleCallbackURL(url)
-                    }
-                }
         }
         .commands {
             SidebarCommands()

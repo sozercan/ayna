@@ -55,7 +55,6 @@ enum UITestEnvironment {
     private static func configureKeychain() {
         let keychain = EphemeralKeychainStorage()
         AIService.keychain = keychain
-        GitHubOAuthService.keychain = keychain
     }
 
     @MainActor

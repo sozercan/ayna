@@ -70,8 +70,7 @@ final class AzureOpenAIProvider: AIProviderProtocol, @unchecked Sendable {
             stream: stream,
             tools: tools,
             apiKey: config.apiKey,
-            isAzure: true,
-            isGitHubModels: false
+            isAzure: true
         ) else {
             callbacks.onError(AynaError.missingConfiguration(detail: "Failed to build API request"))
             return

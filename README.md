@@ -5,7 +5,7 @@ A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for Apple platforms.
-- ☁️ **Multi-Provider**: Native support for OpenAI, [Anthropic](https://www.anthropic.com), Azure OpenAI, and [GitHub Models](https://github.com/marketplace/models). Also works with any OpenAI-compatible endpoint (Gemini, Ollama, etc.).
+- ☁️ **Multi-Provider**: Native support for OpenAI, [Anthropic](https://www.anthropic.com), and Azure OpenAI. Also works with any OpenAI-compatible endpoint (Gemini, Ollama, etc.).
 - 🔀 **Multi-Model Chat**: Compare responses from multiple models simultaneously.
 - 🍎 **Apple Intelligence**: Uses the on-device Apple Intelligence API when available (macOS/iOS).
 - 🏠 **Local Models**: Connect to local servers like Ollama via custom endpoint.
@@ -41,7 +41,7 @@ brew install --cask ayna
 ### Requirements
 
 - macOS 26.0 (Tahoe) or newer, iOS 26.0 or newer, or watchOS 26.0 or newer.
-- An API key for OpenAI, Anthropic, or Azure OpenAI, or a GitHub account for GitHub Models (optional if using local models).
+- An API key for OpenAI, Anthropic, or Azure OpenAI (optional if using local models).
 
 ## User Guide
 
@@ -51,7 +51,6 @@ brew install --cask ayna
    - **OpenAI**: Use the default endpoint or a custom OpenAI API-compatible endpoint.
    - **Anthropic**: Use the default endpoint or a custom Anthropic API-compatible endpoint.
    - **Azure**: Use `https://<resource>.openai.azure.com` (Azure OpenAI) or `https://<resource>.services.ai.azure.com` (Microsoft Foundry) with your deployment name as the model.
-   - **GitHub Models**: Sign in with your GitHub account.
    - **Apple Intelligence**: For on-device inference.
 3. Start chatting!
 

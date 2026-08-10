@@ -180,23 +180,24 @@
 
         @Test
         func `watchOS model filtering`() {
-            // On watchOS, Apple Intelligence models should be filtered out
-            let allModels = ["gpt-4o", "gpt-4", "apple-intelligence"]
+            let allModels = ["gpt-4o", "claude", "apple-intelligence", "legacy-model"]
             let modelProviders: [String: AIProvider] = [
                 "gpt-4o": .openai,
-                "gpt-4": .openai,
+                "claude": .anthropic,
                 "apple-intelligence": .appleIntelligence
             ]
 
-            let usableModels = allModels.filter { model in
-                let provider = modelProviders[model]
-                return provider != .appleIntelligence
-            }
+            let usableModels = WatchLiveModelPolicy.usableModels(
+                availableModels: allModels,
+                modelProviders: modelProviders
+            )
 
-            #expect(usableModels.count == 2)
-            #expect(usableModels.contains("gpt-4o"))
-            #expect(usableModels.contains("gpt-4"))
-            #expect(!usableModels.contains("apple-intelligence"))
+            #expect(usableModels == ["gpt-4o", "claude"])
+            #expect(!WatchLiveModelPolicy.isUsable(
+                "not-advertised",
+                availableModels: allModels,
+                modelProviders: ["not-advertised": .openai]
+            ))
         }
 
         // MARK: - Conversation State Tests
@@ -354,40 +355,20 @@
 
         @Test
         func `model usability check logic`() {
-            // Test the filtering logic for watchOS-compatible models
-            let allModels = ["gpt-4o", "gpt-4", "gpt-3.5-turbo", "apple-intelligence-chat"]
+            let allModels = ["unknown", "on-device", "unconfigured", "configured"]
             let modelProviders: [String: AIProvider] = [
-                "gpt-4o": .openai,
-                "gpt-4": .openai,
-                "gpt-3.5-turbo": .openai,
-                "apple-intelligence-chat": .appleIntelligence
+                "on-device": .appleIntelligence,
+                "unconfigured": .openai,
+                "configured": .anthropic,
             ]
 
-            // watchOS can only use cloud-based models (not Apple Intelligence)
-            let usableModels = allModels.filter { model in
-                let provider = modelProviders[model]
-                return provider != .appleIntelligence
-            }
+            let selected = WatchLiveModelPolicy.firstUsableModel(
+                availableModels: allModels,
+                modelProviders: modelProviders,
+                isConfigured: { $0 == "configured" }
+            )
 
-            #expect(usableModels.count == 3)
-            #expect(usableModels.contains("gpt-4o"))
-            #expect(usableModels.contains("gpt-4"))
-            #expect(usableModels.contains("gpt-3.5-turbo"))
-            #expect(!usableModels.contains("apple-intelligence-chat"))
-        }
-
-        @Test
-        func `azure provider allowed on Watch`() {
-            // GitHub Models should work on watchOS (uses cloud API)
-            let modelProviders: [String: AIProvider] = [
-                "github-gpt-4o": .githubModels,
-                "openai-gpt-4": .openai
-            ]
-
-            for (model, provider) in modelProviders {
-                let isUsableOnWatch = provider != .appleIntelligence
-                #expect(isUsableOnWatch, "\(model) should be usable on watchOS")
-            }
+            #expect(selected == "configured")
         }
     }
 

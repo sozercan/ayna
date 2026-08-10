@@ -1048,9 +1048,6 @@ struct WatchConnectivitySupportTests {
         let providers = Dictionary(uniqueKeysWithValues: allModels.map { ($0, "provider-\($0)") })
         let endpoints = Dictionary(uniqueKeysWithValues: allModels.map { ($0, "https://\($0).example/v1") })
         let endpointTypes = Dictionary(uniqueKeysWithValues: allModels.map { ($0, "endpoint-\($0)") })
-        let oauth = Dictionary(uniqueKeysWithValues: allModels.enumerated().map { index, model in
-            (model, index.isMultiple(of: 2))
-        })
         let apiKeys = Dictionary(uniqueKeysWithValues: allModels.map { ($0, "key-\($0)") })
         let page = WatchModelMetadataPage(
             selectedModel: selectedModel,
@@ -1060,7 +1057,6 @@ struct WatchConnectivitySupportTests {
             modelProviders: publication.metadataValues(from: providers),
             modelEndpoints: publication.metadataValues(from: endpoints),
             modelEndpointTypes: publication.metadataValues(from: endpointTypes),
-            modelUsesGitHubOAuth: publication.metadataValues(from: oauth),
             modelAPIKeys: publication.metadataValues(from: apiKeys)
         )
         var state = WatchModelMetadataState(
@@ -1071,7 +1067,6 @@ struct WatchConnectivitySupportTests {
             modelProviders: [:],
             modelEndpoints: [:],
             modelEndpointTypes: [:],
-            modelUsesGitHubOAuth: [:],
             modelAPIKeys: [:]
         )
         var accumulator = WatchModelMetadataCycleAccumulator()
@@ -1084,7 +1079,6 @@ struct WatchConnectivitySupportTests {
             #expect(state.modelProviders[model] == providers[model])
             #expect(state.modelEndpoints[model] == endpoints[model])
             #expect(state.modelEndpointTypes[model] == endpointTypes[model])
-            #expect(state.modelUsesGitHubOAuth[model] == oauth[model])
             #expect(state.modelAPIKeys[model] == apiKeys[model])
         }
     }
@@ -1442,10 +1436,7 @@ struct WatchConnectivityRegressionTests {
             WatchContextKeys.selectedModel: "selected-model",
             WatchContextKeys.availableModels: firstModels,
             WatchContextKeys.modelEndpoints: metadata.filter { boundedModelSet.contains($0.key) },
-            WatchContextKeys.modelAPIKeys: metadata.filter { boundedModelSet.contains($0.key) },
-            WatchContextKeys.modelUsesGitHubOAuth: [String: Bool](
-                uniqueKeysWithValues: firstModels.map { ($0, false) }
-            )
+            WatchContextKeys.modelAPIKeys: metadata.filter { boundedModelSet.contains($0.key) }
         ]
         let unboundedContext: [String: Any] = [
             WatchContextKeys.syncSnapshot: firstPayload.data,
@@ -1524,7 +1515,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [staleModel: "openai"],
             modelEndpoints: [staleModel: "https://stale.example/v1"],
             modelEndpointTypes: [staleModel: "chatCompletions"],
-            modelUsesGitHubOAuth: [staleModel: false],
             modelAPIKeys: [staleModel: "stale-key"]
         )
         let firstPage = WatchModelMetadataPage(
@@ -1535,7 +1525,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [firstModel: "openai"],
             modelEndpoints: [firstModel: "https://one.example/v1"],
             modelEndpointTypes: [firstModel: "responses"],
-            modelUsesGitHubOAuth: [firstModel: false],
             modelAPIKeys: [firstModel: "key-one"]
         )
         let secondPage = WatchModelMetadataPage(
@@ -1546,7 +1535,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [secondModel: "anthropic"],
             modelEndpoints: [secondModel: "https://two.example/v1"],
             modelEndpointTypes: [secondModel: "messages"],
-            modelUsesGitHubOAuth: [secondModel: true],
             modelAPIKeys: [secondModel: "key-two"]
         )
         let cycleID = UUID()
@@ -1580,7 +1568,6 @@ struct WatchModelMetadataCycleTests {
             secondModel: "https://two.example/v1"
         ])
         #expect(state.modelEndpointTypes == [firstModel: "responses", secondModel: "messages"])
-        #expect(state.modelUsesGitHubOAuth == [firstModel: false, secondModel: true])
         #expect(state.modelAPIKeys == [firstModel: "key-one", secondModel: "key-two"])
     }
 
@@ -1742,7 +1729,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [retainedModel: "openai"],
             modelEndpoints: [retainedModel: "https://retained.example/v1"],
             modelEndpointTypes: [retainedModel: "responses"],
-            modelUsesGitHubOAuth: [retainedModel: false],
             modelAPIKeys: [retainedModel: "retained-key"]
         )
         let page = WatchModelMetadataPage(
@@ -1753,7 +1739,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [incomingModel: "anthropic"],
             modelEndpoints: [incomingModel: "https://incoming.example/v1"],
             modelEndpointTypes: [incomingModel: "messages"],
-            modelUsesGitHubOAuth: [incomingModel: false],
             modelAPIKeys: [incomingModel: "incoming-key"]
         )
         var accumulator = WatchModelMetadataCycleAccumulator()
@@ -1788,7 +1773,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [retainedModel: "openai", removedModel: "anthropic"],
             modelEndpoints: [retainedModel: "https://retained.example", removedModel: "https://removed.example"],
             modelEndpointTypes: [retainedModel: "responses", removedModel: "messages"],
-            modelUsesGitHubOAuth: [retainedModel: false, removedModel: true],
             modelAPIKeys: [retainedModel: "retained-key", removedModel: "removed-key"]
         )
         var accumulator = WatchModelMetadataCycleAccumulator()
@@ -1801,7 +1785,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [incomingModel: "anthropic"],
             modelEndpoints: [incomingModel: "https://incoming.example"],
             modelEndpointTypes: [incomingModel: "messages"],
-            modelUsesGitHubOAuth: [incomingModel: false],
             modelAPIKeys: [incomingModel: "incoming-key"],
             removedModelDigests: [WatchModelIdentity.digest(removedModel)]
         )
@@ -1830,7 +1813,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [incomingModel: "anthropic"],
             modelEndpoints: [incomingModel: "https://incoming.example"],
             modelEndpointTypes: [incomingModel: "messages"],
-            modelUsesGitHubOAuth: [incomingModel: false],
             modelAPIKeys: [incomingModel: "incoming-key"]
         )
         let committedEpoch = WatchModelMetadataContextReducer.apply(
@@ -1861,7 +1843,6 @@ struct WatchModelMetadataCycleTests {
             modelProviders: [retainedModel: "openai"],
             modelEndpoints: [retainedModel: "https://retained.example/v1"],
             modelEndpointTypes: [retainedModel: "responses"],
-            modelUsesGitHubOAuth: [retainedModel: false],
             modelAPIKeys: [retainedModel: "retained-key"]
         )
         let snapshot = WatchSyncSnapshot(
@@ -1984,7 +1965,6 @@ struct WatchLegacyMetadataCompatibilityTests {
             WatchContextKeys.modelProviders: [currentModel: "openai"],
             WatchContextKeys.modelEndpoints: [currentModel: "https://current.example/v1"],
             WatchContextKeys.modelEndpointTypes: [currentModel: "responses"],
-            WatchContextKeys.modelUsesGitHubOAuth: [currentModel: false],
             WatchContextKeys.modelAPIKeys: [currentModel: "current-key"]
         ]
         var state = modelMetadataState(model: staleModel, key: "stale-key")
@@ -2042,8 +2022,8 @@ struct WatchModelRemovalCompatibilityTests {
     @Test
     func `model removal history rotates epoch before tombstones exceed the context budget`() throws {
         let limit = WatchModelRemovalTracker.maximumRetiredDigestCount
-        let fieldRetirementCount = limit / 6
-        let modelRetirementCount = limit - (fieldRetirementCount * 5)
+        let fieldRetirementCount = limit / 5
+        let modelRetirementCount = limit - (fieldRetirementCount * 4)
         let retiredModels = (0 ..< modelRetirementCount).map { "retired-model-\($0)" }
         let retiredFieldModels = Array(retiredModels.prefix(fieldRetirementCount))
         let retainedModel = "retained-model"
@@ -2055,7 +2035,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: retiredFieldModels + [retainedModel],
             endpointModelIDs: retiredFieldModels,
             endpointTypeModelIDs: retiredFieldModels,
-            gitHubOAuthModelIDs: retiredFieldModels,
             apiKeyModelIDs: retiredFieldModels
         )).isEmpty)
         let atLimit = tracker.publication(inventory: WatchModelMetadataInventory(
@@ -2063,7 +2042,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [retainedModel],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            gitHubOAuthModelIDs: [],
             apiKeyModelIDs: []
         ))
         let atLimitContext: [String: Any] = [
@@ -2071,7 +2049,6 @@ struct WatchModelRemovalCompatibilityTests {
             WatchContextKeys.removedModelProviderDigests: atLimit.removedProviderDigests,
             WatchContextKeys.removedModelEndpointDigests: atLimit.removedEndpointDigests,
             WatchContextKeys.removedModelEndpointTypeDigests: atLimit.removedEndpointTypeDigests,
-            WatchContextKeys.removedModelGitHubOAuthDigests: atLimit.removedGitHubOAuthDigests,
             WatchContextKeys.removedModelAPIKeyDigests: atLimit.removedAPIKeyDigests,
             WatchContextKeys.modelMetadataEpoch: tracker.epoch.uuidString
         ]
@@ -2080,7 +2057,6 @@ struct WatchModelRemovalCompatibilityTests {
             + atLimit.removedProviderDigests.count
             + atLimit.removedEndpointDigests.count
             + atLimit.removedEndpointTypeDigests.count
-            + atLimit.removedGitHubOAuthDigests.count
             + atLimit.removedAPIKeyDigests.count
 
         #expect(retiredCount == limit)
@@ -2093,7 +2069,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            gitHubOAuthModelIDs: [],
             apiKeyModelIDs: []
         ))
         let encodedAfterRotation = try JSONEncoder().encode(tracker)
@@ -2117,13 +2092,11 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [model],
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
-            gitHubOAuthModelIDs: [model],
             apiKeyModelIDs: [model],
             valueDigests: WatchModelMetadataValueDigests(
                 providers: [modelDigest: WatchModelIdentity.digest("openai")],
                 endpoints: [modelDigest: WatchModelIdentity.digest("https://old.example")],
                 endpointTypes: [modelDigest: WatchModelIdentity.digest("responses")],
-                gitHubOAuth: [modelDigest: WatchModelIdentity.digest("false")],
                 apiKeys: [modelDigest: WatchModelIdentity.digest("old-key")]
             )
         )
@@ -2132,13 +2105,11 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [model],
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
-            gitHubOAuthModelIDs: [model],
             apiKeyModelIDs: [model],
             valueDigests: WatchModelMetadataValueDigests(
                 providers: [modelDigest: WatchModelIdentity.digest("anthropic")],
                 endpoints: [modelDigest: WatchModelIdentity.digest("https://new.example")],
                 endpointTypes: [modelDigest: WatchModelIdentity.digest("messages")],
-                gitHubOAuth: [modelDigest: WatchModelIdentity.digest("true")],
                 apiKeys: [modelDigest: WatchModelIdentity.digest("new-key")]
             )
         )
@@ -2149,7 +2120,6 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(invalidations.removedProviderDigests == [modelDigest])
         #expect(invalidations.removedEndpointDigests == [modelDigest])
         #expect(invalidations.removedEndpointTypeDigests == [modelDigest])
-        #expect(invalidations.removedGitHubOAuthDigests == [modelDigest])
         #expect(invalidations.removedAPIKeyDigests == [modelDigest])
         #expect(tracker.publication(inventory: newInventory) == invalidations)
 
@@ -2161,40 +2131,34 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [model: "openai"],
             modelEndpoints: [model: "https://old.example"],
             modelEndpointTypes: [model: "responses"],
-            modelUsesGitHubOAuth: [model: false],
             modelAPIKeys: [model: "old-key"]
         )
         state.merge(WatchModelMetadataPage(
             removedModelProviderDigests: invalidations.removedProviderDigests,
             removedModelEndpointDigests: invalidations.removedEndpointDigests,
             removedModelEndpointTypeDigests: invalidations.removedEndpointTypeDigests,
-            removedModelGitHubOAuthDigests: invalidations.removedGitHubOAuthDigests,
             removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests
         ))
 
         #expect(state.modelProviders[model] == nil)
         #expect(state.modelEndpoints[model] == nil)
         #expect(state.modelEndpointTypes[model] == nil)
-        #expect(state.modelUsesGitHubOAuth[model] == nil)
         #expect(state.modelAPIKeys[model] == nil)
 
         state.merge(WatchModelMetadataPage(
             modelProviders: [model: "anthropic"],
             modelEndpoints: [model: "https://new.example"],
             modelEndpointTypes: [model: "messages"],
-            modelUsesGitHubOAuth: [model: true],
             modelAPIKeys: [model: "new-key"],
             removedModelProviderDigests: invalidations.removedProviderDigests,
             removedModelEndpointDigests: invalidations.removedEndpointDigests,
             removedModelEndpointTypeDigests: invalidations.removedEndpointTypeDigests,
-            removedModelGitHubOAuthDigests: invalidations.removedGitHubOAuthDigests,
             removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests
         ))
 
         #expect(state.modelProviders[model] == "anthropic")
         #expect(state.modelEndpoints[model] == "https://new.example")
         #expect(state.modelEndpointTypes[model] == "messages")
-        #expect(state.modelUsesGitHubOAuth[model] == true)
         #expect(state.modelAPIKeys[model] == "new-key")
     }
 
@@ -2210,7 +2174,6 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [removedModel: "openai", retainedModel: "anthropic"],
             modelEndpoints: [removedModel: "https://removed.example", retainedModel: "https://retained.example"],
             modelEndpointTypes: [removedModel: "responses", retainedModel: "messages"],
-            modelUsesGitHubOAuth: [removedModel: false, retainedModel: false],
             modelAPIKeys: [removedModel: "revoked-key", retainedModel: "retained-key"]
         )
         let epoch = UUID()
@@ -2229,7 +2192,6 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(state.modelProviders[removedModel] == nil)
         #expect(state.modelEndpoints[removedModel] == nil)
         #expect(state.modelEndpointTypes[removedModel] == nil)
-        #expect(state.modelUsesGitHubOAuth[removedModel] == nil)
         #expect(state.modelAPIKeys[removedModel] == nil)
         #expect(state.modelAPIKeys[retainedModel] == "retained-key")
         #expect(pageContext[WatchContextKeys.modelMetadataEpoch] as? String == epoch.uuidString)
@@ -2249,7 +2211,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [model],
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
-            gitHubOAuthModelIDs: [model],
             apiKeyModelIDs: [model]
         ))
         let removals = tracker.publication(inventory: WatchModelMetadataInventory(
@@ -2257,7 +2218,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [model],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            gitHubOAuthModelIDs: [],
             apiKeyModelIDs: []
         ))
         var state = WatchModelMetadataState(
@@ -2268,7 +2228,6 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [model: "openai"],
             modelEndpoints: [model: "https://removed.example"],
             modelEndpointTypes: [model: "responses"],
-            modelUsesGitHubOAuth: [model: true],
             modelAPIKeys: [model: "revoked-key"]
         )
         state.merge(WatchModelMetadataPage(context: [
@@ -2278,7 +2237,6 @@ struct WatchModelRemovalCompatibilityTests {
             WatchContextKeys.modelProviders: [model: "openai"],
             WatchContextKeys.removedModelEndpointDigests: removals.removedEndpointDigests,
             WatchContextKeys.removedModelEndpointTypeDigests: removals.removedEndpointTypeDigests,
-            WatchContextKeys.removedModelGitHubOAuthDigests: removals.removedGitHubOAuthDigests,
             WatchContextKeys.removedModelAPIKeyDigests: removals.removedAPIKeyDigests
         ]))
 
@@ -2286,7 +2244,6 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(state.modelProviders[model] == "openai")
         #expect(state.modelEndpoints[model] == nil)
         #expect(state.modelEndpointTypes[model] == nil)
-        #expect(state.modelUsesGitHubOAuth[model] == nil)
         #expect(state.modelAPIKeys[model] == nil)
     }
 
@@ -2296,7 +2253,6 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            gitHubOAuthModelIDs: [],
             apiKeyModelIDs: []
         )
     }
@@ -3234,7 +3190,6 @@ private func modelMetadataState(model: String, key: String) -> WatchModelMetadat
         modelProviders: [model: "openai"],
         modelEndpoints: [model: "https://example.com/v1"],
         modelEndpointTypes: [model: "responses"],
-        modelUsesGitHubOAuth: [model: false],
         modelAPIKeys: [model: key]
     )
 }

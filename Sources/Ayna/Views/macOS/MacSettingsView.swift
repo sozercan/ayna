@@ -64,7 +64,6 @@ struct GeneralSettingsView: View {
     @State private var attachFromAppEnabled = AppPreferences.attachFromAppEnabled
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
     @ObservedObject private var aiService = AIService.shared
-    @ObservedObject private var githubOAuth = GitHubOAuthService.shared
     @EnvironmentObject private var conversationManager: ConversationManager
 
     var body: some View {
@@ -1024,9 +1023,8 @@ struct APISettingsView: View {
                 // Scrollable configuration area
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
-                        // API Endpoint Type Selection (not applicable for Apple Intelligence, GitHub Models, or Anthropic)
-                        if aiService.provider != .appleIntelligence, aiService.provider != .githubModels,
-                           aiService.provider != .anthropic
+                        // API Endpoint Type Selection (not applicable for Apple Intelligence or Anthropic)
+                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Text("API Endpoint")
@@ -1200,7 +1198,6 @@ struct APISettingsView: View {
                                                     aiService.modelAPIKeys.removeValue(forKey: selectedName)
                                                     aiService.modelEndpoints.removeValue(forKey: selectedName)
                                                     aiService.modelEndpointTypes.removeValue(forKey: selectedName)
-                                                    aiService.modelUsesGitHubOAuth.removeValue(forKey: selectedName)
 
                                                     // Add new model name if not already present
                                                     if !aiService.customModels.contains(modelName) {
@@ -1402,16 +1399,6 @@ struct APISettingsView: View {
                                 }
                             }
                             .padding(.horizontal)
-                        } else if aiService.provider == .githubModels {
-                            // GitHub Models Configuration
-                            GitHubModelsConfigurationView(
-                                tempModelName: $tempModelName,
-                                tempAPIKey: $tempAPIKey,
-                                showAPIKey: $showAPIKey,
-                                selectedModelName: $selectedModelName,
-                                validationStatus: $validationStatus
-                            )
-                            .padding(.horizontal)
                         } else if aiService.provider == .anthropic {
                             // Anthropic Configuration
                             AnthropicConfigurationView(
@@ -1426,8 +1413,7 @@ struct APISettingsView: View {
                         }
 
                         // Status Section
-                        if aiService.provider != .appleIntelligence, aiService.provider != .githubModels,
-                           aiService.provider != .anthropic
+                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
                         {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Text("Validation Status")
@@ -1509,15 +1495,15 @@ struct APISettingsView: View {
             } else {
                 tempAPIKey = ""
                 tempEndpoint = "https://api.openai.com/"
-                // Default to "new model" state for GitHub Models and Anthropic
-                if aiService.provider == .githubModels || aiService.provider == .anthropic {
+                // Default to a new-model state for Anthropic.
+                if aiService.provider == .anthropic {
                     createNewModel()
                 }
             }
         }
         .onChange(of: aiService.provider) { _, newProvider in
-            // Reset to "new model" state when switching to GitHub Models or Anthropic
-            if newProvider == .githubModels || newProvider == .anthropic {
+            // Reset to a new-model state when switching to Anthropic.
+            if newProvider == .anthropic {
                 createNewModel()
             }
         }
@@ -1671,7 +1657,6 @@ struct APISettingsView: View {
         aiService.modelEndpoints.removeValue(forKey: model)
         aiService.modelAPIKeys.removeValue(forKey: model)
         aiService.modelEndpointTypes.removeValue(forKey: model)
-        aiService.modelUsesGitHubOAuth.removeValue(forKey: model)
 
         // If we removed the selected default model, pick the next available one or clear it
         if aiService.selectedModel == model {
@@ -1720,9 +1705,6 @@ struct APISettingsView: View {
         }
         // Always copy endpoint type, defaulting to chatCompletions if not set
         aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
-        if let usesOAuth = aiService.modelUsesGitHubOAuth[model] {
-            aiService.modelUsesGitHubOAuth[newName] = usesOAuth
-        }
 
         // Select the new model for editing
         selectedModelName = newName
@@ -1779,440 +1761,6 @@ struct FlowLayout: Layout {
 
             size = CGSize(width: maxWidth, height: currentY + lineHeight)
         }
-    }
-}
-
-// MARK: - GitHub Models Configuration View
-
-struct GitHubModelsConfigurationView: View {
-    @ObservedObject private var aiService = AIService.shared
-    @ObservedObject private var githubOAuth = GitHubOAuthService.shared
-    @Binding var tempModelName: String
-    @Binding var tempAPIKey: String
-    @Binding var showAPIKey: Bool
-    @Binding var selectedModelName: String?
-    @Binding var validationStatus: APISettingsView.ValidationStatus
-
-    @State private var isValidating = false
-
-    /// Returns the effective API key - OAuth token if signed in
-    private var effectiveAPIKey: String {
-        if githubOAuth.isAuthenticated, let token = githubOAuth.getAccessToken() {
-            return token
-        }
-        return ""
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("GitHub Models Configuration")
-                .font(Typography.headline)
-                .foregroundStyle(.primary)
-
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                // Info section
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(Theme.accent)
-                    Text("Access AI models through GitHub Models using your GitHub account")
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-
-                // Show OAuth status if signed in
-                if githubOAuth.isAuthenticated {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Theme.statusConnected)
-                            if let user = githubOAuth.currentUser {
-                                Text("Signed in as @\(user.login)")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            } else {
-                                Text("Signed in with GitHub")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-
-                            Spacer()
-
-                            // Token refresh indicator
-                            if githubOAuth.isRefreshing {
-                                ProgressView()
-                                    .scaleEffect(0.6)
-                                    .help("Refreshing token...")
-                            }
-
-                            Button("Sign Out") {
-                                githubOAuth.signOut()
-                            }
-                            .buttonStyle(.link)
-                            .font(Typography.caption)
-                        }
-                    }
-                    .padding(Spacing.sm)
-                    .background(Color.green.opacity(0.1))
-                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                } else {
-                    // Sign In Button
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Button {
-                            githubOAuth.startWebFlow()
-                        } label: {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "person.badge.key.fill")
-                                Text("Sign in with GitHub")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .controlSize(.large)
-                        .disabled(githubOAuth.isAuthenticating)
-
-                        if githubOAuth.isAuthenticating {
-                            HStack(spacing: Spacing.sm) {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Completing sign in...")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                                Spacer()
-                                Button("Cancel") {
-                                    githubOAuth.cancelAuthentication()
-                                }
-                                .buttonStyle(.link)
-                                .font(Typography.caption)
-                            }
-                            .padding(Spacing.sm)
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
-                        }
-
-                        if let error = githubOAuth.authError {
-                            HStack(spacing: Spacing.xxs) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Theme.statusError)
-                                Text(error)
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.statusError)
-                            }
-                        }
-                    }
-                }
-
-                // Model Selection
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    HStack {
-                        Text("Model")
-                            .font(Typography.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        if githubOAuth.isLoadingModels {
-                            ProgressView().controlSize(.small)
-                            Text("Loading...").font(Typography.micro).foregroundStyle(Theme.textSecondary)
-                        } else if !githubOAuth.availableModels.isEmpty {
-                            Button {
-                                Task { await githubOAuth.fetchModels() }
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(Typography.caption)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Refresh models list")
-                        }
-                        Text("Required")
-                            .font(Typography.micro)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxxs)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
-                    }
-
-                    // Model Picker or fallback text field
-                    if !githubOAuth.availableModels.isEmpty {
-                        Picker("", selection: $tempModelName) {
-                            Text("Select a model...").tag("")
-                            ForEach(githubOAuth.availableModels) { model in
-                                Text(model.displayName).tag(model.id)
-                            }
-                        }
-                        .labelsHidden()
-
-                        Text("\(githubOAuth.availableModels.count) models available")
-                            .font(Typography.caption)
-                            .foregroundStyle(.tertiary)
-                    } else if let error = githubOAuth.modelsError {
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            TextField("openai/gpt-4o", text: $tempModelName)
-                                .textFieldStyle(.roundedBorder)
-                            HStack(spacing: Spacing.xxs) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Theme.statusConnecting)
-                                    .font(Typography.caption)
-                                Text(error)
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            Button("Retry") {
-                                Task { await githubOAuth.fetchModels() }
-                            }
-                            .buttonStyle(.link)
-                            .font(Typography.caption)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            TextField("openai/gpt-4o", text: $tempModelName)
-                                .textFieldStyle(.roundedBorder)
-                            if githubOAuth.isAuthenticated {
-                                Button("Load Available Models") {
-                                    Task { await githubOAuth.fetchModels() }
-                                }
-                                .buttonStyle(.link)
-                                .font(Typography.caption)
-                            } else {
-                                Text("Sign in to see available models")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                        }
-                    }
-
-                    Text("Model ID in format: publisher/model_name")
-                        .font(Typography.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                // Validation Status
-                if isValidating {
-                    HStack(spacing: Spacing.sm) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Validating...")
-                            .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                } else {
-                    switch validationStatus {
-                    case .valid:
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Theme.statusConnected)
-                            Text("Configuration valid")
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.statusConnected)
-                        }
-                    case let .invalid(message):
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.statusError)
-                            Text(message)
-                                .font(Typography.caption)
-                                .foregroundStyle(Theme.statusError)
-                                .lineLimit(2)
-                        }
-                    default:
-                        EmptyView()
-                    }
-                }
-            }
-            .padding(Spacing.lg)
-            .background(Theme.backgroundSecondary)
-            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
-
-            // Action Buttons
-            HStack(spacing: Spacing.md) {
-                Button {
-                    Task {
-                        await validateConfiguration()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle")
-                        Text("Validate")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .disabled(tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .controlSize(.large)
-
-                if let selectedName = selectedModelName,
-                   aiService.customModels.contains(selectedName)
-                {
-                    // Update existing model
-                    Button {
-                        updateModel()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise.circle.fill")
-                            Text("Update Model")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                } else {
-                    // Add new model
-                    Button {
-                        addModel()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Add Model")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tempModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                }
-            }
-        }
-    }
-
-    private func validateConfiguration() async {
-        isValidating = true
-        validationStatus = .checking
-
-        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let apiKey = effectiveAPIKey
-
-        guard !modelName.isEmpty else {
-            await MainActor.run {
-                isValidating = false
-                validationStatus = .invalid("Model ID is required")
-            }
-            return
-        }
-
-        guard !apiKey.isEmpty else {
-            await MainActor.run {
-                isValidating = false
-                validationStatus = .invalid("GitHub authentication is required. Sign in with GitHub.")
-            }
-            return
-        }
-
-        // Use the catalog API to validate credentials and check if model exists
-        do {
-            guard let url = URL(string: "https://models.github.ai/catalog/models") else {
-                await MainActor.run {
-                    isValidating = false
-                    validationStatus = .invalid("Invalid API URL")
-                }
-                return
-            }
-
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                await MainActor.run {
-                    isValidating = false
-                    validationStatus = .invalid("Invalid response from server")
-                }
-                return
-            }
-
-            await MainActor.run {
-                isValidating = false
-
-                switch httpResponse.statusCode {
-                case 200:
-                    // Check if the requested model exists in the catalog
-                    if let models = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                        let modelExists = models.contains { model in
-                            guard let id = model["id"] as? String else { return false }
-                            return id.lowercased() == modelName.lowercased()
-                        }
-                        if modelExists {
-                            validationStatus = .valid
-                        } else {
-                            validationStatus = .invalid("Model '\(modelName)' not found in catalog")
-                        }
-                    } else {
-                        // Catalog response parsed but model check skipped - credentials are valid
-                        validationStatus = .valid
-                    }
-                case 401, 403:
-                    validationStatus = .invalid("Invalid GitHub authentication or insufficient permissions. Ensure token has 'models:read' scope.")
-                default:
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let message = json["message"] as? String
-                    {
-                        validationStatus = .invalid(message)
-                    } else {
-                        validationStatus = .invalid("HTTP \(httpResponse.statusCode)")
-                    }
-                }
-            }
-        } catch {
-            await MainActor.run {
-                isValidating = false
-                validationStatus = .invalid(error.localizedDescription)
-            }
-        }
-    }
-
-    private func addModel() {
-        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !modelName.isEmpty, !aiService.customModels.contains(modelName) else { return }
-
-        aiService.customModels.append(modelName)
-        aiService.modelProviders[modelName] = .githubModels
-
-        // Mark that this model uses OAuth if signed in
-        if githubOAuth.isAuthenticated {
-            aiService.modelUsesGitHubOAuth[modelName] = true
-        }
-
-        if aiService.customModels.count == 1 {
-            aiService.selectedModel = modelName
-        }
-        selectedModelName = modelName
-        validationStatus = .notChecked
-    }
-
-    private func updateModel() {
-        let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !modelName.isEmpty else { return }
-
-        // Remove old model data if name changed
-        if let oldName = selectedModelName, oldName != modelName {
-            aiService.customModels.removeAll { $0 == oldName }
-            aiService.modelProviders.removeValue(forKey: oldName)
-            aiService.modelAPIKeys.removeValue(forKey: oldName)
-            aiService.modelEndpoints.removeValue(forKey: oldName)
-            aiService.modelEndpointTypes.removeValue(forKey: oldName)
-            aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
-
-            // Add new model name if not already present
-            if !aiService.customModels.contains(modelName) {
-                aiService.customModels.append(modelName)
-            }
-
-            // Update selected model if it was the renamed one
-            if aiService.selectedModel == oldName {
-                aiService.selectedModel = modelName
-            }
-        }
-
-        aiService.modelProviders[modelName] = .githubModels
-
-        // Using OAuth, remove any stored PAT
-        aiService.modelAPIKeys.removeValue(forKey: modelName)
-        aiService.modelUsesGitHubOAuth[modelName] = true
-
-        selectedModelName = modelName
-        validationStatus = .notChecked
     }
 }
 
@@ -2551,7 +2099,6 @@ struct AnthropicConfigurationView: View {
             aiService.modelAPIKeys.removeValue(forKey: oldName)
             aiService.modelEndpoints.removeValue(forKey: oldName)
             aiService.modelEndpointTypes.removeValue(forKey: oldName)
-            aiService.modelUsesGitHubOAuth.removeValue(forKey: oldName)
         }
 
         // Add or update model
@@ -2572,10 +2119,6 @@ struct AnthropicConfigurationView: View {
         validationStatus = .notChecked
     }
 }
-
-// MARK: - GitHub Account View
-
-// Removed as it is now integrated into GitHubModelsConfigurationView
 
 #Preview {
     MacSettingsView()

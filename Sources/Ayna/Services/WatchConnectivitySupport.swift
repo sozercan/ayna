@@ -862,17 +862,14 @@ enum WatchContextKeys {
     static let modelProviders = "modelProviders"
     static let modelEndpoints = "modelEndpoints"
     static let modelEndpointTypes = "modelEndpointTypes"
-    static let modelUsesGitHubOAuth = "modelUsesGitHubOAuth"
     static let modelAPIKeys = "modelAPIKeys"
     static let removedModelDigests = "removedModelDigests"
     static let removedModelProviderDigests = "removedModelProviderDigests"
     static let removedModelEndpointDigests = "removedModelEndpointDigests"
     static let removedModelEndpointTypeDigests = "removedModelEndpointTypeDigests"
-    static let removedModelGitHubOAuthDigests = "removedModelGitHubOAuthDigests"
     static let removedModelAPIKeyDigests = "removedModelAPIKeyDigests"
     static let modelMetadataEpoch = "modelMetadataEpoch"
     static let modelMetadataComplete = "modelMetadataComplete"
-    static let githubAccessToken = "githubAccessToken"
     static let tavilyAPIKey = "tavilyAPIKey"
     static let tavilyEnabled = "tavilyEnabled"
     static let webFetchEnabled = "webFetchEnabled"
@@ -1376,16 +1373,6 @@ enum WatchConversationSyncObserver {
             }
             .store(in: &cancellables)
 
-        GitHubOAuthService.shared.$isAuthenticated
-            .map { _ in () }
-            .merge(with: GitHubOAuthService.shared.$tokenExpiresAt.map { _ in () })
-            .debounce(for: .seconds(1), scheduler: RunLoop.main)
-            .sink { [weak conversationManager] _ in
-                guard let conversationManager else { return }
-                onSync(conversationManager.durableConversationsForSync())
-            }
-            .store(in: &cancellables)
-
         NotificationCenter.default.publisher(
             for: .globalSystemPromptDidChange
         )
@@ -1575,21 +1562,18 @@ struct WatchModelMetadataValueDigests: Codable, Equatable, Sendable {
     var providers: [String: String] = [:]
     var endpoints: [String: String] = [:]
     var endpointTypes: [String: String] = [:]
-    var gitHubOAuth: [String: String] = [:]
     var apiKeys: [String: String] = [:]
 
     static func hashing(
         providers: [String: String],
         endpoints: [String: String],
         endpointTypes: [String: String],
-        gitHubOAuth: [String: Bool],
         apiKeys: [String: String]
     ) -> Self {
         Self(
             providers: digestValues(providers, value: { $0 }),
             endpoints: digestValues(endpoints, value: { $0 }),
             endpointTypes: digestValues(endpointTypes, value: { $0 }),
-            gitHubOAuth: digestValues(gitHubOAuth, value: { String($0) }),
             apiKeys: digestValues(apiKeys, value: { $0 })
         )
     }
@@ -1609,7 +1593,6 @@ struct WatchModelMetadataInventory: Equatable, Sendable {
     var providerModelIDs: [String]
     var endpointModelIDs: [String]
     var endpointTypeModelIDs: [String]
-    var gitHubOAuthModelIDs: [String]
     var apiKeyModelIDs: [String]
     var valueDigests = WatchModelMetadataValueDigests()
 }
@@ -1619,7 +1602,6 @@ struct WatchModelRemovalPublication: Equatable, Sendable {
     let removedProviderDigests: [String]
     let removedEndpointDigests: [String]
     let removedEndpointTypeDigests: [String]
-    let removedGitHubOAuthDigests: [String]
     let removedAPIKeyDigests: [String]
 
     var isEmpty: Bool {
@@ -1627,7 +1609,6 @@ struct WatchModelRemovalPublication: Equatable, Sendable {
             && removedProviderDigests.isEmpty
             && removedEndpointDigests.isEmpty
             && removedEndpointTypeDigests.isEmpty
-            && removedGitHubOAuthDigests.isEmpty
             && removedAPIKeyDigests.isEmpty
     }
 }
@@ -1639,7 +1620,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         let providers: Set<String>
         let endpoints: Set<String>
         let endpointTypes: Set<String>
-        let gitHubOAuth: Set<String>
         let apiKeys: Set<String>
     }
 
@@ -1652,8 +1632,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
     private(set) var retiredEndpointDigests: Set<String>
     private(set) var publishedEndpointTypeDigests: Set<String>
     private(set) var retiredEndpointTypeDigests: Set<String>
-    private(set) var publishedGitHubOAuthDigests: Set<String>
-    private(set) var retiredGitHubOAuthDigests: Set<String>
     private(set) var publishedAPIKeyDigests: Set<String>
     private(set) var retiredAPIKeyDigests: Set<String>
     private(set) var publishedValueDigests: WatchModelMetadataValueDigests?
@@ -1668,8 +1646,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointDigests = []
         publishedEndpointTypeDigests = []
         retiredEndpointTypeDigests = []
-        publishedGitHubOAuthDigests = []
-        retiredGitHubOAuthDigests = []
         publishedAPIKeyDigests = []
         retiredAPIKeyDigests = []
         publishedValueDigests = WatchModelMetadataValueDigests()
@@ -1722,16 +1698,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         publishedEndpointTypeDigests = endpointTypes.published
         retiredEndpointTypeDigests = endpointTypes.retired
 
-        let gitHubOAuth = Self.advance(
-            currentModelIDs: inventory.gitHubOAuthModelIDs,
-            published: publishedGitHubOAuthDigests,
-            retired: retiredGitHubOAuthDigests,
-            invalidated: valueChanges.gitHubOAuth,
-            retainsCurrentTombstones: true
-        )
-        publishedGitHubOAuthDigests = gitHubOAuth.published
-        retiredGitHubOAuthDigests = gitHubOAuth.retired
-
         let apiKeys = Self.advance(
             currentModelIDs: inventory.apiKeyModelIDs,
             published: publishedAPIKeyDigests,
@@ -1749,7 +1715,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 removedProviderDigests: [],
                 removedEndpointDigests: [],
                 removedEndpointTypeDigests: [],
-                removedGitHubOAuthDigests: [],
                 removedAPIKeyDigests: []
             )
         }
@@ -1759,7 +1724,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             removedProviderDigests: providers.retired.sorted(),
             removedEndpointDigests: endpoints.retired.sorted(),
             removedEndpointTypeDigests: endpointTypes.retired.sorted(),
-            removedGitHubOAuthDigests: gitHubOAuth.retired.sorted(),
             removedAPIKeyDigests: apiKeys.retired.sorted()
         )
     }
@@ -1769,7 +1733,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             + retiredProviderDigests.count
             + retiredEndpointDigests.count
             + retiredEndpointTypeDigests.count
-            + retiredGitHubOAuthDigests.count
             + retiredAPIKeyDigests.count
     }
 
@@ -1783,8 +1746,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointDigests = []
         publishedEndpointTypeDigests = Self.digests(inventory.endpointTypeModelIDs)
         retiredEndpointTypeDigests = []
-        publishedGitHubOAuthDigests = Self.digests(inventory.gitHubOAuthModelIDs)
-        retiredGitHubOAuthDigests = []
         publishedAPIKeyDigests = Self.digests(inventory.apiKeyModelIDs)
         retiredAPIKeyDigests = []
         publishedValueDigests = inventory.valueDigests
@@ -1820,7 +1781,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 providers: [],
                 endpoints: [],
                 endpointTypes: [],
-                gitHubOAuth: [],
                 apiKeys: []
             )
         }
@@ -1828,7 +1788,6 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             providers: changedModelDigests(from: previous.providers, to: current.providers),
             endpoints: changedModelDigests(from: previous.endpoints, to: current.endpoints),
             endpointTypes: changedModelDigests(from: previous.endpointTypes, to: current.endpointTypes),
-            gitHubOAuth: changedModelDigests(from: previous.gitHubOAuth, to: current.gitHubOAuth),
             apiKeys: changedModelDigests(from: previous.apiKeys, to: current.apiKeys)
         )
     }
@@ -1856,7 +1815,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
     var modelProviders: [String: String]
     var modelEndpoints: [String: String]
     var modelEndpointTypes: [String: String]
-    var modelUsesGitHubOAuth: [String: Bool]
     var modelAPIKeys: [String: String]
 
     mutating func merge(_ page: WatchModelMetadataPage) {
@@ -1876,7 +1834,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
         mergeValues(page.modelProviders, into: &modelProviders)
         mergeValues(page.modelEndpoints, into: &modelEndpoints)
         mergeValues(page.modelEndpointTypes, into: &modelEndpointTypes)
-        mergeValues(page.modelUsesGitHubOAuth, into: &modelUsesGitHubOAuth)
         mergeValues(page.modelAPIKeys, into: &modelAPIKeys)
     }
 
@@ -1893,7 +1850,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = page.modelProviders ?? [:]
         modelEndpoints = page.modelEndpoints ?? [:]
         modelEndpointTypes = page.modelEndpointTypes ?? [:]
-        modelUsesGitHubOAuth = page.modelUsesGitHubOAuth ?? [:]
         modelAPIKeys = page.modelAPIKeys ?? [:]
     }
 
@@ -1904,7 +1860,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = [:]
         modelEndpoints = [:]
         modelEndpointTypes = [:]
-        modelUsesGitHubOAuth = [:]
         modelAPIKeys = [:]
     }
 
@@ -1913,7 +1868,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
         removeEntries(withDigests: page.removedModelProviderDigests, from: &modelProviders)
         removeEntries(withDigests: page.removedModelEndpointDigests, from: &modelEndpoints)
         removeEntries(withDigests: page.removedModelEndpointTypeDigests, from: &modelEndpointTypes)
-        removeEntries(withDigests: page.removedModelGitHubOAuthDigests, from: &modelUsesGitHubOAuth)
         removeEntries(withDigests: page.removedModelAPIKeyDigests, from: &modelAPIKeys)
     }
 
@@ -1938,7 +1892,6 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = modelProviders.filter { isRetained($0.key) }
         modelEndpoints = modelEndpoints.filter { isRetained($0.key) }
         modelEndpointTypes = modelEndpointTypes.filter { isRetained($0.key) }
-        modelUsesGitHubOAuth = modelUsesGitHubOAuth.filter { isRetained($0.key) }
         modelAPIKeys = modelAPIKeys.filter { isRetained($0.key) }
     }
 }
@@ -1951,13 +1904,11 @@ struct WatchModelMetadataPage: Equatable, Sendable {
     var modelProviders: [String: String]?
     var modelEndpoints: [String: String]?
     var modelEndpointTypes: [String: String]?
-    var modelUsesGitHubOAuth: [String: Bool]?
     var modelAPIKeys: [String: String]?
     var removedModelDigests: [String]?
     var removedModelProviderDigests: [String]?
     var removedModelEndpointDigests: [String]?
     var removedModelEndpointTypeDigests: [String]?
-    var removedModelGitHubOAuthDigests: [String]?
     var removedModelAPIKeyDigests: [String]?
 
     init(
@@ -1968,13 +1919,11 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         modelProviders: [String: String]? = nil,
         modelEndpoints: [String: String]? = nil,
         modelEndpointTypes: [String: String]? = nil,
-        modelUsesGitHubOAuth: [String: Bool]? = nil,
         modelAPIKeys: [String: String]? = nil,
         removedModelDigests: [String]? = nil,
         removedModelProviderDigests: [String]? = nil,
         removedModelEndpointDigests: [String]? = nil,
         removedModelEndpointTypeDigests: [String]? = nil,
-        removedModelGitHubOAuthDigests: [String]? = nil,
         removedModelAPIKeyDigests: [String]? = nil
     ) {
         self.selectedModel = selectedModel
@@ -1984,13 +1933,11 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         self.modelProviders = modelProviders
         self.modelEndpoints = modelEndpoints
         self.modelEndpointTypes = modelEndpointTypes
-        self.modelUsesGitHubOAuth = modelUsesGitHubOAuth
         self.modelAPIKeys = modelAPIKeys
         self.removedModelDigests = removedModelDigests
         self.removedModelProviderDigests = removedModelProviderDigests
         self.removedModelEndpointDigests = removedModelEndpointDigests
         self.removedModelEndpointTypeDigests = removedModelEndpointTypeDigests
-        self.removedModelGitHubOAuthDigests = removedModelGitHubOAuthDigests
         self.removedModelAPIKeyDigests = removedModelAPIKeyDigests
     }
 
@@ -2003,13 +1950,11 @@ struct WatchModelMetadataPage: Equatable, Sendable {
             modelProviders: context[WatchContextKeys.modelProviders] as? [String: String],
             modelEndpoints: context[WatchContextKeys.modelEndpoints] as? [String: String],
             modelEndpointTypes: context[WatchContextKeys.modelEndpointTypes] as? [String: String],
-            modelUsesGitHubOAuth: context[WatchContextKeys.modelUsesGitHubOAuth] as? [String: Bool],
             modelAPIKeys: context[WatchContextKeys.modelAPIKeys] as? [String: String],
             removedModelDigests: context[WatchContextKeys.removedModelDigests] as? [String],
             removedModelProviderDigests: context[WatchContextKeys.removedModelProviderDigests] as? [String],
             removedModelEndpointDigests: context[WatchContextKeys.removedModelEndpointDigests] as? [String],
             removedModelEndpointTypeDigests: context[WatchContextKeys.removedModelEndpointTypeDigests] as? [String],
-            removedModelGitHubOAuthDigests: context[WatchContextKeys.removedModelGitHubOAuthDigests] as? [String],
             removedModelAPIKeyDigests: context[WatchContextKeys.removedModelAPIKeyDigests] as? [String]
         )
     }
@@ -2030,7 +1975,6 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         mergeOptionalValues(page.modelProviders, into: &modelProviders)
         mergeOptionalValues(page.modelEndpoints, into: &modelEndpoints)
         mergeOptionalValues(page.modelEndpointTypes, into: &modelEndpointTypes)
-        mergeOptionalValues(page.modelUsesGitHubOAuth, into: &modelUsesGitHubOAuth)
         mergeOptionalValues(page.modelAPIKeys, into: &modelAPIKeys)
         if let removedModelDigests = page.removedModelDigests {
             self.removedModelDigests = mergingUnique(self.removedModelDigests ?? [], removedModelDigests)
@@ -2043,9 +1987,6 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         }
         if let removed = page.removedModelEndpointTypeDigests {
             removedModelEndpointTypeDigests = mergingUnique(removedModelEndpointTypeDigests ?? [], removed)
-        }
-        if let removed = page.removedModelGitHubOAuthDigests {
-            removedModelGitHubOAuthDigests = mergingUnique(removedModelGitHubOAuthDigests ?? [], removed)
         }
         if let removed = page.removedModelAPIKeyDigests {
             removedModelAPIKeyDigests = mergingUnique(removedModelAPIKeyDigests ?? [], removed)

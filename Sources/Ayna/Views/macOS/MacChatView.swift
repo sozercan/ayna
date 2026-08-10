@@ -271,15 +271,6 @@ struct MacChatView: View {
                     }
                 )
 
-                // Rate Limit Warning Banner (GitHub Models only)
-                if aiService.provider == .githubModels {
-                    RateLimitWarningBanner(
-                        rateLimitInfo: GitHubOAuthService.shared.rateLimitInfo,
-                        retryAfterDate: GitHubOAuthService.shared.retryAfterDate
-                    )
-                    .padding(.horizontal, Spacing.contentPadding)
-                }
-
                 // Error Message
                 if let error = errorMessage {
                     ErrorBannerView(

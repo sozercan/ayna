@@ -283,17 +283,6 @@ public enum Theme {
         Color(red: 0.0, green: 0.47, blue: 0.84) // Azure blue
     }
 
-    /// GitHub brand color
-    public static var providerGitHub: Color {
-        #if os(macOS)
-            Color(nsColor: .labelColor) // Black/white depending on mode
-        #elseif os(iOS)
-            Color(uiColor: .label) // Black/white depending on mode
-        #else
-            .white
-        #endif
-    }
-
     /// Apple Intelligence brand color
     public static var providerApple: Color {
         Color.accentColor

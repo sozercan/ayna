@@ -19,7 +19,6 @@ struct AIServiceTests {
 
         // Use in-memory keychain to avoid touching the real Keychain in tests
         AIService.keychain = InMemoryKeychainStorage()
-        GitHubOAuthService.keychain = InMemoryKeychainStorage()
         MockURLProtocol.reset()
     }
 
@@ -31,6 +30,52 @@ struct AIServiceTests {
         service.customModels = ["gpt-4o"]
         service.selectedModel = "gpt-4o"
         return service
+    }
+
+    private func makeMigrationService() -> AIService {
+        AIService(urlSession: URLSession(configuration: .ephemeral))
+    }
+
+    private func seedModelAPIKeys(
+        _ keys: [String: String],
+        in storage: InMemoryKeychainStorage
+    ) throws {
+        try storage.setData(JSONEncoder().encode(keys), for: "model_api_keys")
+    }
+
+    private func persistedModelAPIKeys(
+        in storage: InMemoryKeychainStorage
+    ) throws -> [String: String] {
+        guard let data = try storage.data(for: "model_api_keys") else { return [:] }
+        return try JSONDecoder().decode([String: String].self, from: data)
+    }
+
+    @Test("An unrecognized default provider cannot route inherited models")
+    func unrecognizedDefaultProviderCannotRouteInheritedModels() throws {
+        let inheritedModel = "future-inherited"
+        let explicitModel = "valid-explicit"
+        let storage = InMemoryKeychainStorage()
+        AIService.keychain = storage
+        defaults.set([inheritedModel, explicitModel], forKey: "customModels")
+        defaults.set("Future Provider", forKey: "aiProvider")
+        defaults.set([explicitModel: "OpenAI"], forKey: "modelProviders")
+        defaults.set(inheritedModel, forKey: "selectedModel")
+        try seedModelAPIKeys([
+            inheritedModel: "future-key",
+            explicitModel: "openai-key"
+        ], in: storage)
+
+        let service = makeMigrationService()
+
+        #expect(service.customModels == [inheritedModel, explicitModel])
+        #expect(service.usableModels == [explicitModel])
+        #expect(!service.isModelConfigured(inheritedModel))
+        #expect(service.selectedModel == explicitModel)
+        #expect(defaults.string(forKey: "aiProvider") == "Future Provider")
+        #expect(try persistedModelAPIKeys(in: storage) == [
+            inheritedModel: "future-key",
+            explicitModel: "openai-key"
+        ])
     }
 
     @Test("Request flights reject stale cleanup")
@@ -625,67 +670,6 @@ struct AIServiceTests {
             // Give time for async callback
             try? await Task.sleep(for: .milliseconds(500))
         }
-    }
-
-    @Test("GitHub Models rate limit tracking is per token")
-    func gitHubModelsRateLimitTrackingIsPerToken() throws {
-        let oauth = GitHubOAuthService()
-
-        let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
-        let now = Date()
-
-        let responseA = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: [
-                "X-RateLimit-Limit": "100",
-                "X-RateLimit-Remaining": "10",
-                "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(60).timeIntervalSince1970))",
-                "X-RateLimit-Resource": "ai-inference"
-            ]
-        ))
-
-        let responseB = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: [
-                "X-RateLimit-Limit": "100",
-                "X-RateLimit-Remaining": "3",
-                "X-RateLimit-Reset": "\(Int(now.addingTimeInterval(120).timeIntervalSince1970))",
-                "X-RateLimit-Resource": "ai-inference"
-            ]
-        ))
-
-        oauth.updateRateLimit(from: responseA, forAccessToken: "token-A")
-        oauth.updateRateLimit(from: responseB, forAccessToken: "token-B")
-
-        #expect(oauth.rateLimitInfo(forAccessToken: "token-A")?.remaining == 10)
-        #expect(oauth.rateLimitInfo(forAccessToken: "token-B")?.remaining == 3)
-    }
-
-    @Test("GitHub Models retry after is per token")
-    func gitHubModelsRetryAfterIsPerToken() throws {
-        let oauth = GitHubOAuthService()
-
-        let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
-        let response = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 429,
-            httpVersion: nil,
-            headerFields: [
-                "Retry-After": "60"
-            ]
-        ))
-
-        oauth.updateRetryAfter(from: response, forAccessToken: "token-A")
-
-        #expect(oauth.retryAfterDate(forAccessToken: "token-A") != nil)
-        #expect(oauth.retryAfterDate(forAccessToken: "token-B") == nil)
-
-        oauth.clearRetryAfter(forAccessToken: "token-A")
-        #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
     }
 
     @Test("Stale Anthropic callbacks cannot clear or deliver into a replacement", .timeLimit(.minutes(1)))

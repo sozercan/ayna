@@ -54,7 +54,7 @@ struct AynaIOSApp: App {
                     Task {
                         await conversationManager.loadingTask?.value
 
-                        // Handle deep links (including OAuth callbacks)
+                        // Handle incoming deep links.
                         await DeepLinkManager.shared.handle(url: url)
 
                         // Handle the chat request that became ready during this URL.

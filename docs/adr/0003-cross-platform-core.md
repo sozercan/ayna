@@ -81,7 +81,7 @@ Document platform support in AGENTS.md:
 
 | Feature | macOS | iOS | watchOS |
 |---------|-------|-----|---------|
-| OpenAI / Azure / GitHub Models | ✅ | ✅ | ✅ |
+| OpenAI / Azure / Anthropic / Custom | ✅ | ✅ | ✅ |
 | Apple Intelligence | ✅ | ✅ | ❌ |
 | MCP Tools | ✅ | ❌ | ❌ |
 

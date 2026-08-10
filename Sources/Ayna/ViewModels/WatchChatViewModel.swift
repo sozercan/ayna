@@ -58,7 +58,46 @@ final class WatchToolCallRoundRegistry {
             }
         }
     }
+}
 
+enum WatchLiveModelPolicy {
+    static func usableModels(
+        availableModels: [String],
+        modelProviders: [String: AIProvider]
+    ) -> [String] {
+        availableModels.filter { model in
+            isUsable(
+                model,
+                availableModels: availableModels,
+                modelProviders: modelProviders
+            )
+        }
+    }
+
+    static func isUsable(
+        _ model: String,
+        availableModels: [String],
+        modelProviders: [String: AIProvider]
+    ) -> Bool {
+        guard availableModels.contains(model), let provider = modelProviders[model] else {
+            return false
+        }
+        return provider != .appleIntelligence
+    }
+
+    static func firstUsableModel(
+        availableModels: [String],
+        modelProviders: [String: AIProvider],
+        isConfigured: (String) -> Bool
+    ) -> String? {
+        availableModels.first { model in
+            isUsable(
+                model,
+                availableModels: availableModels,
+                modelProviders: modelProviders
+            ) && isConfigured(model)
+        }
+    }
 }
 
 #if os(watchOS)
@@ -247,11 +286,17 @@ final class WatchToolCallRoundRegistry {
             }
 
             var model = requestConversation.model
-            if aiService.modelProviders[model] == .appleIntelligence {
-                let fallback = connectivityService.availableModels.first { candidate in
-                    aiService.modelProviders[candidate] != .appleIntelligence &&
-                        aiService.isModelConfigured(candidate)
-                }
+            let currentModelIsUsable = WatchLiveModelPolicy.isUsable(
+                model,
+                availableModels: connectivityService.availableModels,
+                modelProviders: aiService.modelProviders
+            ) && aiService.isModelConfigured(model)
+            if !currentModelIsUsable {
+                let fallback = WatchLiveModelPolicy.firstUsableModel(
+                    availableModels: connectivityService.availableModels,
+                    modelProviders: aiService.modelProviders,
+                    isConfigured: aiService.isModelConfigured
+                )
                 guard let fallback else {
                     stopForPreparationError(
                         "No compatible models available. Please add a model on iPhone.",
@@ -1215,21 +1260,27 @@ final class WatchToolCallRoundRegistry {
 
         /// Create a new conversation
         func createNewConversation() -> UUID? {
-            // Filter to only models usable on watchOS (exclude Apple Intelligence)
-            let usableModels = connectivityService.availableModels.filter { model in
-                let provider = aiService.modelProviders[model]
-                return provider != .appleIntelligence
-            }
-
-            // Use selected model if it's usable, otherwise pick first usable model
             let selectedModel = connectivityService.selectedModel
-            let selectedProvider = aiService.modelProviders[selectedModel]
-            let isSelectedUsable = selectedProvider != .appleIntelligence
+            let selectedModelIsUsable = WatchLiveModelPolicy.isUsable(
+                selectedModel,
+                availableModels: connectivityService.availableModels,
+                modelProviders: aiService.modelProviders
+            ) && aiService.isModelConfigured(selectedModel)
 
-            let model: String = if !selectedModel.isEmpty, isSelectedUsable {
+            let model: String? = if selectedModelIsUsable {
                 selectedModel
             } else {
-                usableModels.first ?? "gpt-4"
+                WatchLiveModelPolicy.firstUsableModel(
+                    availableModels: connectivityService.availableModels,
+                    modelProviders: aiService.modelProviders,
+                    isConfigured: aiService.isModelConfigured
+                )
+            }
+
+            guard let model else {
+                errorMessage = "No compatible models available. Please add a model on iPhone."
+                playHaptic(.failure)
+                return nil
             }
 
             guard let conversation = conversationStore.createConversation(

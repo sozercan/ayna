@@ -101,7 +101,6 @@ struct AynaErrorTests {
         ErrorDescriptionCase(error: .noModelSelected, expectedContains: "No model selected", hasRecoverySuggestion: true),
         ErrorDescriptionCase(error: .cancelled, expectedContains: "Operation was cancelled", hasRecoverySuggestion: false),
         ErrorDescriptionCase(error: .missingAPIKey(provider: "OpenAI"), expectedContains: "OpenAI API key not configured", hasRecoverySuggestion: true),
-        ErrorDescriptionCase(error: .invalidAPIKey(provider: "GitHub"), expectedContains: "Invalid GitHub API key", hasRecoverySuggestion: true),
         ErrorDescriptionCase(error: .modelNotFound(modelName: "gpt-5"), expectedContains: "Model 'gpt-5' not found", hasRecoverySuggestion: true),
         ErrorDescriptionCase(error: .toolNotFound(toolName: "web_search"), expectedContains: "Tool 'web_search' not found", hasRecoverySuggestion: true),
         ErrorDescriptionCase(error: .rateLimited(retryAfter: 60), expectedContains: "Rate limit", hasRecoverySuggestion: true),

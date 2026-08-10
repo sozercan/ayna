@@ -2,13 +2,13 @@
 
 **Date**: 2024-12-01  
 **Status**: Accepted  
-**Context**: Supporting multiple AI providers (OpenAI, Azure, GitHub Models, Apple Intelligence) with a unified interface  
+**Context**: Supporting multiple AI providers (OpenAI, Azure, Anthropic, Apple Intelligence) with a unified interface
 
 ## Context
 
 Ayna needs to support multiple AI providers to give users flexibility in choosing their preferred service. Each provider has different:
 
-- Authentication mechanisms (API keys, OAuth, system integration)
+- Authentication mechanisms (API keys and system integration)
 - API endpoints and request formats
 - Streaming response formats
 - Model availability and capabilities

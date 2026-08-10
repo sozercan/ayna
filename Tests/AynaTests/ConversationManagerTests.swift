@@ -219,6 +219,51 @@ struct ConversationManagerTests {
         #expect(manager.conversations.first?.title == stored.title)
     }
 
+    @Test
+    @MainActor
+    func `Loaded conversations remove unavailable active models without rewriting history`() async throws {
+        let supportedModel = "supported-model"
+        let removedModel = "removed-model"
+        let previousModels = AIService.shared.customModels
+        let previousSelectedModel = AIService.shared.selectedModel
+        defer {
+            AIService.shared.customModels = previousModels
+            AIService.shared.selectedModel = previousSelectedModel
+        }
+        AIService.shared.customModels = [supportedModel]
+        AIService.shared.selectedModel = supportedModel
+
+        let historicalResponse = Message(
+            role: .assistant,
+            content: "Historical response",
+            model: removedModel
+        )
+        let stored = Conversation(
+            title: "Legacy multi-model conversation",
+            messages: [historicalResponse],
+            model: removedModel,
+            multiModelEnabled: true,
+            activeModels: [supportedModel, removedModel]
+        )
+        let store = ScriptedConversationStore(conversations: [stored])
+        let manager = ConversationManager(store: store, saveDebounceDuration: .zero)
+
+        _ = await manager.loadingTask?.value
+        await manager.flushPendingSaves()
+
+        let repaired = try #require(manager.conversation(byId: stored.id))
+        #expect(repaired.model == supportedModel)
+        #expect(repaired.activeModels == [supportedModel])
+        #expect(!repaired.multiModelEnabled)
+        #expect(repaired.messages.first?.model == removedModel)
+
+        let persisted = try #require(await store.persistedConversations().first)
+        #expect(persisted.model == supportedModel)
+        #expect(persisted.activeModels == [supportedModel])
+        #expect(!persisted.multiModelEnabled)
+        #expect(persisted.messages.first?.model == removedModel)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     @MainActor
     func `Reload failure closes authority preserves UI and retries latest load`() async {
