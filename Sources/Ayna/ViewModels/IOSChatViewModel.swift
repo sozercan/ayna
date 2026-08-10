@@ -351,8 +351,9 @@
                 cancelCurrentAIRequest(requestOwnerID)
             }
 
-            let transition = { @MainActor [weak self] in
-                self?.finalizeResetForNewChat()
+            let transition: @MainActor @Sendable () -> Void = { [weak self] in
+                guard let self else { return }
+                self.finalizeResetForNewChat()
             }
             if let callbackQueue = activeStreamingCallbackQueue ?? activeMultiModelCallbackQueue {
                 callbackQueue.enqueue(transition)
