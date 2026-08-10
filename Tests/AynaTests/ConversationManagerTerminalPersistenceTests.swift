@@ -20,19 +20,12 @@ struct TerminalPersistenceTests {
         return manager
     }
 
-    @MainActor
-    private func reloadConversation(
+    private func loadPersistedConversation(
         _ conversationID: UUID,
         from store: EncryptedConversationStore
     ) async throws -> Conversation {
-        let manager = ConversationManager(
-            store: store,
-            saveDebounceDuration: .milliseconds(0),
-            searchIndexWarmupEnabled: false,
-            spotlightIndexingEnabled: false
-        )
-        _ = await manager.loadingTask?.value
-        return try #require(await manager.ensureConversationLoaded(conversationID))
+        let conversation = try await store.loadConversation(id: conversationID)
+        return try #require(conversation)
     }
 
     @Test
@@ -56,7 +49,7 @@ struct TerminalPersistenceTests {
         })
 
         await manager.flushPendingSaves()
-        let beforeTerminalSave = try await reloadConversation(original.id, from: store)
+        let beforeTerminalSave = try await loadPersistedConversation(original.id, from: store)
         let originalAssistant = try #require(beforeTerminalSave.messages.first(where: { $0.id == assistant.id }))
         #expect(originalAssistant.content.isEmpty)
         #expect(originalAssistant.reasoning == nil)
@@ -69,7 +62,7 @@ struct TerminalPersistenceTests {
         })
         await manager.flushPendingSaves()
 
-        let reloaded = try await reloadConversation(original.id, from: store)
+        let reloaded = try await loadPersistedConversation(original.id, from: store)
         let reloadedAssistant = try #require(reloaded.messages.first(where: { $0.id == assistant.id }))
         #expect(reloadedAssistant.content == "Hello world")
         #expect(reloadedAssistant.reasoning == "Thinking")
@@ -94,7 +87,7 @@ struct TerminalPersistenceTests {
         ))
         await manager.flushPendingSaves()
 
-        let reloaded = try await reloadConversation(original.id, from: store)
+        let reloaded = try await loadPersistedConversation(original.id, from: store)
         #expect(!reloaded.messages.contains(where: { $0.id == removedMessageID }))
     }
 
@@ -147,7 +140,7 @@ struct TerminalPersistenceTests {
         ))
         await manager.flushPendingSaves()
 
-        let reloaded = try await reloadConversation(original.id, from: store)
+        let reloaded = try await loadPersistedConversation(original.id, from: store)
         let reloadedAssistant = try #require(reloaded.messages.first(where: { $0.id == assistant.id }))
         let reloadedGroup = try #require(reloaded.getResponseGroup(groupID))
         #expect(reloadedAssistant.content == "Completed response")
