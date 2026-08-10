@@ -3,11 +3,23 @@ import SwiftUI
 
 /// Converts markdown text into renderable content blocks tailored for the chat UI.
 enum MarkdownRenderer {
-    /// Cache for parsed content blocks to improve performance
-    /// Configured with limits to prevent unbounded memory growth
+    enum CachePolicy: Sendable {
+        /// Use the shared parse cache for stable, displayable message content.
+        case useCache
+        /// Parse without reading or writing the shared cache; useful for transient streaming prefixes.
+        case doNotCache
+    }
+
+    nonisolated static let cacheCountLimit = 100
+    nonisolated static let cacheTotalCostLimit = 4 * 1024 * 1024
+    nonisolated static let maximumCacheableEntryCost = 512 * 1024
+
+    /// Cache for parsed content blocks to improve performance.
+    /// Configured with count and cost limits to prevent unbounded memory growth.
     private nonisolated(unsafe) static let cache: NSCache<NSString, ContentBlockWrapper> = {
         let cache = NSCache<NSString, ContentBlockWrapper>()
-        cache.countLimit = 100 // Maximum 100 cached markdown parses
+        cache.countLimit = cacheCountLimit
+        cache.totalCostLimit = cacheTotalCostLimit
         return cache
     }()
 
@@ -34,12 +46,14 @@ enum MarkdownRenderer {
         try! NSRegularExpression(pattern: #"^\s*:?-+:?\s*$"#)
     #endif
 
-    nonisolated static func parse(_ content: String) -> [ContentBlock] {
+    nonisolated static func parse(
+        _ content: String,
+        cachePolicy: CachePolicy = .useCache
+    ) -> [ContentBlock] {
         var blocks: [ContentBlock] = []
 
-        // Check cache first
         let cacheKey = content as NSString
-        if let cachedWrapper = cache.object(forKey: cacheKey) {
+        if cachePolicy == .useCache, let cachedWrapper = cache.object(forKey: cacheKey) {
             return cachedWrapper.blocks
         }
 
@@ -161,14 +175,35 @@ enum MarkdownRenderer {
             blocks.append(ContentBlock(type: .tool(toolName, result)))
         }
 
-        // Update cache
-        cache.setObject(ContentBlockWrapper(blocks: blocks), forKey: cacheKey)
+        cacheBlocks(blocks, forKey: cacheKey, originalContent: content, cachePolicy: cachePolicy)
 
         return blocks
     }
 
     nonisolated static func cachedBlocks(for content: String) -> [ContentBlock]? {
         cache.object(forKey: content as NSString)?.blocks
+    }
+
+    nonisolated static func removeAllCachedBlocks() {
+        cache.removeAllObjects()
+    }
+
+    private nonisolated static func cacheBlocks(
+        _ blocks: [ContentBlock],
+        forKey cacheKey: NSString,
+        originalContent content: String,
+        cachePolicy: CachePolicy
+    ) {
+        guard cachePolicy == .useCache else { return }
+
+        let cost = cacheCost(for: content, blocks: blocks)
+        guard cost <= maximumCacheableEntryCost else { return }
+
+        cache.setObject(ContentBlockWrapper(blocks: blocks), forKey: cacheKey, cost: cost)
+    }
+
+    private nonisolated static func cacheCost(for content: String, blocks: [ContentBlock]) -> Int {
+        max(1, content.utf8.count + blocks.count * 256)
     }
 
     private nonisolated static func parseCodeBlock(

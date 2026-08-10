@@ -1,7 +1,8 @@
 @testable import Ayna
+import Foundation
 import Testing
 
-@Suite("MarkdownRenderer Tests", .tags(.fast))
+@Suite("MarkdownRenderer Tests", .tags(.fast), .serialized)
 struct MarkdownRendererTests {
     @Test("Parses headings, paragraphs, and divider")
     func parsesHeadingsParagraphsAndDivider() {
@@ -194,6 +195,7 @@ struct MarkdownRendererTests {
 
     @Test("Returns cached blocks after parsing")
     func returnsCachedBlocksAfterParsing() {
+        MarkdownRenderer.removeAllCachedBlocks()
         let input = """
         # Cached
 
@@ -205,5 +207,89 @@ struct MarkdownRendererTests {
         let cachedBlocks = MarkdownRenderer.cachedBlocks(for: input)
 
         #expect(cachedBlocks?.count == parsedBlocks.count)
+    }
+
+    @Test("Transient parses do not populate cache")
+    func transientParsesDoNotPopulateCache() {
+        MarkdownRenderer.removeAllCachedBlocks()
+        let prefix = """
+        # Streaming
+
+        Partial response with an open list:
+        - first
+        - second
+        """
+
+        let transientBlocks = MarkdownRenderer.parse(prefix, cachePolicy: .doNotCache)
+
+        #expect(!transientBlocks.isEmpty)
+        #expect(MarkdownRenderer.cachedBlocks(for: prefix) == nil)
+
+        let cachedBlocks = MarkdownRenderer.parse(prefix)
+        #expect(MarkdownRenderer.cachedBlocks(for: prefix)?.count == cachedBlocks.count)
+    }
+
+    @Test("Large markdown entries are not cached")
+    func largeMarkdownEntriesAreNotCached() {
+        MarkdownRenderer.removeAllCachedBlocks()
+        let oversizedCode = String(
+            repeating: "x",
+            count: MarkdownRenderer.maximumCacheableEntryCost + 1
+        )
+        let input = """
+        ```text
+        \(oversizedCode)
+        ```
+        """
+
+        let blocks = MarkdownRenderer.parse(input)
+
+        #expect(blocks.count == 1)
+        #expect(MarkdownRenderer.cachedBlocks(for: input) == nil)
+    }
+
+    @Test("Parses streaming prefixes without caching transient content", .timeLimit(.minutes(1)))
+    func parsesStreamingPrefixesWithoutCachingTransientContent() {
+        MarkdownRenderer.removeAllCachedBlocks()
+        let paragraph = """
+        ## Streaming Response
+
+        This response grows token by token while the UI refreshes. It includes **inline markdown**,
+        a list, and an unfinished code block so each prefix looks like a realistic stream.
+
+        - Alpha
+        - Beta
+        - Gamma
+
+        ```swift
+        func render(_ value: String) -> String {
+            value.uppercased()
+        }
+        ```
+        """
+        let content = String(repeating: paragraph, count: 16)
+        var prefixesParsed = 0
+        var lastPrefix = ""
+        let step = max(1, content.count / 120)
+        var offset = step
+
+        let start = CFAbsoluteTimeGetCurrent()
+        while offset < content.count {
+            let endIndex = content.index(content.startIndex, offsetBy: offset)
+            let prefix = String(content[..<endIndex])
+            lastPrefix = prefix
+            _ = MarkdownRenderer.parse(prefix, cachePolicy: .doNotCache)
+            prefixesParsed += 1
+            offset += step
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        print("BENCH markdown.streaming-prefix.no-cache prefixes=\(prefixesParsed) seconds=\(elapsed)")
+        #expect(prefixesParsed >= 100)
+        #expect(MarkdownRenderer.cachedBlocks(for: lastPrefix) == nil)
+
+        let finalBlocks = MarkdownRenderer.parse(content)
+        #expect(!finalBlocks.isEmpty)
+        #expect(MarkdownRenderer.cachedBlocks(for: content)?.count == finalBlocks.count)
     }
 }

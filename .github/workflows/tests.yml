@@ -31,7 +31,9 @@ jobs:
   macos_unit_tests:
     name: macOS Unit Tests
     runs-on: macos-26
-    timeout-minutes: 20
+    # The expanded persistence/concurrency suite can exceed 20 minutes on a
+    # cold macOS runner even though it completes locally.
+    timeout-minutes: 40
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -45,8 +47,10 @@ jobs:
     - name: Clear SPM artifacts cache
       run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
-    - name: Run unit tests
-      run: swift test -q
+    # Suite-local `.serialized` traits do not isolate unrelated suites that
+    # share process-wide preferences, service singletons, and URLProtocol mocks.
+    - name: Run unit tests serially
+      run: swift test --no-parallel
 
   ios_build_check:
     name: iOS Build Check

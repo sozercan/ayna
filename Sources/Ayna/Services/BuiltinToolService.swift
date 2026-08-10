@@ -208,6 +208,14 @@ import os.log
         /// Maximum search results
         private let maxSearchResults: Int = 100
 
+        /// Reused formatter for directory listings to avoid allocating one per entry.
+        private let fileSizeFormatter: ByteCountFormatter = {
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useKB, .useMB, .useGB]
+            formatter.countStyle = .file
+            return formatter
+        }()
+
         // MARK: - Tool Names
 
         enum ToolName {
@@ -644,22 +652,22 @@ import os.log
             }
 
             var results: [SearchResult] = []
+            results.reserveCapacity(maxSearchResults)
 
             // Search recursively
             let enumerator = FileManager.default.enumerator(
                 at: resolvedURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
             )
 
             while let fileURL = enumerator?.nextObject() as? URL {
                 guard results.count < maxSearchResults else { break }
 
-                let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 guard resourceValues?.isRegularFile == true else { continue }
 
-                let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                if let size = attrs?[.size] as? Int, size > maxReadSize {
+                if let size = resourceValues?.fileSize, size > maxReadSize {
                     continue
                 }
 
@@ -1068,10 +1076,7 @@ import os.log
         }
 
         func formatFileSize(_ bytes: Int64) -> String {
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useKB, .useMB, .useGB]
-            formatter.countStyle = .file
-            return formatter.string(fromByteCount: bytes)
+            fileSizeFormatter.string(fromByteCount: bytes)
         }
 
         func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

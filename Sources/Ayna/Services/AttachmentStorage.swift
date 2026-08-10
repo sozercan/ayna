@@ -52,13 +52,54 @@ final class AttachmentDataCache: @unchecked Sendable {
 
 // MARK: - Attachment Storage
 
+struct AttachmentCleanupSnapshot: Sendable {
+    static let empty = AttachmentCleanupSnapshot(fileNames: [])
+
+    let fileNames: Set<String>
+}
+
+struct AttachmentStorageGeneration: Sendable, Equatable {
+    fileprivate let value: UInt64
+}
+
+enum AttachmentStorageError: LocalizedError {
+    case invalidCleanupPath(String)
+    case unsupportedCleanupSymbolicLink(String)
+    case privacyCleanupInProgress
+    case staleGeneration
+    case missingCleanupSnapshot
+
+    var errorDescription: String? {
+        switch self {
+        case let .invalidCleanupPath(path):
+            "Invalid attachment cleanup path: \(path)"
+        case let .unsupportedCleanupSymbolicLink(path):
+            "Attachment cleanup does not support a symbolic-link root: \(path)"
+        case .privacyCleanupInProgress:
+            "Attachment storage is being cleared"
+        case .staleGeneration:
+            "Attachment belongs to a cleared conversation generation"
+        case .missingCleanupSnapshot:
+            "Attachment cleanup scope is unavailable"
+        }
+    }
+}
+
+private enum AsyncLoadSource: Sendable {
+    case cache(Data, generation: AttachmentStorageGeneration)
+    case disk(fileURL: URL, generation: AttachmentStorageGeneration)
+}
+
 /// Manages storage of message attachments (images, files) on disk
 /// to reduce the size of the encrypted conversation store.
-final class AttachmentStorage: Sendable {
+final class AttachmentStorage: @unchecked Sendable {
     static let shared = AttachmentStorage()
 
     private let attachmentsDirectory: URL
     private let dataCache: AttachmentDataCache
+    private let operationLock = NSLock()
+    private var storageGeneration: UInt64 = 0
+    private var cleanupFenceCount = 0
 
     init(
         directoryURL: URL? = nil,
@@ -96,82 +137,277 @@ final class AttachmentStorage: Sendable {
     }
 
     /// Saves data to disk and returns the relative path
-    func save(data: Data, extension: String = "dat") throws -> String {
-        let filename = UUID().uuidString + "." + `extension`
-        let fileURL = attachmentsDirectory.appendingPathComponent(filename)
+    func save(
+        data: Data,
+        extension: String = "dat",
+        generation expectedGeneration: AttachmentStorageGeneration? = nil
+    ) throws -> String {
+        try operationLock.withLock {
+            guard cleanupFenceCount == 0 else {
+                throw AttachmentStorageError.privacyCleanupInProgress
+            }
+            if let expectedGeneration, expectedGeneration.value != storageGeneration {
+                throw AttachmentStorageError.staleGeneration
+            }
+            let filename = UUID().uuidString + "." + Self.sanitizedExtension(`extension`)
+            let fileURL = attachmentsDirectory.appendingPathComponent(filename)
 
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            dataCache.set(data, forKey: filename)
-            DiagnosticsLogger.log(
-                .attachmentStorage,
-                level: .info,
-                message: "Saved attachment",
-                metadata: ["filename": filename, "size": "\(data.count)"]
-            )
-            return filename
-        } catch {
-            DiagnosticsLogger.log(
-                .attachmentStorage,
-                level: .error,
-                message: "Failed to save attachment",
-                metadata: ["error": error.localizedDescription, "filename": filename]
-            )
-            throw error
+            do {
+                try data.write(to: fileURL, options: .atomic)
+                dataCache.set(data, forKey: filename)
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .info,
+                    message: "Saved attachment",
+                    metadata: ["filename": filename, "size": "\(data.count)"]
+                )
+                return filename
+            } catch {
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .error,
+                    message: "Failed to save attachment",
+                    metadata: ["error": error.localizedDescription, "filename": filename]
+                )
+                throw error
+            }
+        }
+    }
+
+    nonisolated static func sanitizedExtension(_ fileExtension: String) -> String {
+        let components = fileExtension
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        let sanitized = String(components.joined(separator: "_").prefix(32))
+        return sanitized.isEmpty ? "dat" : sanitized
+    }
+
+    func currentGeneration() -> AttachmentStorageGeneration {
+        operationLock.withLock {
+            AttachmentStorageGeneration(value: storageGeneration)
+        }
+    }
+
+    func isCurrentGeneration(_ generation: AttachmentStorageGeneration) -> Bool {
+        operationLock.withLock {
+            cleanupFenceCount == 0 && generation.value == storageGeneration
         }
     }
 
     /// Returns cached data without touching disk.
     func cachedData(path: String) -> Data? {
-        dataCache.get(path)
+        operationLock.withLock {
+            guard cleanupFenceCount == 0 else { return nil }
+            return dataCache.get(path)
+        }
     }
 
     /// Loads data from a relative path, using cache to avoid repeated disk I/O
     func load(path: String) -> Data? {
-        // Check cache first
-        if let cached = dataCache.get(path) {
-            return cached
-        }
+        operationLock.withLock {
+            guard cleanupFenceCount == 0 else { return nil }
+            if let cached = dataCache.get(path) {
+                return cached
+            }
 
-        let fileURL = attachmentsDirectory.appendingPathComponent(path)
-        return Self.readData(at: fileURL, path: path, cache: dataCache)
+            let fileURL = attachmentsDirectory.appendingPathComponent(path)
+            return Self.readData(at: fileURL, path: path, cache: dataCache)
+        }
     }
 
     /// Loads data from disk off the caller's actor, caching the result for future access.
     func loadData(path: String) async -> Data? {
-        if let cached = dataCache.get(path) {
-            return cached
+        guard !Task.isCancelled else { return nil }
+
+        let source = operationLock.withLock { () -> AsyncLoadSource? in
+            guard cleanupFenceCount == 0 else { return nil }
+            if let cached = dataCache.get(path) {
+                return .cache(
+                    cached,
+                    generation: AttachmentStorageGeneration(value: storageGeneration)
+                )
+            }
+            return .disk(
+                fileURL: attachmentsDirectory.appendingPathComponent(path),
+                generation: AttachmentStorageGeneration(value: storageGeneration)
+            )
         }
 
-        let fileURL = attachmentsDirectory.appendingPathComponent(path)
-        let dataCache = dataCache
-        return await Task.detached(priority: .userInitiated) {
-            Self.readData(at: fileURL, path: path, cache: dataCache)
-        }.value
+        guard let source else { return nil }
+        switch source {
+        case let .cache(data, readGeneration):
+            guard !Task.isCancelled else { return nil }
+            return operationLock.withLock {
+                guard cleanupFenceCount == 0,
+                      readGeneration.value == storageGeneration
+                else {
+                    return nil
+                }
+                return data
+            }
+        case let .disk(fileURL, readGeneration):
+            let readTask = Task.detached(priority: .userInitiated) { () -> Data? in
+                do {
+                    return try Self.readDataCancellable(at: fileURL)
+                } catch is CancellationError {
+                    return nil
+                } catch {
+                    DiagnosticsLogger.log(
+                        .attachmentStorage,
+                        level: .error,
+                        message: "Failed to load attachment",
+                        metadata: ["error": error.localizedDescription, "path": path]
+                    )
+                    return nil
+                }
+            }
+
+            return await withTaskCancellationHandler {
+                guard !Task.isCancelled else {
+                    readTask.cancel()
+                    return nil
+                }
+                guard let data = await readTask.value,
+                      !Task.isCancelled
+                else {
+                    return nil
+                }
+
+                return self.operationLock.withLock {
+                    guard self.cleanupFenceCount == 0,
+                          readGeneration.value == self.storageGeneration,
+                          FileManager.default.fileExists(atPath: fileURL.path)
+                    else {
+                        return nil
+                    }
+                    if let cached = self.dataCache.get(path) {
+                        return cached
+                    }
+                    self.dataCache.set(data, forKey: path)
+                    return data
+                }
+            } onCancel: {
+                readTask.cancel()
+            }
+        }
     }
 
     /// Deletes a file at the given relative path
     func delete(path: String) {
-        // Remove from cache
-        dataCache.remove(path)
+        operationLock.withLock {
+            dataCache.remove(path)
 
-        let fileURL = attachmentsDirectory.appendingPathComponent(path)
-        do {
-            try FileManager.default.removeItem(at: fileURL)
-            DiagnosticsLogger.log(
-                .attachmentStorage,
-                level: .info,
-                message: "Deleted attachment",
-                metadata: ["path": path]
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .attachmentStorage,
-                level: .error,
-                message: "Failed to delete attachment",
-                metadata: ["error": error.localizedDescription, "path": path]
-            )
+            let fileURL = attachmentsDirectory.appendingPathComponent(path)
+            do {
+                try FileManager.default.removeItem(at: fileURL)
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .info,
+                    message: "Deleted attachment",
+                    metadata: ["path": path]
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .error,
+                    message: "Failed to delete attachment",
+                    metadata: ["error": error.localizedDescription, "path": path]
+                )
+            }
         }
+    }
+
+    /// Captures the attachment files currently owned by a clear request.
+    func cleanupSnapshot() throws -> AttachmentCleanupSnapshot {
+        try operationLock.withLock {
+            try makeCleanupSnapshot()
+        }
+    }
+
+    func beginCleanup() {
+        operationLock.withLock {
+            storageGeneration &+= 1
+            cleanupFenceCount += 1
+        }
+    }
+
+    func beginCleanupSnapshot() throws -> AttachmentCleanupSnapshot {
+        beginCleanup()
+        do {
+            return try cleanupSnapshot()
+        } catch {
+            finishCleanup()
+            throw error
+        }
+    }
+
+    func finishCleanup() {
+        operationLock.withLock {
+            cleanupFenceCount = max(0, cleanupFenceCount - 1)
+        }
+    }
+
+    /// Deletes the files captured by a clear request and clears the in-process cache.
+    func clear(_ snapshot: AttachmentCleanupSnapshot) throws {
+        try operationLock.withLock {
+            let fileManager = FileManager.default
+            do {
+                try validateCleanupRoot(fileManager: fileManager)
+                try fileManager.createDirectory(
+                    at: attachmentsDirectory,
+                    withIntermediateDirectories: true
+                )
+                let rootDirectory = attachmentsDirectory.standardizedFileURL
+                let fileURLs = try snapshot.fileNames.map { fileName -> URL in
+                    let fileURL = attachmentsDirectory
+                        .appendingPathComponent(fileName)
+                        .standardizedFileURL
+                    guard !fileName.isEmpty,
+                          fileName != ".",
+                          fileName != "..",
+                          fileName == (fileName as NSString).lastPathComponent,
+                          !fileName.contains("/"),
+                          fileURL.deletingLastPathComponent() == rootDirectory
+                    else {
+                        throw AttachmentStorageError.invalidCleanupPath(fileName)
+                    }
+                    return fileURL
+                }
+                dataCache.removeAll()
+                for fileURL in fileURLs {
+                    do {
+                        try fileManager.removeItem(at: fileURL)
+                    } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                        continue
+                    }
+                }
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .info,
+                    message: "Cleared attachment snapshot",
+                    metadata: [
+                        "path": attachmentsDirectory.path,
+                        "count": "\(snapshot.fileNames.count)"
+                    ]
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .attachmentStorage,
+                    level: .error,
+                    message: "Failed to clear attachment storage",
+                    metadata: ["error": error.localizedDescription, "path": attachmentsDirectory.path]
+                )
+                throw error
+            }
+        }
+    }
+
+    /// Deletes every attachment present when the operation begins.
+    func clearAll() throws {
+        let snapshot = try beginCleanupSnapshot()
+        defer { finishCleanup() }
+        try clear(snapshot)
     }
 
     /// Returns the full URL for a relative path (useful for QuickLook or sharing)
@@ -197,5 +433,44 @@ final class AttachmentStorage: Sendable {
             )
             return nil
         }
+    }
+
+    private func makeCleanupSnapshot() throws -> AttachmentCleanupSnapshot {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: attachmentsDirectory.path) else {
+            return .empty
+        }
+        try validateCleanupRoot(fileManager: fileManager)
+        let fileNames = try fileManager.contentsOfDirectory(
+            at: attachmentsDirectory,
+            includingPropertiesForKeys: nil
+        ).reduce(into: Set<String>()) { result, url in
+            result.insert(url.lastPathComponent)
+        }
+        return AttachmentCleanupSnapshot(fileNames: fileNames)
+    }
+
+    private func validateCleanupRoot(fileManager: FileManager) throws {
+        let attributes = try fileManager.attributesOfItem(atPath: attachmentsDirectory.path)
+        guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+            throw AttachmentStorageError.unsupportedCleanupSymbolicLink(attachmentsDirectory.path)
+        }
+    }
+
+    private nonisolated static func readDataCancellable(at fileURL: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+
+        var data = Data()
+        while true {
+            try Task.checkCancellation()
+            guard let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty else {
+                break
+            }
+            data.append(chunk)
+        }
+
+        try Task.checkCancellation()
+        return data
     }
 }

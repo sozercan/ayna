@@ -23,6 +23,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     }
 }
 
+typealias IOSBuiltInToolExecutor = @MainActor (
+    _ name: String,
+    _ arguments: [String: Any]
+) async -> (String, [CitationReference]?)
+
 /// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
 /// A shared ViewModel that encapsulates common chat logic for iOS views.
 /// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
@@ -34,6 +39,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
     @Published var attachedImages: [UIImage] = []
+    @Published private(set) var messageContentRevision = 0
 
     /// The name of the tool currently being executed (for UI indicator)
     @Published var currentToolName: String?
@@ -48,6 +54,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     var conversationManager: ConversationManager
     let aiService: AIService
+    private let executeBuiltInTool: IOSBuiltInToolExecutor
     private let imageGenerationCoordinator = ImageGenerationCoordinator()
         private let toolChainCoordinator = ToolChainCoordinator()
         private let toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
@@ -62,6 +69,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         private var pendingAutoSendID: UUID?
         private var pendingAutoSendDraft: String?
         private var pendingAutoSendConversationID: UUID?
+        private var sendPreparationTask: Task<Void, Never>?
+        private var sendPreparationID: UUID?
+        var sendPreparationDidFinish: (@MainActor () -> Void)?
+        var multiModelChunkWillProcess: (@MainActor () -> Void)?
+        private var isProcessingMultiModelChunkCallback = false
+        private var pendingResetForNewChat = false
 
     /// Maximum tool chain depth for iOS.
     /// Lower than macOS (25) due to mobile resource constraints and typical mobile use cases.
@@ -70,6 +83,45 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Stores the pending user message text for retry on failure
     private var pendingUserMessage: String?
+
+    private struct StreamingChunkKey: Hashable, Sendable {
+        let conversationId: UUID
+        let messageId: UUID
+        let model: String?
+    }
+
+    private struct PendingChunkBuffer {
+        var chunks: [String] = []
+        var pendingCharacterCount = 0
+        var flushTask: Task<Void, Never>?
+    }
+
+    private var pendingChunkBuffers: [StreamingChunkKey: PendingChunkBuffer] = [:]
+    private let streamingChunkFlushInterval: Duration = .milliseconds(75)
+    private let streamingChunkImmediateFlushThreshold = 256
+
+    private struct ToolExecutionState {
+        let token: ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken
+        let conversationId: UUID
+        let callId: String
+        let toolName: String
+        let arguments: [String: AnyCodable]
+        var result: ToolExecutionResult?
+    }
+
+    private struct SendPreparation {
+        let draftText: String
+        let text: String
+        let attachedFiles: [URL]
+        let attachedImages: [UIImage]
+        let selectedModel: String
+        let selectedModels: Set<String>
+        let requestModel: String
+    }
+
+    private var toolExecutionStates: [
+        ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken: ToolExecutionState
+    ] = [:]
 
     // MARK: - Configuration
 
@@ -105,13 +157,20 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     init(
         conversationId: UUID,
         conversationManager: ConversationManager,
-        aiService: AIService? = nil
+        aiService: AIService? = nil,
+        executeBuiltInTool: IOSBuiltInToolExecutor? = nil
     ) {
         let resolvedAIService = aiService ?? .shared
         self.conversationId = conversationId
         isNewChatMode = false
         self.conversationManager = conversationManager
         self.aiService = resolvedAIService
+        self.executeBuiltInTool = executeBuiltInTool ?? { name, arguments in
+            await resolvedAIService.executeBuiltInToolWithCitations(
+                name: name,
+                arguments: arguments
+            )
+        }
         selectedModel = resolvedAIService.selectedModel
         selectedModels = [resolvedAIService.selectedModel]
     }
@@ -119,13 +178,20 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Initialize for a new chat (no conversation yet).
     init(
         conversationManager: ConversationManager,
-        aiService: AIService? = nil
+        aiService: AIService? = nil,
+        executeBuiltInTool: IOSBuiltInToolExecutor? = nil
     ) {
         let resolvedAIService = aiService ?? .shared
         conversationId = nil
         isNewChatMode = true
         self.conversationManager = conversationManager
         self.aiService = resolvedAIService
+        self.executeBuiltInTool = executeBuiltInTool ?? { name, arguments in
+            await resolvedAIService.executeBuiltInToolWithCitations(
+                name: name,
+                arguments: arguments
+            )
+        }
         selectedModel = resolvedAIService.selectedModel
         selectedModels = [resolvedAIService.selectedModel]
     }
@@ -144,7 +210,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Used when view model was created before environment was available.
     func configure(with manager: ConversationManager) {
             if conversationManager !== manager {
-                cancelPendingAutoSend()
+                cancelOwnedOperations()
             }
         conversationManager = manager
     }
@@ -174,6 +240,15 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     /// Reset state for a fresh new chat session.
     func resetForNewChat() {
+        if isProcessingMultiModelChunkCallback {
+            pendingResetForNewChat = true
+            return
+        }
+        performResetForNewChat()
+    }
+
+    private func performResetForNewChat() {
+        pendingResetForNewChat = false
             cancelOwnedOperations()
         conversationId = nil
         messageText = ""
@@ -196,11 +271,26 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     /// Check for and process a pending auto-send prompt from deep link.
     /// This should be called after the view model is configured with a conversation.
     private func checkAndProcessPendingPrompt() {
-            cancelPendingAutoSend()
         guard let convId = conversationId,
               let index = conversationManager.conversations.firstIndex(where: { $0.id == convId }),
               let prompt = conversationManager.conversations[index].pendingAutoSendPrompt,
               !prompt.isEmpty
+        else {
+            return
+        }
+
+        if sendPreparationTask != nil {
+            guard cancelPendingAutoSend() else { return }
+            if cancelSendPreparation() {
+                isGenerating = false
+            }
+        } else {
+            guard !isGenerating else { return }
+            cancelPendingAutoSend()
+        }
+
+        guard let claimIndex = conversationManager.conversations.firstIndex(where: { $0.id == convId }),
+              conversationManager.conversations[claimIndex].pendingAutoSendPrompt == prompt
         else {
             return
         }
@@ -213,8 +303,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
 
             // Clear and persist the prompt before claiming it so view recreation cannot resend it.
-        conversationManager.conversations[index].pendingAutoSendPrompt = nil
-            conversationManager.saveImmediately(conversationManager.conversations[index])
+        conversationManager.conversations[claimIndex].pendingAutoSendPrompt = nil
+            conversationManager.saveImmediately(conversationManager.conversations[claimIndex])
 
         // Set the message text and send
         messageText = prompt
@@ -235,11 +325,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                       self.messageText == prompt
                 else {
                     return
-        }
+                }
                 self.pendingAutoSendTask = nil
                 self.pendingAutoSendID = nil
-                self.pendingAutoSendDraft = nil
-                self.pendingAutoSendConversationID = nil
                 self.sendMessage()
             }
             pendingAutoSendTask = task
@@ -247,32 +335,53 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         @discardableResult
         private func cancelPendingAutoSend() -> Bool {
-            let wasPending = pendingAutoSendTask != nil || pendingAutoSendID != nil
+            let wasPending = pendingAutoSendTask != nil
+                || pendingAutoSendID != nil
+                || pendingAutoSendDraft != nil
             pendingAutoSendTask?.cancel()
             pendingAutoSendTask = nil
             pendingAutoSendID = nil
-            if let draft = pendingAutoSendDraft,
-               messageText == draft,
-               let claimedConversationID = pendingAutoSendConversationID,
-               let index = conversationManager.conversations.firstIndex(where: { $0.id == claimedConversationID })
-            {
-                // Return an unsent claim to durable conversation state so view disappearance,
-                // reconfiguration, or switching conversations cannot silently drop a deep link.
-                if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
-                    conversationManager.conversations[index].pendingAutoSendPrompt = draft
-                    conversationManager.saveImmediately(conversationManager.conversations[index])
-                }
-                messageText = ""
-            }
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: true)
             pendingAutoSendDraft = nil
             pendingAutoSendConversationID = nil
             return wasPending
         }
 
-        private func consumePendingAutoSendClaim() {
+        private func preparePendingAutoSendClaimForSend() {
             pendingAutoSendTask?.cancel()
             pendingAutoSendTask = nil
             pendingAutoSendID = nil
+        }
+
+        private func restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: Bool) {
+            guard let draft = pendingAutoSendDraft,
+                  let claimedConversationID = pendingAutoSendConversationID,
+                  let index = conversationManager.conversations.firstIndex(where: { $0.id == claimedConversationID })
+            else {
+                return
+            }
+
+            if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
+                conversationManager.conversations[index].pendingAutoSendPrompt = draft
+                conversationManager.saveImmediately(conversationManager.conversations[index])
+            }
+            if clearVisibleDraft, messageText == draft {
+                messageText = ""
+            }
+        }
+
+        private func consumePendingAutoSendClaim(afterCommittingTo conversationID: UUID) {
+            pendingAutoSendTask?.cancel()
+            pendingAutoSendTask = nil
+            pendingAutoSendID = nil
+            if let draft = pendingAutoSendDraft,
+               pendingAutoSendConversationID == conversationID,
+               let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationID }),
+               conversationManager.conversations[index].pendingAutoSendPrompt == draft
+            {
+                conversationManager.conversations[index].pendingAutoSendPrompt = nil
+                conversationManager.saveImmediately(conversationManager.conversations[index])
+            }
             pendingAutoSendDraft = nil
             pendingAutoSendConversationID = nil
     }
@@ -395,6 +504,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             message: "🛑 Cancelling generation",
             metadata: logMetadata
         )
+            let cancelledPreparation = cancelSendPreparation()
+            if cancelledPreparation {
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+            }
             toolChainCoordinator.cancelCurrentOperation {
                 finalizePersistedTextGeneration()
         }
@@ -408,22 +521,34 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
     }
 
     /// Send a message in the current conversation.
-    func sendMessage() { // swiftlint:disable:this function_body_length
-        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+    func sendMessage() {
+        let currentConversation = conversation
+        let preparation = SendPreparation(
+            draftText: messageText,
+            text: messageText.trimmingCharacters(in: .whitespacesAndNewlines),
+            attachedFiles: attachedFiles,
+            attachedImages: attachedImages,
+            selectedModel: selectedModel,
+            selectedModels: selectedModels,
+            requestModel: currentConversation?.model ?? selectedModel
+        )
 
         DiagnosticsLogger.log(
             .chatView,
             level: .info,
             message: "🚀 sendMessage() called",
             metadata: [
-                "textLength": "\(text.count)",
+                "textLength": "\(preparation.text.count)",
                 "isGenerating": "\(isGenerating)",
-                "hasConversation": "\(conversation != nil)",
+                "hasConversation": "\(currentConversation != nil)",
                 "isNewChatMode": "\(isNewChatMode)"
             ]
         )
 
-        guard !text.isEmpty || !attachedFiles.isEmpty || !attachedImages.isEmpty else {
+        guard !preparation.text.isEmpty
+            || !preparation.attachedFiles.isEmpty
+            || !preparation.attachedImages.isEmpty
+        else {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
@@ -432,12 +557,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             return
         }
 
-            // A manual send during the short deep-link delay consumes the same durable claim;
-            // cancel the delayed task without restoring or clearing the visible draft.
-            consumePendingAutoSendClaim()
-
         // Prevent sending while already generating
-        guard !isGenerating else {
+        guard !isGenerating, sendPreparationTask == nil else {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
@@ -446,9 +567,83 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             return
         }
 
+            // A manual send during the short deep-link delay takes over the same durable claim.
+            // Keep ownership until the user message is committed so failed hydration can restore it.
+            preparePendingAutoSendClaimForSend()
+
+        if !isNewChatMode,
+           let conversationId,
+           conversationManager.isMetadataOnlyConversation(conversationId)
+        {
+            prepareExistingConversationAndSend(
+                conversationId: conversationId,
+                preparation: preparation
+            )
+            return
+        }
+
+        sendPreparedMessage(preparation)
+    }
+
+    private func prepareExistingConversationAndSend(
+        conversationId: UUID,
+        preparation: SendPreparation
+    ) {
+        let preparationID = UUID()
+        let manager = conversationManager
+        sendPreparationID = preparationID
+        isGenerating = true
+
+        let task = Task { @MainActor [weak self] in
+            defer { self?.sendPreparationDidFinish?() }
+            let loadedConversation = await ConversationSendPreflight.loadConversationHistory(
+                conversationId: conversationId,
+                manager: manager
+            )
+            guard let self,
+                  !Task.isCancelled,
+                  self.sendPreparationID == preparationID,
+                  self.conversationId == conversationId,
+                  self.conversationManager === manager
+            else {
+                return
+            }
+
+            self.sendPreparationTask = nil
+            self.sendPreparationID = nil
+            self.isGenerating = false
+
+            guard loadedConversation != nil else {
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .error,
+                    message: "❌ Failed to load conversation before sending",
+                    metadata: ["conversationId": conversationId.uuidString]
+                )
+                self.errorMessage = "Unable to load this conversation's history. Try again."
+                self.restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+
+            self.sendPreparedMessage(preparation)
+        }
+        sendPreparationTask = task
+    }
+
+    @discardableResult
+    private func cancelSendPreparation() -> Bool {
+        let wasPending = sendPreparationTask != nil || sendPreparationID != nil
+        sendPreparationTask?.cancel()
+        sendPreparationTask = nil
+        sendPreparationID = nil
+        return wasPending
+    }
+
+    // swiftlint:disable:next function_body_length
+    private func sendPreparedMessage(_ preparation: SendPreparation) {
         // Check for multi-model mode
-        if selectedModels.count >= 2 {
-            sendToMultipleModels()
+        if preparation.selectedModels.count >= 2 {
+            sendToMultipleModels(preparation)
             return
         }
 
@@ -463,8 +658,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             conversationId = newConv.id
 
             // Update model if different from default
-            if newConv.model != selectedModel {
-                conversationManager.updateModel(for: newConv, model: selectedModel)
+            if newConv.model != preparation.selectedModel {
+                conversationManager.updateModel(for: newConv, model: preparation.selectedModel)
             }
 
             DiagnosticsLogger.log(
@@ -480,6 +675,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 level: .error,
                 message: "❌ No conversation available to send message"
             )
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
             return
         }
 
@@ -491,39 +687,40 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             message: "📤 Sending message",
             metadata: [
                 "conversationId": targetConversationId.uuidString,
-                "textLength": "\(text.count)",
-                "attachmentCount": "\(attachedFiles.count)",
-                "imageCount": "\(attachedImages.count)",
+                "textLength": "\(preparation.text.count)",
+                "attachmentCount": "\(preparation.attachedFiles.count)",
+                "imageCount": "\(preparation.attachedImages.count)",
             ]
         )
 
-        var userMessage = Message(role: .user, content: text)
+        var userMessage = Message(role: .user, content: preparation.text)
 
         // Process file attachments with proper resource cleanup
-        if !attachedFiles.isEmpty {
-            let result = IOSFileAttachmentUtils.processAttachments(from: attachedFiles)
+        if !preparation.attachedFiles.isEmpty {
+            let result = IOSFileAttachmentUtils.processAttachments(from: preparation.attachedFiles)
             userMessage.attachments = result.attachments
             if !result.errors.isEmpty {
                 errorMessage = result.errors.joined(separator: "\n")
             }
-            cleanupAttachedFiles()
+            cleanupAttachedFiles(preparation.attachedFiles)
         }
 
         // Process image attachments from photo library
-        if !attachedImages.isEmpty {
-            let imageAttachments = IOSFileAttachmentUtils.processImageAttachments(from: attachedImages)
+        if !preparation.attachedImages.isEmpty {
+            let imageAttachments = IOSFileAttachmentUtils.processImageAttachments(from: preparation.attachedImages)
             if userMessage.attachments == nil {
                 userMessage.attachments = imageAttachments
             } else {
                 userMessage.attachments?.append(contentsOf: imageAttachments)
             }
-            attachedImages.removeAll()
+            removeAttachedImages(preparation.attachedImages)
         }
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
+        consumePendingAutoSendClaim(afterCommittingTo: targetConversationId)
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: preparation.text) {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
@@ -533,8 +730,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         }
 
         // Store the message text for retry in case of failure
-        pendingUserMessage = text
-        messageText = ""
+        pendingUserMessage = preparation.text
+        if messageText == preparation.draftText {
+            messageText = ""
+        }
         isGenerating = true
         errorMessage = nil
         errorRecoverySuggestion = nil
@@ -551,7 +750,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         )
 
         // Create a capability-aware placeholder so cancellation/rollback can identify image work.
-        let requestModel = conversationManager.conversation(byId: targetConversationId)?.model ?? targetConversation.model
+        let requestModel = preparation.requestModel.isEmpty
+            ? targetConversation.model
+            : preparation.requestModel
         let isImageRequest = aiService.getModelCapability(requestModel) == .imageGeneration
         var assistantMessage = Message(role: .assistant, content: "", model: requestModel)
         if isImageRequest {
@@ -579,7 +780,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         if isImageRequest {
             generateImage(
-                text: text,
+                text: preparation.text,
                 assistantMessage: assistantMessage,
                 conversationId: targetConversationId,
                 model: requestModel
@@ -606,7 +807,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             level: .info,
             message: "📡 Calling sendMessageWithToolSupport",
             metadata: [
-                "model": updatedConversation.model,
+                "model": requestModel,
                 "messageCount": "\(messagesToSend.count)",
                 "hasTools": "\(tools != nil)",
                 "toolCount": "\(tools?.count ?? 0)"
@@ -615,7 +816,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
         sendMessageWithToolSupport(
             messages: messagesToSend,
-            model: updatedConversation.model,
+            model: requestModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
             tools: tools
@@ -686,10 +887,11 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             )
                         }
                         self.currentToolName = nil
-                        self.updateAssistantMessage(
-                            assistantMessageId,
-                            appendingChunk: chunk,
-                            conversationId: conversationId
+                        self.enqueueStreamingChunk(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId,
+                            model: model,
+                            chunk: chunk
                         )
                     }
                 },
@@ -710,6 +912,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 "currentToolName": self.currentToolName ?? "none",
                                 "assistantMessageId": assistantMessageId.uuidString
                             ]
+                        )
+
+                        self.flushStreamingChunks(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId,
+                            model: model
                         )
 
                         let resolution = roundCoordinator.providerDidComplete(
@@ -751,6 +959,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         else {
                             return
                         }
+
+                        self.flushStreamingChunks(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId,
+                            model: model
+                        )
 
                         if toolToken.registrationIndex == 0 {
                             guard self.toolCallDepth < self.maxToolCallDepth else {
@@ -795,6 +1009,15 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         if let updatedConversation = self.conversationManager.conversation(byId: conversationId) {
                             self.conversationManager.save(updatedConversation)
                         }
+
+                        self.toolExecutionStates[toolToken] = ToolExecutionState(
+                            token: toolToken,
+                            conversationId: conversationId,
+                            callId: toolCallId,
+                            toolName: toolName,
+                            arguments: anyCodableArguments,
+                            result: nil
+                        )
 
                         self.executeTool(
                             token: toolToken,
@@ -844,10 +1067,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             level: .info,
                             message: "⚙️ Executing tool: \(toolName)"
                         )
-                let (output, citations) = await self.aiService.executeBuiltInToolWithCitations(
-                            name: toolName,
-                    arguments: arguments.value
-                        )
+                let (output, citations) = await self.executeBuiltInTool(
+                    toolName,
+                    arguments.value
+                )
                 guard coordinator.owns(operationID, conversationID: conversationId),
                       self.activeAssistantMessageId == assistantMessageId,
                       !Task.isCancelled
@@ -868,6 +1091,10 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                     output: output,
                     citations: citations ?? []
                 )
+                if var state = self.toolExecutionStates[token] {
+                    state.result = result
+                    self.toolExecutionStates[token] = state
+                }
                 let resolution = roundCoordinator.toolDidComplete(token, result: result)
                 self.handleToolRoundResolution(
                     resolution,
@@ -943,6 +1170,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 conversationManager.addMessage(to: conversation, message: result.makeMessage())
                             }
 
+            toolExecutionStates.removeAll()
+
+            if let conversationWithToolResults = conversationManager.conversation(byId: conversationId) {
+                conversationManager.saveImmediately(conversationWithToolResults)
+            }
+
             guard let conversationWithResults = conversationManager.conversation(byId: conversationId) else {
                 stopToolChainForMissingConversation(
                     operationID: operationID,
@@ -992,12 +1225,14 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             assistantMessageId: UUID,
             conversationId: UUID
         ) {
+            flushAllStreamingChunks(conversationId: conversationId)
             guard activeAssistantMessageId == assistantMessageId,
                   toolChainCoordinator.finishOperation(operationID)
             else {
                 return
                             }
             activeAssistantMessageId = nil
+            toolExecutionStates.removeAll()
             isGenerating = false
             currentToolName = nil
             toolCallDepth = 0
@@ -1031,10 +1266,12 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             else {
                 return
             }
+            flushAllStreamingChunks(conversationId: conversationId)
+            persistUnfinishedToolExecutions(conversationId: conversationId)
             toolChainCoordinator.cancelCurrentOperation()
             activeAssistantMessageId = nil
 
-            if error is CancellationError {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
                 DiagnosticsLogger.log(
                     .chatView,
                     level: .info,
@@ -1045,6 +1282,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 currentToolName = nil
                 toolCallDepth = 0
                 pendingUserMessage = nil
+                if let updatedConversation = conversationManager.conversation(byId: conversationId) {
+                    conversationManager.saveImmediately(updatedConversation)
+                }
                 return
             }
 
@@ -1066,10 +1306,16 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
             failedMessage = pendingUserMessage
             pendingUserMessage = nil
-            conversationManager.removeMessage(
-                                conversationId: conversationId,
-                messageId: assistantMessageId
-                            )
+            let assistantHasToolCalls = conversationManager
+                .conversation(byId: conversationId)?
+                .messages.first(where: { $0.id == assistantMessageId })?
+                .toolCalls?.isEmpty == false
+            if !assistantHasToolCalls {
+                conversationManager.removeMessage(
+                    conversationId: conversationId,
+                    messageId: assistantMessageId
+                )
+            }
             if let updatedConversation = conversationManager.conversation(byId: conversationId) {
                 conversationManager.save(updatedConversation)
                         }
@@ -1102,6 +1348,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 message: "⚠️ Max tool call depth reached"
         )
             toolChainCoordinator.cancelCurrentOperation()
+            toolExecutionStates.removeAll()
             activeAssistantMessageId = nil
             isGenerating = false
             currentToolName = nil
@@ -1127,11 +1374,50 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 return
             }
             toolChainCoordinator.cancelCurrentOperation()
+            toolExecutionStates.removeAll()
             activeAssistantMessageId = nil
             isGenerating = false
             currentToolName = nil
             toolCallDepth = 0
     }
+
+        @discardableResult
+        private func persistUnfinishedToolExecutions(conversationId: UUID) -> Bool {
+            let states = toolExecutionStates.values
+                .filter { $0.conversationId == conversationId }
+                .sorted { $0.token.registrationIndex < $1.token.registrationIndex }
+            guard !states.isEmpty else { return false }
+
+            for state in states {
+                toolExecutionStates.removeValue(forKey: state.token)
+            }
+
+            guard let conversation = conversationManager.conversation(byId: conversationId) else {
+                return false
+            }
+
+            var persistedCallIds = Set(
+                conversation.messages
+                    .filter { $0.role == .tool }
+                    .flatMap { $0.toolCalls ?? [] }
+                    .map(\.id)
+            )
+            var didPersist = false
+
+            for state in states where !persistedCallIds.contains(state.callId) {
+                let result = state.result ?? ToolExecutionResult(
+                    callID: state.callId,
+                    toolName: state.toolName,
+                    arguments: state.arguments,
+                    output: "Tool call cancelled before completion."
+                )
+                conversationManager.addMessage(to: conversation, message: result.makeMessage())
+                persistedCallIds.insert(state.callId)
+                didPersist = true
+            }
+
+            return didPersist
+        }
 
     /// Get the ID of the last assistant message in the conversation
     private func getLastAssistantMessageId(conversationId: UUID) -> UUID? {
@@ -1148,6 +1434,81 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 
     // MARK: - Private Methods
 
+    private func enqueueStreamingChunk(
+        conversationId: UUID,
+        messageId: UUID,
+        model: String? = nil,
+        chunk: String
+    ) {
+        guard !chunk.isEmpty else { return }
+
+        let key = StreamingChunkKey(
+            conversationId: conversationId,
+            messageId: messageId,
+            model: model
+        )
+        var buffer = pendingChunkBuffers[key] ?? PendingChunkBuffer()
+        buffer.chunks.append(chunk)
+        buffer.pendingCharacterCount += chunk.count
+
+        if buffer.flushTask == nil {
+            let interval = streamingChunkFlushInterval
+            buffer.flushTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
+                guard let self, !Task.isCancelled else { return }
+                self.flushStreamingChunks(for: key)
+            }
+        }
+
+        pendingChunkBuffers[key] = buffer
+
+        if buffer.pendingCharacterCount >= streamingChunkImmediateFlushThreshold {
+            flushStreamingChunks(for: key)
+        }
+    }
+
+    private func flushStreamingChunks(
+        conversationId: UUID,
+        messageId: UUID,
+        model: String? = nil
+    ) {
+        flushStreamingChunks(
+            for: StreamingChunkKey(
+                conversationId: conversationId,
+                messageId: messageId,
+                model: model
+            )
+        )
+    }
+
+    private func flushStreamingChunks(for key: StreamingChunkKey) {
+        guard let buffer = pendingChunkBuffers.removeValue(forKey: key) else { return }
+        buffer.flushTask?.cancel()
+        let chunk = buffer.chunks.joined()
+        guard !chunk.isEmpty else { return }
+        updateAssistantMessage(
+            key.messageId,
+            appendingChunk: chunk,
+            conversationId: key.conversationId
+        )
+    }
+
+    @discardableResult
+    private func flushAllStreamingChunks(conversationId: UUID? = nil) -> Bool {
+        let keys = pendingChunkBuffers.keys.filter { key in
+            conversationId.map { key.conversationId == $0 } ?? true
+        }
+        guard !keys.isEmpty else { return false }
+        for key in keys {
+            flushStreamingChunks(for: key)
+        }
+        return true
+    }
+
     private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
         // Use safe ID-based append instead of index-based access
         let success = conversationManager.appendToMessage(
@@ -1156,7 +1517,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             chunk: chunk
         )
 
-        if !success {
+        if success {
+            messageContentRevision &+= 1
+        } else {
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,
@@ -1184,13 +1547,29 @@ private extension IOSChatViewModel {
 
     /// Cleans up temporary attached files.
     func cleanupAttachedFiles() {
+        cleanupAttachedFiles(attachedFiles)
+    }
+
+    func cleanupAttachedFiles(_ files: [URL]) {
         let tempDirPath = FileManager.default.temporaryDirectory.path
-        for url in attachedFiles where FileManager.default.fileExists(atPath: url.path) {
-            if url.path.hasPrefix(tempDirPath) {
+        for url in files {
+            if FileManager.default.fileExists(atPath: url.path),
+               url.path.hasPrefix(tempDirPath)
+            {
                 try? FileManager.default.removeItem(at: url)
             }
+            if let index = attachedFiles.firstIndex(of: url) {
+                attachedFiles.remove(at: index)
+            }
         }
-        attachedFiles.removeAll()
+    }
+
+    func removeAttachedImages(_ images: [UIImage]) {
+        for image in images {
+            if let index = attachedImages.firstIndex(where: { $0 === image }) {
+                attachedImages.remove(at: index)
+            }
+        }
     }
 }
 
@@ -1418,39 +1797,55 @@ extension IOSChatViewModel {
 
 extension IOSChatViewModel {
     /// Sends a message to multiple models in parallel for comparison
-    func sendToMultipleModels() {
+    private func sendToMultipleModels(_ preparation: SendPreparation) {
         guard !isGenerating else { return }
-        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let text = preparation.text
+        guard !text.isEmpty else {
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+            return
+        }
 
-        guard let targetConversation = getOrCreateConversationForMultiModel() else { return }
+        guard let targetConversation = getOrCreateConversationForMultiModel(
+            selectedModels: preparation.selectedModels
+        ) else {
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+            return
+        }
         let conversationId = targetConversation.id
+        let models = Array(preparation.selectedModels)
 
         // Check for image generation and route accordingly
-        if let firstModel = selectedModels.sorted().first,
+        if let firstModel = preparation.selectedModels.sorted().first,
            aiService.getModelCapability(firstModel) == .imageGeneration
         {
-            generateImagesWithMultipleModels(prompt: text, models: Array(selectedModels), conversation: targetConversation)
+            generateImagesWithMultipleModels(
+                prompt: text,
+                models: models,
+                conversation: targetConversation,
+                draftText: preparation.draftText
+            )
             return
         }
 
         DiagnosticsLogger.log(.chatView, level: .info, message: "🔀 Starting iOS multi-model request",
-                              metadata: ["models": selectedModels.map(\.self).joined(separator: ", ")])
+                              metadata: ["models": models.joined(separator: ", ")])
 
         let userMessage = Message(role: .user, content: text)
         conversationManager.addMessage(to: targetConversation, message: userMessage)
+        consumePendingAutoSendClaim(afterCommittingTo: conversationId)
 
         if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
             DiagnosticsLogger.log(.chatView, level: .info, message: "💾 Memory command processed",
                                   metadata: ["response": memoryResponse])
         }
 
-        messageText = ""
+        if messageText == preparation.draftText {
+            messageText = ""
+        }
         isGenerating = true
         errorMessage = nil
 
         let responseGroupId = UUID()
-        let models = Array(selectedModels)
         var messageIds: [String: UUID] = [:]
         var placeholderMessages: [Message] = []
         let responseGroup = createPlaceholderMessagesForMultiModel(
@@ -1480,13 +1875,28 @@ extension IOSChatViewModel {
             temperature: updatedConversation.temperature,
             onChunk: { [weak self] model, chunk in
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
-                        guard let self else { return }
-                    self.processMultiModelChunk(
-                        model: model,
-                        chunk: chunk,
-                        messageIds: messageIdsByModel,
-                        conversationId: conversationId
-                    )
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId)
+                        else {
+                            return
+                        }
+
+                        self.isProcessingMultiModelChunkCallback = true
+                        defer {
+                            self.isProcessingMultiModelChunkCallback = false
+                            if self.pendingResetForNewChat {
+                                self.performResetForNewChat()
+                            }
+                        }
+
+                        self.multiModelChunkWillProcess?()
+                        guard coordinator.owns(operationID, conversationID: conversationId) else { return }
+                        self.processMultiModelChunk(
+                            model: model,
+                            chunk: chunk,
+                            messageIds: messageIdsByModel,
+                            conversationId: conversationId
+                        )
                 }
             },
             onModelComplete: { [weak self] model in
@@ -1508,6 +1918,7 @@ extension IOSChatViewModel {
                             return
                         }
 
+                    self.flushAllStreamingChunks(conversationId: conversationId)
                     self.isGenerating = false
                     if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
                             self.conversationManager.saveImmediately(self.conversationManager.conversations[convIndex])
@@ -1542,7 +1953,7 @@ extension IOSChatViewModel {
     }
 
     /// Gets or creates a conversation configured for multi-model mode
-    func getOrCreateConversationForMultiModel() -> Conversation? {
+    func getOrCreateConversationForMultiModel(selectedModels: Set<String>) -> Conversation? {
         if let existing = conversation {
             return existing
         }
@@ -1600,20 +2011,12 @@ extension IOSChatViewModel {
             return
         }
 
-        let success = conversationManager.appendToMessage(
+        enqueueStreamingChunk(
             conversationId: conversationId,
             messageId: messageId,
+            model: model,
             chunk: chunk
         )
-
-        if !success {
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .error,
-                message: "❌ Failed to append chunk - conversation or message not found",
-                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
-            )
-        }
     }
 
     /// Processes completion for a specific model in multi-model mode
@@ -1624,6 +2027,11 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        flushStreamingChunks(
+            conversationId: conversationId,
+            messageId: messageId,
+            model: model
+        )
 
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,
@@ -1651,6 +2059,11 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        flushStreamingChunks(
+            conversationId: conversationId,
+            messageId: messageId,
+            model: model
+        )
 
         let success = conversationManager.updateResponseGroupStatus(
             conversationId: conversationId,
@@ -1691,12 +2104,19 @@ extension IOSChatViewModel {
         /// Used on disappearance so an old view cannot mutate or cancel a replacement owned elsewhere.
         func cancelOwnedOperations() {
             let cancelledAutoSend = cancelPendingAutoSend()
+            let cancelledPreparation = cancelSendPreparation()
             let hadActiveTextState = activeAssistantMessageId != nil || activeMultiModelResponseGroupId != nil
+            let hadBufferedText = !pendingChunkBuffers.isEmpty
+            let hadToolExecutions = !toolExecutionStates.isEmpty
             let cancelledToolChain = toolChainCoordinator.cancelCurrentOperation {
                 finalizePersistedTextGeneration()
             }
             let cancelledImage = imageGenerationCoordinator.cancelCurrentOperation()
-            guard cancelledAutoSend || cancelledImage || cancelledToolChain || hadActiveTextState else { return }
+            guard cancelledAutoSend || cancelledPreparation || cancelledImage || cancelledToolChain || hadActiveTextState
+                || hadBufferedText || hadToolExecutions
+            else {
+                return
+            }
             isGenerating = false
             currentToolName = nil
             toolCallDepth = 0
@@ -1708,10 +2128,19 @@ extension IOSChatViewModel {
         private func finalizePersistedTextGeneration() {
             let assistantMessageId = activeAssistantMessageId
             let responseGroupId = activeMultiModelResponseGroupId
-            guard assistantMessageId != nil || responseGroupId != nil,
-                  let conversationId,
+            guard let conversationId,
                   let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId })
             else {
+                pendingChunkBuffers.values.forEach { $0.flushTask?.cancel() }
+                pendingChunkBuffers.removeAll()
+                toolExecutionStates.removeAll()
+                activeMultiModelResponseGroupId = nil
+                return
+            }
+
+            let flushedText = flushAllStreamingChunks(conversationId: conversationId)
+            let persistedTools = persistUnfinishedToolExecutions(conversationId: conversationId)
+            guard assistantMessageId != nil || responseGroupId != nil || flushedText || persistedTools else {
                 activeMultiModelResponseGroupId = nil
                 return
             }
@@ -1795,7 +2224,7 @@ extension IOSChatViewModel {
                     }
 
                     let messageUpdated = self.conversationManager.updateMessage(
-                        in: conversation,
+                        conversationId: conversation.id,
                         messageId: assistantMessageId
                     ) { message in
                         message.mediaType = .image
@@ -1877,7 +2306,12 @@ extension IOSChatViewModel {
     }
 
     /// Generates images from multiple models in parallel for comparison
-    func generateImagesWithMultipleModels(prompt: String, models: [String], conversation: Conversation) {
+    func generateImagesWithMultipleModels(
+        prompt: String,
+        models: [String],
+        conversation: Conversation,
+        draftText: String
+    ) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
         guard !models.isEmpty else {
@@ -1891,8 +2325,11 @@ extension IOSChatViewModel {
 
         let userMessage = Message(role: .user, content: prompt)
         conversationManager.addMessage(to: conversation, message: userMessage)
+        consumePendingAutoSendClaim(afterCommittingTo: conversationId)
 
-        messageText = ""
+        if messageText == draftText {
+            messageText = ""
+        }
         isGenerating = true
         errorMessage = nil
 
@@ -2060,7 +2497,10 @@ extension IOSChatViewModel {
             }
             return
         }
-        let messageUpdated = conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+        let messageUpdated = conversationManager.updateMessage(
+            conversationId: conversation.id,
+            messageId: messageId
+        ) { message in
             message.content = ""
             if let imagePath {
                 message.imagePath = imagePath

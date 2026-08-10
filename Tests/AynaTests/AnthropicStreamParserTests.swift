@@ -38,6 +38,45 @@ struct AnthropicStreamParserTests {
         #expect(result.shouldComplete == false)
     }
 
+    @Test(arguments: ["", " "])
+    func `string path accepts an optional space after SSE field colons`(separator: String) {
+        let parser = AnthropicStreamParser()
+        _ = parser.processLine("event:\(separator)content_block_delta")
+
+        let result = parser.processLine(
+            "data:\(separator){\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}"
+        )
+
+        #expect(result.content == "Hello")
+    }
+
+    @Test(arguments: ["", " "])
+    func `data path accepts an optional space after SSE field colons`(separator: String) {
+        let parser = AnthropicStreamParser()
+        _ = parser.processLine(Data("event:\(separator)content_block_delta".utf8))
+
+        let result = parser.processLine(
+            Data(
+                "data:\(separator){\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}".utf8
+            )
+        )
+
+        #expect(result.content == "Hello")
+    }
+
+    @Test
+    func `empty data fields without spaces clear pending events in both paths`() {
+        let stringParser = AnthropicStreamParser()
+        _ = stringParser.processLine("event:message_stop")
+        _ = stringParser.processLine("data:")
+        #expect(stringParser.processLine("data:{}").shouldComplete == false)
+
+        let dataParser = AnthropicStreamParser()
+        _ = dataParser.processLine(Data("event:message_stop".utf8))
+        _ = dataParser.processLine(Data("data:".utf8))
+        #expect(dataParser.processLine(Data("data:{}".utf8)).shouldComplete == false)
+    }
+
     // MARK: - Message Start Tests
 
     @Test("Message start extracts message ID")

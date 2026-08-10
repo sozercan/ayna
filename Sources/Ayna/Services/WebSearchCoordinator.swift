@@ -20,9 +20,7 @@ final class WebSearchCoordinator: ObservableObject {
 
     // MARK: - Constants
 
-    private enum Constants {
-        static let toolName = "web_search"
-    }
+    nonisolated static let toolName = "web_search"
 
     // MARK: - Dependencies
 
@@ -69,7 +67,7 @@ final class WebSearchCoordinator: ObservableObject {
         [
             "type": "function",
             "function": [
-                "name": Constants.toolName,
+                "name": Self.toolName,
                 "description": "Search the web for information. Use this tool for any factual question, to look up people, organizations, recent events, current data, or when you're unsure about the answer.",
                 "parameters": [
                     "type": "object",
@@ -97,10 +95,6 @@ final class WebSearchCoordinator: ObservableObject {
     }
 
     /// The tool name used in function calling
-    static var toolName: String {
-        Constants.toolName
-    }
-
     // MARK: - Execution
 
     /// Executes a web search tool call and returns formatted results

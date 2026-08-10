@@ -170,6 +170,73 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(updatedConfig.name)?.state == .connected)
     }
 
+    @Test("Discovery lists tools and resources concurrently", .timeLimit(.minutes(1)))
+    func discoveryListsToolsAndResourcesConcurrently() async {
+        let config = MCPServerConfig(name: "catalog", command: "cmd", enabled: true)
+        let tool = makeMCPTool(name: "search", serverName: config.name)
+        let resource = makeMCPResource(name: "example", serverName: config.name)
+        let toolsStarted = FlightTestSignal()
+        let resourcesStarted = FlightTestSignal()
+        let releaseCatalog = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.listToolsHandler = {
+            toolsStarted.signal()
+            await releaseCatalog.wait()
+            return [tool]
+        }
+        service.listResourcesHandler = {
+            resourcesStarted.signal()
+            await releaseCatalog.wait()
+            return [resource]
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let connection = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        let didStartTools = await toolsStarted.wait(timeout: .seconds(1))
+        let didStartResources = await resourcesStarted.wait(timeout: .seconds(1))
+        releaseCatalog.signal()
+        await connection.value
+
+        #expect(didStartTools)
+        #expect(didStartResources)
+        #expect(manager.availableTools == [tool])
+        #expect(manager.availableResources == [resource])
+    }
+
+    @Test("Enabled tool cache refresh handles bulk configs", .timeLimit(.minutes(1)))
+    func enabledToolCacheRefreshHandlesBulkConfigs() {
+        let configCount = 1_000
+        let toolsPerServer = 5
+        let configs = (0 ..< configCount).map { index in
+            MCPServerConfig(name: "server-\(index)", command: "cmd", enabled: index.isMultiple(of: 2))
+        }
+        let tools = configs.flatMap { config in
+            (0 ..< toolsPerServer).map { toolIndex in
+                makeMCPTool(name: "\(config.name)-tool-\(toolIndex)", serverName: config.name)
+            }
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { StubMCPService(config: $0) },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = configs
+        manager.availableTools = tools
+
+        let enabledTools = manager.getEnabledTools()
+
+        #expect(enabledTools.count == (configCount / 2) * toolsPerServer)
+        #expect(manager.getEnabledTools().count == enabledTools.count)
+    }
+
     @Test("Disconnecting during retry backoff prevents another connection attempt", .timeLimit(.minutes(1)))
     func disconnectingDuringRetryBackoffPreventsAnotherAttempt() async {
         let config = MCPServerConfig(name: "backoff", command: "cmd", enabled: true)

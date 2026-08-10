@@ -34,48 +34,6 @@ echo "🔨 Building $APP_NAME ($CONF) for ${ARCH_LIST[*]}..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# Build for each architecture
-BUILD_PRODUCT_DIRS=()
-for ARCH in "${ARCH_LIST[@]}"; do
-  echo "  → Building for $ARCH..."
-  SWIFT_BUILD_ARGS=(-c "$CONF" --arch "$ARCH")
-  if [[ ${#ARCH_LIST[@]} -gt 1 ]]; then
-    # SwiftPM's Swift Build engine can use one configuration output directory even
-    # when --arch changes. Keep universal-build slices isolated so a later
-    # build cannot overwrite an earlier architecture before lipo combines them.
-    SWIFT_BUILD_ARGS+=(--scratch-path "$ROOT/.build/architectures/$ARCH")
-  fi
-  swift build "${SWIFT_BUILD_ARGS[@]}"
-  BUILD_PRODUCT_DIRS+=("$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)")
-done
-
-# Create app bundle structure
-echo "📦 Creating app bundle..."
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-mkdir -p "$APP_BUNDLE/Contents/Resources"
-mkdir -p "$APP_BUNDLE/Contents/Frameworks"
-
-# Build path helpers. SwiftPM's output layout varies by build engine, so use
-# the paths it reported instead of assuming the legacy architecture layout.
-build_product_dir() {
-  local arch="$1"
-  local index
-  for index in "${!ARCH_LIST[@]}"; do
-    if [[ "${ARCH_LIST[$index]}" == "$arch" ]]; then
-      printf '%s\n' "${BUILD_PRODUCT_DIRS[$index]}"
-      return 0
-    fi
-  done
-  echo "ERROR: No build product directory recorded for $arch" >&2
-  return 1
-}
-
-build_product_path() {
-  local name="$1"
-  local arch="$2"
-  printf '%s/%s\n' "$(build_product_dir "$arch")" "$name"
-}
-
 # Verify binary architectures
 verify_binary_arches() {
   local binary="$1"; shift
@@ -90,6 +48,63 @@ verify_binary_arches() {
   done
 }
 
+staged_product_path() {
+  local name="$1"
+  local arch="$2"
+  echo "$BUILD_DIR/products/$arch/$name"
+}
+
+staged_build_dir_path() {
+  local arch="$1"
+  echo "$BUILD_DIR/products/$arch/.build-dir"
+}
+
+staged_build_dir() {
+  local arch="$1"
+  cat "$(staged_build_dir_path "$arch")"
+}
+
+stage_binary() {
+  local name="$1"
+  local arch="$2"
+  local build_dir="$3"
+  local src="$build_dir/$name"
+  if [[ ! -f "$src" ]]; then
+    echo "ERROR: Missing ${name} build for ${arch} at ${src}" >&2
+    exit 1
+  fi
+
+  local dest
+  dest=$(staged_product_path "$name" "$arch")
+  mkdir -p "$(dirname "$dest")"
+  cp "$src" "$dest"
+  chmod +x "$dest"
+  verify_binary_arches "$dest" "$arch"
+  printf '%s\n' "$build_dir" > "$(staged_build_dir_path "$arch")"
+}
+
+# Build and stage each architecture immediately. Some SwiftPM toolchains reuse
+# an architecture-agnostic Products directory, so delaying collection until all
+# builds finish can make every entry point at the final architecture built.
+for ARCH in "${ARCH_LIST[@]}"; do
+  echo "  → Building for $ARCH..."
+  SWIFT_BUILD_ARGS=(-c "$CONF" --arch "$ARCH")
+  if [[ ${#ARCH_LIST[@]} -gt 1 ]]; then
+    # Keep universal-build slices isolated so one architecture cannot overwrite
+    # another before the binaries are staged and combined with lipo.
+    SWIFT_BUILD_ARGS+=(--scratch-path "$ROOT/.build/architectures/$ARCH")
+  fi
+  swift build "${SWIFT_BUILD_ARGS[@]}"
+  ARCH_BUILD_DIR=$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)
+  stage_binary "$APP_NAME" "$ARCH" "$ARCH_BUILD_DIR"
+done
+
+# Create app bundle structure
+echo "📦 Creating app bundle..."
+mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+
 # Install binary (handles universal builds)
 install_binary() {
   local name="$1"
@@ -97,9 +112,9 @@ install_binary() {
   local binaries=()
   for arch in "${ARCH_LIST[@]}"; do
     local src
-    src=$(build_product_path "$name" "$arch")
+    src=$(staged_product_path "$name" "$arch")
     if [[ ! -f "$src" ]]; then
-      echo "ERROR: Missing ${name} build for ${arch} at ${src}" >&2
+      echo "ERROR: Missing staged ${name} build for ${arch} at ${src}" >&2
       exit 1
     fi
     binaries+=("$src")
@@ -271,14 +286,14 @@ fi
 # Embed Sparkle.framework
 SPARKLE_FRAMEWORK=""
 for arch in "${ARCH_LIST[@]}"; do
-  CANDIDATE_DIR=$(build_product_dir "$arch")
+  CANDIDATE_DIR=$(staged_build_dir "$arch")
   if [[ -d "$CANDIDATE_DIR/Sparkle.framework" ]]; then
     SPARKLE_FRAMEWORK="$CANDIDATE_DIR/Sparkle.framework"
     break
   fi
 done
 
-# Also check the default build path
+# Also check the default build path used by older SwiftPM layouts.
 if [[ -z "$SPARKLE_FRAMEWORK" ]] && [[ -d ".build/$CONF/Sparkle.framework" ]]; then
   SPARKLE_FRAMEWORK=".build/$CONF/Sparkle.framework"
 fi
@@ -294,7 +309,7 @@ fi
 
 # SwiftPM resource bundles
 FIRST_ARCH="${ARCH_LIST[0]}"
-PREFERRED_BUILD_DIR=$(build_product_dir "$FIRST_ARCH")
+PREFERRED_BUILD_DIR=$(staged_build_dir "$FIRST_ARCH")
 shopt -s nullglob
 SWIFTPM_BUNDLES=("${PREFERRED_BUILD_DIR}/"*.bundle)
 shopt -u nullglob

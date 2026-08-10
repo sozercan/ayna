@@ -11,15 +11,116 @@ import AppKit
 import OSLog
 import SwiftUI
 
+struct MacPendingAutoSendClaim {
+    let conversationID: UUID
+    let prompt: String
+
+    @MainActor
+    func restore(in conversationManager: ConversationManager) {
+        guard let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }) else {
+            return
+        }
+
+        if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
+            conversationManager.conversations[index].pendingAutoSendPrompt = prompt
+            conversationManager.saveImmediately(conversationManager.conversations[index])
+        }
+    }
+
+    @MainActor
+    func consume(
+        committedPrompt: String,
+        conversationID committedConversationID: UUID,
+        in conversationManager: ConversationManager
+    ) {
+        guard committedConversationID == conversationID,
+              committedPrompt == prompt
+        else {
+            restore(in: conversationManager)
+            return
+        }
+        guard let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }),
+            conversationManager.conversations[index].pendingAutoSendPrompt == prompt
+        else {
+            return
+        }
+
+        conversationManager.conversations[index].pendingAutoSendPrompt = nil
+        conversationManager.saveImmediately(conversationManager.conversations[index])
+    }
+}
+
 // ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
 // tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
 // the larger body here until the view hierarchy is modularized.
 
+enum MacChatMessagePresentation {
+    static func isVisible(
+        _ message: Message,
+        lastMessageID: UUID?,
+        isGenerating: Bool
+    ) -> Bool {
+        if message.role == .system {
+            return false
+        }
+
+        if message.role == .tool {
+            let isWebSearchResult = message.toolCalls?.contains(where: {
+                $0.toolName == WebSearchCoordinator.toolName
+            }) == true
+            return !isWebSearchResult
+                && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        guard message.role == .assistant else {
+            return !message.content.isEmpty
+                || message.imageData != nil
+                || message.imagePath != nil
+                || message.mediaType == .image
+        }
+
+        if hasVisibleAssistantOutput(message) {
+            return true
+        }
+        if message.toolCalls?.isEmpty == false {
+            return false
+        }
+        if message.responseGroupId != nil {
+            return true
+        }
+        return message.id == lastMessageID && isGenerating
+    }
+
+    static func isRemovableAssistantPlaceholder(_ message: Message) -> Bool {
+        message.role == .assistant
+            && !hasVisibleAssistantOutput(message)
+            && message.toolCalls?.isEmpty != false
+            && message.responseGroupId == nil
+    }
+
+    private static func hasVisibleAssistantOutput(_ message: Message) -> Bool {
+        !message.content.isEmpty
+            || message.reasoning?.isEmpty == false
+            || message.imageData != nil
+            || message.imagePath != nil
+            || message.mediaType == .image
+            || message.citations?.isEmpty == false
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct MacChatView: View {
-    private struct PendingAutoSendClaim {
-        let conversationID: UUID
-        let prompt: String
+    private struct SendPreparation {
+        let promptText: String
+        let files: [URL]
+        let appContent: AppContent?
+        let selectedModel: String
+        let selectedModels: Set<String>
+        let activeModel: String?
     }
 
     let conversation: Conversation
@@ -52,7 +153,7 @@ struct MacChatView: View {
     @State private var toolChainTimeoutTask: Task<Void, Never>?
         @State private var sendPreparationTask: Task<Void, Never>?
         @State private var sendPreparationID: UUID?
-        @State private var pendingAutoSendClaim: PendingAutoSendClaim?
+        @State private var pendingAutoSendClaim: MacPendingAutoSendClaim?
         @State var activeAssistantMessageID: UUID?
         @State var activeMultiModelResponseGroupID: UUID?
         @State var toolChainCoordinator = ToolChainCoordinator()
@@ -117,43 +218,11 @@ struct MacChatView: View {
     /// Helper to filter visible messages
     private func updateVisibleMessages() {
         visibleMessages = currentConversation.messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-            // Always show tool messages when they have content (tool replies are the "first" assistant response)
-            if message.role == .tool {
-                    let isWebSearchResult = message.toolCalls?.contains(where: {
-                        $0.toolName == WebSearchCoordinator.toolName
-                    }) == true
-                    return !isWebSearchResult &&
-                        !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            // Always show assistant messages that have citations (from web search)
-            if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                return true
-            }
-
-            // Show if: has content, has image data, or is generating image
-            // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == currentConversation.messages.last?.id && isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
+            MacChatMessagePresentation.isVisible(
+                message,
+                lastMessageID: currentConversation.messages.last?.id,
+                isGenerating: isGenerating
+            )
         }
 
         // Update displayable items after visible messages change
@@ -164,29 +233,13 @@ struct MacChatView: View {
 
     /// Updates cached displayable items. Call when messages change or isGenerating changes.
     private func updateDisplayableItems() {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
+        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        cachedDisplayableItems = items
+        )
     }
 
     private var normalizedSelectedModel: String {
@@ -334,10 +387,14 @@ struct MacChatView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button(action: { exportConversation(format: .markdown) }) {
+                    Button {
+                        Task { await exportConversation(format: .markdown) }
+                    } label: {
                         Label("Export as Markdown", systemImage: "doc.text")
                     }
-                    Button(action: { exportConversation(format: .pdf) }) {
+                    Button {
+                        Task { await exportConversation(format: .pdf) }
+                    } label: {
                         Label("Export as PDF", systemImage: "doc.text.image")
                     }
                 } label: {
@@ -409,7 +466,7 @@ struct MacChatView: View {
         // restores it until the user message is actually committed.
         conversationManager.conversations[index].pendingAutoSendPrompt = nil
         conversationManager.saveImmediately(conversationManager.conversations[index])
-        pendingAutoSendClaim = PendingAutoSendClaim(
+        pendingAutoSendClaim = MacPendingAutoSendClaim(
             conversationID: conversationManager.conversations[index].id,
             prompt: prompt
         )
@@ -459,13 +516,19 @@ struct MacChatView: View {
         case pdf
     }
 
-    private func exportConversation(format: ExportFormat) {
+    private func exportConversation(format: ExportFormat) async {
+        guard let conversationForExport = await conversationManager.ensureConversationLoaded(currentConversation.id) else {
+            logChat("❌ Cannot export conversation: failed to load conversation history", level: .error)
+            errorMessage = "Could not load this conversation for export. Please try again."
+            return
+        }
+
         let url: URL?
         switch format {
         case .markdown:
-            let content = ConversationExporter.generateMarkdown(for: currentConversation)
+            let content = ConversationExporter.generateMarkdown(for: conversationForExport)
             let tempDir = FileManager.default.temporaryDirectory
-            let fileName = "\(currentConversation.title.replacingOccurrences(of: " ", with: "_")).md"
+            let fileName = "\(conversationForExport.title.replacingOccurrences(of: " ", with: "_")).md"
             let fileURL = tempDir.appendingPathComponent(fileName)
             do {
                 try content.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -475,7 +538,7 @@ struct MacChatView: View {
                 url = nil
             }
         case .pdf:
-            url = ConversationExporter.generatePDF(for: currentConversation)
+            url = ConversationExporter.generatePDF(for: conversationForExport)
         }
 
         if let url {
@@ -495,8 +558,8 @@ struct MacChatView: View {
 
     // MARK: - Model Selection Helpers
 
-    private func resolveModelForSending() -> String? {
-        let trimmedSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func resolveModelForSending(selection: String) -> String? {
+        let trimmedSelection = selection.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSelection.isEmpty {
             return trimmedSelection
         }
@@ -512,7 +575,11 @@ struct MacChatView: View {
         return trimmedGlobal.isEmpty ? nil : trimmedGlobal
     }
 
-    private func ensureConversationModelMatchesSelection(_ model: String) {
+    private func ensureConversationModelMatchesSelection(
+        _ model: String,
+        expectedSelection: String
+    ) {
+        guard selectedModel == expectedSelection else { return }
         if currentConversation.model != model {
             conversationManager.updateModel(for: conversation, model: model)
         }
@@ -781,6 +848,14 @@ struct MacChatView: View {
             return
         }
 
+            let preparation = SendPreparation(
+                promptText: messageText,
+                files: attachedFiles,
+                appContent: attachedAppContent,
+                selectedModel: selectedModel,
+                selectedModels: selectedModels,
+                activeModel: resolveModelForSending(selection: selectedModel)
+            )
             let preparationID = UUID()
             sendPreparationID = preparationID
             isGenerating = true
@@ -789,7 +864,7 @@ struct MacChatView: View {
                     try? await Task.sleep(for: delay)
                 }
                 guard !Task.isCancelled, sendPreparationID == preparationID else { return }
-                await sendMessage(preparationID: preparationID)
+                await sendMessage(preparationID: preparationID, preparation: preparation)
             }
             sendPreparationTask = task
         }
@@ -802,20 +877,28 @@ struct MacChatView: View {
             }
         }
 
-        private func restorePendingAutoSendClaimIfNeeded() {
+        private func restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: Bool = true) {
             guard let claim = pendingAutoSendClaim else { return }
-            defer { pendingAutoSendClaim = nil }
-            guard messageText == claim.prompt,
-                  let index = conversationManager.conversations.firstIndex(where: { $0.id == claim.conversationID })
-            else {
-                return
+            claim.restore(in: conversationManager)
+            if clearVisibleDraft {
+                pendingAutoSendClaim = nil
+                if messageText == claim.prompt {
+                    messageText = ""
+                }
             }
+        }
 
-            if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
-                conversationManager.conversations[index].pendingAutoSendPrompt = claim.prompt
-                conversationManager.saveImmediately(conversationManager.conversations[index])
-            }
-            messageText = ""
+        private func consumePendingAutoSendClaim(
+            afterCommitting prompt: String,
+            to conversationID: UUID
+        ) {
+            guard let claim = pendingAutoSendClaim else { return }
+            claim.consume(
+                committedPrompt: prompt,
+                conversationID: conversationID,
+                in: conversationManager
+            )
+            pendingAutoSendClaim = nil
         }
 
         private func isSameAppContent(_ lhs: AppContent?, _ rhs: AppContent?) -> Bool {
@@ -839,7 +922,10 @@ struct MacChatView: View {
         // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
         // we defer that refactor and explicitly allow the longer body.
         // swiftlint:disable:next function_body_length
-        private func sendMessage(preparationID: UUID) async {
+        private func sendMessage(
+            preparationID: UUID,
+            preparation: SendPreparation
+        ) async {
             var handedOff = false
             defer {
                 if sendPreparationID == preparationID {
@@ -853,20 +939,40 @@ struct MacChatView: View {
 
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
 
+            guard await ConversationSendPreflight.loadConversationHistory(
+                conversationId: conversation.id,
+                manager: conversationManager
+            ) != nil else {
+                guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+                logChat(
+                    "❌ Failed to load conversation before sending",
+                    level: .error,
+                    metadata: ["conversationId": conversation.id.uuidString]
+                )
+                errorMessage = "Unable to load this conversation's history. Try again."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+            guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+
         // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
-        guard let activeModel = resolveModelForSending() else {
+        guard let activeModel = preparation.activeModel else {
             logChat("❌ Cannot send message: no model selected", level: .error)
             errorMessage = "Select a model in Settings → Model."
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
             return
         }
 
-        ensureConversationModelMatchesSelection(activeModel)
-            let promptText = messageText
-            let filesToSend = attachedFiles
-            let appContentToSend = attachedAppContent
-            let selectedModelsToSend = selectedModels
+        ensureConversationModelMatchesSelection(
+            activeModel,
+            expectedSelection: preparation.selectedModel
+        )
+            let promptText = preparation.promptText
+            let filesToSend = preparation.files
+            let appContentToSend = preparation.appContent
+            let selectedModelsToSend = preparation.selectedModels
         logChat(
             "🎯 Sending message with model \(activeModel)",
             level: .info,
@@ -880,6 +986,26 @@ struct MacChatView: View {
                 fileURLs: filesToSend,
             saveToStorage: true
         )
+            guard sendPreparationID == preparationID, !Task.isCancelled else {
+                discardStoredAttachments(in: userMessage)
+                return
+            }
+
+            guard await ConversationSendPreflight.loadConversationHistory(
+                conversationId: conversation.id,
+                manager: conversationManager
+            ) != nil else {
+                discardStoredAttachments(in: userMessage)
+                guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+                logChat(
+                    "❌ Conversation changed while preparing attachments",
+                    level: .error,
+                    metadata: ["conversationId": conversation.id.uuidString]
+                )
+                errorMessage = "Unable to load this conversation's history. Try again."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
             guard sendPreparationID == preparationID, !Task.isCancelled else {
                 discardStoredAttachments(in: userMessage)
                 return
@@ -902,8 +1028,11 @@ struct MacChatView: View {
             level: .info,
             metadata: ["attachmentCount": "\(userMessage.attachments?.count ?? 0)"]
             )
-            pendingAutoSendClaim = nil
             conversationManager.addMessage(to: conversation, message: userMessage)
+            consumePendingAutoSendClaim(
+                afterCommitting: promptText,
+                to: conversation.id
+            )
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
         if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {

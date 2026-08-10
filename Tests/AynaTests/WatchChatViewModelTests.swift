@@ -180,7 +180,7 @@
 
         @Test
         func `watchOS model filtering`() {
-            let allModels = ["gpt-4o", "claude", "apple-intelligence", "legacy-model"]
+            let allModels = ["gpt-4o", "claude", "apple-intelligence", "inherited-model"]
             let modelProviders: [String: AIProvider] = [
                 "gpt-4o": .openai,
                 "claude": .anthropic,
@@ -189,14 +189,22 @@
 
             let usableModels = WatchLiveModelPolicy.usableModels(
                 availableModels: allModels,
-                modelProviders: modelProviders
+                modelProviders: modelProviders,
+                defaultProvider: .openai
             )
 
-            #expect(usableModels == ["gpt-4o", "claude"])
+            #expect(usableModels == ["gpt-4o", "claude", "inherited-model"])
             #expect(!WatchLiveModelPolicy.isUsable(
                 "not-advertised",
                 availableModels: allModels,
-                modelProviders: ["not-advertised": .openai]
+                modelProviders: ["not-advertised": .openai],
+                defaultProvider: .openai
+            ))
+            #expect(!WatchLiveModelPolicy.isUsable(
+                "inherited-model",
+                availableModels: allModels,
+                modelProviders: modelProviders,
+                defaultProvider: .appleIntelligence
             ))
         }
 
@@ -365,6 +373,7 @@
             let selected = WatchLiveModelPolicy.firstUsableModel(
                 availableModels: allModels,
                 modelProviders: modelProviders,
+                defaultProvider: .openai,
                 isConfigured: { $0 == "configured" }
             )
 

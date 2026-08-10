@@ -27,7 +27,8 @@
             private var watchUsableModels: [String] {
                 WatchLiveModelPolicy.usableModels(
                     availableModels: connectivityService.availableModels,
-                    modelProviders: aiService.modelProviders
+                    modelProviders: aiService.modelProviders,
+                    defaultProvider: aiService.provider
                 )
             }
 

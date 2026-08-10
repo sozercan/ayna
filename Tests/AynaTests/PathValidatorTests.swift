@@ -270,4 +270,120 @@ struct PathValidatorTests {
             Issue.record("Expected requiresApproval for custom sensitive filename")
         }
     }
+
+    @Test("Protected path symlink retarget requires approval after validator init")
+    func protectedPathSymlinkRetargetRequiresApprovalAfterValidatorInit() throws {
+        let tempRoot = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let protectedPath = tempRoot.appendingPathComponent("protected")
+        try FileManager.default.createDirectory(at: protectedPath, withIntermediateDirectories: true)
+
+        let validator = PathValidator(
+            projectRoot: tempRoot,
+            protectedPaths: [protectedPath.path],
+            sensitiveFilenames: []
+        )
+
+        try FileManager.default.removeItem(at: protectedPath)
+        let symlinkTarget = tempRoot.appendingPathComponent("retargeted")
+        try FileManager.default.createDirectory(at: symlinkTarget, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: protectedPath, withDestinationURL: symlinkTarget)
+
+        let result = validator.validate(
+            protectedPath.appendingPathComponent("config").path,
+            operation: .read,
+            requireApprovalOutsideProject: false
+        )
+
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains(protectedPath.path))
+        } else {
+            Issue.record("Expected retargeted protected symlink to require approval")
+        }
+    }
+
+    @Test("Project root symlink retarget updates write boundary")
+    func projectRootSymlinkRetargetUpdatesWriteBoundary() throws {
+        let tempRoot = try TestHelpers.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let oldTarget = tempRoot.appendingPathComponent("old-project")
+        let newTarget = tempRoot.appendingPathComponent("new-project")
+        try FileManager.default.createDirectory(at: oldTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newTarget, withIntermediateDirectories: true)
+
+        let projectRoot = tempRoot.appendingPathComponent("project")
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: oldTarget)
+        let validator = PathValidator(projectRoot: projectRoot, protectedPaths: [], sensitiveFilenames: [])
+
+        try FileManager.default.removeItem(at: projectRoot)
+        try FileManager.default.createSymbolicLink(at: projectRoot, withDestinationURL: newTarget)
+
+        let oldTargetResult = validator.validate(
+            oldTarget.appendingPathComponent("Sources/Old.swift").path,
+            operation: .write
+        )
+        let newTargetResult = validator.validate(
+            newTarget.appendingPathComponent("Sources/New.swift").path,
+            operation: .write
+        )
+
+        #expect(oldTargetResult == .requiresApproval(reason: "Path outside project directory"))
+        #expect(newTargetResult == .allowed)
+        #expect(!validator.isWithinProject(oldTarget.path))
+        #expect(validator.isWithinProject(newTarget.path))
+    }
+
+    // MARK: - Bulk Validation Checks
+
+    @Test("Bulk path validation classifications stay stable")
+    func bulkPathValidationClassificationsStayStable() {
+        let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
+        let validator = PathValidator(projectRoot: projectRoot)
+        struct ValidationCase {
+            let path: String
+            let operation: PathValidator.FileOperation
+            let expectedAllowed: Bool
+        }
+
+        let cases = [
+            ValidationCase(path: "/tmp/my-project/Sources/App.swift", operation: .read, expectedAllowed: true),
+            ValidationCase(path: "/tmp/my-project/Sources/App.swift", operation: .write, expectedAllowed: true),
+            ValidationCase(path: "/tmp/my-project/.env", operation: .read, expectedAllowed: false),
+            ValidationCase(path: "/tmp/my-project/.git/config", operation: .read, expectedAllowed: false),
+            ValidationCase(path: "/etc/passwd", operation: .read, expectedAllowed: false),
+            ValidationCase(path: "/tmp/other/file.txt", operation: .write, expectedAllowed: false),
+            ValidationCase(path: "$HOME/Documents/file.txt", operation: .read, expectedAllowed: true),
+            ValidationCase(path: "/tmp/my-project/src/../README.md", operation: .write, expectedAllowed: true)
+        ]
+
+        let iterations = 50
+        var allowed = 0
+        var requiresApproval = 0
+        var denied = 0
+
+        let start = Date()
+        for _ in 0..<iterations {
+            for testCase in cases {
+                let result = validator.validate(testCase.path, operation: testCase.operation)
+                #expect(result.isAllowed == testCase.expectedAllowed)
+
+                switch result {
+                case .allowed:
+                    allowed += 1
+                case .requiresApproval:
+                    requiresApproval += 1
+                case .denied:
+                    denied += 1
+                }
+            }
+        }
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(allowed == iterations * 4)
+        #expect(requiresApproval == iterations * 4)
+        #expect(denied == 0)
+        print("BENCH PathValidator bulk validations: \(iterations * cases.count) in \(String(format: "%.4f", elapsed))s")
+    }
 }

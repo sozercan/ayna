@@ -34,18 +34,23 @@ final class OpenAIImageService: @unchecked Sendable {
             state.withLock { $0.isActive }
         }
 
-        func resume(_ task: URLSessionTask) {
+        @discardableResult
+        func register(_ task: URLSessionTask) -> Bool {
             let shouldResume = state.withLock { state -> Bool in
                 guard state.isActive else { return false }
                 state.cancellations.append { task.cancel() }
                 return true
             }
 
-            if shouldResume {
-                task.resume()
-            } else {
+            if !shouldResume {
                 task.cancel()
             }
+            return shouldResume
+        }
+
+        func resume(_ task: URLSessionTask) {
+            guard register(task) else { return }
+            task.resume()
         }
 
         func run(_ operation: @escaping @Sendable () async -> Void) {

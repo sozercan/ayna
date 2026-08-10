@@ -63,13 +63,15 @@ final class WatchToolCallRoundRegistry {
 enum WatchLiveModelPolicy {
     static func usableModels(
         availableModels: [String],
-        modelProviders: [String: AIProvider]
+        modelProviders: [String: AIProvider],
+        defaultProvider: AIProvider
     ) -> [String] {
         availableModels.filter { model in
             isUsable(
                 model,
                 availableModels: availableModels,
-                modelProviders: modelProviders
+                modelProviders: modelProviders,
+                defaultProvider: defaultProvider
             )
         }
     }
@@ -77,24 +79,28 @@ enum WatchLiveModelPolicy {
     static func isUsable(
         _ model: String,
         availableModels: [String],
-        modelProviders: [String: AIProvider]
+        modelProviders: [String: AIProvider],
+        defaultProvider: AIProvider
     ) -> Bool {
-        guard availableModels.contains(model), let provider = modelProviders[model] else {
+        guard availableModels.contains(model) else {
             return false
         }
+        let provider = modelProviders[model] ?? defaultProvider
         return provider != .appleIntelligence
     }
 
     static func firstUsableModel(
         availableModels: [String],
         modelProviders: [String: AIProvider],
+        defaultProvider: AIProvider,
         isConfigured: (String) -> Bool
     ) -> String? {
         availableModels.first { model in
             isUsable(
                 model,
                 availableModels: availableModels,
-                modelProviders: modelProviders
+                modelProviders: modelProviders,
+                defaultProvider: defaultProvider
             ) && isConfigured(model)
         }
     }
@@ -289,12 +295,14 @@ enum WatchLiveModelPolicy {
             let currentModelIsUsable = WatchLiveModelPolicy.isUsable(
                 model,
                 availableModels: connectivityService.availableModels,
-                modelProviders: aiService.modelProviders
+                modelProviders: aiService.modelProviders,
+                defaultProvider: aiService.provider
             ) && aiService.isModelConfigured(model)
             if !currentModelIsUsable {
                 let fallback = WatchLiveModelPolicy.firstUsableModel(
                     availableModels: connectivityService.availableModels,
                     modelProviders: aiService.modelProviders,
+                    defaultProvider: aiService.provider,
                     isConfigured: aiService.isModelConfigured
                 )
                 guard let fallback else {
@@ -1264,7 +1272,8 @@ enum WatchLiveModelPolicy {
             let selectedModelIsUsable = WatchLiveModelPolicy.isUsable(
                 selectedModel,
                 availableModels: connectivityService.availableModels,
-                modelProviders: aiService.modelProviders
+                modelProviders: aiService.modelProviders,
+                defaultProvider: aiService.provider
             ) && aiService.isModelConfigured(selectedModel)
 
             let model: String? = if selectedModelIsUsable {
@@ -1273,6 +1282,7 @@ enum WatchLiveModelPolicy {
                 WatchLiveModelPolicy.firstUsableModel(
                     availableModels: connectivityService.availableModels,
                     modelProviders: aiService.modelProviders,
+                    defaultProvider: aiService.provider,
                     isConfigured: aiService.isModelConfigured
                 )
             }
@@ -1318,6 +1328,7 @@ enum WatchLiveModelPolicy {
                 messages: [titleMessage],
                 model: conversation.model,
                 stream: false,
+                requestLane: .background,
                 onChunk: { [weak self] chunk in
                     Task { @MainActor [weak self] in
                         guard let self, self.canApplyTitleUpdate(requestID) else { return }

@@ -75,64 +75,23 @@ struct MacNewChatView: View {
     private var visibleMessages: [Message] {
         guard let conversation = currentConversation else { return [] }
         return conversation.messages.filter { message in
-            if message.role == .system {
-                return false
-            }
-
-            if message.role == .tool {
-                    let isWebSearchResult = message.toolCalls?.contains(where: {
-                        $0.toolName == WebSearchCoordinator.toolName
-                    }) == true
-                    return !isWebSearchResult &&
-                        !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                }
-
-                if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                    return true
-            }
-
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                return message.id == conversation.messages.last?.id && isGenerating
-            }
-            return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+            MacChatMessagePresentation.isVisible(
+                message,
+                lastMessageID: conversation.messages.last?.id,
+                isGenerating: isGenerating
+            )
         }
     }
 
     /// Converts visible messages into displayable items, grouping multi-model responses together
     private var displayableItems: [DisplayableItem] {
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
-        for message in visibleMessages {
-            // Check if this message is part of a response group
-            if let groupId = message.responseGroupId {
-                // Only process each group once
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                // Collect all messages in this group
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-
-                // Always show response groups as a group, even if only one response is currently visible
-                // This prevents UI jumping when responses arrive sequentially
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                // Regular message (not part of a response group)
-                items.append(.message(message))
+        DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        return items
+        )
     }
 
     private var needsModelSetup: Bool {

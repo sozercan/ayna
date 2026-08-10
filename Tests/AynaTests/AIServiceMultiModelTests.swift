@@ -234,4 +234,80 @@ extension AIServiceTests {
         #expect(staleErrors.value == 0)
         #expect(!staleAllComplete.value)
     }
+
+    @Test("Responses output stops when its first callback replaces the batch", .timeLimit(.minutes(1)))
+    func responsesOutputStopsWhenFirstCallbackReplacesBatch() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "responses-reentrant-batch"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelEndpointTypes[model] = .responses
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let receivedChunks = FlightTestBox<[String]>([])
+        let staleAllComplete = FlightTestBox(false)
+        let staleErrors = FlightTestBox<[String]>([])
+        let replacementRequest = FlightTestBox<AITextBatchRequest?>(nil)
+        let replacementComplete = FlightTestSignal()
+        let staleBatch = service.sendToMultipleModels(
+            messages: [Message(role: .user, content: "First")],
+            models: [model],
+            onChunk: { _, chunk in
+                receivedChunks.update { $0.append(chunk) }
+                guard chunk == "old-1" else { return }
+                MainActor.assumeIsolated {
+                    replacementRequest.value = service.sendToMultipleModels(
+                        messages: [Message(role: .user, content: "Replacement")],
+                        models: [model],
+                        onChunk: { _, replacementChunk in
+                            receivedChunks.update { $0.append(replacementChunk) }
+                        },
+                        onModelComplete: { _ in },
+                        onAllComplete: { replacementComplete.signal() },
+                        onError: { _, error in Issue.record("Unexpected replacement error: \(error)") }
+                    )
+                }
+            },
+            onModelComplete: { _ in },
+            onAllComplete: { staleAllComplete.value = true },
+            onError: { model, error in
+                staleErrors.update { $0.append("\(model):\(error.localizedDescription)") }
+            }
+        )
+
+        let staleExchange = await server.exchange(at: 0)
+        staleExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        staleExchange.send(Data(
+            #"{"output":[{"type":"message","content":[{"type":"output_text","text":"old-1"},{"type":"output_text","text":"old-2"}]}]}"#.utf8
+        ))
+        staleExchange.finish()
+
+        let replacementStarted = await server.waitForRequestCount(2)
+        #expect(replacementStarted)
+        guard replacementStarted else {
+            staleBatch.cancel()
+            replacementRequest.value?.cancel()
+            return
+        }
+
+        let replacementExchange = await server.exchange(at: 1)
+        staleBatch.cancel()
+        #expect(!replacementExchange.isStopped)
+
+        replacementExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        replacementExchange.send(Data(
+            #"{"output":[{"type":"message","content":[{"type":"output_text","text":"new"}]}]}"#.utf8
+        ))
+        replacementExchange.finish()
+
+        #expect(await replacementComplete.wait(timeout: .seconds(1)))
+        #expect(receivedChunks.value == ["old-1", "new"])
+        #expect(!staleAllComplete.value)
+        #expect(staleErrors.value.isEmpty)
+    }
 }

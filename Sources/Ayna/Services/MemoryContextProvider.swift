@@ -213,6 +213,22 @@ final class MemoryContextProvider {
         summaryService.removeSummary(for: conversationId)
     }
 
+    func invalidateConversationSummariesForClear() -> ConversationSummaryClearSnapshot {
+        summaryService.invalidateForConversationClear()
+    }
+
+    func restoreConversationSummariesAfterFailedClear(_ snapshot: ConversationSummaryClearSnapshot) async throws {
+        try await summaryService.restoreAfterFailedConversationClear(snapshot)
+    }
+
+    func clearAllConversationSummaries(cleanupToken: String? = nil) async throws {
+        try await summaryService.clearAllSummaries(
+            preservingCurrentDigest: true,
+            completingConversationClear: true,
+            cleanupToken: cleanupToken
+        )
+    }
+
     /// Backfills summaries for existing conversations.
     func backfillSummaries(from conversations: [Conversation]) {
         guard isMemoryEnabled else { return }

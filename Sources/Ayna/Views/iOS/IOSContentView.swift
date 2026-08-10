@@ -188,9 +188,6 @@ struct IOSNewChatView: View {
             return
         }
 
-        var items: [DisplayableItem] = []
-        var processedGroupIds: Set<UUID> = []
-
         let visibleMessages = conversation.messages.filter { message in
             // Hide system messages entirely
             if message.role == .system {
@@ -226,19 +223,13 @@ struct IOSNewChatView: View {
             return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
         }
 
-        for message in visibleMessages {
-            if let groupId = message.responseGroupId {
-                guard !processedGroupIds.contains(groupId) else { continue }
-                processedGroupIds.insert(groupId)
-
-                let groupResponses = visibleMessages.filter { $0.responseGroupId == groupId }
-                items.append(.responseGroup(groupId: groupId, responses: groupResponses))
-            } else {
-                items.append(.message(message))
+        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
+            from: visibleMessages,
+            makeMessage: { .message($0) },
+            makeResponseGroup: { groupId, responses in
+                .responseGroup(groupId: groupId, responses: responses)
             }
-        }
-
-        cachedDisplayableItems = items
+        )
     }
 
     /// Calculates which response would be auto-selected if user continues without choosing
