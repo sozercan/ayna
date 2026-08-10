@@ -38,6 +38,30 @@ struct ChatTurnFailurePlanTests {
     }
 
     @Test
+    func `immediate failure remains retryable after empty placeholder finalization`() {
+        let user = Message(role: .user, content: "Retry me")
+        let placeholder = Message(role: .assistant, content: "")
+        var conversation = Conversation(messages: [user, placeholder])
+
+        let finalization = ChatGenerationFinalizer.finalize(
+            conversation: &conversation,
+            activeAssistantMessageID: placeholder.id,
+            activeResponseGroupID: nil
+        )
+
+        let plan = ChatTurnFailurePlan(
+            messages: conversation.messages,
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: placeholder.id,
+            failedUserMessagePolicy: .removeForRetry
+        )
+
+        #expect(finalization.removedAssistantMessageID == placeholder.id)
+        #expect(plan.messagesAfterFailure == [user])
+        #expect(plan.retryPrompt == user.content)
+    }
+
+    @Test
     func `retry truncates the complete failed turn including tool continuations`() {
         let earlier = Message(role: .assistant, content: "Earlier")
         let user = Message(role: .user, content: "Search")

@@ -47,10 +47,14 @@ struct ChatTurnFailurePlan: Equatable, Sendable {
         let assistantMessage = assistantPlaceholderId.flatMap { assistantId in
             messages.first { $0.id == assistantId && $0.role == .assistant }
         }
+        // Finalization only removes empty single-response placeholders, so an identified
+        // placeholder that is already absent still represents a retryable no-output failure.
+        let canRetryAfterAssistantState = assistantPlaceholderId != nil
+            && (assistantMessage.map(Self.canRetryAfterAssistantState) ?? true)
 
         let shouldOfferRetry = failedUserMessagePolicy == .removeForRetry
             && failedUserMessage.map(Self.canRecreateFromTextOnly) == true
-            && assistantMessage.map(Self.canRetryAfterAssistantState) == true
+            && canRetryAfterAssistantState
 
         retryPrompt = shouldOfferRetry ? failedUserMessage?.content : nil
         messagesAfterFailure = messages.filter { message in
