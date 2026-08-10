@@ -43,7 +43,9 @@ The app supports multiple AI providers via the `AIProvider` enum.
 
 ### OpenAI Service Architecture
 
-Decomposed into single-responsibility components:
+OpenAI-compatible providers are routed directly through `AIService` and its
+single-responsibility request components. `AIProviderProtocol` remains the
+request-scoped adapter boundary for Anthropic and test injection.
 
 | File | Responsibility |
 |------|----------------|
@@ -53,9 +55,7 @@ Decomposed into single-responsibility components:
 | `OpenAIStreamParser.swift` | SSE parsing, tool call handling |
 | `AIRetryPolicy.swift` | Exponential backoff for transient failures |
 | `OpenAIImageService.swift` | DALL·E image generation |
-| `Providers/AIProviderProtocol.swift` | Protocol defining provider interface |
-| `Providers/OpenAIProvider.swift` | OpenAI API implementation |
-| `Providers/AzureOpenAIProvider.swift` | Azure OpenAI implementation |
+| `Providers/AIProviderProtocol.swift` | Request-scoped Anthropic provider interface |
 
 ### Apple Intelligence Service
 

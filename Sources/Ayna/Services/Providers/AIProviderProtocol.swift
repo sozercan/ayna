@@ -68,10 +68,10 @@ struct AIProviderStreamCallbacks: Sendable {
     }
 }
 
-/// Protocol defining the interface for AI providers
+/// Protocol defining the request-scoped provider interface used by Anthropic.
 ///
-/// Each provider implements this protocol
-/// to handle chat completions with their specific API requirements.
+/// OpenAI-compatible providers are routed directly through `AIService`; this
+/// abstraction remains for Anthropic request ownership and test injection.
 protocol AIProviderProtocol: AnyObject, Sendable {
     /// The provider type this implementation handles
     @MainActor
@@ -122,28 +122,5 @@ extension AIProviderProtocol {
             return AynaError.noModelSelected
         }
         return nil
-    }
-}
-
-/// Provider factory for creating provider instances
-enum AIProviderFactory {
-    /// Create a provider instance for the given type
-    ///
-    /// - Parameters:
-    ///   - type: The provider type to create
-    ///   - urlSession: URLSession to use for network requests
-    /// - Returns: An instance of the appropriate provider
-    @MainActor
-    static func createProvider(for type: AIProvider, urlSession: URLSession) -> AIProviderProtocol {
-        switch type {
-        case .openai:
-            OpenAIProvider(urlSession: urlSession)
-        case .appleIntelligence:
-            // Apple Intelligence is handled separately by its dedicated service
-            // Return OpenAI provider as fallback (should not be used)
-            OpenAIProvider(urlSession: urlSession)
-        case .anthropic:
-            AnthropicProvider(urlSession: urlSession)
-        }
     }
 }

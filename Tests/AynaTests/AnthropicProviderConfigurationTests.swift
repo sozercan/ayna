@@ -17,17 +17,6 @@ struct AnthropicProviderConfigurationTests {
     }
 
     @Test
-    func `factory returns AnthropicProvider for .anthropic`() {
-        let provider = AIProviderFactory.createProvider(
-            for: .anthropic,
-            urlSession: URLSession(configuration: .ephemeral)
-        )
-
-        #expect(provider.providerType == .anthropic)
-        #expect(provider is AnthropicProvider)
-    }
-
-    @Test
     func `provider type is anthropic`() {
         #expect(makeProvider().providerType == .anthropic)
     }
