@@ -8,24 +8,9 @@
 
 import SwiftUI
 
-/// Represents either a single message or a group of parallel responses
-enum DisplayableItem: Identifiable {
-    case message(Message)
-    case responseGroup(groupId: UUID, responses: [Message])
-
-    var id: String {
-        switch self {
-        case let .message(msg):
-            msg.id.uuidString
-        case let .responseGroup(groupId, _):
-            "group-\(groupId.uuidString)"
-        }
-    }
-}
-
 /// The scrollable message list area showing conversation messages
 struct ChatMessageList: View {
-    let displayableItems: [DisplayableItem]
+    let displayableItems: [ChatTranscriptItem]
     let conversation: Conversation
     let isGenerating: Bool
     @Binding var isToolSectionExpanded: Bool
@@ -50,7 +35,8 @@ struct ChatMessageList: View {
                 LazyVStack(spacing: 0) {
                     ForEach(displayableItems) { item in
                         switch item {
-                        case let .message(message):
+                        case let .message(transcriptMessage):
+                            let message = transcriptMessage.message
                             MacMessageView(
                                 message: message,
                                 modelName: message.model,
@@ -64,13 +50,14 @@ struct ChatMessageList: View {
                             )
                             .id(message.id)
 
-                        case let .responseGroup(groupId, responses):
+                        case let .responseGroup(group):
                             MultiModelResponseView(
-                                responseGroupId: groupId,
-                                responses: responses,
+                                responseGroupId: group.id,
+                                responses: group.messages,
                                 conversation: conversation,
+                                defaultCandidateId: group.defaultCandidateId,
                                 onSelectResponse: { messageId in
-                                    onSelectResponse(groupId, messageId)
+                                    onSelectResponse(group.id, messageId)
                                 },
                                 onRetry: { message in
                                     onRetryMessage(message)
@@ -129,6 +116,9 @@ struct ChatMessageList: View {
                 }
             }
             .onChange(of: conversation.messages) { _, _ in
+                onMessagesChange()
+            }
+            .onChange(of: conversation.responseGroups) { _, _ in
                 onMessagesChange()
             }
             .onChange(of: conversation.messages.last?.content) { _, _ in

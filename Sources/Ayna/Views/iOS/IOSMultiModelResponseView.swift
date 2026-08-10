@@ -337,16 +337,34 @@ struct IOSMultiModelResponseCard: View {
 
     @ViewBuilder
     private var contentBody: some View {
+        let contentPlan = MultiModelResponseContentPlan(
+            message: message,
+            responseStatus: responseStatus
+        )
+
         if isImageGeneration {
             imageGenerationContent
-        } else if message.content.isEmpty, isStreaming {
-            IOSTypingIndicatorView()
-                .padding(.vertical, Spacing.lg)
         } else if hasFailed {
             failedStateView
         } else {
-            ForEach(contentBlocks) { block in
-                IOSContentBlockView(block: block)
+            if let reasoning = contentPlan.reasoning {
+                IOSReasoningView(
+                    reasoning: reasoning,
+                    initiallyExpanded: message.content.isEmpty
+                )
+            }
+
+            if contentPlan.showsTypingIndicator {
+                IOSTypingIndicatorView()
+                    .padding(.vertical, Spacing.lg)
+            } else if !message.content.isEmpty {
+                if contentBlocks.isEmpty {
+                    Text(verbatim: message.content)
+                } else {
+                    ForEach(contentBlocks) { block in
+                        IOSContentBlockView(block: block)
+                    }
+                }
             }
         }
     }

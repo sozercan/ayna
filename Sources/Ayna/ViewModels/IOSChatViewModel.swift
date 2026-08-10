@@ -1845,15 +1845,17 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        let responseGroupId = UUID()
-        var messageIds: [String: UUID] = [:]
-        var placeholderMessages: [Message] = []
-        let responseGroup = createPlaceholderMessagesForMultiModel(
-            models: models, userMessageId: userMessage.id, responseGroupId: responseGroupId,
-            messageIds: &messageIds, placeholderMessages: &placeholderMessages
+        let responsePlan = createResponsePlanForMultiModel(
+            models: models,
+            userMessageId: userMessage.id
         )
-        let messageIdsByModel = messageIds
-        conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIdsByModel = responsePlan.messageIDsByModel
+        conversationManager.addMultiModelResponse(
+            to: targetConversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        )
 
         guard let updatedConversation = conversation else {
             isGenerating = false
@@ -1945,7 +1947,21 @@ extension IOSChatViewModel {
                 }
             },
             onPendingToolCall: nil,
-            onReasoning: nil
+            onReasoning: { [weak self] model, reasoning in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                    guard let self,
+                          coordinator.owns(operationID, conversationID: conversationId),
+                          let messageId = messageIdsByModel[model]
+                    else {
+                        return
+                    }
+                    self.appendMultiModelReasoning(
+                        reasoning,
+                        to: messageId,
+                        conversationId: conversationId
+                    )
+                }
+            }
         )
             coordinator.onCancel(for: operationID) {
                 request.cancel()
@@ -1976,22 +1992,19 @@ extension IOSChatViewModel {
         return updatedConv
     }
 
-    /// Creates placeholder messages for each model in a multi-model request
-    func createPlaceholderMessagesForMultiModel(
+    /// Creates the immutable setup for a multi-model request.
+    func createResponsePlanForMultiModel(
         models: [String],
         userMessageId: UUID,
-        responseGroupId: UUID,
-        messageIds: inout [String: UUID],
-        placeholderMessages: inout [Message]
-    ) -> ResponseGroup {
-        var responseGroup = ResponseGroup(id: responseGroupId, userMessageId: userMessageId)
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-            responseGroup.addResponse(messageId: messageId, modelName: model, status: .streaming)
-            placeholderMessages.append(Message(id: messageId, role: .assistant, content: "", model: model, responseGroupId: responseGroupId))
-        }
-        return responseGroup
+        responseGroupId: UUID = UUID(),
+        mediaType: Message.MediaType? = nil
+    ) -> MultiModelResponsePlan {
+        MultiModelResponsePlan(
+            models: models,
+            userMessageId: userMessageId,
+            responseGroupId: responseGroupId,
+            mediaType: mediaType
+        )
     }
 
     /// Processes a streaming chunk for a specific model in multi-model mode
@@ -2017,6 +2030,26 @@ extension IOSChatViewModel {
             model: model,
             chunk: chunk
         )
+    }
+
+    private func appendMultiModelReasoning(
+        _ reasoning: String,
+        to messageId: UUID,
+        conversationId: UUID
+    ) {
+        guard conversationManager.updateMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            update: { message in
+                message.reasoning = (message.reasoning ?? "") + reasoning
+            }
+        ) else {
+            return
+        }
+
+        if let conversation = conversationManager.conversation(byId: conversationId) {
+            conversationManager.save(conversation)
+        }
     }
 
     /// Processes completion for a specific model in multi-model mode
@@ -2333,40 +2366,19 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        let responseGroupId = UUID()
-        var responseEntries: [ResponseGroup.ResponseEntry] = []
-        var messageIds: [String: UUID] = [:]
-
-        for model in models {
-            let messageId = UUID()
-            messageIds[model] = messageId
-
-            let placeholderMessage = Message(
-                id: messageId,
-                role: .assistant,
-                content: "",
-                model: model,
-                responseGroupId: responseGroupId,
-                mediaType: .image
-            )
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-
-            responseEntries.append(ResponseGroup.ResponseEntry(
-                id: messageId,
-                modelName: model,
-                status: .streaming
-            ))
-        }
-
-        let responseGroup = ResponseGroup(
-            id: responseGroupId,
+        let responsePlan = createResponsePlanForMultiModel(
+            models: models,
             userMessageId: userMessage.id,
-            responses: responseEntries
+            mediaType: .image
         )
+        let responseGroupId = responsePlan.responseGroupId
+        let messageIds = responsePlan.messageIDsByModel
 
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-            conversationManager.conversations[index].responseGroups.append(responseGroup)
+        for placeholderMessage in responsePlan.placeholderMessages {
+            conversationManager.addMessage(to: conversation, message: placeholderMessage)
         }
+
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let conversationManager = conversationManager
         let cancelledMessageIDs = Array(messageIds.values)

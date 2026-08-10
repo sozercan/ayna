@@ -15,6 +15,8 @@ struct MultiModelResponseView: View {
     let responseGroupId: UUID
     let responses: [Message]
     let conversation: Conversation
+    /// ID of the response that would be auto-selected if the user continues without choosing.
+    var defaultCandidateId: UUID?
     var onSelectResponse: ((UUID) -> Void)?
     var onRetry: ((Message) -> Void)?
 
@@ -30,15 +32,6 @@ struct MultiModelResponseView: View {
 
     private var isSelectionMade: Bool {
         selectedResponseId != nil
-    }
-
-    private var defaultCandidateId: UUID? {
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == conversation.model }) {
-            return match.id
-        }
-        // 2. Fallback: First model
-        return responses.first?.id
     }
 
     /// Determines the grid layout based on number of responses
@@ -128,6 +121,7 @@ struct MultiModelResponseCard: View {
 
     @State private var isHovered = false
     @State private var cachedContentBlocks: [ContentBlock]
+    @State private var cachedReasoningBlocks: [ContentBlock]
     @State private var decodedImage: NSImage?
 
     init(
@@ -147,6 +141,7 @@ struct MultiModelResponseCard: View {
         self.onSelect = onSelect
         self.onRetry = onRetry
         _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
+        _cachedReasoningBlocks = State(initialValue: MarkdownRenderer.parse(message.reasoning ?? ""))
     }
 
     private var modelName: String {
@@ -205,6 +200,14 @@ struct MultiModelResponseCard: View {
                     let blocks = MarkdownRenderer.parse(newContent)
                     await MainActor.run {
                         cachedContentBlocks = blocks
+                    }
+                }
+            }
+            .onChange(of: message.reasoning) { _, newReasoning in
+                Task.detached(priority: .userInitiated) {
+                    let blocks = MarkdownRenderer.parse(newReasoning ?? "")
+                    await MainActor.run {
+                        cachedReasoningBlocks = blocks
                     }
                 }
             }
@@ -286,7 +289,12 @@ struct MultiModelResponseCard: View {
     }
 
     private var contentScrollView: some View {
-        ScrollView {
+        let contentPlan = MultiModelResponseContentPlan(
+            message: message,
+            responseStatus: responseStatus
+        )
+
+        return ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if message.mediaType == .image {
                     // Image generation content
@@ -326,14 +334,24 @@ struct MultiModelResponseCard: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, Spacing.xxl)
                     }
-                } else if message.content.isEmpty, isStreaming {
-                    TypingIndicatorView()
-                        .padding(.vertical, Spacing.sm)
                 } else if hasFailed {
                     failedContentView
                 } else {
-                    ForEach(cachedContentBlocks, id: \.id) { block in
-                        block.view
+                    if let reasoning = contentPlan.reasoning {
+                        reasoningView(reasoning)
+                    }
+
+                    if contentPlan.showsTypingIndicator {
+                        TypingIndicatorView()
+                            .padding(.vertical, Spacing.sm)
+                    } else if !message.content.isEmpty {
+                        if cachedContentBlocks.isEmpty {
+                            Text(verbatim: message.content)
+                        } else {
+                            ForEach(cachedContentBlocks, id: \.id) { block in
+                                block.view
+                            }
+                        }
                     }
                 }
             }
@@ -341,6 +359,30 @@ struct MultiModelResponseCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 120, maxHeight: 300)
+    }
+
+    private func reasoningView(_ reasoning: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Label("Reasoning", systemImage: "brain.head.profile")
+                .font(Typography.captionBold)
+                .foregroundStyle(Theme.textSecondary)
+
+            if cachedReasoningBlocks.isEmpty {
+                Text(verbatim: reasoning)
+            } else {
+                ForEach(cachedReasoningBlocks, id: \.id) { block in
+                    block.view
+                }
+            }
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Theme.textSecondary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Reasoning")
     }
 
     private func loadImage() {
@@ -615,7 +657,8 @@ struct MultiModelSelector: View {
             return MultiModelResponseView(
                 responseGroupId: groupId,
                 responses: responses,
-                conversation: conversation
+                conversation: conversation,
+                defaultCandidateId: responses.first?.id
             )
             .frame(width: 800)
             .padding()

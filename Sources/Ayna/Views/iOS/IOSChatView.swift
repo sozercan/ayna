@@ -29,28 +29,11 @@ struct IOSChatView: View {
     @State private var isNearBottom = true
 
     /// Performance: Cached displayable items to avoid O(n) computation on every render
-    @State private var cachedDisplayableItems: [DisplayableItem] = []
+    @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
     /// Get the conversation from the environment's conversation manager
     private var conversation: Conversation? {
         conversationManager.conversations.first { $0.id == conversationId }
-    }
-
-    // MARK: - Multi-Model Display
-
-    /// Represents either a single message or a group of parallel responses
-    private enum DisplayableItem: Identifiable {
-        case message(Message)
-        case responseGroup(groupId: UUID, responses: [Message])
-
-        var id: String {
-            switch self {
-            case let .message(msg):
-                msg.id.uuidString
-            case let .responseGroup(groupId, _):
-                "group-\(groupId.uuidString)"
-            }
-        }
     }
 
     /// Updates cached displayable items. Call when messages change or isGenerating changes.
@@ -60,50 +43,10 @@ struct IOSChatView: View {
             return
         }
 
-        let visibleMessages = conversation.messages.filter { message in
-            // Hide system messages entirely
-            if message.role == .system {
-                return false
-            }
-
-                // Web search results remain in model history but are presented as citations instead.
-            if message.role == .tool {
-                    if message.toolCalls?.contains(where: { $0.toolName == WebSearchCoordinator.toolName }) == true {
-                        return false
-                    }
-                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-                if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                    return true
-                }
-
-            // Don't show empty assistant messages unless we're actively generating
-            if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                // Hide assistant messages that only have tool calls (intermediate steps)
-                // These are placeholders that triggered tool execution but have no response content
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    return false
-                }
-                // Always show assistant messages in a response group (multi-model mode)
-                // They need to remain visible even after generation to show failed/empty states
-                if message.responseGroupId != nil {
-                    return true
-                }
-                // Only show empty assistant message if it's the last message and we're generating
-                return message.id == conversation.messages.last?.id && viewModel.isGenerating
-            }
-
-            return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
-        }
-
-        cachedDisplayableItems = DisplayableMessageGrouper.displayableItems(
-            from: visibleMessages,
-            makeMessage: { .message($0) },
-            makeResponseGroup: { groupId, responses in
-                .responseGroup(groupId: groupId, responses: responses)
-            }
-        )
+        cachedDisplayableItems = ChatTranscriptPlan(
+            conversation: conversation,
+            isGenerating: viewModel.isGenerating
+        ).items
     }
 
     var body: some View {
@@ -115,9 +58,11 @@ struct IOSChatView: View {
                             LazyVStack(spacing: 12) {
                                 ForEach(cachedDisplayableItems) { item in
                                     switch item {
-                                    case let .message(message):
+                                    case let .message(transcriptMessage):
+                                        let message = transcriptMessage.message
                                         IOSMessageView(
                                             message: message,
+                                            displayKind: transcriptMessage.displayKind,
                                             onRetry: message.role == .assistant && !viewModel.isGenerating ? {
                                                 viewModel.retryMessage(beforeMessage: message)
                                             } : nil,
@@ -138,24 +83,24 @@ struct IOSChatView: View {
                                         )
                                         .id(message.id)
                                         .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
-                                    case let .responseGroup(groupId, responses):
+                                    case let .responseGroup(group):
                                         IOSMultiModelResponseView(
-                                            responseGroupId: groupId,
-                                            responses: responses,
+                                            responseGroupId: group.id,
+                                            responses: group.messages,
                                             conversation: conversation,
                                             onSelectResponse: { messageId in
                                                 // Use centralized haptic engine
                                                 HapticEngine.selection()
                                                 conversationManager.selectResponse(
                                                     in: conversation,
-                                                    groupId: groupId,
+                                                    groupId: group.id,
                                                     messageId: messageId
                                                 )
                                             },
                                             onRetry: viewModel.isGenerating ? nil : { message in
                                                 viewModel.retryMessage(beforeMessage: message)
                                             },
-                                            defaultCandidateId: defaultCandidateId(for: responses, in: conversation)
+                                            defaultCandidateId: group.defaultCandidateId
                                         )
                                         .id(item.id)
                                     }
@@ -400,45 +345,19 @@ struct IOSChatView: View {
 
     private func autoSelectResponseIfNeeded() {
         guard let conversation else { return }
-        guard let lastMessage = conversation.messages.last,
-              let groupId = lastMessage.responseGroupId,
-              let group = conversation.getResponseGroup(groupId),
-              group.selectedResponseId == nil
-        else {
-            return
-        }
+        guard let selection = ChatTranscriptPlan.autoSelectionCandidate(in: conversation) else { return }
 
-        let responses = conversation.messages.filter { $0.responseGroupId == groupId }
-        var candidateId: UUID?
-
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == conversation.model }) {
-            candidateId = match.id
-        }
-        // 2. Fallback: First model
-        else if let first = responses.first {
-            candidateId = first.id
-        }
-
-        if let id = candidateId {
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .info,
-                message: "🤖 Auto-selecting response before sending new message",
-                metadata: ["messageId": id.uuidString]
-            )
-            conversationManager.selectResponse(in: conversation, groupId: groupId, messageId: id)
-        }
-    }
-
-    /// Calculates which response would be auto-selected if user continues without choosing (for visual cue)
-    private func defaultCandidateId(for responses: [Message], in conversation: Conversation) -> UUID? {
-        // 1. Primary: conversation.model
-        if let match = responses.first(where: { $0.model == conversation.model }) {
-            return match.id
-        }
-        // 2. Fallback: First response
-        return responses.first?.id
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🤖 Auto-selecting response before sending new message",
+            metadata: ["messageId": selection.messageId.uuidString]
+        )
+        conversationManager.selectResponse(
+            in: conversation,
+            groupId: selection.groupId,
+            messageId: selection.messageId
+        )
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
