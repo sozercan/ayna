@@ -350,7 +350,8 @@ struct IOSMultiModelResponseCard: View {
             if let reasoning = contentPlan.reasoning {
                 IOSReasoningView(
                     reasoning: reasoning,
-                    initiallyExpanded: message.content.isEmpty
+                    initiallyExpanded: message.content.isEmpty,
+                    isStreaming: isStreaming
                 )
             }
 

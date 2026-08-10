@@ -297,6 +297,7 @@ struct MacChatView: View {
                         updateTranscriptPlan()
                     },
                     onModelChange: {
+                        updateTranscriptPlan()
                         syncSelectedModelWithConversation()
                     },
                     onGeneratingChange: {

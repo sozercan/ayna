@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 struct IOSMessageView: View {
     let message: Message
     let displayKind: ChatTranscriptDisplayKind?
+    let isGenerating: Bool
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
     var onEdit: ((String) -> Void)?
@@ -36,6 +37,7 @@ struct IOSMessageView: View {
     init(
         message: Message,
         displayKind: ChatTranscriptDisplayKind? = nil,
+        isGenerating: Bool = false,
         onRetry: (() -> Void)? = nil,
         onSwitchModel: ((String) -> Void)? = nil,
         onEdit: ((String) -> Void)? = nil,
@@ -43,6 +45,7 @@ struct IOSMessageView: View {
     ) {
         self.message = message
         self.displayKind = displayKind
+        self.isGenerating = isGenerating
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
@@ -267,7 +270,8 @@ struct IOSMessageView: View {
                 if hasReasoning, let reasoning = message.reasoning {
                     IOSReasoningView(
                         reasoning: reasoning,
-                        initiallyExpanded: message.content.isEmpty
+                        initiallyExpanded: message.content.isEmpty,
+                        isStreaming: isGenerating
                     )
                 }
 
@@ -529,17 +533,18 @@ struct IOSMessageView: View {
 /// Collapsible reasoning content shared by single- and multi-model iOS responses.
 struct IOSReasoningView: View {
     let reasoning: String
+    let isStreaming: Bool
 
     @State private var isExpanded: Bool
     @State private var contentBlocks: [ContentBlock]
-    @State private var lastReasoningHash: Int
     @State private var parseTask: Task<Void, Never>?
+    @State private var parseGeneration = 0
 
-    init(reasoning: String, initiallyExpanded: Bool) {
+    init(reasoning: String, initiallyExpanded: Bool, isStreaming: Bool) {
         self.reasoning = reasoning
+        self.isStreaming = isStreaming
         _isExpanded = State(initialValue: initiallyExpanded)
-        _contentBlocks = State(initialValue: MarkdownRenderer.parse(reasoning))
-        _lastReasoningHash = State(initialValue: reasoning.hashValue)
+        _contentBlocks = State(initialValue: MarkdownRenderer.cachedBlocks(for: reasoning) ?? [])
     }
 
     var body: some View {
@@ -584,21 +589,43 @@ struct IOSReasoningView: View {
             }
         }
         .onChange(of: reasoning) { _, newReasoning in
-            let newHash = newReasoning.hashValue
-            guard newHash != lastReasoningHash else { return }
-            lastReasoningHash = newHash
-
-            parseTask?.cancel()
-            parseTask = Task.detached(priority: .userInitiated) {
-                let blocks = MarkdownRenderer.parse(newReasoning)
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    contentBlocks = blocks
-                }
+            scheduleParse(for: newReasoning)
+        }
+        .onChange(of: isStreaming) { wasStreaming, isStreaming in
+            if wasStreaming, !isStreaming {
+                scheduleParse(for: reasoning)
+            }
+        }
+        .task {
+            if contentBlocks.isEmpty {
+                scheduleParse(for: reasoning)
             }
         }
         .onDisappear {
             parseTask?.cancel()
+        }
+    }
+
+    private func scheduleParse(for reasoning: String) {
+        parseTask?.cancel()
+        parseGeneration += 1
+        let generation = parseGeneration
+        let shouldDebounce = isStreaming
+        let cachePolicy: MarkdownRenderer.CachePolicy = isStreaming ? .doNotCache : .useCache
+
+        parseTask = Task.detached(priority: .userInitiated) {
+            if shouldDebounce {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !Task.isCancelled else { return }
+            let blocks = MarkdownRenderer.parse(reasoning, cachePolicy: cachePolicy)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard generation == parseGeneration, self.reasoning == reasoning else {
+                    return
+                }
+                contentBlocks = blocks
+            }
         }
     }
 }

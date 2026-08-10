@@ -122,6 +122,8 @@ struct MultiModelResponseCard: View {
     @State private var isHovered = false
     @State private var cachedContentBlocks: [ContentBlock]
     @State private var cachedReasoningBlocks: [ContentBlock]
+    @State private var reasoningParseTask: Task<Void, Never>?
+    @State private var reasoningParseGeneration = 0
     @State private var decodedImage: NSImage?
 
     init(
@@ -141,7 +143,9 @@ struct MultiModelResponseCard: View {
         self.onSelect = onSelect
         self.onRetry = onRetry
         _cachedContentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
-        _cachedReasoningBlocks = State(initialValue: MarkdownRenderer.parse(message.reasoning ?? ""))
+        _cachedReasoningBlocks = State(
+            initialValue: message.reasoning.flatMap { MarkdownRenderer.cachedBlocks(for: $0) } ?? []
+        )
     }
 
     private var modelName: String {
@@ -204,11 +208,11 @@ struct MultiModelResponseCard: View {
                 }
             }
             .onChange(of: message.reasoning) { _, newReasoning in
-                Task.detached(priority: .userInitiated) {
-                    let blocks = MarkdownRenderer.parse(newReasoning ?? "")
-                    await MainActor.run {
-                        cachedReasoningBlocks = blocks
-                    }
+                scheduleReasoningParse(for: newReasoning ?? "")
+            }
+            .onChange(of: isStreaming) { wasStreaming, isStreaming in
+                if wasStreaming, !isStreaming {
+                    scheduleReasoningParse(for: message.reasoning ?? "")
                 }
             }
             .onChange(of: message.imageData) { _, newImageData in
@@ -224,9 +228,15 @@ struct MultiModelResponseCard: View {
                 }
             }
             .task {
+                if cachedReasoningBlocks.isEmpty {
+                    scheduleReasoningParse(for: message.reasoning ?? "")
+                }
                 if message.mediaType == .image, decodedImage == nil {
                     loadImage()
                 }
+            }
+            .onDisappear {
+                reasoningParseTask?.cancel()
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Response from \(modelName)")
@@ -383,6 +393,31 @@ struct MultiModelResponseCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Reasoning")
+    }
+
+    private func scheduleReasoningParse(for reasoning: String) {
+        reasoningParseTask?.cancel()
+        reasoningParseGeneration += 1
+        let generation = reasoningParseGeneration
+        let shouldDebounce = isStreaming
+        let cachePolicy: MarkdownRenderer.CachePolicy = isStreaming ? .doNotCache : .useCache
+
+        reasoningParseTask = Task.detached(priority: .userInitiated) {
+            if shouldDebounce {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !Task.isCancelled else { return }
+            let blocks = MarkdownRenderer.parse(reasoning, cachePolicy: cachePolicy)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard generation == reasoningParseGeneration,
+                      message.reasoning ?? "" == reasoning
+                else {
+                    return
+                }
+                cachedReasoningBlocks = blocks
+            }
+        }
     }
 
     private func loadImage() {

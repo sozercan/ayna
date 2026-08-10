@@ -94,6 +94,70 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `multi-model reasoning routes by model and rejects stale operation callbacks`() async throws {
+            let models = ["model-a", "model-b"]
+            let conversation = Conversation(
+                model: models[0],
+                systemPromptMode: .disabled,
+                multiModelEnabled: true,
+                activeModels: models
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = MultiModelReasoningCapturingAIService()
+            configure(aiService, models: models)
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            viewModel.selectedModels = Set(models)
+            viewModel.messageText = "First comparison"
+
+            viewModel.sendMessage()
+            #expect(aiService.reasoningCallbackCount == 1)
+            let firstGroup = try #require(manager.conversation(byId: conversation.id)?.responseGroups.last)
+            let firstA = try #require(firstGroup.responses.first(where: { $0.modelName == models[0] }))
+            let firstB = try #require(firstGroup.responses.first(where: { $0.modelName == models[1] }))
+
+            aiService.emitReasoning(requestIndex: 0, model: models[0], reasoning: "first-a")
+            aiService.emitReasoning(requestIndex: 0, model: models[1], reasoning: "first-b")
+            #expect(await waitUntil {
+                let messages = manager.conversation(byId: conversation.id)?.messages ?? []
+                return messages.first(where: { $0.id == firstA.id })?.reasoning == "first-a"
+                    && messages.first(where: { $0.id == firstB.id })?.reasoning == "first-b"
+            })
+
+            viewModel.cancelGeneration()
+            viewModel.messageText = "Replacement comparison"
+            viewModel.sendMessage()
+            #expect(aiService.reasoningCallbackCount == 2)
+            let secondGroup = try #require(manager.conversation(byId: conversation.id)?.responseGroups.last)
+            #expect(secondGroup.id != firstGroup.id)
+            let secondA = try #require(secondGroup.responses.first(where: { $0.modelName == models[0] }))
+            let secondB = try #require(secondGroup.responses.first(where: { $0.modelName == models[1] }))
+
+            aiService.emitReasoning(requestIndex: 0, model: models[0], reasoning: "-stale")
+            aiService.emitReasoning(requestIndex: 1, model: models[0], reasoning: "second-a")
+            #expect(await waitUntil {
+                manager.conversation(byId: conversation.id)?.messages.first(where: { $0.id == secondA.id })?.reasoning
+                    == "second-a"
+            })
+
+            let messages = try #require(manager.conversation(byId: conversation.id)?.messages)
+            #expect(messages.first(where: { $0.id == firstA.id })?.reasoning == "first-a")
+            #expect(messages.first(where: { $0.id == firstB.id })?.reasoning == "first-b")
+            #expect(messages.first(where: { $0.id == secondB.id })?.reasoning == nil)
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test
         func `hydrated conversation send remains synchronous`() throws {
             let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
@@ -571,6 +635,51 @@
                 onPendingToolCall: onPendingToolCall,
                 onReasoning: onReasoning
             )
+        }
+    }
+
+    @MainActor
+    private final class MultiModelReasoningCapturingAIService: AIService {
+        private typealias ReasoningCallback = @Sendable (String, String) -> Void
+
+        private var reasoningCallbacks: [ReasoningCallback?] = []
+
+        var reasoningCallbackCount: Int {
+            reasoningCallbacks.count
+        }
+
+        init() {
+            super.init(responseSimulator: { _, _ in })
+        }
+
+        override func sendToMultipleModels(
+            messages: [Message],
+            models: [String],
+            temperature: Double?,
+            onChunk: @escaping @Sendable (String, String) -> Void,
+            onModelComplete: @escaping @Sendable (String) -> Void,
+            onAllComplete: @escaping @Sendable () -> Void,
+            onError: @escaping @Sendable (String, Error) -> Void,
+            onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
+            onReasoning: (@Sendable (String, String) -> Void)?
+        ) -> AITextBatchRequest {
+            reasoningCallbacks.append(onReasoning)
+            return super.sendToMultipleModels(
+                messages: messages,
+                models: [],
+                temperature: temperature,
+                onChunk: { _, _ in },
+                onModelComplete: { _ in },
+                onAllComplete: {},
+                onError: { _, _ in },
+                onPendingToolCall: nil,
+                onReasoning: nil
+            )
+        }
+
+        func emitReasoning(requestIndex: Int, model: String, reasoning: String) {
+            guard reasoningCallbacks.indices.contains(requestIndex) else { return }
+            reasoningCallbacks[requestIndex]?(model, reasoning)
         }
     }
 

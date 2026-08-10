@@ -18,6 +18,7 @@ import SwiftUI
 @MainActor
 struct MacMessageView: View {
     let message: Message
+    let displayKind: ChatTranscriptDisplayKind?
     var modelName: String?
     var onRetry: (() -> Void)?
     var onSwitchModel: ((String) -> Void)?
@@ -48,12 +49,14 @@ struct MacMessageView: View {
 
     init(
         message: Message,
+        displayKind: ChatTranscriptDisplayKind? = nil,
         modelName: String? = nil,
         onRetry: (() -> Void)? = nil,
         onSwitchModel: ((String) -> Void)? = nil,
         onEdit: ((String) -> Void)? = nil
     ) {
         self.message = message
+        self.displayKind = displayKind
         self.modelName = modelName
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
@@ -473,12 +476,16 @@ struct MacMessageView: View {
         // Check if message has meaningful reasoning content
         let hasReasoning = message.reasoning.map { !$0.isEmpty } ?? false
         let hasCitations = !(message.citations?.isEmpty ?? true)
+        let shouldShowTypingIndicator = if let displayKind {
+            displayKind == .typingPlaceholder
+        } else {
+            message.role == .assistant && message.content.isEmpty && message.mediaType != .image
+                && !hasReasoning && !hasCitations
+        }
 
         // Show typing indicator for empty assistant messages (waiting for response)
         // But not if we have reasoning content (model is thinking)
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
-           !hasReasoning, !hasCitations
-        {
+        if shouldShowTypingIndicator {
             TypingIndicatorView()
         }
 

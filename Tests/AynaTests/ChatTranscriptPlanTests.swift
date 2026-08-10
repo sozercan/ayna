@@ -181,6 +181,47 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
+    func `default candidate prefers meaningful content over an empty preferred-model response`() {
+        let groupId = UUID()
+        let user = Message(role: .user, content: "Compare")
+        let emptyPreferred = Message(
+            role: .assistant,
+            content: "",
+            model: "gpt-a",
+            responseGroupId: groupId
+        )
+        let meaningful = Message(
+            role: .assistant,
+            content: "Useful answer",
+            model: "gpt-b",
+            responseGroupId: groupId
+        )
+        let group = ResponseGroup(
+            id: groupId,
+            userMessageId: user.id,
+            responses: [
+                ResponseGroup.ResponseEntry(id: emptyPreferred.id, modelName: "gpt-a", status: .completed),
+                ResponseGroup.ResponseEntry(id: meaningful.id, modelName: "gpt-b", status: .completed)
+            ]
+        )
+        let conversation = Conversation(
+            messages: [user, emptyPreferred, meaningful],
+            model: "gpt-a",
+            responseGroups: [group]
+        )
+
+        let plan = ChatTranscriptPlan(conversation: conversation, isGenerating: false)
+
+        #expect(ChatTranscriptPlan.defaultCandidateId(
+            for: [emptyPreferred, meaningful],
+            in: conversation,
+            responseGroup: group
+        ) == meaningful.id)
+        #expect(plan.pendingAutoSelection?.messageId == meaningful.id)
+        #expect(conversation.getEffectiveHistory().map(\.id) == [user.id, meaningful.id])
+    }
+
+    @Test
     func `default candidate falls back to original ordering when every response is unavailable`() {
         let failed = Message(role: .assistant, content: "A", model: "gpt-a")
         let streaming = Message(role: .assistant, content: "B", model: "gpt-b")

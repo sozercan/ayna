@@ -39,6 +39,7 @@ struct ChatMessageList: View {
                             let message = transcriptMessage.message
                             MacMessageView(
                                 message: message,
+                                displayKind: transcriptMessage.displayKind,
                                 modelName: message.model,
                                 onRetry: message.role == .assistant ? { onRetryMessage(message) } : nil,
                                 onSwitchModel: message.role == .assistant

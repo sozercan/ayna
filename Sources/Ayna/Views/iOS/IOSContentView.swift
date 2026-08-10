@@ -199,6 +199,8 @@ struct IOSNewChatView: View {
                                     IOSMessageView(
                                         message: message,
                                         displayKind: transcriptMessage.displayKind,
+                                        isGenerating: viewModel.isGenerating
+                                            && message.id == conversation.messages.last?.id,
                                         onRetry: message.role == .assistant ? {
                                             viewModel.retryMessage(beforeMessage: message)
                                         } : nil,

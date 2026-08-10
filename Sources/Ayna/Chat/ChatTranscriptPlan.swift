@@ -66,10 +66,19 @@ struct ChatTranscriptPlan: Equatable, Sendable {
     let pendingAutoSelection: ChatTranscriptResponseSelection?
 
     init(conversation: Conversation, isGenerating: Bool) {
+        let responseGroupsByID = conversation.responseGroups.reduce(into: [UUID: ResponseGroup]()) { result, group in
+            if result[group.id] == nil {
+                result[group.id] = group
+            }
+        }
         visibleMessages = conversation.messages.compactMap { message in
             Self.visibleMessage(for: message, in: conversation, isGenerating: isGenerating)
         }
-        items = Self.makeItems(from: visibleMessages, in: conversation)
+        items = Self.makeItems(
+            from: visibleMessages,
+            in: conversation,
+            responseGroupsByID: responseGroupsByID
+        )
         pendingAutoSelection = Self.autoSelectionCandidate(in: conversation)
     }
 
@@ -78,15 +87,22 @@ struct ChatTranscriptPlan: Equatable, Sendable {
         in conversation: Conversation,
         responseGroup: ResponseGroup? = nil
     ) -> UUID? {
-        let selectableResponses = responses.filter { message in
-            guard let responseGroup,
-                  let entry = responseGroup.responses.first(where: { $0.id == message.id })
+        let responseEntriesByID = responseGroup?.responses.reduce(into: [UUID: ResponseGroupEntry]()) { result, entry in
+            if result[entry.id] == nil {
+                result[entry.id] = entry
+            }
+        } ?? [:]
+        let meaningfulResponses = responses.filter(\.hasMeaningfulHistoryContent)
+        let contentCandidates = meaningfulResponses.isEmpty ? responses : meaningfulResponses
+        let selectableResponses = contentCandidates.filter { message in
+            guard responseGroup != nil,
+                  let entry = responseEntriesByID[message.id]
             else {
                 return true
             }
             return entry.status != .streaming && entry.status != .failed
         }
-        let candidates = selectableResponses.isEmpty ? responses : selectableResponses
+        let candidates = selectableResponses.isEmpty ? contentCandidates : selectableResponses
 
         if let match = candidates.first(where: { $0.model == conversation.model }) {
             return match.id
@@ -191,7 +207,8 @@ struct ChatTranscriptPlan: Equatable, Sendable {
 
     private static func makeItems(
         from visibleMessages: [ChatTranscriptMessage],
-        in conversation: Conversation
+        in conversation: Conversation,
+        responseGroupsByID: [UUID: ResponseGroup]
     ) -> [ChatTranscriptItem] {
         let messagesByID = visibleMessages.reduce(into: [UUID: ChatTranscriptMessage]()) { result, item in
             result[item.id] = item
@@ -204,7 +221,7 @@ struct ChatTranscriptPlan: Equatable, Sendable {
                 return .message(item)
             case let .responseGroup(groupId, responses):
                 let responseItems = responses.compactMap { messagesByID[$0.id] }
-                let responseGroup = conversation.getResponseGroup(groupId)
+                let responseGroup = responseGroupsByID[groupId]
                 return .responseGroup(ChatTranscriptResponseGroup(
                     id: groupId,
                     responses: responseItems,
