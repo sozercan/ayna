@@ -145,6 +145,7 @@ struct MacChatView: View {
     @State var errorMessage: String?
     @State var errorRecoverySuggestion: String?
     @State private var failedMessage: String?
+    @State private var failedMessageId: UUID?
     @State private var selectedModel: String
     @State private var attachedFiles: [URL] = []
     @State var toolCallDepth = 0
@@ -475,12 +476,10 @@ struct MacChatView: View {
 
         isGenerating = true
 
-        // Build messages for API using the same pattern as sendMessage
-            var messagesToSend = currentConversation.getEffectiveHistory()
-        if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: currentConversation,
+            systemPrompt: buildFullSystemPrompt(for: currentConversation)
+        )
 
         // Create assistant placeholder
         let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
@@ -495,8 +494,10 @@ struct MacChatView: View {
             model: currentConversation.model,
             temperature: currentConversation.temperature,
             tools: tools,
-                isInitialRequest: true,
-                assistantMessageID: assistantMessage.id
+            isInitialRequest: true,
+            assistantMessageID: assistantMessage.id,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -701,10 +702,25 @@ struct MacChatView: View {
 
         logChat("🔄 Retrying failed message", level: .info, metadata: ["messageLength": "\(message.count)"])
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId,
+           let messagesBeforeFailedTurn = ChatTurnFailurePlan.messagesBeforeFailedTurn(
+               in: currentConversation.messages,
+               failedUserMessageId: messageId
+           )
+        {
+            var updatedConversation = currentConversation
+            updatedConversation.messages = messagesBeforeFailedTurn
+            updatedConversation.updatedAt = Date()
+            conversationManager.updateConversation(updatedConversation)
+        }
 
         // Set message text and send
         messageText = message
@@ -714,6 +730,7 @@ struct MacChatView: View {
     /// Dismiss the current error without retrying
     private func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -1029,6 +1046,7 @@ struct MacChatView: View {
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = promptText // Store for retry in case of failure
+        failedMessageId = userMessage.id
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
         // Get updated messages after adding user message
@@ -1065,14 +1083,10 @@ struct MacChatView: View {
             return
         }
 
-            let currentMessages = updatedConversation.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
@@ -1148,12 +1162,14 @@ struct MacChatView: View {
             temperature: updatedConversation.temperature,
             tools: tools,
             isInitialRequest: true,
-            assistantMessageID: assistantMessage.id
+            assistantMessageID: assistantMessage.id,
+            failedUserMessageId: userMessage.id,
+            failedUserMessagePolicy: .removeForRetry
         )
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length function_parameter_count
     func sendMessageWithToolSupport(
         messages: [Message],
         model: String,
@@ -1161,7 +1177,9 @@ struct MacChatView: View {
         tools: [[String: Any]]?,
         isInitialRequest _: Bool,
         assistantMessageID requestedAssistantMessageID: UUID? = nil,
-        operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
+        operationID existingOperationID: ToolChainCoordinator.OperationID? = nil,
+        failedUserMessageId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let mcpManager = MCPServerManager.shared
@@ -1276,7 +1294,9 @@ struct MacChatView: View {
                             conversationID: conversationId,
                             model: model,
                             temperature: temperature,
-                            tools: toolsWrapper.value
+                            tools: toolsWrapper.value,
+                            failedUserMessageId: failedUserMessageId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
                         )
                 }
             },
@@ -1285,7 +1305,8 @@ struct MacChatView: View {
                         guard activeAssistantMessageID == assistantMessageID else { return }
                         guard coordinator.owns(operationID, conversationID: conversationId) else { return }
                         abortOwnedTextGeneration(operationID: operationID, conversationID: conversationId)
-                        if !(error is CancellationError) {
+                        guard !(error is CancellationError) else { return }
+
                     logChat(
                         "❌ Stream error",
                         level: .error,
@@ -1293,7 +1314,24 @@ struct MacChatView: View {
                     )
                     errorMessage = ErrorPresenter.userMessage(for: error)
                     errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
-                }
+
+                        if let current = conversationManager.conversation(byId: conversationId) {
+                            let plan = ChatTurnFailurePlan(
+                                messages: current.messages,
+                                failedUserMessageId: failedUserMessageId,
+                                assistantPlaceholderId: assistantMessageID,
+                                failedUserMessagePolicy: failedUserMessagePolicy
+                            )
+                            var updatedConversation = current
+                            updatedConversation.messages = plan.messagesAfterFailure
+                            updatedConversation.updatedAt = Date()
+                            conversationManager.updateConversation(updatedConversation)
+                            failedMessage = plan.retryPrompt
+                            failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
+                        } else {
+                            failedMessage = nil
+                            failedMessageId = nil
+                        }
                     }
             },
             onToolCallRequested: toolCallAdmissionGate.admittedCallback { toolCallId, toolName, arguments in
@@ -1421,7 +1459,9 @@ struct MacChatView: View {
                                 conversationID: conversationId,
                                 model: model,
                                 temperature: temperature,
-                                tools: toolsWrapper.value
+                                tools: toolsWrapper.value,
+                                failedUserMessageId: failedUserMessageId,
+                                failedUserMessagePolicy: failedUserMessagePolicy
                             )
                         }
                     }
@@ -1437,7 +1477,9 @@ struct MacChatView: View {
             conversationID: UUID,
             model: String,
             temperature: Double,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            failedUserMessageId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             switch resolution {
             case .pending:
@@ -1453,6 +1495,7 @@ struct MacChatView: View {
                 toolCallDepth = 0
                 isGenerating = false
                 failedMessage = nil
+                failedMessageId = nil
             case let .launchContinuation(continuation):
                 toolChainTimeoutTask?.cancel()
                 toolChainTimeoutTask = nil
@@ -1463,7 +1506,9 @@ struct MacChatView: View {
                     conversationID: conversationID,
                     model: model,
                     temperature: temperature,
-                    tools: tools
+                    tools: tools,
+                    failedUserMessageId: failedUserMessageId,
+                    failedUserMessagePolicy: failedUserMessagePolicy
                 )
             }
         }
@@ -1475,7 +1520,9 @@ struct MacChatView: View {
             conversationID: UUID,
             model: String,
             temperature: Double,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            failedUserMessageId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             guard toolChainCoordinator.owns(operationID, conversationID: conversationID),
                   continuation.operationID == operationID,
@@ -1503,12 +1550,11 @@ struct MacChatView: View {
                 return
             }
 
-            var history = conversationWithAssistant
-            history.messages.removeAll { $0.id == continuationMessage.id }
-            var continuationMessages = history.getEffectiveHistory()
-            if let systemPrompt = buildFullSystemPrompt(for: conversationWithAssistant) {
-                continuationMessages.insert(Message(role: .system, content: systemPrompt), at: 0)
-            }
+            let continuationMessages = ChatTurnRequestPlan(
+                conversation: conversationWithAssistant,
+                systemPrompt: buildFullSystemPrompt(for: conversationWithAssistant),
+                excludingAssistantPlaceholderId: continuationMessage.id
+            ).messages
 
             currentToolName = nil
             sendMessageWithToolSupport(
@@ -1518,7 +1564,9 @@ struct MacChatView: View {
                 tools: tools,
                 isInitialRequest: false,
                 assistantMessageID: continuationMessage.id,
-                operationID: operationID
+                operationID: operationID,
+                failedUserMessageId: failedUserMessageId,
+                failedUserMessagePolicy: failedUserMessagePolicy
             )
         }
     }
