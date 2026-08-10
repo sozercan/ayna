@@ -231,10 +231,8 @@ struct IOSMultiModelResponseCard: View {
         self.isSelectionMade = isSelectionMade
         self.responseStatus = responseStatus
         self.onRetry = onRetry
-        _contentBlocks = State(initialValue: MarkdownRenderer.parse(
-            message.content,
-            cachePolicy: responseStatus == .streaming ? .doNotCache : .useCache
-        ))
+        let renderPlan = IOSMultiModelMarkdownRenderPlan(content: message.content)
+        _contentBlocks = State(initialValue: renderPlan.initialBlocks)
     }
 
     private var isStreaming: Bool {
@@ -282,6 +280,9 @@ struct IOSMultiModelResponseCard: View {
             }
         }
         .task {
+            let renderPlan = IOSMultiModelMarkdownRenderPlan(content: message.content)
+            scheduleParse(for: renderPlan.deferredContent)
+
             // Load image on appear if needed
             if isImageGeneration, decodedImage == nil {
                 loadImageFromPath()

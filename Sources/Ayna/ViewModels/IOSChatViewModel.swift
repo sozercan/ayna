@@ -345,6 +345,10 @@
         /// Reset state for a fresh new chat session.
         func resetForNewChat() {
             invalidateActiveRequests()
+            if let conversationId {
+                flushAllStreamingChunks(conversationId: conversationId)
+                persistConversationAfterStreamingFlush(conversationId: conversationId)
+            }
             conversationId = nil
             messageText = ""
             isGenerating = false

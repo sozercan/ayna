@@ -271,6 +271,51 @@ import Testing
             #expect(cancellationCount == 0)
         }
 
+        @Test
+        func `resetting a new chat flushes and persists buffered content`() async throws {
+            let directory = try TestHelpers.makeTemporaryDirectory()
+            let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
+            let manager = ConversationManager(
+                store: store,
+                saveDebounceDuration: .milliseconds(0),
+                searchIndexWarmupEnabled: false
+            )
+            _ = await manager.loadingTask?.value
+
+            let model = "test-model"
+            let messageId = UUID()
+            let conversation = Conversation(
+                title: "New Chat Reset",
+                messages: [Message(id: messageId, role: .assistant, content: "", model: model)],
+                model: model
+            )
+            manager.conversations = [conversation]
+
+            let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+            let viewModel = IOSChatViewModel(conversationManager: manager, aiService: service)
+            viewModel.conversationId = conversation.id
+            viewModel.processMultiModelChunk(
+                model: model,
+                chunk: "buffered before onAppear reset",
+                messageIds: [model: messageId],
+                conversationId: conversation.id
+            )
+
+            #expect(manager.conversation(byId: conversation.id)?.messages.first?.content == "")
+
+            viewModel.resetForNewChat()
+
+            #expect(viewModel.conversationId == nil)
+            #expect(
+                manager.conversation(byId: conversation.id)?.messages.first?.content
+                    == "buffered before onAppear reset"
+            )
+
+            await manager.flushPendingSaves()
+            let persisted = try #require(try await store.loadConversation(id: conversation.id))
+            #expect(persisted.messages.first?.content == "buffered before onAppear reset")
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `successful tool continuation persists its result before the follow-up assistant`() async throws {
             let directory = try TestHelpers.makeTemporaryDirectory()
