@@ -80,6 +80,36 @@ import Testing
             #expect(fixture.viewModel.messageContentRevision == 1)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `model completion coalesces and flushes pending reasoning exactly once`() async throws {
+            let fixture = try await makeFixture()
+
+            fixture.viewModel.processMultiModelReasoning(
+                model: fixture.model,
+                "first ",
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId
+            )
+            fixture.viewModel.processMultiModelReasoning(
+                model: fixture.model,
+                "second",
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId
+            )
+
+            #expect(fixture.manager.conversations.first?.messages.first?.reasoning == nil)
+
+            fixture.viewModel.processMultiModelCompletion(
+                model: fixture.model,
+                messageIds: fixture.messageIds,
+                conversationId: fixture.conversationId,
+                responseGroupId: fixture.responseGroupId
+            )
+
+            #expect(fixture.manager.conversations.first?.messages.first?.reasoning == "first second")
+            #expect(fixture.manager.conversations.first?.responseGroups.first?.responses.first?.status == .completed)
+        }
+
         @Test
         func `ordered callback queue preserves stream event order`() async {
             let queue = OrderedMainActorEventQueue()
@@ -125,6 +155,21 @@ import Testing
                 messageIds: [firstResponse.modelName: firstResponse.id],
                 conversationId: conversation.id
             )
+            viewModel.processMultiModelReasoning(
+                model: firstResponse.modelName,
+                "buffered ",
+                messageIds: [firstResponse.modelName: firstResponse.id],
+                conversationId: conversation.id
+            )
+            viewModel.processMultiModelReasoning(
+                model: firstResponse.modelName,
+                "reasoning",
+                messageIds: [firstResponse.modelName: firstResponse.id],
+                conversationId: conversation.id
+            )
+            #expect(
+                manager.conversations.first?.messages.first(where: { $0.id == firstResponse.id })?.reasoning == nil
+            )
 
             viewModel.cancelGeneration()
             let responseGroupAfterCancel = try #require(manager.conversations.first?.getResponseGroup(responseGroupId))
@@ -132,6 +177,7 @@ import Testing
                 manager.conversations.first?.messages.first(where: { $0.id == firstResponse.id })
             )
             #expect(messageAfterCancel.content == "buffered partial")
+            #expect(messageAfterCancel.reasoning == "buffered reasoning")
             #expect(responseGroupAfterCancel.isComplete)
             #expect(responseGroupAfterCancel.responses.allSatisfy { $0.status == .failed })
 
@@ -139,6 +185,7 @@ import Testing
             let persisted = try #require(try await store.loadConversation(id: conversation.id))
             #expect(persisted.getResponseGroup(responseGroupId)?.isComplete == true)
             #expect(persisted.messages.first(where: { $0.id == firstResponse.id })?.content == "buffered partial")
+            #expect(persisted.messages.first(where: { $0.id == firstResponse.id })?.reasoning == "buffered reasoning")
         }
 
         @Test

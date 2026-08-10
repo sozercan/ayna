@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 #if os(macOS)
 //
 //  MacNewChatView.swift
@@ -31,6 +30,7 @@ struct MacNewChatView: View {
         @State var toolChainCoordinator = ToolChainCoordinator()
         @State private var toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
         @State var imageGenerationCoordinator = ImageGenerationCoordinator()
+        @State var multiModelReasoningBuffer = MultiModelStreamingBuffer()
         @State private var sendPreparationTask: Task<Void, Never>?
         @State private var sendPreparationID: UUID?
 
@@ -903,6 +903,7 @@ struct MacNewChatView: View {
             activeAssistantMessageID = nil
             activeMultiModelResponseGroupID = responseGroupId
             let operationID = coordinator.beginOperation(conversationID: conversationId)
+            multiModelReasoningBuffer.resetAll()
             let request = aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
@@ -926,6 +927,7 @@ struct MacNewChatView: View {
             onModelComplete: { model in
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
+                        multiModelReasoningBuffer.finish(for: messageId)
 
                         updateResponseGroupViaGroup(
                             conversationId: conversationId,
@@ -939,6 +941,7 @@ struct MacNewChatView: View {
             onAllComplete: {
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                         guard coordinator.owns(operationID, conversationID: conversationId) else { return }
+                    multiModelReasoningBuffer.finishAll()
                     isGenerating = false
                     logNewChat("🏁 All models completed", level: .info)
 
@@ -958,6 +961,7 @@ struct MacNewChatView: View {
             onError: { model, error in
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
+                        multiModelReasoningBuffer.finish(for: messageId)
 
                         updateResponseGroupViaGroup(
                             conversationId: conversationId,
@@ -982,23 +986,33 @@ struct MacNewChatView: View {
             onPendingToolCall: nil,
             onReasoning: { model, reasoning in
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
-                    guard let messageId = messageIdsByModel[model] else { return }
-                    guard conversationManager.updateMessage(
-                        conversationId: conversationId,
-                        messageId: messageId,
-                        update: { message in
-                            message.reasoning = (message.reasoning ?? "") + reasoning
+                    guard !reasoning.isEmpty,
+                          let messageId = messageIdsByModel[model]
+                    else { return }
+
+                    let conversationManager = conversationManager
+                    multiModelReasoningBuffer.buffer(for: messageId) { reasoningChunk in
+                        guard conversationManager.updateMessage(
+                            conversationId: conversationId,
+                            messageId: messageId,
+                            update: { message in
+                                message.reasoning = (message.reasoning ?? "") + reasoningChunk
+                            }
+                        ) else {
+                            return
                         }
-                    ) else {
-                        return
-                    }
-                    if let conversation = conversationManager.conversation(byId: conversationId) {
-                        conversationManager.save(conversation)
-                    }
+                        if let conversation = conversationManager.conversation(byId: conversationId) {
+                            conversationManager.save(conversation)
+                        }
+                    }.append(reasoning)
                 }
             }
         )
             coordinator.onCancel(for: operationID) {
+                multiModelReasoningBuffer.finishAll()
+                if let conversation = conversationManager.conversation(byId: conversationId) {
+                    conversationManager.saveImmediately(conversation)
+                }
                 request.cancel()
             }
     }

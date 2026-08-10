@@ -64,6 +64,7 @@ final class StreamingChunkBuffer {
 
     /// Add a chunk to the buffer. May trigger immediate or delayed delivery.
     func append(_ chunk: String) {
+        guard !chunk.isEmpty else { return }
         buffer += chunk
 
         // Track when we received the first chunk in this batch
@@ -82,13 +83,14 @@ final class StreamingChunkBuffer {
 
     /// Force delivery of any remaining buffered content.
     /// Call this when streaming completes.
-    func flush() {
+    @discardableResult
+    func flush() -> Bool {
         deliveryTask?.cancel()
         deliveryTask = nil
 
-        if !buffer.isEmpty {
-            deliverNow()
-        }
+        guard !buffer.isEmpty else { return false }
+        deliverNow()
+        return true
     }
 
     /// Cancel any pending delivery and clear the buffer.
@@ -146,36 +148,62 @@ final class StreamingChunkBuffer {
 // MARK: - Multi-Model Buffer Manager
 
 /// Manages multiple buffers for multi-model streaming scenarios.
-/// Each model gets its own buffer to prevent interference.
+/// Each response message gets its own buffer to prevent interference.
 @MainActor
 final class MultiModelStreamingBuffer {
-    private var buffers: [String: StreamingChunkBuffer] = [:]
+    private var buffers: [UUID: StreamingChunkBuffer] = [:]
     private let config: StreamingChunkBuffer.Config
+
+    var isEmpty: Bool {
+        buffers.isEmpty
+    }
 
     init(config: StreamingChunkBuffer.Config? = nil) {
         self.config = config ?? .multiModel
     }
 
-    /// Get or create a buffer for a specific model
-    func buffer(for model: String, onDeliver: @escaping (String) -> Void) -> StreamingChunkBuffer {
-        if let existing = buffers[model] {
+    /// Get or create a buffer for a specific response message.
+    func buffer(for messageID: UUID, onDeliver: @escaping (String) -> Void) -> StreamingChunkBuffer {
+        if let existing = buffers[messageID] {
             existing.onDeliver = onDeliver
             return existing
         }
 
         let newBuffer = StreamingChunkBuffer(config: config, onDeliver: onDeliver)
-        buffers[model] = newBuffer
+        buffers[messageID] = newBuffer
         return newBuffer
     }
 
-    /// Flush all buffers
-    func flushAll() {
+    /// Flush all buffers without ending their streams.
+    @discardableResult
+    func flushAll() -> Bool {
+        var delivered = false
         for buffer in buffers.values {
-            buffer.flush()
+            delivered = buffer.flush() || delivered
         }
+        return delivered
     }
 
-    /// Reset all buffers
+    /// Flush and remove a completed response buffer.
+    @discardableResult
+    func finish(for messageID: UUID) -> Bool {
+        guard let buffer = buffers.removeValue(forKey: messageID) else { return false }
+        return buffer.flush()
+    }
+
+    /// Flush and remove every response buffer owned by the current operation.
+    @discardableResult
+    func finishAll() -> Bool {
+        let activeBuffers = Array(buffers.values)
+        buffers.removeAll()
+        var delivered = false
+        for buffer in activeBuffers {
+            delivered = buffer.flush() || delivered
+        }
+        return delivered
+    }
+
+    /// Reset all buffers.
     func resetAll() {
         for buffer in buffers.values {
             buffer.reset()
@@ -183,9 +211,9 @@ final class MultiModelStreamingBuffer {
         buffers.removeAll()
     }
 
-    /// Reset buffer for a specific model
-    func reset(for model: String) {
-        buffers[model]?.reset()
-        buffers.removeValue(forKey: model)
+    /// Reset a response buffer without delivering it.
+    func reset(for messageID: UUID) {
+        buffers[messageID]?.reset()
+        buffers.removeValue(forKey: messageID)
     }
 }

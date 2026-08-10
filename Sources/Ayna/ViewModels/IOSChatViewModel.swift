@@ -99,6 +99,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     private var pendingChunkBuffers: [StreamingChunkKey: PendingChunkBuffer] = [:]
     private let streamingChunkFlushInterval: Duration = .milliseconds(75)
     private let streamingChunkImmediateFlushThreshold = 256
+    private let multiModelReasoningBuffer = MultiModelStreamingBuffer()
 
     private struct ToolExecutionState {
         let token: ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken
@@ -1871,6 +1872,7 @@ extension IOSChatViewModel {
             activeAssistantMessageId = nil
             activeMultiModelResponseGroupId = responseGroupId
             let operationID = coordinator.beginOperation(conversationID: conversationId)
+            multiModelReasoningBuffer.resetAll()
             let request = aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
@@ -1914,24 +1916,9 @@ extension IOSChatViewModel {
             },
             onAllComplete: { [weak self] in
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
-                        guard let self,
-                              coordinator.owns(operationID, conversationID: conversationId)
-                        else {
-                            return
-                        }
-
-                    self.flushAllStreamingChunks(conversationId: conversationId)
-                    self.isGenerating = false
-                    if let convIndex = self.conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
-                            self.conversationManager.saveImmediately(self.conversationManager.conversations[convIndex])
-                    }
-                        self.activeMultiModelResponseGroupId = nil
-                        guard coordinator.finishOperation(operationID) else { return }
-
-                    // Notify that conversation is ready (for new chat navigation)
-                    if self.isNewChatMode {
-                        self.onConversationCreated?(conversationId)
-                    }
+                        self?.finishMultiModelGeneration(
+                            operationID: operationID, conversationId: conversationId, coordinator: coordinator
+                        )
                 }
             },
             onError: { [weak self] model, error in
@@ -1949,23 +1936,48 @@ extension IOSChatViewModel {
             onPendingToolCall: nil,
             onReasoning: { [weak self] model, reasoning in
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
-                    guard let self,
-                          coordinator.owns(operationID, conversationID: conversationId),
-                          let messageId = messageIdsByModel[model]
-                    else {
-                        return
-                    }
-                    self.appendMultiModelReasoning(
+                    guard let self, coordinator.owns(operationID, conversationID: conversationId) else { return }
+                    self.processMultiModelReasoning(
+                        model: model,
                         reasoning,
-                        to: messageId,
+                        messageIds: messageIdsByModel,
                         conversationId: conversationId
                     )
                 }
             }
         )
-            coordinator.onCancel(for: operationID) {
+            coordinator.onCancel(for: operationID) { [weak self] in
+                self?.finishAndPersistMultiModelReasoning(conversationId: conversationId)
                 request.cancel()
             }
+    }
+
+    private func finishMultiModelGeneration(
+        operationID: ToolChainCoordinator.OperationID,
+        conversationId: UUID,
+        coordinator: ToolChainCoordinator
+    ) {
+        guard coordinator.owns(operationID, conversationID: conversationId) else { return }
+
+        multiModelReasoningBuffer.finishAll()
+        flushAllStreamingChunks(conversationId: conversationId)
+        isGenerating = false
+        if let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversationManager.saveImmediately(conversationManager.conversations[conversationIndex])
+        }
+        activeMultiModelResponseGroupId = nil
+        guard coordinator.finishOperation(operationID) else { return }
+
+        if isNewChatMode {
+            onConversationCreated?(conversationId)
+        }
+    }
+
+    private func finishAndPersistMultiModelReasoning(conversationId: UUID) {
+        multiModelReasoningBuffer.finishAll()
+        if let conversation = conversationManager.conversation(byId: conversationId) {
+            conversationManager.saveImmediately(conversation)
+        }
     }
 
     /// Gets or creates a conversation configured for multi-model mode
@@ -2032,24 +2044,33 @@ extension IOSChatViewModel {
         )
     }
 
-    private func appendMultiModelReasoning(
+    func processMultiModelReasoning(
+        model: String,
         _ reasoning: String,
-        to messageId: UUID,
+        messageIds: [String: UUID],
         conversationId: UUID
     ) {
-        guard conversationManager.updateMessage(
-            conversationId: conversationId,
-            messageId: messageId,
-            update: { message in
-                message.reasoning = (message.reasoning ?? "") + reasoning
-            }
-        ) else {
+        guard !reasoning.isEmpty,
+              let messageId = messageIds[model]
+        else {
             return
         }
 
-        if let conversation = conversationManager.conversation(byId: conversationId) {
-            conversationManager.save(conversation)
-        }
+        let conversationManager = conversationManager
+        multiModelReasoningBuffer.buffer(for: messageId) { reasoningChunk in
+            guard conversationManager.updateMessage(
+                conversationId: conversationId,
+                messageId: messageId,
+                update: { message in
+                    message.reasoning = (message.reasoning ?? "") + reasoningChunk
+                }
+            ) else {
+                return
+            }
+            if let conversation = conversationManager.conversation(byId: conversationId) {
+                conversationManager.save(conversation)
+            }
+        }.append(reasoning)
     }
 
     /// Processes completion for a specific model in multi-model mode
@@ -2060,6 +2081,7 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        multiModelReasoningBuffer.finish(for: messageId)
         flushStreamingChunks(
             conversationId: conversationId,
             messageId: messageId,
@@ -2092,6 +2114,7 @@ extension IOSChatViewModel {
         responseGroupId: UUID
     ) {
         guard let messageId = messageIds[model] else { return }
+        multiModelReasoningBuffer.finish(for: messageId)
         flushStreamingChunks(
             conversationId: conversationId,
             messageId: messageId,
@@ -2139,7 +2162,7 @@ extension IOSChatViewModel {
             let cancelledAutoSend = cancelPendingAutoSend()
             let cancelledPreparation = cancelSendPreparation()
             let hadActiveTextState = activeAssistantMessageId != nil || activeMultiModelResponseGroupId != nil
-            let hadBufferedText = !pendingChunkBuffers.isEmpty
+            let hadBufferedText = !pendingChunkBuffers.isEmpty || !multiModelReasoningBuffer.isEmpty
             let hadToolExecutions = !toolExecutionStates.isEmpty
             let cancelledToolChain = toolChainCoordinator.cancelCurrentOperation {
                 finalizePersistedTextGeneration()
@@ -2161,6 +2184,7 @@ extension IOSChatViewModel {
         private func finalizePersistedTextGeneration() {
             let assistantMessageId = activeAssistantMessageId
             let responseGroupId = activeMultiModelResponseGroupId
+            let flushedReasoning = multiModelReasoningBuffer.finishAll()
             guard let conversationId,
                   let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId })
             else {
@@ -2173,7 +2197,7 @@ extension IOSChatViewModel {
 
             let flushedText = flushAllStreamingChunks(conversationId: conversationId)
             let persistedTools = persistUnfinishedToolExecutions(conversationId: conversationId)
-            guard assistantMessageId != nil || responseGroupId != nil || flushedText || persistedTools else {
+            guard assistantMessageId != nil || responseGroupId != nil || flushedText || flushedReasoning || persistedTools else {
                 activeMultiModelResponseGroupId = nil
                 return
             }

@@ -467,6 +467,7 @@ extension MacChatView {
         activeAssistantMessageID = nil
         activeMultiModelResponseGroupID = responseGroupId
         let operationID = coordinator.beginOperation(conversationID: conversationId)
+        multiModelReasoningBuffer.resetAll()
         let request = aiService.sendToMultipleModels(
             messages: messagesToSend,
             models: models,
@@ -490,6 +491,7 @@ extension MacChatView {
             onModelComplete: { model in
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
+                    multiModelReasoningBuffer.finish(for: messageId)
 
                     // Update response group status
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
@@ -511,6 +513,7 @@ extension MacChatView {
             onAllComplete: {
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard coordinator.owns(operationID, conversationID: conversationId) else { return }
+                    multiModelReasoningBuffer.finishAll()
                     isGenerating = false
                     logChat("🏁 All models completed", level: .info)
 
@@ -527,6 +530,7 @@ extension MacChatView {
             onError: { model, error in
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard let messageId = messageIdsByModel[model] else { return }
+                    multiModelReasoningBuffer.finish(for: messageId)
 
                     // Update response group status to failed
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
@@ -580,24 +584,47 @@ extension MacChatView {
             },
             onReasoning: { model, reasoning in
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
-                    guard let messageId = messageIdsByModel[model] else { return }
-                    guard conversationManager.updateMessage(
-                        conversationId: conversationId,
-                        messageId: messageId,
-                        update: { message in
-                            message.reasoning = (message.reasoning ?? "") + reasoning
-                        }
-                    ) else {
-                        return
-                    }
-                    if let conversation = conversationManager.conversation(byId: conversationId) {
-                        conversationManager.save(conversation)
-                    }
+                    bufferMultiModelReasoning(reasoning, model: model, messageIdsByModel: messageIdsByModel, conversationId: conversationId)
                 }
             }
         )
         coordinator.onCancel(for: operationID) {
+            finishAndPersistMultiModelReasoning(conversationId: conversationId)
             request.cancel()
+        }
+    }
+
+    private func bufferMultiModelReasoning(
+        _ reasoning: String,
+        model: String,
+        messageIdsByModel: [String: UUID],
+        conversationId: UUID
+    ) {
+        guard !reasoning.isEmpty,
+              let messageId = messageIdsByModel[model]
+        else { return }
+
+        let conversationManager = conversationManager
+        multiModelReasoningBuffer.buffer(for: messageId) { reasoningChunk in
+            guard conversationManager.updateMessage(
+                conversationId: conversationId,
+                messageId: messageId,
+                update: { message in
+                    message.reasoning = (message.reasoning ?? "") + reasoningChunk
+                }
+            ) else {
+                return
+            }
+            if let conversation = conversationManager.conversation(byId: conversationId) {
+                conversationManager.save(conversation)
+            }
+        }.append(reasoning)
+    }
+
+    private func finishAndPersistMultiModelReasoning(conversationId: UUID) {
+        multiModelReasoningBuffer.finishAll()
+        if let conversation = conversationManager.conversation(byId: conversationId) {
+            conversationManager.saveImmediately(conversation)
         }
     }
 }

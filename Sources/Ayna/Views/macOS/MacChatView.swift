@@ -159,6 +159,7 @@ struct MacChatView: View {
         @State var toolChainCoordinator = ToolChainCoordinator()
         @State private var toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
     @State var imageGenerationCoordinator = ImageGenerationCoordinator()
+    @State var multiModelReasoningBuffer = MultiModelStreamingBuffer()
     @State private var showingSystemPromptSheet = false
 
     // Multi-model support (unified selection - 1 model = single, 2+ = multi)
@@ -743,7 +744,8 @@ struct MacChatView: View {
 
             let assistantMessageID = activeAssistantMessageID
             let responseGroupID = activeMultiModelResponseGroupID
-            guard assistantMessageID != nil || responseGroupID != nil || !pendingText.isEmpty,
+            let flushedReasoning = multiModelReasoningBuffer.finishAll()
+            guard assistantMessageID != nil || responseGroupID != nil || !pendingText.isEmpty || flushedReasoning,
                   let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id })
             else {
                 activeMultiModelResponseGroupID = nil

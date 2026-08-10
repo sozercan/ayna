@@ -39,7 +39,8 @@
         func finalizePersistedTextGeneration() {
             let assistantMessageID = activeAssistantMessageID
             let responseGroupID = activeMultiModelResponseGroupID
-            guard assistantMessageID != nil || responseGroupID != nil,
+            let flushedReasoning = multiModelReasoningBuffer.finishAll()
+            guard assistantMessageID != nil || responseGroupID != nil || flushedReasoning,
                   let conversationID = currentConversationId,
                   let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationID })
             else {
