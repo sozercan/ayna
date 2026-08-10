@@ -2303,7 +2303,7 @@ extension IOSChatViewModel {
                         return
                     }
 
-                    let messageUpdated = self.conversationManager.updateMessage(
+                    let messageUpdated = self.conversationManager.updateMessageAndPersist(
                         conversationId: conversation.id,
                         messageId: assistantMessageId
                     ) { message in
@@ -2556,7 +2556,7 @@ extension IOSChatViewModel {
             }
             return
         }
-        let messageUpdated = conversationManager.updateMessage(
+        let messageUpdated = conversationManager.updateMessageAndPersist(
             conversationId: conversation.id,
             messageId: messageId
         ) { message in
@@ -2635,15 +2635,12 @@ extension IOSChatViewModel {
         messageId: UUID,
         status: ResponseGroup.ResponseStatus
     ) {
-        if let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let groupIndex = conversationManager.conversations[conversationIndex].responseGroups.firstIndex(where: {
-               $0.id == responseGroupId
-           }),
-           let entryIndex = conversationManager.conversations[conversationIndex].responseGroups[groupIndex]
-           .responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[conversationIndex].responseGroups[groupIndex].responses[entryIndex].status = status
-        }
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: status
+        )
     }
 
     /// Finalizes a batch of image generation requests

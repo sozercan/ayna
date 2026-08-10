@@ -365,21 +365,21 @@ struct MacNewChatView: View {
     }
 
     func updateResponseGroupStatus(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           let gi = conversationManager.conversations[ci].responseGroups.firstIndex(where: { $0.id == responseGroupId }),
-           let ei = conversationManager.conversations[ci].responseGroups[gi].responses.firstIndex(where: { $0.id == messageId })
-        {
-            conversationManager.conversations[ci].responseGroups[gi].responses[ei].status = status
-        }
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: status
+        )
     }
 
     func updateResponseGroupViaGroup(conversationId: UUID, responseGroupId: UUID, messageId: UUID, status: ResponseGroup.ResponseStatus) {
-        if let ci = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }),
-           var group = conversationManager.conversations[ci].getResponseGroup(responseGroupId)
-        {
-            group.updateStatus(for: messageId, status: status)
-            conversationManager.conversations[ci].updateResponseGroup(group)
-        }
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: status
+        )
     }
 
     private func saveImageData(_ imageData: Data) async -> String? {
@@ -715,9 +715,7 @@ struct MacNewChatView: View {
             conversationManager.addMessage(to: conversation, message: placeholderMessage)
         }
 
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         registerNewChatImageBatchCancellation(
             coordinator: coordinator,
