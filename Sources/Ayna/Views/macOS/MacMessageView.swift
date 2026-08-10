@@ -8,6 +8,7 @@
 
 // swiftlint:disable file_length
 
+import Combine
 import SwiftUI
 
 // MARK: - Design System Integration
@@ -471,10 +472,13 @@ struct MacMessageView: View {
 
         // Check if message has meaningful reasoning content
         let hasReasoning = message.reasoning.map { !$0.isEmpty } ?? false
+        let hasCitations = !(message.citations?.isEmpty ?? true)
 
         // Show typing indicator for empty assistant messages (waiting for response)
         // But not if we have reasoning content (model is thinking)
-        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image, !hasReasoning {
+        if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
+           !hasReasoning, !hasCitations
+        {
             TypingIndicatorView()
         }
 

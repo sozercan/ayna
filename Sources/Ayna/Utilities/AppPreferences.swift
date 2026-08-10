@@ -1,6 +1,11 @@
 import Foundation
 import os
 
+extension Notification.Name {
+    static let globalSystemPromptDidChange = Notification.Name("globalSystemPromptDidChange")
+    static let watchSyncContextDidChange = Notification.Name("watchSyncContextDidChange")
+}
+
 /// Centralizes access to UserDefaults so tests can swap in isolated suites
 /// without mutating the real application preferences.
 private final class DefaultsState: @unchecked Sendable {
@@ -51,7 +56,11 @@ enum AppPreferences {
     /// Returns an empty string by default (no system prompt).
     static var globalSystemPrompt: String {
         get { storage.string(forKey: globalSystemPromptKey) ?? "" }
-        set { storage.set(newValue, forKey: globalSystemPromptKey) }
+        set {
+            guard newValue != globalSystemPrompt else { return }
+            storage.set(newValue, forKey: globalSystemPromptKey)
+            NotificationCenter.default.post(name: .globalSystemPromptDidChange, object: nil)
+        }
     }
 
     // MARK: - Attach from App (macOS only)

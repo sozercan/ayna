@@ -7,6 +7,7 @@
 
 #if os(macOS)
 import Combine
+import Darwin
 import Foundation
 import os
 
@@ -32,10 +33,46 @@ protocol MCPServiceDelegate: AnyObject {
     func mcpService(_ service: MCPServicing, didTerminateWithError error: String?)
 }
 
+private struct MCPRequestCompletionAction: Sendable {
+    enum Reason: Sendable {
+        case cancelled
+        case timedOut
+
+        var notificationReason: String {
+            switch self {
+            case .cancelled:
+                "Client cancelled request"
+            case .timedOut:
+                "Client request timed out"
+            }
+        }
+    }
+
+    let id: Int
+    let method: String
+    let transportID: UUID
+    let reason: Reason
+    let requiresTransportInvalidation: Bool
+}
+
 private final class PendingMCPRequestStore: @unchecked Sendable {
+    private enum WriteState {
+        case queued
+        case writing
+        case written
+    }
+
     private struct Entry {
+        let method: String
+        let transportID: UUID
         let continuation: CheckedContinuation<MCPResponse, Error>
-        let timeoutTask: Task<Void, Never>
+        var timeoutTask: Task<Void, Never>?
+        var writeState: WriteState
+    }
+
+    private struct CompletionOutcome {
+        let entry: Entry
+        let action: MCPRequestCompletionAction?
     }
 
     private let timeoutSeconds: TimeInterval
@@ -43,27 +80,85 @@ private final class PendingMCPRequestStore: @unchecked Sendable {
     private var entries: [Int: Entry] = [:]
 
     init(timeoutSeconds: TimeInterval) {
-        self.timeoutSeconds = timeoutSeconds
+        self.timeoutSeconds = max(0, timeoutSeconds)
     }
 
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return entries.count
+        lock.withLock { entries.count }
     }
 
-    func insert(id: Int, method: String, continuation: CheckedContinuation<MCPResponse, Error>) {
+    func insert(
+        id: Int,
+        method: String,
+        transportID: UUID,
+        continuation: CheckedContinuation<MCPResponse, Error>,
+        timeoutHandler: @escaping @Sendable (MCPRequestCompletionAction) -> Void
+    ) {
+        lock.withLock {
+            entries[id] = Entry(
+                method: method,
+                transportID: transportID,
+                continuation: continuation,
+                timeoutTask: nil,
+                writeState: .queued
+            )
+    }
+
         let timeoutSeconds = self.timeoutSeconds
         let timeoutTask = Task.detached { [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(for: .seconds(timeoutSeconds))
-            guard !Task.isCancelled else { return }
-            self.timeoutRequest(id: id, method: method)
+            do {
+                try await Task.sleep(for: .seconds(timeoutSeconds))
+            } catch {
+                return
         }
 
-        lock.lock()
-        entries[id] = Entry(continuation: continuation, timeoutTask: timeoutTask)
-        lock.unlock()
+            guard let action = self?.timeoutRequest(id: id) else { return }
+            timeoutHandler(action)
+        }
+
+        let shouldCancelTimeout = lock.withLock { () -> Bool in
+            guard var entry = entries[id] else { return true }
+            entry.timeoutTask = timeoutTask
+            entries[id] = entry
+            return false
+        }
+        if shouldCancelTimeout {
+            timeoutTask.cancel()
+        }
+    }
+
+    func beginWrite(id: Int) -> Bool {
+        lock.withLock {
+            guard var entry = entries[id], entry.writeState == .queued else { return false }
+            entry.writeState = .writing
+            entries[id] = entry
+            return true
+        }
+    }
+
+    func finishWrite(id: Int) -> MCPRequestCompletionAction? {
+        lock.withLock {
+            if var entry = entries[id], entry.writeState == .writing {
+                entry.writeState = .written
+                entries[id] = entry
+            }
+            return nil
+        }
+    }
+
+    func failWrite(id: Int, error: Error) {
+        let continuation: CheckedContinuation<MCPResponse, Error>? = lock.withLock {
+            guard let entry = entries.removeValue(forKey: id) else { return nil }
+            entry.timeoutTask?.cancel()
+            return entry.continuation
+        }
+        continuation?.resume(throwing: error)
+    }
+
+    func cancel(id: Int) -> MCPRequestCompletionAction? {
+        guard let outcome = complete(id: id, reason: .cancelled) else { return nil }
+        outcome.entry.continuation.resume(throwing: CancellationError())
+        return outcome.action
     }
 
     @discardableResult
@@ -80,58 +175,255 @@ private final class PendingMCPRequestStore: @unchecked Sendable {
         return true
     }
 
+    func failAll(for transportID: UUID, error: Error) {
+        let continuations: [CheckedContinuation<MCPResponse, Error>] = lock.withLock {
+            let matchingIDs = entries.compactMap { id, entry in
+                entry.transportID == transportID ? id : nil
+            }
+            let matchingEntries = matchingIDs.compactMap { entries.removeValue(forKey: $0) }
+            matchingEntries.forEach { $0.timeoutTask?.cancel() }
+            return matchingEntries.map(\.continuation)
+        }
+        continuations.forEach { $0.resume(throwing: error) }
+    }
+
     func failAll(error: Error) {
         let continuations: [CheckedContinuation<MCPResponse, Error>] = lock.withLock {
             let allEntries = Array(entries.values)
             entries.removeAll()
-            allEntries.forEach { $0.timeoutTask.cancel() }
+            allEntries.forEach { $0.timeoutTask?.cancel() }
             return allEntries.map(\.continuation)
         }
-
         continuations.forEach { $0.resume(throwing: error) }
     }
 
-    private func timeoutRequest(id: Int, method: String) {
-        guard let entry = take(id: id) else { return }
+    private func timeoutRequest(id: Int) -> MCPRequestCompletionAction? {
+        guard let outcome = complete(id: id, reason: .timedOut) else { return nil }
 
         DiagnosticsLogger.log(
             .mcpService,
             level: .error,
             message: "MCP request timed out",
-            metadata: ["id": "\(id)", "method": method]
+            metadata: ["id": "\(id)", "method": outcome.entry.method]
         )
-        entry.continuation.resume(throwing: MCPServiceError.timeout)
+        outcome.entry.continuation.resume(throwing: MCPServiceError.timeout)
+        return outcome.action
+    }
+
+    private func complete(id: Int, reason: MCPRequestCompletionAction.Reason) -> CompletionOutcome? {
+        lock.withLock {
+            guard let entry = entries.removeValue(forKey: id) else { return nil }
+            entry.timeoutTask?.cancel()
+
+            switch entry.writeState {
+            case .queued:
+                return CompletionOutcome(entry: entry, action: nil)
+            case .writing:
+                return CompletionOutcome(
+                    entry: entry,
+                    action: MCPRequestCompletionAction(
+                        id: id,
+                        method: entry.method,
+                        transportID: entry.transportID,
+                        reason: reason,
+                        requiresTransportInvalidation: true
+                    )
+                )
+            case .written:
+                return CompletionOutcome(
+                    entry: entry,
+                    action: MCPRequestCompletionAction(
+                        id: id,
+                        method: entry.method,
+                        transportID: entry.transportID,
+                        reason: reason,
+                        requiresTransportInvalidation: false
+                    )
+                )
+            }
+        }
     }
 
     private func take(id: Int) -> Entry? {
         lock.withLock {
             guard let entry = entries.removeValue(forKey: id) else { return nil }
-            entry.timeoutTask.cancel()
+            entry.timeoutTask?.cancel()
             return entry
         }
     }
 }
 
 private extension NSLock {
-    func withLock<T>(_ body: () -> T) -> T {
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock()
         defer { unlock() }
-        return body()
+        return try body()
+    }
+}
+
+private final class MCPTransportLease: @unchecked Sendable {
+    let id: UUID
+
+    private let inputHandle: FileHandle
+    private let lock = NSLock()
+    private var isActive = true
+
+    init(id: UUID, inputHandle: FileHandle) {
+        self.id = id
+        self.inputHandle = inputHandle
+        // Closing a wedged transport from another task must make blocked writes fail with
+        // EPIPE rather than terminating the entire app with SIGPIPE.
+        _ = fcntl(inputHandle.fileDescriptor, F_SETNOSIGPIPE, 1)
+    }
+
+    func invalidate() {
+        lock.withLock { isActive = false }
+    }
+
+    func activeInputHandle() throws -> FileHandle {
+        try lock.withLock {
+            guard isActive else { throw MCPServiceError.notConnected }
+            return inputHandle
+        }
+    }
+}
+
+private final class MCPProcessLifecycle: @unchecked Sendable {
+    private struct State {
+        var isManualDisconnect = false
+        var isRegistered = false
+        var isFinalized = false
+    }
+
+    let id: UUID
+    let process: Process
+    let inputPipe: Pipe
+    let outputPipe: Pipe
+    let errorPipe: Pipe
+    let lease: MCPTransportLease
+    let trackingKey: String
+
+    private let registerProcess: @Sendable (String, pid_t) -> Void
+    private let unregisterProcess: @Sendable (String) -> Void
+    private let lock = NSLock()
+    private var state = State()
+
+    init(
+        id: UUID,
+        serverName: String,
+        process: Process,
+        inputPipe: Pipe,
+        outputPipe: Pipe,
+        errorPipe: Pipe,
+        registerProcess: @escaping @Sendable (String, pid_t) -> Void,
+        unregisterProcess: @escaping @Sendable (String) -> Void
+    ) {
+        self.id = id
+        self.process = process
+        self.inputPipe = inputPipe
+        self.outputPipe = outputPipe
+        self.errorPipe = errorPipe
+        lease = MCPTransportLease(id: id, inputHandle: inputPipe.fileHandleForWriting)
+        trackingKey = "\(serverName)#\(id.uuidString)"
+        self.registerProcess = registerProcess
+        self.unregisterProcess = unregisterProcess
+    }
+
+    func registerAfterLaunch() {
+        lock.lock()
+        guard !state.isFinalized, !state.isRegistered else {
+            lock.unlock()
+            return
+        }
+        registerProcess(trackingKey, process.processIdentifier)
+        state.isRegistered = true
+        lock.unlock()
+    }
+
+    func markManualDisconnect() {
+        lock.withLock { state.isManualDisconnect = true }
+    }
+
+    func stopReading() {
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+    }
+
+    /// Returns whether this was a manual disconnect. Nil means another exit observer finalized it.
+    func finalize() -> Bool? {
+        let finalization: (manual: Bool, shouldUnregister: Bool)? = lock.withLock {
+            guard !state.isFinalized else { return nil }
+            state.isFinalized = true
+            return (state.isManualDisconnect, state.isRegistered)
+        }
+        guard let finalization else { return nil }
+
+        stopReading()
+        lease.invalidate()
+        if finalization.shouldUnregister {
+            unregisterProcess(trackingKey)
+        }
+        try? inputPipe.fileHandleForWriting.close()
+        try? outputPipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForReading.close()
+        return finalization.manual
+    }
+}
+
+private actor MCPOutboundWriter {
+    typealias MessageWriteHandler = @Sendable (FileHandle, Data) throws -> Void
+
+    private let writeHandler: MessageWriteHandler
+
+    init(writeHandler: @escaping MessageWriteHandler) {
+        self.writeHandler = writeHandler
+    }
+
+    func writeRequest(
+        id: Int,
+        method: String,
+        data: Data,
+        lifecycle: MCPProcessLifecycle,
+        store: PendingMCPRequestStore,
+        beforeWrite: (@Sendable (Int, String) -> Void)?,
+        completionHandler: @escaping @Sendable (MCPRequestCompletionAction) -> Void
+    ) {
+        beforeWrite?(id, method)
+        guard store.beginWrite(id: id) else { return }
+
+        do {
+            try write(data, lifecycle: lifecycle)
+            if let action = store.finishWrite(id: id) {
+                completionHandler(action)
+            }
+        } catch {
+            store.failWrite(id: id, error: error)
+        }
+    }
+
+    func writeNotification(_ data: Data, lifecycle: MCPProcessLifecycle) throws {
+        try write(data, lifecycle: lifecycle)
+    }
+
+    private func write(_ data: Data, lifecycle: MCPProcessLifecycle) throws {
+        let inputHandle = try lifecycle.lease.activeInputHandle()
+        try writeHandler(inputHandle, data)
     }
 }
 
 /// Service for communicating with MCP servers via stdio
 class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
-    private var process: Process?
-    private var standardInput: Pipe?
-    private var standardOutput: Pipe?
-    private var standardError: Pipe?
-
-    private var healthCheckTask: Task<Void, Never>?
-    private var isDisconnectingManually = false
+    private var activeLifecycle: MCPProcessLifecycle?
+    private var lifecycles: [UUID: MCPProcessLifecycle] = [:]
+    private var healthCheckTask: (transportID: UUID, task: Task<Void, Never>)?
 
     private var requestId = 0
     private let pendingRequests: PendingMCPRequestStore
+    private let requestWriteHook: (@Sendable (Int, String) -> Void)?
+    private let outboundWriter: MCPOutboundWriter
+    private let terminationGracePeriod: TimeInterval
+    private let processRegistrationHandler: @Sendable (String, pid_t) -> Void
+    private let processUnregistrationHandler: @Sendable (String) -> Void
 
     let serverConfig: MCPServerConfig
     @Published var isConnected = false
@@ -139,7 +431,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     weak var delegate: MCPServiceDelegate?
 
     private var outputBuffer = ""
-
     private let stateLock = NSLock()
 
     @discardableResult
@@ -153,15 +444,40 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         pendingRequests.count
     }
 
-    init(serverConfig: MCPServerConfig, requestTimeoutSeconds: TimeInterval = 30) {
+    init(
+        serverConfig: MCPServerConfig,
+        requestTimeoutSeconds: TimeInterval = 30,
+        requestWriteHook: (@Sendable (Int, String) -> Void)? = nil,
+        messageWriteHandler: @escaping @Sendable (FileHandle, Data) throws -> Void = { handle, data in
+            try handle.write(contentsOf: data)
+        },
+        terminationGracePeriod: TimeInterval = 0.5,
+        processRegistrationHandler: @escaping @Sendable (String, pid_t) -> Void = { trackingKey, pid in
+            MCPProcessTracker.shared.register(serverName: trackingKey, pid: pid)
+        },
+        processUnregistrationHandler: @escaping @Sendable (String) -> Void = { trackingKey in
+            MCPProcessTracker.shared.unregister(serverName: trackingKey)
+        }
+    ) {
         self.serverConfig = serverConfig
         pendingRequests = PendingMCPRequestStore(timeoutSeconds: requestTimeoutSeconds)
+        self.requestWriteHook = requestWriteHook
+        outboundWriter = MCPOutboundWriter(writeHandler: messageWriteHandler)
+        self.terminationGracePeriod = max(0, terminationGracePeriod)
+        self.processRegistrationHandler = processRegistrationHandler
+        self.processUnregistrationHandler = processUnregistrationHandler
     }
 
     deinit {
-        healthCheckTask?.cancel()
-        process?.terminate()
-        standardInput = nil
+        healthCheckTask?.task.cancel()
+        let remainingLifecycles = Array(lifecycles.values)
+        pendingRequests.failAll(error: MCPServiceError.notConnected)
+        for lifecycle in remainingLifecycles {
+            lifecycle.markManualDisconnect()
+            lifecycle.stopReading()
+            lifecycle.lease.invalidate()
+            Self.terminateProcess(lifecycle, gracePeriod: terminationGracePeriod)
+        }
     }
 
     // MARK: - Connection Management
@@ -170,14 +486,13 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     /// can share the same cleanup/error propagation. Splitting it today would duplicate fragile state
     /// management, so we temporarily allow the longer body until the connection pipeline is refactored.
     func connect() async throws {
-        guard !isConnected else { return }
+        guard withLock({ activeLifecycle == nil }) else { return }
 
         let process = Process()
         let inputPipe = Pipe()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
 
-        // Find the command executable with error handling
         DiagnosticsLogger.log(
             .mcpService,
             level: .info,
@@ -195,12 +510,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             )
         } catch {
             let errorMsg = "Executable not found: \(serverConfig.command) - \(error.localizedDescription)"
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .error,
-                message: errorMsg
-            )
-            Task { @MainActor [weak self] in
+            DiagnosticsLogger.log(.mcpService, level: .error, message: errorMsg)
+            await MainActor.run { [weak self] in
                 self?.lastError = errorMsg
             }
             throw MCPServiceError.initializationFailed(errorMsg)
@@ -209,7 +520,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: commandPath)
         process.arguments = serverConfig.args
 
-        // Set up environment with proper PATH
         var environment = ProcessInfo.processInfo.environment
         let commonPaths = [
             "/opt/homebrew/bin",
@@ -219,154 +529,144 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             "/opt/homebrew/opt/node/bin",
             NSHomeDirectory() + "/.nvm/versions/node/*/bin"
         ]
-        let existingPath = environment["PATH"] ?? ""
-        let newPath = (commonPaths + [existingPath]).joined(separator: ":")
-        environment["PATH"] = newPath
-
-        // Merge with user-provided environment
-        // Only merge if env is not empty to avoid potential type issues
-        if !serverConfig.env.isEmpty {
+        environment["PATH"] = (commonPaths + [environment["PATH"] ?? ""]).joined(separator: ":")
             for (key, value) in serverConfig.env {
                 environment[key] = value
             }
-        }
         process.environment = environment
         process.standardInput = inputPipe
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        withLock {
-            self.process = process
-            standardInput = inputPipe
-            standardOutput = outputPipe
-            standardError = errorPipe
+        let lifecycle = MCPProcessLifecycle(
+            id: UUID(),
+            serverName: serverConfig.name,
+            process: process,
+            inputPipe: inputPipe,
+            outputPipe: outputPipe,
+            errorPipe: errorPipe,
+            registerProcess: processRegistrationHandler,
+            unregisterProcess: processUnregistrationHandler
+        )
+        let installed = withLock { () -> Bool in
+            guard activeLifecycle == nil else { return false }
+            activeLifecycle = lifecycle
+            lifecycles[lifecycle.id] = lifecycle
+            outputBuffer = ""
+            return true
         }
-        process.terminationHandler = { [weak self] process in
-            guard let self else { return }
-            handleProcessTermination(exitCode: process.terminationStatus)
+        guard installed else { return }
+
+        process.terminationHandler = { [weak self, lifecycle] terminatedProcess in
+            let exitCode = terminatedProcess.terminationStatus
+            terminatedProcess.terminationHandler = nil
+            if let self {
+                self.processDidExit(lifecycle, exitCode: exitCode)
+            } else {
+                _ = lifecycle.finalize()
+        }
         }
 
-        // Set up output reading with error handling
         let serverName = serverConfig.name
         outputPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-            do {
                 let data = handle.availableData
-                guard !data.isEmpty else { return }
-
-                if let output = String(data: data, encoding: .utf8) {
-                    Task { @MainActor in
-                        self?.handleOutput(output)
-                    }
-                }
-            } catch {
-                DiagnosticsLogger.log(
-                    .mcpService,
-                    level: .error,
-                    message: "Error reading MCP output",
-                    metadata: ["server": serverName, "error": error.localizedDescription]
-                )
-            }
+            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+            self?.handleOutput(output, transportID: lifecycle.id)
         }
 
-        // Set up error reading (stderr - may include info messages)
         errorPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-            do {
                 let data = handle.availableData
-                guard !data.isEmpty else { return }
+            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
 
-                if let output = String(data: data, encoding: .utf8) {
                     DiagnosticsLogger.log(
                         .mcpService,
                         level: .info,
                         message: "MCP server stderr",
                         metadata: ["server": serverName, "output": output]
                     )
-                    // Only treat it as an error if it contains error keywords
                     if output.lowercased().contains("error") || output.lowercased().contains("failed") {
-                        Task { @MainActor in
-                            self?.lastError = output
-                        }
-                    }
+                Task { @MainActor [weak self] in
+                    guard let self, self.isActiveTransport(lifecycle.id) else { return }
+                    self.lastError = output
                 }
-            } catch {
-                DiagnosticsLogger.log(
-                    .mcpService,
-                    level: .error,
-                    message: "Error reading stderr",
-                    metadata: ["server": serverName, "error": error.localizedDescription]
-                )
             }
         }
 
         do {
             try process.run()
-            MCPProcessTracker.shared.register(serverName: serverName, pid: process.processIdentifier)
-
-            // Initialize the MCP session
-            try await initialize()
+            lifecycle.registerAfterLaunch()
+            try await initialize(on: lifecycle)
+            guard isActiveTransport(lifecycle.id), !Task.isCancelled else {
+                disconnect(transportID: lifecycle.id)
+                throw CancellationError()
+            }
+        } catch is CancellationError {
+            disconnect(transportID: lifecycle.id)
+            throw CancellationError()
         } catch {
-            disconnect()
+            disconnect(transportID: lifecycle.id)
             let errorMsg = "Failed to start process: \(error.localizedDescription)"
-            DiagnosticsLogger.log(
-                .mcpService,
-                level: .error,
-                message: errorMsg
-            )
-            Task { @MainActor [weak self] in
-                self?.lastError = errorMsg
+            DiagnosticsLogger.log(.mcpService, level: .error, message: errorMsg)
+            await MainActor.run { [weak self] in
+                guard let self, !self.hasActiveReplacement(for: lifecycle.id) else { return }
+                self.lastError = errorMsg
             }
             throw MCPServiceError.initializationFailed(errorMsg)
         }
 
-        Task { @MainActor in
+        await MainActor.run { [weak self] in
+            guard let self, self.isActiveTransport(lifecycle.id) else { return }
             self.isConnected = true
             self.lastError = nil
         }
-
-        startHealthCheckTimer()
+        startHealthCheckTimer(for: lifecycle)
     }
 
     func disconnect() {
-        let alreadyDisconnecting = withLock {
-            if isDisconnectingManually { return true }
-            isDisconnectingManually = true
-            return false
-        }
-        guard !alreadyDisconnecting else { return }
-
-        stopHealthCheckTimer()
-
-        // Clean up handlers BEFORE terminating to stop processing
-        cleanupProcessResources()
-
-        // Capture process reference before clearing
-        let processToTerminate = withLock {
-            let processReference = process
-            process = nil
-            return processReference
+        _ = disconnect(transportID: nil)
         }
 
-        // Unregister from process tracker
-        MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
+    @discardableResult
+    private func disconnect(transportID: UUID?) -> Bool {
+        let lifecycle: MCPProcessLifecycle? = withLock {
+            guard let current = activeLifecycle,
+                  transportID == nil || current.id == transportID
+            else {
+                return nil
+        }
 
-        // Terminate and wait for exit in background to avoid zombie processes
-        if let processToTerminate, processToTerminate.isRunning {
-            processToTerminate.terminate()
-            Task.detached {
-                processToTerminate.waitUntilExit()
+            current.markManualDisconnect()
+            current.lease.invalidate()
+            current.stopReading()
+            activeLifecycle = nil
+            outputBuffer = ""
+            if healthCheckTask?.transportID == current.id {
+                healthCheckTask?.task.cancel()
+                healthCheckTask = nil
+            }
+            return current
+        }
+        guard let lifecycle else { return false }
+
+        pendingRequests.failAll(for: lifecycle.id, error: MCPServiceError.notConnected)
+        Task { @MainActor [weak self] in
+            guard let self, !self.hasActiveReplacement(for: lifecycle.id) else { return }
+            self.isConnected = false
+        }
+
+        Self.terminateProcess(lifecycle, gracePeriod: terminationGracePeriod) { [weak self, lifecycle] exitCode in
+            if let self {
+                self.processDidExit(lifecycle, exitCode: exitCode)
+            } else {
+                _ = lifecycle.finalize()
             }
         }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            isConnected = false
-            withLock { isDisconnectingManually = false }
-        }
+        return true
     }
 
     // MARK: - MCP Protocol Methods
 
-    private func initialize() async throws {
+    private func initialize(on lifecycle: MCPProcessLifecycle) async throws {
         let response = try await sendRequest(
             method: "initialize",
             params: [
@@ -379,15 +679,16 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     "name": "ayna",
                     "version": "1.0.0"
                 ] as [String: String])
-            ]
+            ],
+            lifecycle: lifecycle
         )
 
         guard response.error == nil else {
             throw MCPServiceError.initializationFailed(response.error?.message ?? "Unknown error")
         }
 
-        // Send initialized notification
-        try await sendNotification(method: "notifications/initialized")
+        // Send initialized notification on the same transport generation.
+        try await sendNotification(method: "notifications/initialized", lifecycle: lifecycle)
     }
 
     func listTools() async throws -> [MCPTool] {
@@ -472,67 +773,176 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     // MARK: - Low-level JSON-RPC
 
     @MainActor
-    private func sendRequest(method: String, params: [String: AnyCodable]?) async throws -> MCPResponse {
+    private func sendRequest(
+        method: String,
+        params: [String: AnyCodable]?,
+        lifecycle suppliedLifecycle: MCPProcessLifecycle? = nil
+    ) async throws -> MCPResponse {
+        try Task.checkCancellation()
+        guard let lifecycle = suppliedLifecycle ?? withLock({ activeLifecycle }),
+              isActiveTransport(lifecycle.id)
+        else {
+            throw MCPServiceError.notConnected
+        }
+
         let id = withLock {
             requestId += 1
             return requestId
         }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingRequests.insert(id: id, method: method, continuation: continuation)
-
             let request = MCPRequest(id: id, method: method, params: params)
-
+        let requestData: Data
             do {
-                let data = try JSONEncoder().encode(request)
-                guard var jsonString = String(data: data, encoding: .utf8) else {
-                    pendingRequests.fail(id: id, error: MCPServiceError.encodingFailed)
+            var data = try JSONEncoder().encode(request)
+            data.append(0x0A)
+            requestData = data
+        } catch {
+            throw MCPServiceError.encodingFailed
+                }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                pendingRequests.insert(
+                    id: id,
+                    method: method,
+                    transportID: lifecycle.id,
+                    continuation: continuation,
+                    timeoutHandler: { [weak self] action in
+                        self?.handleRequestCompletion(action)
+                    }
+                )
+
+                guard !Task.isCancelled else {
+                    cancelRequest(id: id)
                     return
                 }
 
-                jsonString += "\n"
-
-                guard let inputHandle = withLock({ standardInput?.fileHandleForWriting }) else {
-                    pendingRequests.fail(id: id, error: MCPServiceError.notConnected)
-                    return
+                let writer = outboundWriter
+                let store = pendingRequests
+                let beforeWrite = requestWriteHook
+                Task.detached { [weak self, lifecycle] in
+                    await writer.writeRequest(
+                        id: id,
+                        method: method,
+                        data: requestData,
+                        lifecycle: lifecycle,
+                        store: store,
+                        beforeWrite: beforeWrite,
+                        completionHandler: { [weak self] action in
+                            self?.handleRequestCompletion(action)
                 }
+                    )
+            }
+        }
+        } onCancel: {
+            cancelRequest(id: id)
+        }
+    }
 
-                if let data = jsonString.data(using: .utf8) {
-                    inputHandle.write(data)
-                } else {
-                    pendingRequests.fail(id: id, error: MCPServiceError.encodingFailed)
-                }
+    private func cancelRequest(id: Int) {
+        if let action = pendingRequests.cancel(id: id) {
+            handleRequestCompletion(action)
+        }
+    }
+
+    private func handleRequestCompletion(_ action: MCPRequestCompletionAction) {
+        if action.requiresTransportInvalidation {
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .error,
+                message: "MCP request ended while its pipe write was blocked; disconnecting transport",
+                metadata: [
+                    "id": "\(action.id)",
+                    "method": action.method,
+                    "reason": action.reason.notificationReason,
+                    "server": serverConfig.name
+                ]
+            )
+            invalidateTransport(
+                action.transportID,
+                reason: "MCP transport write was interrupted: \(action.reason.notificationReason)"
+            )
+            return
+        }
+
+        if action.method == "initialize" {
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .info,
+                message: "Initialize request completed without a response; disconnecting transport",
+                metadata: [
+                    "id": "\(action.id)",
+                    "reason": action.reason.notificationReason,
+                    "server": serverConfig.name
+                ]
+            )
+            disconnect(transportID: action.transportID)
+            return
+        }
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.sendCancellationNotification(action)
             } catch {
-                pendingRequests.fail(id: id, error: error)
+                DiagnosticsLogger.log(
+                    .mcpService,
+                    level: .error,
+                    message: "Failed to send MCP cancellation notification; disconnecting",
+                    metadata: [
+                        "error": error.localizedDescription,
+                        "id": "\(action.id)",
+                        "server": self.serverConfig.name
+                    ]
+                )
+                self.disconnect(transportID: action.transportID)
             }
         }
     }
 
-    private func sendNotification(method: String, params: [String: AnyCodable]? = nil) async throws {
+    private func invalidateTransport(_ transportID: UUID, reason: String) {
+        guard disconnect(transportID: transportID) else { return }
+        Task { @MainActor [weak self] in
+            guard let self, !self.hasActiveReplacement(for: transportID) else { return }
+            self.lastError = reason
+            self.delegate?.mcpService(self, didTerminateWithError: reason)
+        }
+    }
+
+    /// MCP 2024-11-05 cancellation schema:
+    /// `notifications/cancelled` with params `{ "requestId": RequestId, "reason"?: string }`.
+    private func sendCancellationNotification(_ action: MCPRequestCompletionAction) async throws {
+        guard let lifecycle = withLock({ lifecycles[action.transportID] }) else {
+            throw MCPServiceError.notConnected
+        }
+        try await sendNotification(
+            method: "notifications/cancelled",
+            params: [
+                "requestId": AnyCodable(action.id),
+                "reason": AnyCodable(action.reason.notificationReason)
+            ],
+            lifecycle: lifecycle
+        )
+        }
+
+    private func sendNotification(
+        method: String,
+        params: [String: AnyCodable]? = nil,
+        lifecycle: MCPProcessLifecycle
+    ) async throws {
         let notification: [String: Any] = [
             "jsonrpc": "2.0",
             "method": method,
             "params": params?.mapValues { $0.value } ?? [:]
         ]
 
-        let data = try JSONSerialization.data(withJSONObject: notification)
-        guard var jsonString = String(data: data, encoding: .utf8) else {
-            throw MCPServiceError.encodingFailed
-        }
-
-        jsonString += "\n"
-
-        guard let inputHandle = withLock({ standardInput?.fileHandleForWriting }) else {
-            throw MCPServiceError.notConnected
-        }
-
-        if let data = jsonString.data(using: .utf8) {
-            inputHandle.write(data)
-        }
+        var data = try JSONSerialization.data(withJSONObject: notification)
+        data.append(0x0A)
+        try await outboundWriter.writeNotification(data, lifecycle: lifecycle)
     }
 
-    private func handleOutput(_ output: String) {
+    private func handleOutput(_ output: String, transportID: UUID) {
         let completedLines: [String] = withLock {
+            guard activeLifecycle?.id == transportID else { return [] }
             if outputBuffer.count + output.count > 1_048_576 {
                 DiagnosticsLogger.log(.mcpService, level: .error, message: "MCP output buffer exceeded 1MB limit, clearing")
                 outputBuffer = ""
@@ -582,8 +992,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     if !self.pendingRequests.resume(id: id, with: response) {
                         DiagnosticsLogger.log(
                             .mcpService,
-                            level: .error,
-                            message: "Received response for unknown request",
+                            level: .info,
+                            message: "Ignoring response for completed MCP request",
                             metadata: ["id": "\(id)"]
                         )
                     }
@@ -786,82 +1196,129 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     // MARK: - Connection Monitoring
 
-    private func startHealthCheckTimer() {
-        stopHealthCheckTimer()
+    private func isActiveTransport(_ transportID: UUID) -> Bool {
+        withLock { activeLifecycle?.id == transportID }
+    }
 
-        let task = Task { [weak self] in
-            // Initial delay before first check
-            try? await Task.sleep(for: .seconds(5))
+    private func hasActiveReplacement(for transportID: UUID) -> Bool {
+        withLock {
+            guard let activeLifecycle else { return false }
+            return activeLifecycle.id != transportID
+        }
+    }
 
+    private func startHealthCheckTimer(for lifecycle: MCPProcessLifecycle) {
+        let task = Task { [weak self, lifecycle] in
+            do {
+                try await Task.sleep(for: .seconds(5))
             while !Task.isCancelled {
-                guard let self else { return }
-                let running = self.withLock { self.process?.isRunning ?? false }
-                if !running {
-                    let status = self.withLock { self.process?.terminationStatus }
-                    self.handleProcessTermination(exitCode: status)
+                    guard let self, self.isActiveTransport(lifecycle.id) else { return }
+                    if !lifecycle.process.isRunning {
+                        let exitCode = lifecycle.process.processIdentifier > 0
+                            ? lifecycle.process.terminationStatus
+                            : nil
+                        self.processDidExit(lifecycle, exitCode: exitCode)
                     return
                 }
-                try? await Task.sleep(for: .seconds(5))
+                    try await Task.sleep(for: .seconds(5))
             }
+            } catch {
+                // Cancellation is the expected shutdown path.
         }
-        withLock { healthCheckTask = task }
     }
 
-    private func stopHealthCheckTimer() {
         withLock {
-            healthCheckTask?.cancel()
-            healthCheckTask = nil
+            healthCheckTask?.task.cancel()
+            healthCheckTask = (lifecycle.id, task)
         }
     }
 
-    private func handleProcessTermination(exitCode: Int32?) {
-        stopHealthCheckTimer()
-        cleanupProcessResources()
-        withLock { process = nil }
-        let message: String? =
-            if let exitCode, exitCode != 0 {
+    private func processDidExit(_ lifecycle: MCPProcessLifecycle, exitCode: Int32?) {
+        guard let wasManualDisconnect = lifecycle.finalize() else { return }
+
+        let wasActive = withLock { () -> Bool in
+            lifecycles.removeValue(forKey: lifecycle.id)
+            guard activeLifecycle?.id == lifecycle.id else { return false }
+            activeLifecycle = nil
+            outputBuffer = ""
+            if healthCheckTask?.transportID == lifecycle.id {
+                healthCheckTask?.task.cancel()
+                healthCheckTask = nil
+            }
+            return true
+    }
+        pendingRequests.failAll(for: lifecycle.id, error: MCPServiceError.notConnected)
+        guard wasActive else { return }
+
+        Task { @MainActor [weak self] in
+            guard let self, !self.hasActiveReplacement(for: lifecycle.id) else { return }
+            self.isConnected = false
+            guard !wasManualDisconnect else { return }
+
+            let message = if let exitCode, exitCode != 0 {
                 "Exited with code \(exitCode)"
             } else {
-                nil
+                "MCP server process ended unexpectedly"
             }
-        handleUnexpectedDisconnect(reason: message)
-    }
-
-    private func handleUnexpectedDisconnect(reason: String?) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            if withLock({ isDisconnectingManually }) {
-                withLock { isDisconnectingManually = false }
-                return
-            }
-
-            let message = reason ?? "MCP server process ended unexpectedly"
             DiagnosticsLogger.log(
                 .mcpService,
                 level: .error,
                 message: "Lost MCP connection",
                 metadata: [
-                    "server": serverConfig.name,
-                    "reason": message
+                    "server": self.serverConfig.name,
+                    "reason": message,
+                    "transport": lifecycle.id.uuidString
                 ]
             )
-            MCPProcessTracker.shared.unregister(serverName: serverConfig.name)
-            lastError = message
-            isConnected = false
-            delegate?.mcpService(self, didTerminateWithError: message)
+            self.lastError = message
+            self.delegate?.mcpService(self, didTerminateWithError: message)
         }
     }
 
-    private func cleanupProcessResources() {
-        withLock {
-            standardOutput?.fileHandleForReading.readabilityHandler = nil
-            standardError?.fileHandleForReading.readabilityHandler = nil
-            standardInput = nil
-            standardOutput = nil
-            standardError = nil
+    private static func terminateProcess(_ lifecycle: MCPProcessLifecycle, gracePeriod: TimeInterval) {
+        terminateProcess(lifecycle, gracePeriod: gracePeriod) { _ in
+            _ = lifecycle.finalize()
+        }
         }
 
-        pendingRequests.failAll(error: MCPServiceError.notConnected)
+    private static func terminateProcess(
+        _ lifecycle: MCPProcessLifecycle,
+        gracePeriod: TimeInterval,
+        completion: @escaping @Sendable (Int32?) -> Void
+    ) {
+        Task.detached {
+            let process = lifecycle.process
+            if process.isRunning {
+                process.terminate()
+                let clock = ContinuousClock()
+                let deadline = clock.now.advanced(by: .seconds(gracePeriod))
+                while process.isRunning, clock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(25))
+                }
+
+                if process.isRunning {
+                    DiagnosticsLogger.log(
+                        .mcpService,
+                        level: .info,
+                        message: "MCP process ignored SIGTERM; escalating to SIGKILL",
+                        metadata: [
+                            "pid": "\(process.processIdentifier)",
+                            "transport": lifecycle.id.uuidString
+                        ]
+                    )
+                    Darwin.kill(process.processIdentifier, SIGKILL)
+                }
+
+                if process.isRunning {
+                    process.waitUntilExit()
+                }
+            }
+
+            let exitCode = process.processIdentifier > 0 && !process.isRunning
+                ? process.terminationStatus
+                : nil
+            completion(exitCode)
+        }
     }
 }
 

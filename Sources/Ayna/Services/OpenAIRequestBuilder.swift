@@ -10,12 +10,7 @@ struct ToolCallInfo: @unchecked Sendable {
     let arguments: [String: Any]
 }
 
-/// Unchecked wrapper for JSON-like tool definitions that use `Any`.
-///
-/// Tool definitions are built from immutable JSON-compatible values, but Swift
-/// cannot prove `[String: Any]` is Sendable. The async request builders accept
-/// this wrapper so large request construction can leave the MainActor without
-/// weakening strict concurrency at every call site.
+/// Sendable wrapper for immutable JSON-compatible tool definitions.
 struct RequestBuilderToolDefinitions: @unchecked Sendable {
     static let none = RequestBuilderToolDefinitions(nil)
 
@@ -26,8 +21,8 @@ struct RequestBuilderToolDefinitions: @unchecked Sendable {
     }
 }
 
-/// Resolves request-builder attachment data without forcing body construction
-/// to use `@MainActor` synchronous attachment loaders.
+/// Resolves file-backed image attachments before request serialization leaves
+/// the main actor.
 enum RequestBuilderAttachmentResolver {
     typealias AttachmentDataLoader = @Sendable (String) async -> Data?
 
@@ -89,67 +84,63 @@ enum OpenAIRequestBuilder {
     ///
     /// - Parameter message: The message to convert
     /// - Returns: Dictionary suitable for JSON serialization
-    static func buildMessagePayload(from message: Message) -> [String: Any]? {
-        guard !Task.isCancelled else { return nil }
+    static func buildMessagePayload(from message: Message) -> [String: Any] {
         var payload: [String: Any] = ["role": message.role.rawValue]
 
-        #if !os(watchOS)
-            // Handle tool role messages (tool results)
-            if message.role == .tool {
+        // Handle tool role messages (tool results)
+        if message.role == .tool {
+            payload["content"] = message.content
+            // Tool messages need tool_call_id from the assistant's tool call
+            if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
+                payload["tool_call_id"] = firstToolCall.id
+            }
+            return payload
+        }
+
+        // Handle assistant messages with tool calls
+        if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+            // Assistant message that made tool calls
+            if !message.content.isEmpty {
                 payload["content"] = message.content
-                // Tool messages need tool_call_id from the assistant's tool call
-                if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
-                    payload["tool_call_id"] = firstToolCall.id
-                }
-                return payload
+            } else {
+                payload["content"] = "" // Empty content when only tool calls
             }
 
-            // Handle assistant messages with tool calls
-            if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                // Assistant message that made tool calls
-                if !message.content.isEmpty {
-                    payload["content"] = message.content
-                } else {
-                    payload["content"] = "" // Empty content when only tool calls
+            // Add tool_calls array
+            let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
+                // Convert AnyCodable arguments to JSON string safely
+                var argumentsDict: [String: Any] = [:]
+                for (key, anyCodable) in toolCall.arguments {
+                    argumentsDict[key] = anyCodable.value
                 }
 
-                // Add tool_calls array
-                let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
-                    guard !Task.isCancelled else { return nil }
-                    // Convert AnyCodable arguments to JSON string safely
-                    var argumentsDict: [String: Any] = [:]
-                    for (key, anyCodable) in toolCall.arguments {
-                        argumentsDict[key] = anyCodable.value
-                    }
+                guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
+                      let argumentsString = String(data: argumentsJSON, encoding: .utf8)
+                else {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "Failed to encode arguments for tool call",
+                        metadata: ["tool": toolCall.toolName]
+                    )
+                    return nil
+                }
 
-                    guard let argumentsJSON = try? JSONSerialization.data(withJSONObject: argumentsDict, options: []),
-                          let argumentsString = String(data: argumentsJSON, encoding: .utf8)
-                    else {
-                        DiagnosticsLogger.log(
-                            .aiService,
-                            level: .error,
-                            message: "Failed to encode arguments for tool call",
-                            metadata: ["tool": toolCall.toolName]
-                        )
-                        return nil
-                    }
-
-                    return [
-                        "id": toolCall.id,
-                        "type": "function",
-                        "function": [
-                            "name": toolCall.toolName,
-                            "arguments": argumentsString
-                        ]
+                return [
+                    "id": toolCall.id,
+                    "type": "function",
+                    "function": [
+                        "name": toolCall.toolName,
+                        "arguments": argumentsString
                     ]
-                }
-
-                if !toolCallsArray.isEmpty {
-                    payload["tool_calls"] = toolCallsArray
-                }
-                return payload
+                ]
             }
-        #endif
+
+            if !toolCallsArray.isEmpty {
+                payload["tool_calls"] = toolCallsArray
+            }
+            return payload
+        }
 
         // Check if message has attachments (multimodal content)
         if let attachments = message.attachments, !attachments.isEmpty {
@@ -165,10 +156,8 @@ enum OpenAIRequestBuilder {
 
             // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                guard !Task.isCancelled else { return nil }
                 if let data = attachment.data {
                     let base64Image = data.base64EncodedString()
-                    guard !Task.isCancelled else { return nil }
                     contentArray.append([
                         "type": "image_url",
                         "image_url": [
@@ -184,7 +173,7 @@ enum OpenAIRequestBuilder {
             payload["content"] = message.content
         }
 
-        return Task.isCancelled ? nil : payload
+        return payload
     }
 
     /// Build a chat completions request body.
@@ -201,132 +190,122 @@ enum OpenAIRequestBuilder {
         stream: Bool,
         tools: [[String: Any]]? = nil,
         supportsParallelToolCalls: Bool = true
-    ) -> [String: Any]? {
-        guard !Task.isCancelled else { return nil }
-        #if !os(watchOS)
-            // Build a set of valid tool_call_ids that have matching tool responses
-            // First, collect all tool messages and their tool_call_ids
-            var toolResponseIds = Set<String>()
-            for message in messages {
-                guard !Task.isCancelled else { return nil }
-                if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
-                    toolResponseIds.insert(toolCallId)
-                }
+    ) -> [String: Any] {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
+
+        // Build a set of valid tool_call_ids that have matching tool responses
+        // First, collect all tool messages and their tool_call_ids
+        var toolResponseIds = Set<String>()
+        for message in sanitizedMessages {
+            if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
+                toolResponseIds.insert(toolCallId)
             }
+        }
 
-            // Now filter messages:
-            // 1. Keep all non-tool, non-assistant messages
-            // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
-            // 3. For tool messages, only keep if preceding assistant has the matching tool_call
-            var filteredMessages: [Message] = []
-            for (index, message) in messages.enumerated() {
-                guard !Task.isCancelled else { return nil }
-                if message.role == .tool {
-                    // Get the tool_call_id from this tool message
-                    guard let toolCallId = message.toolCalls?.first?.id else {
-                        DiagnosticsLogger.log(
-                            .aiService,
-                            level: .info,
-                            message: "⚠️ Skipping tool message without tool_call_id",
-                            metadata: ["index": "\(index)"]
-                        )
-                        continue
+        // Now filter messages:
+        // 1. Keep all non-tool, non-assistant messages
+        // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
+        // 3. For tool messages, only keep if preceding assistant has the matching tool_call
+        var filteredMessages: [Message] = []
+        for (index, message) in sanitizedMessages.enumerated() {
+            if message.role == .tool {
+                // Get the tool_call_id from this tool message
+                guard let toolCallId = message.toolCalls?.first?.id else {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "⚠️ Skipping tool message without tool_call_id",
+                        metadata: ["index": "\(index)"]
+                    )
+                    continue
+                }
+
+                // Check if a preceding assistant message has matching tool_call
+                if index == 0 {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "⚠️ Skipping orphaned/mismatched tool message",
+                        metadata: ["index": "\(index)", "toolCallId": toolCallId]
+                    )
+                } else {
+                    var foundAssistant = false
+                    for prevIdx in stride(from: index - 1, through: 0, by: -1) {
+                        let prevMessage = sanitizedMessages[prevIdx]
+                        if prevMessage.role == .assistant {
+                            if let toolCalls = prevMessage.toolCalls,
+                               toolCalls.contains(where: { $0.id == toolCallId })
+                            {
+                                foundAssistant = true
+                            }
+                            break
+                        } else if prevMessage.role == .tool {
+                            continue // Skip other tool messages in the sequence
+                        } else {
+                            break
+                        }
                     }
-
-                    // Check if a preceding assistant message has matching tool_call
-                    if index == 0 {
+                    if foundAssistant {
+                        // Valid tool message with matching ID - keep it
+                        filteredMessages.append(message)
+                    } else {
                         DiagnosticsLogger.log(
                             .aiService,
                             level: .info,
                             message: "⚠️ Skipping orphaned/mismatched tool message",
                             metadata: ["index": "\(index)", "toolCallId": toolCallId]
                         )
-                    } else {
-                        var foundAssistant = false
-                        for prevIdx in stride(from: index - 1, through: 0, by: -1) {
-                            let prevMessage = messages[prevIdx]
-                            if prevMessage.role == .assistant {
-                                if let toolCalls = prevMessage.toolCalls,
-                                   toolCalls.contains(where: { $0.id == toolCallId })
-                                {
-                                    foundAssistant = true
-                                }
-                                break
-                            } else if prevMessage.role == .tool {
-                                continue // Skip other tool messages in the sequence
-                            } else {
-                                break
-                            }
-                        }
-                        if foundAssistant {
-                            // Valid tool message with matching ID - keep it
-                            filteredMessages.append(message)
-                        } else {
-                            DiagnosticsLogger.log(
-                                .aiService,
-                                level: .info,
-                                message: "⚠️ Skipping orphaned/mismatched tool message",
-                                metadata: ["index": "\(index)", "toolCallId": toolCallId]
-                            )
-                        }
                     }
-                } else if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    // For assistant messages with tool_calls, filter to only those with matching tool responses
-                    let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
+                }
+            } else if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                // For assistant messages with tool_calls, filter to only those with matching tool responses
+                let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
 
-                    if validToolCalls.isEmpty {
-                        // No valid tool calls - add assistant without tool_calls
-                        var modifiedMessage = message
-                        modifiedMessage.toolCalls = nil
-                        filteredMessages.append(modifiedMessage)
-                        DiagnosticsLogger.log(
-                            .aiService,
-                            level: .info,
-                            message: "⚠️ Stripped orphaned tool_calls from assistant message",
-                            metadata: [
-                                "index": "\(index)",
-                                "originalToolCallCount": "\(toolCalls.count)"
-                            ]
-                        )
-                    } else if validToolCalls.count < toolCalls.count {
-                        // Some tool calls are orphaned - keep only valid ones
-                        var modifiedMessage = message
-                        modifiedMessage.toolCalls = validToolCalls
-                        filteredMessages.append(modifiedMessage)
-                        DiagnosticsLogger.log(
-                            .aiService,
-                            level: .info,
-                            message: "⚠️ Filtered some orphaned tool_calls from assistant",
-                            metadata: [
-                                "index": "\(index)",
-                                "kept": "\(validToolCalls.count)",
-                                "removed": "\(toolCalls.count - validToolCalls.count)"
-                            ]
-                        )
-                    } else {
-                        // All tool calls have matching responses - keep as-is
-                        filteredMessages.append(message)
-                    }
+                if validToolCalls.isEmpty {
+                    // No valid tool calls - add assistant without tool_calls
+                    var modifiedMessage = message
+                    modifiedMessage.toolCalls = nil
+                    filteredMessages.append(modifiedMessage)
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "⚠️ Stripped orphaned tool_calls from assistant message",
+                        metadata: [
+                            "index": "\(index)",
+                            "originalToolCallCount": "\(toolCalls.count)"
+                        ]
+                    )
+                } else if validToolCalls.count < toolCalls.count {
+                    // Some tool calls are orphaned - keep only valid ones
+                    var modifiedMessage = message
+                    modifiedMessage.toolCalls = validToolCalls
+                    filteredMessages.append(modifiedMessage)
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .info,
+                        message: "⚠️ Filtered some orphaned tool_calls from assistant",
+                        metadata: [
+                            "index": "\(index)",
+                            "kept": "\(validToolCalls.count)",
+                            "removed": "\(toolCalls.count - validToolCalls.count)"
+                        ]
+                    )
                 } else {
+                    // All tool calls have matching responses - keep as-is
                     filteredMessages.append(message)
                 }
+            } else {
+                filteredMessages.append(message)
             }
+        }
 
-            var messagePayloads: [[String: Any]] = []
-            messagePayloads.reserveCapacity(filteredMessages.count)
-            for message in filteredMessages {
-                guard let payload = buildMessagePayload(from: message) else { return nil }
-                messagePayloads.append(payload)
+        let messagePayloads = filteredMessages
+            .filter { message in
+                message.role != .assistant ||
+                    !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    !(message.toolCalls?.isEmpty ?? true)
             }
-        #else
-            // watchOS: No tool support, just pass messages through
-            var messagePayloads: [[String: Any]] = []
-            messagePayloads.reserveCapacity(messages.count)
-            for message in messages {
-                guard let payload = buildMessagePayload(from: message) else { return nil }
-                messagePayloads.append(payload)
-            }
-        #endif
+            .map { buildMessagePayload(from: $0) }
 
         var body: [String: Any] = [
             "messages": messagePayloads,
@@ -343,7 +322,7 @@ enum OpenAIRequestBuilder {
             }
         }
 
-        return Task.isCancelled ? nil : body
+        return body
     }
 
     // MARK: - Responses API
@@ -354,88 +333,102 @@ enum OpenAIRequestBuilder {
     /// - Messages are wrapped in `type: "message"` objects
     /// - Content types are `input_text`/`output_text` instead of just `text`
     /// - Images use `input_image` type
-    /// - System messages are skipped
+    /// - System messages are skipped here and promoted to top-level `instructions` by `buildResponsesBody`
     /// - Tool results use `function_call_output` type (not "tool" role)
     /// - Assistant tool calls use `function_call` type in output
     ///
     /// - Parameter messages: Messages to convert
     /// - Returns: Array of input items for the Responses API
-    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]]? {
-        guard !Task.isCancelled else { return nil }
+    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var inputArray: [[String: Any]] = []
+        var messageIndex = 0
 
-        for message in messages {
-            guard !Task.isCancelled else { return nil }
-            // Skip system messages - Responses API handles them differently
+        while messageIndex < sanitizedMessages.count {
+            let message = sanitizedMessages[messageIndex]
+
             if message.role == .system {
+                messageIndex += 1
                 continue
             }
 
-            #if !os(watchOS)
-                // Handle tool result messages - convert to function_call_output
-                if message.role == .tool {
-                    if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
-                        let outputItem: [String: Any] = [
-                            "type": "function_call_output",
-                            "call_id": firstToolCall.id,
-                            "output": message.content
+            // Orphan tool outputs are never emitted independently. A valid tool
+            // round is handled with its preceding assistant call below.
+            if message.role == .tool {
+                messageIndex += 1
+                continue
+            }
+
+            if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                if !message.content.isEmpty {
+                    inputArray.append([
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            ["type": "output_text", "text": message.content]
                         ]
-                        inputArray.append(outputItem)
-                    }
-                    continue
+                    ])
                 }
 
-                // Handle assistant messages with tool calls
-                if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    // First add any text content as a message
-                    if !message.content.isEmpty {
-                        let messageItem: [String: Any] = [
-                            "type": "message",
-                            "role": "assistant",
-                            "content": [
-                                ["type": "output_text", "text": message.content]
-                            ]
-                        ]
-                        inputArray.append(messageItem)
+                // Tool outputs belong to this round only while they are contiguous
+                // and immediately follow the assistant call.
+                var resultByCallID: [String: Message] = [:]
+                var nextIndex = messageIndex + 1
+                while nextIndex < sanitizedMessages.count, sanitizedMessages[nextIndex].role == .tool {
+                    let resultMessage = sanitizedMessages[nextIndex]
+                    if let callID = resultMessage.toolCalls?.first?.id,
+                       resultByCallID[callID] == nil
+                    {
+                        resultByCallID[callID] = resultMessage
                     }
-
-                    // Then add each tool call as a function_call item
-                    for toolCall in toolCalls {
-                        guard !Task.isCancelled else { return nil }
-                        // Convert AnyCodable arguments to JSON string
-                        var argumentsDict: [String: Any] = [:]
-                        for (key, anyCodable) in toolCall.arguments {
-                            argumentsDict[key] = anyCodable.value
-                        }
-
-                        let argumentsString: String = if let argsData = try? JSONSerialization.data(withJSONObject: argumentsDict),
-                                                         let argsStr = String(data: argsData, encoding: .utf8)
-                        {
-                            argsStr
-                        } else {
-                            "{}"
-                        }
-
-                        let functionCallItem: [String: Any] = [
-                            "type": "function_call",
-                            "call_id": toolCall.id,
-                            "name": toolCall.toolName,
-                            "arguments": argumentsString
-                        ]
-                        inputArray.append(functionCallItem)
-                    }
-                    continue
+                    nextIndex += 1
                 }
-            #endif
+
+                var validCalls: [MCPToolCall] = []
+                var seenCallIDs: Set<String> = []
+                for toolCall in toolCalls
+                    where resultByCallID[toolCall.id] != nil && seenCallIDs.insert(toolCall.id).inserted
+                {
+                    var argumentsDict: [String: Any] = [:]
+                    for (key, anyCodable) in toolCall.arguments {
+                        argumentsDict[key] = anyCodable.value
+                    }
+                    let argumentsString: String = if let data = try? JSONSerialization.data(
+                        withJSONObject: argumentsDict
+                    ), let string = String(data: data, encoding: .utf8) {
+                        string
+                    } else {
+                        "{}"
+                    }
+                    inputArray.append([
+                        "type": "function_call",
+                        "call_id": toolCall.id,
+                        "name": toolCall.toolName,
+                        "arguments": argumentsString
+                    ])
+                    validCalls.append(toolCall)
+                }
+
+                for toolCall in validCalls {
+                    guard let resultMessage = resultByCallID[toolCall.id] else { continue }
+                    inputArray.append([
+                        "type": "function_call_output",
+                        "call_id": toolCall.id,
+                        "output": resultMessage.content
+                    ])
+                }
+
+                messageIndex = nextIndex
+                continue
+            }
 
             var messageItem: [String: Any] = [
                 "type": "message",
                 "role": message.role.rawValue
             ]
-
             var contentArray: [[String: Any]] = []
 
-            if !message.content.isEmpty {
+            if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let contentType = message.role == .user ? "input_text" : "output_text"
                 contentArray.append([
                     "type": contentType,
@@ -443,26 +436,28 @@ enum OpenAIRequestBuilder {
                 ])
             }
 
-            // Add image attachments for user messages
             if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
                 for attachment in attachments where attachment.mimeType.starts(with: "image/") {
-                    guard !Task.isCancelled else { return nil }
                     if let data = attachment.data {
-                        let base64Data = data.base64EncodedString()
-                        guard !Task.isCancelled else { return nil }
                         contentArray.append([
                             "type": "input_image",
-                            "image_url": "data:\(attachment.mimeType);base64,\(base64Data)",
+                            "image_url": "data:\(attachment.mimeType);base64,\(data.base64EncodedString())"
                         ])
                     }
                 }
             }
 
+            guard !contentArray.isEmpty else {
+                messageIndex += 1
+                continue
+            }
+
             messageItem["content"] = contentArray
             inputArray.append(messageItem)
+            messageIndex += 1
         }
 
-        return Task.isCancelled ? nil : inputArray
+        return inputArray
     }
 
     /// Convert tools from Chat Completions format to Responses API format.
@@ -474,7 +469,6 @@ enum OpenAIRequestBuilder {
     /// - Returns: Tools in Responses API format
     static func convertToolsToResponsesFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
-            guard !Task.isCancelled else { return nil }
             // Check if it's already in Responses format (has top-level "name")
             if tool["name"] != nil {
                 return tool
@@ -522,8 +516,8 @@ enum OpenAIRequestBuilder {
         messages: [Message],
         tools: [[String: Any]]? = nil,
         supportsParallelToolCalls: Bool = true
-    ) -> [String: Any]? {
-        guard let inputArray = buildResponsesInput(from: messages) else { return nil }
+    ) -> [String: Any] {
+        let inputArray = buildResponsesInput(from: messages)
 
         var body: [String: Any] = [
             "model": model,
@@ -531,6 +525,14 @@ enum OpenAIRequestBuilder {
             "reasoning": ["summary": "auto"],
             "text": ["verbosity": "medium"]
         ]
+
+        let instructions = messages
+            .filter { $0.role == .system && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.content)
+            .joined(separator: "\n\n")
+        if !instructions.isEmpty {
+            body["instructions"] = instructions
+        }
 
         // Add tools if provided (convert from Chat Completions format to Responses format)
         if let tools, !tools.isEmpty {
@@ -551,7 +553,7 @@ enum OpenAIRequestBuilder {
             }
         }
 
-        return Task.isCancelled ? nil : body
+        return body
     }
 
     /// Result from parsing Responses API output
@@ -680,11 +682,7 @@ enum OpenAIRequestBuilder {
         }
     }
 
-    /// Create a configured URLRequest for the Chat Completions API off the MainActor.
-    ///
-    /// This async entry point resolves image attachment data, builds the JSON
-    /// body, and serializes it from a non-actor-isolated executor when awaited
-    /// by MainActor provider code.
+    /// Creates a Chat Completions request without blocking the caller's actor.
     static func createChatCompletionsRequestAsync(
         url: URL,
         messages: [Message],
@@ -703,11 +701,10 @@ enum OpenAIRequestBuilder {
                 in: messages,
                 attachmentDataLoader: attachmentDataLoader
             )
-        } catch is CancellationError {
-            return nil
         } catch {
             return nil
         }
+
         let buildTask = Task.detached(priority: .userInitiated) {
             createChatCompletionsRequest(
                 url: url,
@@ -757,18 +754,17 @@ enum OpenAIRequestBuilder {
         isGitHubModels: Bool = false,
         supportsParallelToolCalls: Bool = true
     ) -> URLRequest? {
+        guard !Task.isCancelled else { return nil }
         var request = URLRequest(url: url)
         configureRequest(&request, apiKey: apiKey, isAzure: isAzure, isGitHubModels: isGitHubModels)
 
-        guard let body = buildChatCompletionsBody(
+        let body = buildChatCompletionsBody(
             messages: messages,
             model: model,
             stream: stream,
             tools: tools,
             supportsParallelToolCalls: supportsParallelToolCalls && !isGitHubModels
-        ) else {
-            return nil
-        }
+        )
 
         guard !Task.isCancelled else { return nil }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
@@ -780,11 +776,7 @@ enum OpenAIRequestBuilder {
         return request
     }
 
-    /// Create a configured URLRequest for the Responses API off the MainActor.
-    ///
-    /// This async entry point resolves image attachment data, builds the JSON
-    /// body, and serializes it from a non-actor-isolated executor when awaited
-    /// by MainActor provider code.
+    /// Creates a Responses request without blocking the caller's actor.
     static func createResponsesRequestAsync(
         url: URL,
         messages: [Message],
@@ -801,11 +793,10 @@ enum OpenAIRequestBuilder {
                 in: messages,
                 attachmentDataLoader: attachmentDataLoader
             )
-        } catch is CancellationError {
-            return nil
         } catch {
             return nil
         }
+
         let buildTask = Task.detached(priority: .userInitiated) {
             createResponsesRequest(
                 url: url,
@@ -849,17 +840,16 @@ enum OpenAIRequestBuilder {
         isAzure: Bool,
         supportsParallelToolCalls: Bool = true
     ) -> URLRequest? {
+        guard !Task.isCancelled else { return nil }
         var request = URLRequest(url: url)
         configureRequest(&request, apiKey: apiKey, isAzure: isAzure)
 
-        guard let body = buildResponsesBody(
+        let body = buildResponsesBody(
             model: model,
             messages: messages,
             tools: tools,
             supportsParallelToolCalls: supportsParallelToolCalls
-        ) else {
-            return nil
-        }
+        )
 
         guard !Task.isCancelled else { return nil }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {

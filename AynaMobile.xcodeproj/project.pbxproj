@@ -6,9 +6,45 @@
 	objectVersion = 71;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E7000101 /* AIServiceFlightTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000201 /* AIServiceFlightTestSupport.swift */; };
+		E7000102 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000202 /* TestHelpers.swift */; };
+		E7000103 /* TestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000203 /* TestTags.swift */; };
+		E7000104 /* WatchChatViewModelNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000204 /* WatchChatViewModelNativeTests.swift */; };
+		E7000105 /* WatchChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000205 /* WatchChatViewModelTests.swift */; };
+		E7000106 /* WatchConversationStoreNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000206 /* WatchConversationStoreNativeTests.swift */; };
+		E7000107 /* WatchConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000207 /* WatchConversationStoreTests.swift */; };
+		E7000108 /* WatchDataModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000208 /* WatchDataModelTests.swift */; };
+		E7000109 /* WatchMarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000209 /* WatchMarkdownRendererTests.swift */; };
+		E700010A /* WatchSyncChatViewModelNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E700020A /* WatchSyncChatViewModelNativeTests.swift */; };
+		E700010B /* WatchSyncConversationStoreNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E700020B /* WatchSyncConversationStoreNativeTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E7000800 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D6000800 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C5000500;
+			remoteInfo = "Ayna-watchOS";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B4000200 /* Ayna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ayna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5000200 /* Ayna Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ayna Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E7000201 /* AIServiceFlightTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIServiceFlightTestSupport.swift; sourceTree = "<group>"; };
+		E7000202 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		E7000203 /* TestTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestTags.swift; sourceTree = "<group>"; };
+		E7000204 /* WatchChatViewModelNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatViewModelNativeTests.swift; sourceTree = "<group>"; };
+		E7000205 /* WatchChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatViewModelTests.swift; sourceTree = "<group>"; };
+		E7000206 /* WatchConversationStoreNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConversationStoreNativeTests.swift; sourceTree = "<group>"; };
+		E7000207 /* WatchConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConversationStoreTests.swift; sourceTree = "<group>"; };
+		E7000208 /* WatchDataModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchDataModelTests.swift; sourceTree = "<group>"; };
+		E7000209 /* WatchMarkdownRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownRendererTests.swift; sourceTree = "<group>"; };
+		E700020A /* WatchSyncChatViewModelNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncChatViewModelNativeTests.swift; sourceTree = "<group>"; };
+		E700020B /* WatchSyncConversationStoreNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncConversationStoreNativeTests.swift; sourceTree = "<group>"; };
+		E700020C /* Ayna-watchOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-watchOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -47,6 +83,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E7000300 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -54,6 +97,7 @@
 			isa = PBXGroup;
 			children = (
 				D6000001 /* Sources/Ayna */,
+				E7000401 /* Ayna-watchOSTests */,
 				D6000402 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,9 +107,29 @@
 			children = (
 				B4000200 /* Ayna.app */,
 				C5000200 /* Ayna Watch App.app */,
+				E700020C /* Ayna-watchOSTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
+		};
+		E7000401 /* Ayna-watchOSTests */ = {
+			isa = PBXGroup;
+			children = (
+				E7000201 /* AIServiceFlightTestSupport.swift */,
+				E7000202 /* TestHelpers.swift */,
+				E7000203 /* TestTags.swift */,
+				E7000204 /* WatchChatViewModelNativeTests.swift */,
+				E7000205 /* WatchChatViewModelTests.swift */,
+				E7000206 /* WatchConversationStoreNativeTests.swift */,
+				E7000207 /* WatchConversationStoreTests.swift */,
+				E7000208 /* WatchDataModelTests.swift */,
+				E7000209 /* WatchMarkdownRendererTests.swift */,
+				E700020A /* WatchSyncChatViewModelNativeTests.swift */,
+				E700020B /* WatchSyncConversationStoreNativeTests.swift */,
+			);
+			name = "Ayna-watchOSTests";
+			path = Tests/AynaTests;
+			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
 
@@ -110,6 +174,24 @@
 			productReference = C5000200 /* Ayna Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E7000500 /* Ayna-watchOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E7000700 /* Build configuration list for PBXNativeTarget "Ayna-watchOSTests" */;
+			buildPhases = (
+				E7000600 /* Sources */,
+				E7000300 /* Frameworks */,
+				E7000601 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E7000801 /* PBXTargetDependency */,
+			);
+			name = "Ayna-watchOSTests";
+			productName = "Ayna-watchOSTests";
+			productReference = E700020C /* Ayna-watchOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -119,6 +201,12 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					E7000500 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = C5000500;
+					};
+				};
 			};
 			buildConfigurationList = D6000900 /* Build configuration list for PBXProject "AynaMobile" */;
 			compatibilityVersion = "Xcode 16.0";
@@ -136,6 +224,7 @@
 			targets = (
 				B4000500 /* Ayna-iOS */,
 				C5000500 /* Ayna-watchOS */,
+				E7000500 /* Ayna-watchOSTests */,
 			);
 		};
 /* End PBXProject section */
@@ -149,6 +238,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C5000601 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E7000601 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -172,7 +268,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E7000600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7000101 /* AIServiceFlightTestSupport.swift in Sources */,
+				E7000102 /* TestHelpers.swift in Sources */,
+				E7000103 /* TestTags.swift in Sources */,
+				E7000104 /* WatchChatViewModelNativeTests.swift in Sources */,
+				E7000105 /* WatchChatViewModelTests.swift in Sources */,
+				E7000106 /* WatchConversationStoreNativeTests.swift in Sources */,
+				E7000107 /* WatchConversationStoreTests.swift in Sources */,
+				E7000108 /* WatchDataModelTests.swift in Sources */,
+				E7000109 /* WatchMarkdownRendererTests.swift in Sources */,
+				E700010A /* WatchSyncChatViewModelNativeTests.swift in Sources */,
+				E700010B /* WatchSyncConversationStoreNativeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E7000801 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C5000500 /* Ayna-watchOS */;
+			targetProxy = E7000800 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D6000A01 /* Debug */ = {
@@ -388,6 +510,51 @@
 			};
 			name = Release;
 		};
+		E7000B01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.watchOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_MODULE_ALIASES = "Ayna=Ayna_Watch_App";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		E7000B02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.watchOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_MODULE_ALIASES = "Ayna=Ayna_Watch_App";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna Watch App";
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -414,6 +581,15 @@
 			buildConfigurations = (
 				D6000A01 /* Debug */,
 				D6000A02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E7000700 /* Build configuration list for PBXNativeTarget "Ayna-watchOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E7000B01 /* Debug */,
+				E7000B02 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -20,9 +20,7 @@ final class WebSearchCoordinator: ObservableObject {
 
     // MARK: - Constants
 
-    private enum Constants {
-        static let toolName = "web_search"
-    }
+    nonisolated static let toolName = "web_search"
 
     // MARK: - Dependencies
 
@@ -69,7 +67,7 @@ final class WebSearchCoordinator: ObservableObject {
         [
             "type": "function",
             "function": [
-                "name": Constants.toolName,
+                "name": Self.toolName,
                 "description": "Search the web for information. Use this tool for any factual question, to look up people, organizations, recent events, current data, or when you're unsure about the answer.",
                 "parameters": [
                     "type": "object",
@@ -97,10 +95,6 @@ final class WebSearchCoordinator: ObservableObject {
     }
 
     /// The tool name used in function calling
-    static var toolName: String {
-        Constants.toolName
-    }
-
     // MARK: - Execution
 
     /// Executes a web search tool call and returns formatted results
@@ -134,16 +128,15 @@ final class WebSearchCoordinator: ObservableObject {
         }
 
         // Try primary provider, then fallback
-        let response: WebSearchResponse
-        if tavilyService.isConfigured {
-            response = await searchWithTavilyFallbackToDDG(
+        let response: WebSearchResponse = if tavilyService.isConfigured {
+            await searchWithTavilyFallbackToDDG(
                 query: query,
                 topic: topic,
                 searchDepth: searchDepth,
                 maxResults: maxResults
             )
         } else {
-            response = await searchWithDDGFallbackToError(
+            await searchWithDDGFallbackToError(
                 query: query,
                 maxResults: maxResults
             )
@@ -173,6 +166,9 @@ final class WebSearchCoordinator: ObservableObject {
             )
             return tavilyResponse.toWebSearchResponse()
         } catch {
+            guard !Task.isCancelled else {
+                return cancelledResponse(query: query, provider: .tavily)
+            }
             log(.default, "⚠️ Tavily search failed, falling back to DuckDuckGo", metadata: [
                 "error": error.localizedDescription,
             ])
@@ -188,6 +184,9 @@ final class WebSearchCoordinator: ObservableObject {
         do {
             return try await ddgService.search(query: query, maxResults: maxResults)
         } catch {
+            guard !Task.isCancelled else {
+                return cancelledResponse(query: query, provider: .duckDuckGo)
+            }
             log(.error, "❌ All search providers failed", metadata: [
                 "error": error.localizedDescription,
             ])
@@ -199,6 +198,16 @@ final class WebSearchCoordinator: ObservableObject {
                 provider: .duckDuckGo
             )
         }
+    }
+
+    private func cancelledResponse(query: String, provider: WebSearchProvider) -> WebSearchResponse {
+        WebSearchResponse(
+            query: query,
+            answer: nil,
+            results: [],
+            responseTime: 0,
+            provider: provider
+        )
     }
 
     // MARK: - Logging

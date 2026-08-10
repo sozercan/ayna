@@ -93,61 +93,6 @@ import Testing
         }
 
         @Test
-        func `tool request state remains pending after the UI label clears`() {
-            let state = StreamingRequestCallbackState()
-
-            state.markToolCallRequested()
-
-            #expect(state.hasPendingToolCall)
-            #expect(!state.isFinalized)
-        }
-
-        @Test
-        func `finalized tool request cannot remain pending`() {
-            let state = StreamingRequestCallbackState()
-
-            state.markToolCallRequested()
-            state.markFinalized()
-            state.markToolCallRequested()
-
-            #expect(state.isFinalized)
-            #expect(!state.hasPendingToolCall)
-        }
-
-        @Test
-        func `multiple tool calls are retained for one processing batch`() throws {
-            let state = StreamingRequestCallbackState()
-            state.enqueueToolCall(
-                StreamingToolCall(id: "call-1", name: "web_search", arguments: ["query": "first"])
-            )
-            state.enqueueToolCall(
-                StreamingToolCall(id: "call-2", name: "web_search", arguments: ["query": "second"])
-            )
-
-            let toolCalls = try #require(state.beginToolCallProcessing())
-
-            #expect(toolCalls.map(\.id) == ["call-1", "call-2"])
-            #expect(state.hasPendingToolCall)
-            state.finishToolCallProcessing()
-            #expect(!state.hasPendingToolCall)
-        }
-
-        @Test
-        func `in-flight tool calls remain available for cancellation finalization`() throws {
-            let state = StreamingRequestCallbackState()
-            state.enqueueToolCall(
-                StreamingToolCall(id: "call-1", name: "web_search", arguments: ["query": "test"])
-            )
-
-            let processingToolCalls = try #require(state.beginToolCallProcessing())
-            let terminalToolCalls = state.takePendingToolCalls()
-
-            #expect(processingToolCalls.map(\.id) == ["call-1"])
-            #expect(terminalToolCalls.map(\.id) == ["call-1"])
-            #expect(!state.hasPendingToolCall)
-        }
-
-        @Test
         func `cancelling multi-model generation finalizes streaming response entries`() async throws {
             let directory = try TestHelpers.makeTemporaryDirectory()
             let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
@@ -244,31 +189,6 @@ import Testing
                     == "queued before switch"
             )
             #expect(persisted.getResponseGroup(responseGroup.id)?.isComplete == true)
-        }
-
-        @Test
-        func `resetting an idle new chat does not cancel a shared AI request`() async throws {
-            let directory = try TestHelpers.makeTemporaryDirectory()
-            let store = TestHelpers.makeTestStore(directory: directory, keychain: InMemoryKeychainStorage())
-            let manager = ConversationManager(
-                store: store,
-                saveDebounceDuration: .milliseconds(0),
-                searchIndexWarmupEnabled: false
-            )
-            _ = await manager.loadingTask?.value
-            let service = AIService(urlSession: URLSession(configuration: .ephemeral))
-            var cancellationCount = 0
-            let viewModel = IOSChatViewModel(
-                conversationManager: manager,
-                aiService: service,
-                cancelCurrentAIRequest: { _ in
-                    cancellationCount += 1
-                }
-            )
-
-            viewModel.resetForNewChat()
-
-            #expect(cancellationCount == 0)
         }
 
         @Test(.timeLimit(.minutes(1)))

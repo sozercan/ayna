@@ -5,15 +5,13 @@
 //  Tests for WebSearchCoordinator routing, fallback, and response formatting.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("WebSearchCoordinator Tests", .tags(.async), .serialized)
 @MainActor
 struct WebSearchCoordinatorTests {
-
     // MARK: - Provider Routing Tests
 
     @Test("Routes to DuckDuckGo when Tavily not configured")
@@ -80,6 +78,39 @@ struct WebSearchCoordinatorTests {
         let result = await coordinator.executeToolCall(arguments: [:])
         #expect(result.contains("Error"))
         #expect(result.contains("query"))
+    }
+
+    @Test("Cancellation does not start a fallback provider", .timeLimit(.minutes(1)))
+    func cancellationDoesNotStartFallbackProvider() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let session = URLSession(configuration: config)
+
+        let tavily = TavilyService(keychain: MockKeychainStorage(), urlSession: session)
+        tavily.apiKey = "tvly-test-key"
+        tavily.isEnabled = true
+        let ddg = DuckDuckGoSearchService(urlSession: session)
+        let coordinator = WebSearchCoordinator(tavilyService: tavily, ddgService: ddg)
+
+        let task = Task {
+            await coordinator.executeToolCallWithCitations(arguments: ["query": "cancel me"])
+        }
+
+        #expect(await server.waitForRequestCount(1))
+        let firstRequest = await server.exchange(at: 0)
+        task.cancel()
+
+        let clock = ContinuousClock()
+        let stopDeadline = clock.now.advanced(by: .seconds(1))
+        while !firstRequest.isStopped, clock.now < stopDeadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(firstRequest.isStopped)
+        _ = await task.value
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(server.requestCount == 1)
     }
 
     // MARK: - WebSearchResponse Formatting Tests

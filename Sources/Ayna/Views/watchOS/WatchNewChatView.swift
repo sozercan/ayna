@@ -51,10 +51,18 @@
 
                         // Composer
                         composerBar
+
+                        if let error = viewModel.errorMessage {
+                            Text(error)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                     .padding(.horizontal, 4)
                 }
                 .defaultScrollAnchor(.bottom)
+                .accessibilityIdentifier(TestIdentifiers.Watch.newChatView)
             }
 
             private var composerBar: some View {
@@ -78,8 +86,9 @@
                 conversationStore.selectedConversationId = newId
 
                 // Send the message
-                viewModel.sendMessage(trimmed)
-                messageText = ""
+                if viewModel.sendMessage(trimmed).consumedInput {
+                    messageText = ""
+                }
             }
         }
 

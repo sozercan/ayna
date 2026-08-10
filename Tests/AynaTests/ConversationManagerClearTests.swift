@@ -116,6 +116,30 @@ struct ConversationManagerClearTests {
         #expect(manager.persistenceErrorMessage == nil)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `default test summary callbacks do not leak clear state between managers`() async {
+        let clearedConversation = TestHelpers.sampleConversation(title: "Cleared")
+        let successfulStore = ScriptedConversationStore(conversations: [clearedConversation])
+        let successfulManager = ConversationManager(store: successfulStore)
+        _ = await successfulManager.loadingTask?.value
+
+        await successfulManager.clearAllConversations().value
+
+        #expect(successfulManager.conversations.isEmpty)
+
+        let restoredConversation = TestHelpers.sampleConversation(title: "Restored")
+        let failingStore = ScriptedConversationStore(conversations: [restoredConversation])
+        _ = await failingStore.enqueue(.clear, outcome: .fail)
+        let failingManager = ConversationManager(store: failingStore)
+        _ = await failingManager.loadingTask?.value
+
+        await failingManager.clearAllConversations().value
+
+        #expect(failingManager.conversations.map(\.id) == [restoredConversation.id])
+        #expect(failingManager.conversations.first?.title == restoredConversation.title)
+    }
+
     @Test
     @MainActor
     func `failed clear does not publish a committed history tombstone`() async throws {
@@ -322,6 +346,7 @@ struct ConversationManagerClearTests {
             saveDebounceDuration: .milliseconds(0),
             clearOperation: {
                 clearGate.run()
+                try store.clear()
             }
         )
         _ = await manager.loadingTask?.value
@@ -730,6 +755,67 @@ struct ConversationManagerClearTests {
 
         let persisted = try await store.loadConversations()
         #expect(persisted.map(\.title) == ["After Clear Final"])
+    }
+}
+
+extension ConversationManagerClearTests {
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `failed clear repair waits behind a post-clear save registered during attachment preparation`() async {
+        let beforeClear = TestHelpers.sampleConversation(title: "Before Clear")
+        let createdAfterClear = TestHelpers.sampleConversation(title: "After Clear")
+        let store = ScriptedConversationStore(conversations: [beforeClear])
+        let snapshotGate = BlockingClearOperationGate()
+        defer { snapshotGate.release() }
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .seconds(30),
+            attachmentCleanupSnapshotOperation: {
+                snapshotGate.run()
+                return .empty
+            }
+        )
+        _ = await manager.loadingTask?.value
+
+        let clearGate = await store.enqueue(
+            .clear,
+            outcome: .partialClear([beforeClear.id]),
+            blocked: true
+        )
+        let clearTask = manager.clearAllConversations()
+        while !snapshotGate.hasStarted() {
+            await Task.yield()
+        }
+
+        manager.insertConversationFromSync(createdAfterClear)
+        let saveGate = await store.enqueue(
+            .save(createdAfterClear.id, createdAfterClear.title),
+            blocked: true
+        )
+        let repairGate = await store.enqueue(.clear, blocked: true)
+        let saveTask = manager.saveImmediately(createdAfterClear)
+
+        snapshotGate.release()
+        await clearGate.started.wait()
+        await clearGate.releaseGate.open()
+        await saveGate.started.wait()
+
+        #expect(await repairGate.started.opened() == false)
+        let operationsBeforeRepair = await store.operations()
+        #expect(Array(operationsBeforeRepair.suffix(2)) == [
+            .clear,
+            .save(createdAfterClear.id, createdAfterClear.title),
+        ])
+
+        await saveGate.releaseGate.open()
+        await clearTask.value
+        await repairGate.started.wait()
+        await repairGate.releaseGate.open()
+        await saveTask.value
+        await manager.flushPendingSaves()
+
+        #expect(Set(manager.conversations.map(\.id)) == Set([beforeClear.id, createdAfterClear.id]))
+        #expect(await Set(store.persistedConversations().map(\.id)) == Set([beforeClear.id, createdAfterClear.id]))
     }
 
     @Test

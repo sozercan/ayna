@@ -126,6 +126,32 @@ struct AnthropicRequestBuilderTests {
         #expect(anthropicMessages[0]["role"] as? String == "assistant")
     }
 
+    @Test("Serialized request omits empty assistant placeholders")
+    func serializedRequestOmitsEmptyAssistantPlaceholders() throws {
+        let url = try #require(URL(string: "https://api.anthropic.com/v1/messages"))
+        let request = try AnthropicRequestBuilder.createMessagesRequest(
+            url: url,
+            messages: [
+                Message(role: .user, content: "Question"),
+                Message(
+                    role: .assistant,
+                    content: "",
+                    responseGroupId: UUID(),
+                    isSelectedResponse: false
+                ),
+            ],
+            config: AnthropicRequestConfig(model: "claude-sonnet-4-20250514", apiKey: "test-key"),
+            stream: false,
+            tools: nil
+        )
+        let bodyData = try #require(request.httpBody)
+        let bodyObject = try JSONSerialization.jsonObject(with: bodyData)
+        let body = try #require(bodyObject as? [String: Any])
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        #expect(messages.count == 1)
+        #expect(messages[0]["role"] as? String == "user")
+    }
+
     // MARK: - max_tokens Tests
 
     @Test("Default max_tokens is 4096")

@@ -65,7 +65,7 @@ struct aynaApp: App {
         // Initialize "Work with Apps" if enabled
         Task { @MainActor in
             // Store reference to conversation manager for window creation
-            AynaAppDelegate.conversationManager = manager
+            AynaAppDelegate.attachConversationManager(manager)
             setupWorkWithApps(conversationManager: manager)
         }
     }
@@ -76,7 +76,7 @@ struct aynaApp: App {
                 .environmentObject(conversationManager)
                 .onAppear {
                     // Pass conversation manager to app delegate for deep link handling
-                    AynaAppDelegate.conversationManager = conversationManager
+                    AynaAppDelegate.attachConversationManager(conversationManager)
 
                     // If running UI tests, ensure window is ready
                     if UITestEnvironment.isEnabled {
@@ -189,6 +189,12 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Reference to the conversation manager for window creation
     weak static var conversationManager: ConversationManager?
+
+    private var deepLinkHandlingTask: Task<Void, Never>?
+
+    static func attachConversationManager(_ manager: ConversationManager) {
+        conversationManager = manager
+    }
 
     /// Shared instance for window delegate
     static let shared = AynaAppDelegate()
@@ -330,8 +336,21 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Handle deep link URLs at the app delegate level to prevent new window creation
     func application(_ app: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
+        for url in urls {
+            enqueueDeepLinkURL(url, app: app)
+        }
+    }
 
+    private func enqueueDeepLinkURL(_ url: URL, app: NSApplication) {
+        let precedingTask = deepLinkHandlingTask
+        deepLinkHandlingTask = Task { @MainActor [weak self] in
+            await precedingTask?.value
+            guard let self else { return }
+            await self.processDeepLinkURL(url, app: app)
+        }
+    }
+
+    private func processDeepLinkURL(_ url: URL, app: NSApplication) async {
         // First, ensure we have a window by activating the app
         app.activate(ignoringOtherApps: true)
 
@@ -345,50 +364,39 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 NSWorkspace.shared.open(mainURL)
             }
             // Small delay to let the window appear before handling the actual deep link
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                await self.handleDeepLinkURL(url, app: app)
-            }
-        } else {
-            // Window exists, handle immediately
-            Task { @MainActor in
-                await self.handleDeepLinkURL(url, app: app)
-            }
+            try? await Task.sleep(for: .milliseconds(300))
         }
+        await handleDeepLinkURL(url, app: app)
     }
 
     @MainActor
     private func handleDeepLinkURL(_ url: URL, app: NSApplication) async {
-        await DeepLinkManager.shared.handle(url: url)
+        if let manager = await waitForReadyConversationManager() {
+            await DeepLinkManager.shared.handle(url: url)
 
-        DiagnosticsLogger.log(
-            .app,
-            level: .fault,
-            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
-        )
-
-        // Handle chat deep links by starting a conversation
-        // BUT only if there's no pending add-model confirmation (unified flow)
-        if DeepLinkManager.shared.pendingAddModel == nil,
-           let chatRequest = DeepLinkManager.shared.pendingChat,
-           let manager = Self.conversationManager
-        {
             DiagnosticsLogger.log(
                 .app,
                 level: .fault,
-                message: "🔗 DEBUG AppDelegate: Starting conversation (no pending add model)"
+                message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
             )
-            _ = manager.startConversation(
-                model: chatRequest.model,
-                prompt: chatRequest.prompt,
-                systemPrompt: chatRequest.systemPrompt
-            )
-            DeepLinkManager.shared.clearPendingChat()
-        } else if DeepLinkManager.shared.pendingAddModel != nil {
+
+            // Handle the chat request that became ready during this URL.
+            if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {
+                Self.startDeepLinkConversation(chatRequest, using: manager)
+            }
+
+            if DeepLinkManager.shared.pendingAddModel != nil {
+                DiagnosticsLogger.log(
+                    .app,
+                    level: .fault,
+                    message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
+                )
+            }
+        } else {
             DiagnosticsLogger.log(
                 .app,
-                level: .fault,
-                message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
+                level: .error,
+                message: "Unable to handle deep link before conversation storage became ready"
             )
         }
 
@@ -399,6 +407,33 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             window.makeKeyAndOrderFront(nil)
         }
+    }
+
+    private func waitForReadyConversationManager() async -> ConversationManager? {
+        for _ in 0..<100 {
+            if let manager = Self.conversationManager {
+                await manager.loadingTask?.value
+                return manager
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return nil
+    }
+
+    private static func startDeepLinkConversation(
+        _ chatRequest: ChatRequest,
+        using manager: ConversationManager
+    ) {
+        DiagnosticsLogger.log(
+            .app,
+            level: .fault,
+            message: "🔗 DEBUG AppDelegate: Starting ready deep-link conversation"
+        )
+        _ = manager.startConversation(
+            model: chatRequest.model,
+            prompt: chatRequest.prompt,
+            systemPrompt: chatRequest.systemPrompt
+        )
     }
 }
 

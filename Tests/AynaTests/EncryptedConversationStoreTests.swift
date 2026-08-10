@@ -52,6 +52,7 @@ private actor SaveCommitGate {
 }
 
 @Suite("EncryptedConversationStore Tests", .tags(.persistence, .slow))
+// swiftlint:disable:next type_body_length
 struct EncryptedConversationStoreTests {
     @Test
     func `duplicate UUID filenames prefer the canonical storage name`() {
@@ -332,6 +333,26 @@ struct EncryptedConversationStoreTests {
 
         #expect(migrated.title == "Newer Legacy")
         #expect(!FileManager.default.fileExists(atPath: legacyFileURL.path))
+    }
+
+    @Test
+    func `one unreadable record fails the whole load instead of returning a partial snapshot`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let readable = TestHelpers.sampleConversation(title: "Readable")
+        let unreadable = TestHelpers.sampleConversation(title: "Unreadable")
+        try await store.save(readable)
+        try await store.save(unreadable)
+        try Data("corrupt encrypted record".utf8).write(
+            to: store.fileURL(for: unreadable.id),
+            options: .atomic
+        )
+
+        await #expect(throws: EncryptedStoreError.self) {
+            _ = try await store.loadConversations()
+        }
+        #expect(FileManager.default.fileExists(atPath: store.fileURL(for: readable.id).path))
+        #expect(FileManager.default.fileExists(atPath: store.fileURL(for: unreadable.id).path))
     }
 
     @Test

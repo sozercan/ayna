@@ -8,6 +8,7 @@
 
 #if os(watchOS)
 
+    import Foundation
     import SwiftUI
 
     // MARK: - Design System Integration
@@ -44,10 +45,30 @@
                         Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
                     }
 
-                    // Message content
+                    // Message content and web-search sources.
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        if !message.content.isEmpty {
                     Text(renderedContent)
                         .font(Typography.body)
                         .foregroundStyle(isUser ? Theme.userBubbleText : .primary)
+                        }
+
+                        if let citations = message.citations, !citations.isEmpty {
+                            ForEach(Array(citations.enumerated()), id: \.offset) { _, citation in
+                                if let url = URL(string: citation.url) {
+                                    Link(destination: url) {
+                                        Label(citation.title, systemImage: "link")
+                                            .font(Typography.micro)
+                                            .lineLimit(2)
+                                    }
+                                } else {
+                                    Text(citation.title)
+                                        .font(Typography.micro)
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                    }
                         .padding(.horizontal, Spacing.bubblePaddingH)
                         .padding(.vertical, Spacing.bubblePaddingV)
                         .background(bubbleBackground)

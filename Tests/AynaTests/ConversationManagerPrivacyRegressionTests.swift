@@ -144,7 +144,7 @@ struct ConversationManagerPrivacyTests {
     }
 
     @Test
-    func `attachment snapshot failure rolls back without committing clear`() async throws {
+    func `attachment snapshot failure rolls back through one compensating repair`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation(title: "Snapshot Failure Rollback")
@@ -165,10 +165,76 @@ struct ConversationManagerPrivacyTests {
         manager.clearAllConversations()
         await manager.flushPendingSaves()
 
-        #expect(!clearProbe.wasInvoked)
+        #expect(clearProbe.invocationCount == 1)
         #expect(manager.conversations.map(\.id) == [conversation.id])
         #expect(try await store.loadConversation(id: conversation.id)?.title == conversation.title)
         #expect(manager.persistenceErrorMessage != nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `blocked attachment snapshot preparation keeps clear barrier registered`() async throws {
+        let conversation = TestHelpers.sampleConversation(title: "Blocked Snapshot")
+        let store = ScriptedConversationStore(conversations: [conversation])
+        let snapshotGate = PrivacyBlockingAttachmentSnapshotGate()
+        let manager = ConversationManager(
+            store: store,
+            attachmentCleanupSnapshotOperation: {
+                snapshotGate.snapshot()
+            }
+        )
+        _ = await manager.loadingTask?.value
+
+        let clearTask = manager.clearAllConversations()
+        defer { snapshotGate.release() }
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        while !snapshotGate.hasStarted() {
+            await Task.yield()
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+
+        snapshotGate.release()
+        await clearTask.value
+
+        #expect(manager.pendingDestructivePersistenceOperations == 0)
+        #expect(manager.conversations.isEmpty)
+        #expect(await store.persistedConversations().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `attachment snapshot failure keeps barrier until rollback repair is durable`() async throws {
+        let conversation = TestHelpers.sampleConversation(title: "Snapshot Repair")
+        let store = ScriptedConversationStore(conversations: [conversation])
+        let repairClear = await store.enqueue(.clear, blocked: true)
+        let manager = ConversationManager(
+            store: store,
+            attachmentCleanupSnapshotOperation: {
+                throw CocoaError(.fileReadUnknown)
+            },
+            destructiveRepairRetryBaseDelay: .milliseconds(1)
+        )
+        _ = await manager.loadingTask?.value
+
+        let clearTask = manager.clearAllConversations()
+        await repairClear.started.wait()
+        await clearTask.value
+
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(manager.pendingDestructivePersistenceOperations == 1)
+        #expect(manager.conversations.map(\.id) == [conversation.id])
+        #expect(manager.conversations.first?.title == conversation.title)
+
+        await repairClear.releaseGate.open()
+        for _ in 0 ..< 100 where manager.pendingDestructivePersistenceOperations != 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(manager.pendingDestructivePersistenceOperations == 0)
+        let persisted = try #require(await store.persistedConversations().first)
+        #expect(persisted.id == conversation.id)
+        #expect(persisted.title == conversation.title)
     }
 
     @Test
@@ -458,6 +524,36 @@ private final class PrivacySnapshotThreadProbe: @unchecked Sendable {
     }
 }
 
+private final class PrivacyBlockingAttachmentSnapshotGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var started = false
+    private var released = false
+
+    func snapshot() -> AttachmentCleanupSnapshot {
+        condition.lock()
+        started = true
+        condition.broadcast()
+        while !released {
+            condition.wait()
+        }
+        condition.unlock()
+        return .empty
+    }
+
+    func hasStarted() -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return started
+    }
+
+    func release() {
+        condition.lock()
+        released = true
+        condition.broadcast()
+        condition.unlock()
+    }
+}
+
 private final class PrivacyMarkerScanFailureProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var shouldFail = false
@@ -480,15 +576,15 @@ private final class PrivacyMarkerScanFailureProbe: @unchecked Sendable {
 
 private final class PrivacyClearInvocationProbe: @unchecked Sendable {
     private let lock = NSLock()
-    private var invocationCount = 0
+    private var count = 0
 
-    var wasInvoked: Bool {
-        lock.withLock { invocationCount > 0 }
+    var invocationCount: Int {
+        lock.withLock { count }
     }
 
     func record() {
         lock.withLock {
-            invocationCount += 1
+            count += 1
         }
     }
 }

@@ -19,6 +19,7 @@ enum EncryptedStoreError: LocalizedError {
     case clearRollbackFailed(paths: [String])
     case clearRecoveryRequired(paths: [String])
     case unsupportedClearSymbolicLink(path: String)
+    case unreadableConversationFiles(count: Int)
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,8 @@ enum EncryptedStoreError: LocalizedError {
             "Conversation storage is awaiting clear-transaction recovery for: \(paths.joined(separator: ", "))."
         case let .unsupportedClearSymbolicLink(path):
             "Conversation storage cannot be cleared safely while this path is a symbolic link: \(path)."
+        case let .unreadableConversationFiles(count):
+            "Failed to load \(count) encrypted conversation file(s)."
         }
     }
 
@@ -48,14 +51,15 @@ enum EncryptedStoreError: LocalizedError {
         switch self {
         case .clearRollbackFailed, .clearRecoveryRequired:
             true
-        case .keyLost, .clearBackupCleanupFailed, .clearCleanupPending, .unsupportedClearSymbolicLink:
+        case .keyLost, .clearBackupCleanupFailed, .clearCleanupPending,
+             .unsupportedClearSymbolicLink, .unreadableConversationFiles:
             false
         }
     }
 }
 
 struct PrivacyCleanupMarkerSnapshot: Sendable {
-    fileprivate let markerFileNames: Set<String>
+    let markerFileNames: Set<String>
 
     var isEmpty: Bool {
         markerFileNames.isEmpty
@@ -1192,7 +1196,7 @@ final class EncryptedConversationStore: Sendable {
 
             let keyData = try keyCache.keyData()
 
-            let conversations = await withTaskGroup(of: Conversation?.self) { group in
+            let loadResult = await withTaskGroup(of: Conversation?.self) { group in
                 for url in encryptedFileURLs {
                     group.addTask {
                         do {
@@ -1218,17 +1222,19 @@ final class EncryptedConversationStore: Sendable {
                         failedCount += 1
                     }
                 }
-                if failedCount > 0, conversations.isEmpty {
-                    DiagnosticsLogger.log(
-                        .encryptedStore, level: .error,
-                        message: "❌ All conversations failed to decrypt",
-                        metadata: ["failedCount": "\(failedCount)"]
-                    )
-                }
-                return conversations
+                return (conversations, failedCount)
             }
+
             guard operationGenerations.matchesGlobalGeneration(loadGeneration) else { return [] }
-            return conversations
+            guard loadResult.1 == 0 else {
+                DiagnosticsLogger.log(
+                    .encryptedStore, level: .error,
+                    message: "❌ Refusing partial conversation load",
+                    metadata: ["failedCount": "\(loadResult.1)"]
+                )
+                throw EncryptedStoreError.unreadableConversationFiles(count: loadResult.1)
+            }
+            return loadResult.0
         }.value
     }
 
@@ -1418,6 +1424,25 @@ final class EncryptedConversationStore: Sendable {
             }
 
             guard operationGenerations.matchesGlobalGeneration(loadGeneration) else { return [] }
+            let unreadableConversationIds = validConversationIds.filter { id in
+                guard validMetadata[id] == nil,
+                      let generation = conversationGenerations[id]
+                else {
+                    return false
+                }
+                return operationGenerations.matches(generation, for: id)
+            }
+            guard unreadableConversationIds.isEmpty else {
+                DiagnosticsLogger.log(
+                    .encryptedStore,
+                    level: .error,
+                    message: "❌ Refusing partial conversation metadata load",
+                    metadata: ["failedCount": "\(unreadableConversationIds.count)"]
+                )
+                throw EncryptedStoreError.unreadableConversationFiles(
+                    count: unreadableConversationIds.count
+                )
+            }
             return validMetadata.values.sorted { $0.updatedAt > $1.updatedAt }
         }.value
     }

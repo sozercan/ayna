@@ -56,7 +56,9 @@ struct IOSMessageView: View {
         }
         // Pre-set hasAppeared to true for messages that are likely already in view
         // This prevents janky animations when scrolling through existing messages
-        _hasAppeared = State(initialValue: !message.content.isEmpty)
+        _hasAppeared = State(
+            initialValue: !message.content.isEmpty || !(message.citations?.isEmpty ?? true)
+        )
     }
 
     @State private var isToolExpanded = false
@@ -240,7 +242,8 @@ struct IOSMessageView: View {
                 // Show typing indicator for empty assistant messages (waiting for response)
                 // Don't show if the message has tool calls (it's waiting for tool execution)
                 if message.role == .assistant, message.content.isEmpty, message.mediaType != .image,
-                   message.toolCalls == nil || message.toolCalls?.isEmpty == true
+                   message.toolCalls == nil || message.toolCalls?.isEmpty == true,
+                   message.citations?.isEmpty ?? true
                 {
                     IOSTypingIndicatorView()
                 } else if contentBlocks.isEmpty {

@@ -11,52 +11,78 @@ import os
 /// Service responsible for image generation via OpenAI-compatible APIs.
 /// Handles both standard OpenAI and Azure OpenAI image endpoints.
 final class OpenAIImageService: @unchecked Sendable {
+    private struct RequestHandleState: Sendable {
+        var isActive = true
+        var cancellations: [@Sendable () -> Void] = []
+    }
+
+    private struct GenerationContext: Sendable {
+        let requestHandle: RequestHandle
+        let onComplete: @Sendable (Data) -> Void
+        let onError: @Sendable (Error) -> Void
+    }
+
+    /// Owns every transport and retry spawned by one logical image request.
+    ///
+    /// The handle is installed by `AIService` before the request starts so Stop can
+    /// synchronously fence callbacks, cancel an active URLSession task, and prevent
+    /// a retry or image download from starting after cancellation.
     final class RequestHandle: @unchecked Sendable {
-        private let lock = NSLock()
-        private var tasks: [URLSessionTask] = []
-        private var retryTasks: [Task<Void, Never>] = []
-        private var cancelled = false
+        private let state = OSAllocatedUnfairLock(initialState: RequestHandleState())
 
-        var isCancelled: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return cancelled
+        var isActive: Bool {
+            state.withLock { $0.isActive }
         }
 
+        @discardableResult
         func register(_ task: URLSessionTask) -> Bool {
-            lock.lock()
-            guard !cancelled else {
-                lock.unlock()
-                task.cancel()
-                return false
+            let shouldResume = state.withLock { state -> Bool in
+                guard state.isActive else { return false }
+                state.cancellations.append { task.cancel() }
+                return true
             }
-            tasks.append(task)
-            lock.unlock()
-            return true
+
+            if !shouldResume {
+                task.cancel()
+            }
+            return shouldResume
         }
 
-        func register(_ task: Task<Void, Never>) -> Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            guard !cancelled else { return false }
-            retryTasks.append(task)
-            return true
+        func resume(_ task: URLSessionTask) {
+            guard register(task) else { return }
+            task.resume()
+        }
+
+        func run(_ operation: @escaping @Sendable () async -> Void) {
+            let task = Task {
+                guard !Task.isCancelled else { return }
+                await operation()
+            }
+            let shouldContinue = state.withLock { state -> Bool in
+                guard state.isActive else { return false }
+                state.cancellations.append { task.cancel() }
+                return true
+            }
+            if !shouldContinue {
+                task.cancel()
+            }
+        }
+
+        func finish() {
+            state.withLock { state in
+                state.isActive = false
+                state.cancellations.removeAll()
+            }
         }
 
         func cancel() {
-            lock.lock()
-            cancelled = true
-            let tasksToCancel = tasks
-            let retryTasksToCancel = retryTasks
-            tasks.removeAll()
-            retryTasks.removeAll()
-            lock.unlock()
-            for task in tasksToCancel {
-                task.cancel()
+            let cancellations = state.withLock { state -> [@Sendable () -> Void] in
+                guard state.isActive else { return [] }
+                state.isActive = false
+                defer { state.cancellations.removeAll() }
+                return state.cancellations
             }
-            for task in retryTasksToCancel {
-                task.cancel()
-            }
+            cancellations.forEach { $0() }
         }
     }
 
@@ -87,10 +113,17 @@ final class OpenAIImageService: @unchecked Sendable {
     // MARK: - Properties
 
     private let urlSession: URLSession
+    private let retryDelay: @Sendable (Int) async -> Void
 
     // MARK: - Initialization
 
-    init(urlSession: URLSession? = nil) {
+    init(
+        urlSession: URLSession? = nil,
+        retryDelay: @escaping @Sendable (Int) async -> Void = { attempt in
+            await AIRetryPolicy.wait(for: attempt)
+        }
+    ) {
+        self.retryDelay = retryDelay
         if let session = urlSession {
             self.urlSession = session
         } else {
@@ -115,24 +148,22 @@ final class OpenAIImageService: @unchecked Sendable {
         prompt: String,
         requestConfig: RequestConfig,
         imageConfig: ImageConfig = .default,
+        requestHandle: RequestHandle,
         onComplete: @escaping @Sendable (Data) -> Void,
         onError: @escaping @Sendable (Error) -> Void,
-        attempt: Int = 0,
-        requestHandle: RequestHandle? = nil
-    ) -> RequestHandle {
-        let handle = requestHandle ?? RequestHandle()
-        guard !handle.isCancelled else { return handle }
+        attempt: Int = 0
+    ) {
         // Validate provider
         guard requestConfig.provider == .openai else {
             onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
-            return handle
+            return
         }
 
         // Validate API key only for OpenAI-hosted and Azure endpoints. Custom OpenAI-compatible
         // image proxies may intentionally rely on local/network authentication instead.
         guard !requestConfig.requiresAPIKey || !requestConfig.apiKey.isEmpty else {
             onError(AynaError.missingAPIKey(provider: "OpenAI"))
-            return handle
+            return
         }
 
         // Resolve endpoint URL
@@ -147,12 +178,12 @@ final class OpenAIImageService: @unchecked Sendable {
             imageURL = try OpenAIEndpointResolver.imageGenerationURL(for: endpointConfig)
         } catch {
             onError(error)
-            return handle
+            return
         }
 
         guard let url = URL(string: imageURL) else {
             onError(AynaError.invalidEndpoint(imageURL))
-            return handle
+            return
         }
 
         // Build request
@@ -191,36 +222,28 @@ final class OpenAIImageService: @unchecked Sendable {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
             onError(error)
-            return handle
+            return
         }
 
         // Execute request
-        executeRequest(
-            request,
-            prompt: prompt,
-            requestConfig: requestConfig,
-            imageConfig: imageConfig,
+        let context = GenerationContext(
+            requestHandle: requestHandle,
             onComplete: onComplete,
-            onError: onError,
-            attempt: attempt,
-            requestHandle: handle
+            onError: onError
         )
-        return handle
+        executeRequest(request, context: context, attempt: attempt)
     }
 
     // MARK: - Private Methods
 
     private func executeRequest(
         _ request: URLRequest,
-        prompt: String,
-        requestConfig: RequestConfig,
-        imageConfig: ImageConfig,
-        onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        attempt: Int,
-        requestHandle: RequestHandle
+        context: GenerationContext,
+        attempt: Int
     ) {
-        guard !requestHandle.isCancelled else { return }
+        let requestHandle = context.requestHandle
+        guard requestHandle.isActive else { return }
+
         let circuitKey = NetworkCircuitBreaker.key(for: request.url, label: "openai.image")
         let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
         if !circuitGate.allowed {
@@ -228,36 +251,33 @@ final class OpenAIImageService: @unchecked Sendable {
             let message = seconds > 0
                 ? "Image generation temporarily unavailable. Please try again in \(seconds)s."
                 : "Image generation temporarily unavailable. Please try again shortly."
-            Task { @MainActor in
-                guard !requestHandle.isCancelled else { return }
-                onError(AynaError.apiError(message: message))
+            requestHandle.run { @MainActor in
+                guard requestHandle.isActive else { return }
+                context.onError(AynaError.apiError(message: message))
             }
             return
         }
 
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
-            guard !requestHandle.isCancelled else { return }
+            guard requestHandle.isActive else { return }
+
             if let error {
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
                 self?.handleError(
                     error,
-                    prompt: prompt,
-                    requestConfig: requestConfig,
-                    imageConfig: imageConfig,
-                    onComplete: onComplete,
-                    onError: onError,
-                    attempt: attempt,
-                    requestHandle: requestHandle
+                    request: request,
+                    context: context,
+                    attempt: attempt
                 )
                 return
             }
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onError(AynaError.invalidResponse(detail: nil))
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
@@ -268,9 +288,9 @@ final class OpenAIImageService: @unchecked Sendable {
                     level: .error,
                     message: "No data received from image generation"
                 )
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onError(AynaError.invalidResponse(detail: "No data received"))
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onError(AynaError.invalidResponse(detail: "No data received"))
                 }
                 return
             }
@@ -290,38 +310,30 @@ final class OpenAIImageService: @unchecked Sendable {
                     return "HTTP \(httpResponse.statusCode)"
                 }()
 
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onError(AynaError.apiError(message: message))
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onError(AynaError.apiError(message: message))
                 }
                 return
             }
 
             NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
-            self?.parseResponse(
-                data,
-                onComplete: onComplete,
-                onError: onError,
-                requestHandle: requestHandle
-            )
+            self?.parseResponse(data, context: context)
         }
-        guard requestHandle.register(task) else { return }
-        task.resume()
+        requestHandle.resume(task)
     }
 
     private func handleError(
         _ error: Error,
-        prompt: String,
-        requestConfig: RequestConfig,
-        imageConfig: ImageConfig,
-        onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        attempt: Int,
-        requestHandle: RequestHandle
+        request: URLRequest,
+        context: GenerationContext,
+        attempt: Int
     ) {
-        let retryTask = Task { @MainActor [weak self] in
-            guard !requestHandle.isCancelled else { return }
+        let requestHandle = context.requestHandle
+        let retryDelay = retryDelay
+        requestHandle.run { @MainActor [weak self] in
+            guard requestHandle.isActive else { return }
             if AIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
                 DiagnosticsLogger.log(
                     .aiService,
@@ -329,39 +341,26 @@ final class OpenAIImageService: @unchecked Sendable {
                     message: "⚠️ Retrying image generation (attempt \(attempt + 1))",
                     metadata: ["error": error.localizedDescription]
                 )
-                await AIRetryPolicy.wait(for: attempt)
-                guard !requestHandle.isCancelled else { return }
-                _ = self?.generateImage(
-                    prompt: prompt,
-                    requestConfig: requestConfig,
-                    imageConfig: imageConfig,
-                    onComplete: onComplete,
-                    onError: onError,
-                    attempt: attempt + 1,
-                    requestHandle: requestHandle
-                )
+                await retryDelay(attempt)
+                guard requestHandle.isActive, !Task.isCancelled else { return }
+                self?.executeRequest(request, context: context, attempt: attempt + 1)
                 return
             }
-            guard !requestHandle.isCancelled else { return }
-            onError(error)
-        }
-        if !requestHandle.register(retryTask) {
-            retryTask.cancel()
+            context.onError(error)
         }
     }
 
     private func parseResponse(
         _ data: Data,
-        onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        requestHandle: RequestHandle
+        context: GenerationContext
     ) {
-        guard !requestHandle.isCancelled else { return }
+        let requestHandle = context.requestHandle
+        guard requestHandle.isActive else { return }
         do {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onError(AynaError.invalidResponse(detail: nil))
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
@@ -377,77 +376,157 @@ final class OpenAIImageService: @unchecked Sendable {
                     message: "API error in image generation",
                     metadata: ["code": code, "message": message]
                 )
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
                     if code == "contentFilter" {
-                        onError(AynaError.contentFiltered(reason: message))
+                        context.onError(AynaError.contentFiltered(reason: message))
                     } else {
-                        onError(AynaError.apiError(message: message))
+                        context.onError(AynaError.apiError(message: message))
                     }
                 }
                 return
             }
 
-            // Parse successful response
             guard let dataArray = json["data"] as? [[String: Any]],
                   let firstItem = dataArray.first
             else {
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onError(AynaError.invalidResponse(detail: nil))
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
             }
 
-            // Try b64_json first (preferred)
             if let b64String = firstItem["b64_json"] as? String,
                let imageData = Data(base64Encoded: b64String)
             {
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
-                    onComplete(imageData)
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
+                    context.onComplete(imageData)
                 }
                 return
             }
 
-            // Fall back to URL download
             if let urlString = firstItem["url"] as? String,
                let url = URL(string: urlString)
             {
-                let downloadTask = urlSession.dataTask(with: url) { data, _, error in
-                    guard !requestHandle.isCancelled else { return }
-                    if let error {
-                        Task { @MainActor in
-                            guard !requestHandle.isCancelled else { return }
-                            onError(error)
-                        }
-                    } else if let data {
-                        Task { @MainActor in
-                            guard !requestHandle.isCancelled else { return }
-                            onComplete(data)
-                        }
-                    } else {
-                        Task { @MainActor in
-                            guard !requestHandle.isCancelled else { return }
-                            onError(AynaError.invalidResponse(detail: "No image data received"))
-                        }
-                    }
-                }
-                guard requestHandle.register(downloadTask) else { return }
-                downloadTask.resume()
+                downloadImage(from: url, context: context)
                 return
             }
 
-            Task { @MainActor in
-                guard !requestHandle.isCancelled else { return }
-                onError(AynaError.invalidResponse(detail: nil))
+            requestHandle.run { @MainActor in
+                guard requestHandle.isActive else { return }
+                context.onError(AynaError.invalidResponse(detail: nil))
             }
         } catch {
-            Task { @MainActor in
-                guard !requestHandle.isCancelled else { return }
-                onError(error)
+            requestHandle.run { @MainActor in
+                guard requestHandle.isActive else { return }
+                context.onError(error)
             }
         }
+    }
+
+    private func downloadImage(
+        from url: URL,
+        context: GenerationContext,
+        attempt: Int = 0
+    ) {
+        let requestHandle = context.requestHandle
+        requestHandle.run { [weak self] in
+            guard let self, requestHandle.isActive else { return }
+            do {
+                let (imageData, response) = try await self.urlSession.data(from: url)
+                guard requestHandle.isActive, !Task.isCancelled else { return }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.handleDownloadError(
+                        AynaError.invalidResponse(detail: "Image download returned no HTTP response"),
+                        url: url,
+                        context: context,
+                        attempt: attempt
+                    )
+                    return
+                }
+                guard (200 ... 299).contains(httpResponse.statusCode) else {
+                    self.handleDownloadError(
+                        AynaError.httpError(statusCode: httpResponse.statusCode, message: nil),
+                        url: url,
+                        context: context,
+                        attempt: attempt
+                    )
+                    return
+                }
+                guard !imageData.isEmpty else {
+                    self.handleDownloadError(
+                        AynaError.invalidResponse(detail: "Image download returned empty data"),
+                        url: url,
+                        context: context,
+                        attempt: attempt
+                    )
+                    return
+                }
+                guard Self.isSupportedImageData(imageData) else {
+                    self.handleDownloadError(
+                        AynaError.invalidResponse(detail: "Image download returned unsupported data"),
+                        url: url,
+                        context: context,
+                        attempt: attempt
+                    )
+                    return
+                }
+                await MainActor.run {
+                    guard requestHandle.isActive else { return }
+                    context.onComplete(imageData)
+                }
+            } catch let error as CancellationError {
+                guard requestHandle.isActive else { return }
+                self.handleDownloadError(error, url: url, context: context, attempt: attempt)
+            } catch let error as URLError where error.code == .cancelled {
+                guard requestHandle.isActive else { return }
+                self.handleDownloadError(error, url: url, context: context, attempt: attempt)
+            } catch {
+                self.handleDownloadError(error, url: url, context: context, attempt: attempt)
+            }
+        }
+    }
+
+    private func handleDownloadError(
+        _ error: Error,
+        url: URL,
+        context: GenerationContext,
+        attempt: Int
+    ) {
+        let requestHandle = context.requestHandle
+        let retryDelay = retryDelay
+        requestHandle.run { @MainActor [weak self] in
+            guard requestHandle.isActive else { return }
+            if AIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
+                await retryDelay(attempt)
+                guard requestHandle.isActive, !Task.isCancelled else { return }
+                self?.downloadImage(from: url, context: context, attempt: attempt + 1)
+                return
+            }
+            context.onError(error)
+        }
+    }
+
+    private static func isSupportedImageData(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.count >= 3, bytes[0] == 0xFF, bytes[1] == 0xD8, bytes[2] == 0xFF {
+            return true
+        }
+        if bytes.count >= 4,
+           bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47
+        {
+            return true
+        }
+        if bytes.count >= 4,
+           bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x38
+        {
+            return true
+        }
+        return bytes.count >= 12 &&
+            bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50
     }
 
     // MARK: - Image Editing
@@ -466,23 +545,21 @@ final class OpenAIImageService: @unchecked Sendable {
         sourceImage: Data,
         requestConfig: RequestConfig,
         imageConfig: ImageConfig = .default,
+        requestHandle: RequestHandle,
         onComplete: @escaping @Sendable (Data) -> Void,
-        onError: @escaping @Sendable (Error) -> Void,
-        requestHandle: RequestHandle? = nil
-    ) -> RequestHandle {
-        let handle = requestHandle ?? RequestHandle()
-        guard !handle.isCancelled else { return handle }
+        onError: @escaping @Sendable (Error) -> Void
+    ) {
         // Validate provider
         guard requestConfig.provider == .openai else {
             onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
-            return handle
+            return
         }
 
         // Validate API key only for OpenAI-hosted and Azure endpoints. Custom OpenAI-compatible
         // image proxies may intentionally rely on local/network authentication instead.
         guard !requestConfig.requiresAPIKey || !requestConfig.apiKey.isEmpty else {
             onError(AynaError.missingAPIKey(provider: "OpenAI"))
-            return handle
+            return
         }
 
         // Resolve endpoint URL
@@ -497,12 +574,12 @@ final class OpenAIImageService: @unchecked Sendable {
             editURL = try OpenAIEndpointResolver.imageEditURL(for: endpointConfig)
         } catch {
             onError(error)
-            return handle
+            return
         }
 
         guard let url = URL(string: editURL) else {
             onError(AynaError.invalidEndpoint(editURL))
-            return handle
+            return
         }
 
         // Build multipart form request
@@ -563,21 +640,22 @@ final class OpenAIImageService: @unchecked Sendable {
         // Execute request
         executeEditRequest(
             request,
+            requestHandle: requestHandle,
             onComplete: onComplete,
-            onError: onError,
-            requestHandle: handle
+            onError: onError
         )
-        return handle
     }
 
     private func executeEditRequest(
         _ request: URLRequest,
+        requestHandle: RequestHandle,
         onComplete: @escaping @Sendable (Data) -> Void,
         onError: @escaping @Sendable (Error) -> Void,
-        attempt: Int = 0,
-        requestHandle: RequestHandle
+        attempt: Int = 0
     ) {
-        guard !requestHandle.isCancelled else { return }
+        guard requestHandle.isActive else { return }
+        let retryDelay = retryDelay
+
         let circuitKey = NetworkCircuitBreaker.key(for: request.url, label: "openai.image.edit")
         let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: circuitKey)
         if !circuitGate.allowed {
@@ -585,37 +663,35 @@ final class OpenAIImageService: @unchecked Sendable {
             let message = seconds > 0
                 ? "Image editing temporarily unavailable. Please try again in \(seconds)s."
                 : "Image editing temporarily unavailable. Please try again shortly."
-            Task { @MainActor in
-                guard !requestHandle.isCancelled else { return }
+            requestHandle.run { @MainActor in
+                guard requestHandle.isActive else { return }
                 onError(AynaError.apiError(message: message))
             }
             return
         }
 
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
-            guard !requestHandle.isCancelled else { return }
+            guard requestHandle.isActive else { return }
+
             if let error {
                 if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
                 if AIRetryPolicy.shouldRetry(error: error, attempt: attempt) {
-                    let retryTask = Task { @MainActor [weak self] in
-                        await AIRetryPolicy.wait(for: attempt)
-                        guard !requestHandle.isCancelled else { return }
+                    requestHandle.run { @MainActor [weak self] in
+                        await retryDelay(attempt)
+                        guard requestHandle.isActive, !Task.isCancelled else { return }
                         self?.executeEditRequest(
                             request,
+                            requestHandle: requestHandle,
                             onComplete: onComplete,
                             onError: onError,
-                            attempt: attempt + 1,
-                            requestHandle: requestHandle
+                            attempt: attempt + 1
                         )
                     }
-                    if !requestHandle.register(retryTask) {
-                        retryTask.cancel()
-                    }
                 } else {
-                    Task { @MainActor in
-                        guard !requestHandle.isCancelled else { return }
+                    requestHandle.run { @MainActor in
+                        guard requestHandle.isActive else { return }
                         onError(error)
                     }
                 }
@@ -623,8 +699,8 @@ final class OpenAIImageService: @unchecked Sendable {
             }
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
                     onError(AynaError.invalidResponse(detail: nil))
                 }
                 return
@@ -636,8 +712,8 @@ final class OpenAIImageService: @unchecked Sendable {
                     level: .error,
                     message: "No data received from image editing"
                 )
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
                     onError(AynaError.invalidResponse(detail: "No data received"))
                 }
                 return
@@ -658,8 +734,8 @@ final class OpenAIImageService: @unchecked Sendable {
                     return "HTTP \(httpResponse.statusCode)"
                 }()
 
-                Task { @MainActor in
-                    guard !requestHandle.isCancelled else { return }
+                requestHandle.run { @MainActor in
+                    guard requestHandle.isActive else { return }
                     onError(AynaError.apiError(message: message))
                 }
                 return
@@ -667,15 +743,14 @@ final class OpenAIImageService: @unchecked Sendable {
 
             NetworkCircuitBreaker.recordSuccess(key: circuitKey)
 
-            self?.parseResponse(
-                data,
+            let context = GenerationContext(
+                requestHandle: requestHandle,
                 onComplete: onComplete,
-                onError: onError,
-                requestHandle: requestHandle
+                onError: onError
             )
+            self?.parseResponse(data, context: context)
         }
-        guard requestHandle.register(task) else { return }
-        task.resume()
+        requestHandle.resume(task)
     }
 }
 

@@ -13,6 +13,8 @@ import os.log
 /// Service for managing Tavily Web Search API integration
 @MainActor
 final class TavilyService: ObservableObject {
+    typealias DataLoader = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+
     static let shared = TavilyService()
 
     // MARK: - Constants
@@ -53,14 +55,20 @@ final class TavilyService: ObservableObject {
     // MARK: - Private Properties
 
     private let keychain: KeychainStoring
-    private let urlSession: URLSession
+    private let dataLoader: DataLoader
 
     // MARK: - Initialization
 
-    init(keychain: KeychainStoring? = nil, urlSession: URLSession = .shared) {
+    convenience init(keychain: KeychainStoring? = nil, urlSession: URLSession = .shared) {
+        self.init(keychain: keychain) { request in
+            try await urlSession.data(for: request)
+        }
+    }
+
+    init(keychain: KeychainStoring? = nil, dataLoader: @escaping DataLoader) {
         let effectiveKeychain = keychain ?? KeychainStorage.standard
         self.keychain = effectiveKeychain
-        self.urlSession = urlSession
+        self.dataLoader = dataLoader
 
         // Load saved API key
         apiKey = (try? effectiveKeychain.string(for: Constants.keychainAPIKey)) ?? ""
@@ -127,7 +135,7 @@ final class TavilyService: ObservableObject {
         urlRequest.httpBody = try encoder.encode(request)
 
         do {
-            let (data, response) = try await urlSession.data(for: urlRequest)
+            let (data, response) = try await dataLoader(urlRequest)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw TavilyError.invalidResponse
@@ -181,6 +189,9 @@ final class TavilyService: ObservableObject {
         } catch let error as TavilyError {
             throw error
         } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             log(.error, "❌ Network error during web search", metadata: ["error": error.localizedDescription])
             if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                 NetworkCircuitBreaker.recordFailure(key: circuitKey)

@@ -2,6 +2,8 @@
 import Foundation
 import Testing
 
+// swiftlint:disable identifier_name
+// swiftlint:disable type_body_length
 extension AIServiceGlobalStateTests {
     @Suite("AIService Tests", .tags(.networking, .async), .serialized)
     @MainActor
@@ -23,197 +25,447 @@ extension AIServiceGlobalStateTests {
             MockURLProtocol.reset()
         }
 
-        private func makeService(
-            anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {
-                AnthropicProvider(urlSession: $0)
-            },
-            streamRetryDelayOperation: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfterDate in
-                await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
-            }
-        ) -> AIService {
+        private func makeService() -> AIService {
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [MockURLProtocol.self]
             let session = URLSession(configuration: config)
-            let service = AIService(
-                urlSession: session,
-                anthropicProviderFactory: anthropicProviderFactory,
-                streamRetryDelayOperation: streamRetryDelayOperation
-            )
+            let service = AIService(urlSession: session)
             service.customModels = ["gpt-4o"]
             service.selectedModel = "gpt-4o"
             return service
         }
 
-        fileprivate nonisolated static func bodyString(from request: URLRequest) -> String {
-            var bodyData = request.httpBody
-            if bodyData == nil, let stream = request.httpBodyStream {
-                stream.open()
-                var data = Data()
-                let bufferSize = 1024
-                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-                defer { buffer.deallocate() }
-                while stream.hasBytesAvailable {
-                    let read = stream.read(buffer, maxLength: bufferSize)
-                    if read > 0 {
-                        data.append(buffer, count: read)
-                    } else {
-                        break
-                    }
-                }
-                stream.close()
-                bodyData = data
-            }
+        @Test
+        func `Request flights reject stale cleanup`() {
+            var flight = RequestFlight<String>()
+            let firstID = RequestFlightID()
+            let secondID = RequestFlightID()
 
-            guard let bodyData else { return "" }
-            return String(data: bodyData, encoding: .utf8) ?? ""
+            #expect(flight.install("first", id: firstID) == nil)
+            #expect(flight.install("second", id: secondID) == "first")
+            let staleClearSucceeded = flight.clear(ifOwnedBy: firstID)
+            #expect(!staleClearSucceeded)
+            #expect(flight.owns(secondID))
         }
 
         @Test
-        func `versioned stream task storage preserves a newer replacement`() {
-            var store = VersionedTaskStore<String, Int>()
-            let firstVersion = UUID()
-            let secondVersion = UUID()
+        func `Taking a request flight detaches its owner and handle`() {
+            var flight = RequestFlight<String>()
+            let flightID = RequestFlightID()
+            flight.install("handle", id: flightID)
 
-            store.set(1, forKey: "model", version: firstVersion)
-            store.set(2, forKey: "model", version: secondVersion)
+            let handle = flight.take()
 
-            #expect(store.removeValue(forKey: "model", matching: firstVersion) == nil)
-            #expect(store.value(forKey: "model") == 2)
-            #expect(store.removeValue(forKey: "model", matching: secondVersion) == 2)
-            #expect(store.value(forKey: "model") == nil)
+            #expect(handle == "handle")
+            #expect(!flight.isActive)
+            #expect(!flight.owns(flightID))
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `replacing a gated multi-model request prevents the stale prompt from launching`() async throws {
-            let service = makeService()
-            let model = "github-gated-model"
-            let token = "github-token-\(UUID().uuidString)"
+        func `Stale stream cleanup preserves the replacement cancellation handle`() async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let staleCleanupProcessed = FlightTestSignal()
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .streamCancellation, !ownsFlight {
+                        staleCleanupProcessed.signal()
+                    }
+                }
+            )
+            let models = ["stream-first", "stream-second"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .openai
+                service.modelAPIKeys[model] = "sk-unit-test"
+            }
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "First")],
+                model: models[0],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let first = await server.exchange(at: 0)
+            first.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Second")],
+                model: models[1],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let second = await server.exchange(at: 1)
+            second.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+            let firstStopped = await first.waitUntilStopped()
+            let staleCleanupObserved = await staleCleanupProcessed.wait(timeout: .seconds(2))
+            #expect(firstStopped)
+            #expect(staleCleanupObserved)
+
+            service.cancelCurrentRequest()
+            let replacementStopped = await second.waitUntilStopped()
+            #expect(replacementStopped)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `URLSession cancellation uses stream cancellation cleanup`() async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let cancellationProcessed = FlightTestSignal()
+            let clearedOwnedFlight = FlightTestBox<Bool?>(nil)
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .streamCancellation {
+                        clearedOwnedFlight.value = ownsFlight
+                        cancellationProcessed.signal()
+                    }
+                }
+            )
+            let model = "cancelled-stream"
             service.customModels = [model]
             service.selectedModel = model
-            service.modelProviders[model] = .githubModels
-            service.modelAPIKeys[model] = token
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+            let errors = FlightTestBox(0)
 
-            let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: token)
-            try await GitHubModelsRequestGate.shared.acquire(key: gateKey)
-            let requestBodies = RequestBodyCollector()
-            MockURLProtocol.requestHandler = { request in
-                requestBodies.append(Self.bodyString(from: request))
-                let response = HTTPURLResponse(
-                    url: request.url!,
-                    statusCode: 200,
-                    httpVersion: nil,
-                    headerFields: nil
-                )!
-                let body = Data(
-                    "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n".utf8
-                )
-                return (response, body)
-            }
-
-            service.sendToMultipleModels(
-                messages: [Message(role: .user, content: "stale prompt")],
-                models: [model],
-                requestOwnerID: UUID(),
-                onChunk: { _, _ in },
-                onModelComplete: { _ in },
-                onAllComplete: {},
-                onError: { _, _ in }
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Cancel")],
+                model: model,
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in errors.value += 1 }
             )
-            for _ in 0 ..< 1000
-                where await GitHubModelsRequestGate.shared.waiterCount(for: gateKey) < 1
-            {
-                await Task.yield()
-            }
+            let exchange = await server.exchange(at: 0)
+            exchange.fail(URLError(.cancelled))
 
-            let completion = TestCallbackWaiter()
-            service.sendToMultipleModels(
-                messages: [Message(role: .user, content: "current prompt")],
-                models: [model],
-                requestOwnerID: UUID(),
-                onChunk: { _, _ in },
-                onModelComplete: { _ in },
-                onAllComplete: { completion.signal() },
-                onError: { _, error in
-                    Issue.record("Unexpected multi-model error: \(error)")
-                    completion.signal()
-                }
-            )
-            for _ in 0 ..< 1000
-                where await GitHubModelsRequestGate.shared.waiterCount(for: gateKey) < 2
-            {
-                await Task.yield()
-            }
-
-            await GitHubModelsRequestGate.shared.release(key: gateKey)
-            await completion.wait()
-
-            #expect(requestBodies.values.count == 1)
-            #expect(requestBodies.values.first?.contains("current prompt") == true)
-            #expect(requestBodies.values.first?.contains("stale prompt") == false)
-            service.cancelCurrentRequest()
+            let observedCancellation = await cancellationProcessed.wait(timeout: .seconds(2))
+            #expect(observedCancellation)
+            #expect(clearedOwnedFlight.value == true)
+            #expect(errors.value == 0)
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `replacing a stream during retry releases the GitHub gate`() async {
-            let retryGate = StreamRetryGate()
-            let service = makeService(
-                streamRetryDelayOperation: { _, _ in
-                    await retryGate.wait()
+        func `Stream tool result is discarded after ownership changes`() async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let toolStarted = FlightTestSignal()
+            let releaseTool = FlightTestSignal()
+            let staleParserStopped = FlightTestSignal()
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .streamCancellation, !ownsFlight {
+                        staleParserStopped.signal()
+                    }
                 }
             )
-            let model = "github-retry-model"
-            let token = "github-retry-token-\(UUID().uuidString)"
+            let models = ["tool-stream", "tool-replacement"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .openai
+                service.modelAPIKeys[model] = "sk-unit-test"
+            }
+            let staleChunks = FlightTestBox("")
+            let staleCompleted = FlightTestBox(false)
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Tool")],
+                model: models[0],
+                stream: true,
+                onChunk: { staleChunks.value += $0 },
+                onComplete: { staleCompleted.value = true },
+                onError: { _ in },
+                onToolCall: { _, _, _ in
+                    toolStarted.signal()
+                    await releaseTool.wait()
+                    return "stale tool result"
+                }
+            )
+            let first = await server.exchange(at: 0)
+            first.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+            first.send(Data(
+                #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"test_tool","arguments":"{}"}}]}}]}"#.utf8
+            ))
+            first.send(Data("\n".utf8))
+            first.send(Data(#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#.utf8))
+            first.send(Data("\n".utf8))
+            let didStartTool = await toolStarted.wait(timeout: .seconds(2))
+            #expect(didStartTool)
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Replacement")],
+                model: models[1],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let replacement = await server.exchange(at: 1)
+            replacement.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+            releaseTool.signal()
+            let stoppedStaleParser = await staleParserStopped.wait(timeout: .seconds(2))
+            #expect(stoppedStaleParser)
+            #expect(staleChunks.value.isEmpty)
+            #expect(!staleCompleted.value)
+
+            service.cancelCurrentRequest()
+            let replacementStopped = await replacement.waitUntilStopped()
+            #expect(replacementStopped)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Per-model multi stream terminal leaves the foreground stream owned`() async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let service = AIService(urlSession: URLSession(configuration: config))
+            let models = ["foreground-stream", "multi-stream"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .openai
+                service.modelAPIKeys[model] = "sk-unit-test"
+            }
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Foreground")],
+                model: models[0],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let foreground = await server.exchange(at: 0)
+            foreground.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+            let multiCompleted = FlightTestSignal()
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Multi")],
+                model: models[1],
+                stream: true,
+                isMultiModelRequest: true,
+                onChunk: { _ in },
+                onComplete: { multiCompleted.signal() },
+                onError: { _ in }
+            )
+            let multi = await server.exchange(at: 1)
+            multi.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+            multi.send(Data("data: [DONE]\n\n".utf8))
+            multi.finish()
+
+            let didComplete = await multiCompleted.wait(timeout: .seconds(2))
+            #expect(didComplete)
+
+            service.cancelCurrentRequest()
+            let foregroundStopped = await foreground.waitUntilStopped()
+            #expect(foregroundStopped)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Stream retry rechecks ownership after waiting`() async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let retryStarted = FlightTestSignal()
+            let releaseRetry = FlightTestSignal()
+            let staleRetryRejected = FlightTestSignal()
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                retryDelay: { _, _ in
+                    retryStarted.signal()
+                    await releaseRetry.wait()
+                },
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .streamRetry, !ownsFlight {
+                        staleRetryRejected.signal()
+                    }
+                }
+            )
+            let models = ["retry-first", "retry-replacement"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .openai
+                service.modelAPIKeys[model] = "sk-unit-test"
+            }
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "First")],
+                model: models[0],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let first = await server.exchange(at: 0)
+            first.fail(URLError(.networkConnectionLost))
+            let didStartRetry = await retryStarted.wait(timeout: .seconds(2))
+            #expect(didStartRetry)
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Replacement")],
+                model: models[1],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let replacement = await server.exchange(at: 1)
+            replacement.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+
+            releaseRetry.signal()
+            let rejectedStaleRetry = await staleRetryRejected.wait(timeout: .seconds(2))
+            #expect(rejectedStaleRetry)
+            #expect(server.requestCount == 2)
+
+            service.cancelCurrentRequest()
+            let replacementStopped = await replacement.waitUntilStopped()
+            #expect(replacementStopped)
+        }
+
+        @Test(
+            arguments: DataFlightVariant.allCases
+        )
+        func `Stale data completion is suppressed and preserves the replacement handle`(variant: DataFlightVariant) async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let staleCallbackProcessed = FlightTestSignal()
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .dataCallback, !ownsFlight {
+                        staleCallbackProcessed.signal()
+                    }
+                }
+            )
+            let model = variant.model
             service.customModels = [model]
             service.selectedModel = model
-            service.modelProviders[model] = .githubModels
-            service.modelAPIKeys[model] = token
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+            service.modelEndpointTypes[model] = variant.endpointType
 
-            let responder = RetryingRequestResponder()
-            MockURLProtocol.requestHandler = { request in
-                responder.response(for: request)
-            }
-
-            service.sendToMultipleModels(
-                messages: [Message(role: .user, content: "stale retry prompt")],
-                models: [model],
-                requestOwnerID: UUID(),
-                onChunk: { _, _ in },
-                onModelComplete: { _ in },
-                onAllComplete: {},
-                onError: { _, _ in }
+            let staleChunks = FlightTestBox("")
+            let staleCompleted = FlightTestBox(false)
+            service.sendMessage(
+                messages: [Message(role: .user, content: "First")],
+                model: model,
+                stream: false,
+                onChunk: { staleChunks.value += $0 },
+                onComplete: { staleCompleted.value = true },
+                onError: { _ in }
             )
-            await retryGate.waitUntilStarted()
+            let first = await server.exchange(at: 0)
+            first.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+            first.send(variant.responseData)
+            first.finish()
 
-            let completion = TestCallbackWaiter()
-            service.sendToMultipleModels(
-                messages: [Message(role: .user, content: "current retry prompt")],
-                models: [model],
-                requestOwnerID: UUID(),
-                onChunk: { _, _ in },
-                onModelComplete: { _ in },
-                onAllComplete: { completion.signal() },
-                onError: { _, error in
-                    Issue.record("Unexpected replacement request error: \(error)")
-                    completion.signal()
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Replacement")],
+                model: model,
+                stream: false,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let replacement = await server.exchange(at: 1)
+
+            let rejectedStaleCallback = await staleCallbackProcessed.wait(timeout: .seconds(2))
+            #expect(rejectedStaleCallback)
+            #expect(staleChunks.value.isEmpty)
+            #expect(!staleCompleted.value)
+
+            service.cancelCurrentRequest()
+            let replacementStopped = await replacement.waitUntilStopped()
+            #expect(replacementStopped)
+        }
+
+        @Test(
+            arguments: DataFlightVariant.allCases
+        )
+        func `Data retry rechecks ownership after waiting`(variant: DataFlightVariant) async {
+            let server = FlightTestURLProtocolServer()
+            FlightTestURLProtocol.install(server: server)
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FlightTestURLProtocol.self]
+            let retryStarted = FlightTestSignal()
+            let releaseRetry = FlightTestSignal()
+            let staleRetryRejected = FlightTestSignal()
+            let service = AIService(
+                urlSession: URLSession(configuration: config),
+                retryDelay: { _, _ in
+                    retryStarted.signal()
+                    await releaseRetry.wait()
+                },
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .dataRetry, !ownsFlight {
+                        staleRetryRejected.signal()
+                    }
                 }
             )
-            let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: token)
-            for _ in 0 ..< 1000
-                where await GitHubModelsRequestGate.shared.waiterCount(for: gateKey) < 1
-            {
-                await Task.yield()
-            }
+            let model = variant.model
+            service.customModels = [model]
+            service.selectedModel = model
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+            service.modelEndpointTypes[model] = variant.endpointType
 
-            await retryGate.release()
-            await completion.wait()
+            service.sendMessage(
+                messages: [Message(role: .user, content: "First")],
+                model: model,
+                stream: false,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let first = await server.exchange(at: 0)
+            first.fail(URLError(.networkConnectionLost))
+            let didStartRetry = await retryStarted.wait(timeout: .seconds(2))
+            #expect(didStartRetry)
 
-            #expect(responder.requestCount == 2)
-            #expect(responder.requestBodies.last?.contains("current retry prompt") == true)
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Replacement")],
+                model: model,
+                stream: false,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+            let replacement = await server.exchange(at: 1)
+
+            releaseRetry.signal()
+            let rejectedStaleRetry = await staleRetryRejected.wait(timeout: .seconds(2))
+            #expect(rejectedStaleRetry)
+            #expect(server.requestCount == 2)
+
             service.cancelCurrentRequest()
+            let replacementStopped = await replacement.waitUntilStopped()
+            #expect(replacementStopped)
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `send message without API key throws error`() async {
+        func `Send message without API key throws error`() async {
             let service = makeService()
             service.modelAPIKeys["gpt-4o"] = ""
 
@@ -249,7 +501,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `send message adds authorization header and payload`() async throws {
+        func `Send message adds authorization header and payload`() async throws {
             let service = makeService()
             service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
 
@@ -265,7 +517,6 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
-            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Request completes") { completed in
                 service.sendMessage(
@@ -280,18 +531,17 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
-                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
-                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                await callbackWaiter.wait()
+                // Give time for async callback
+                try? await Task.sleep(for: .milliseconds(500))
             }
 
             let request = try #require(MockURLProtocol.lastRequest)
@@ -324,169 +574,15 @@ extension AIServiceGlobalStateTests {
             #expect(json["stream"] as? Bool == false)
 
             let messages = try #require(json["messages"] as? [[String: Any]])
-            let userMessage = try #require(messages.first { message in
-                message["role"] as? String == Message.Role.user.rawValue
-            })
-            let content = try #require(userMessage["content"] as? String)
+            let firstMessage = try #require(messages.first)
+            let content = try #require(firstMessage["content"] as? String)
 
             #expect(content == "Hi")
             #expect(receivedChunk.value == "Hello")
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `background title request is not cancelled by foreground request`() async {
-            let service = makeService()
-            service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
-
-            MockURLProtocol.requestHandler = { request in
-                let body = Self.bodyString(from: request)
-                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-                let content = body.contains("Generate a very short title") ? "Generated Title" : "Chat Response"
-                let responseBody = Data(#"{"choices":[{"message":{"content":"\#(content)"}}]}"#.utf8)
-                return (response, responseBody)
-            }
-
-            let titleChunk = ResultHolder()
-            let chatChunk = ResultHolder()
-            let titleWaiter = TestCallbackWaiter()
-            let chatWaiter = TestCallbackWaiter()
-
-            await confirmation("background title request completes") { titleCompleted in
-                await confirmation("foreground request completes") { chatCompleted in
-                    service.sendMessage(
-                        messages: [Message(role: .user, content: "Generate a very short title")],
-                        model: nil,
-                        temperature: nil,
-                        stream: false,
-                        tools: nil,
-                        conversationId: nil,
-                        tracksCurrentRequest: false,
-                        onChunk: { chunk in
-                            titleChunk.value += chunk
-                        },
-                        onComplete: {
-                            titleCompleted()
-                            titleWaiter.signal()
-                        },
-                        onError: { error in
-                            Issue.record("Unexpected title error: \(error)")
-                            titleWaiter.signal()
-                        },
-                        onToolCall: nil,
-                        onToolCallRequested: nil,
-                        onReasoning: nil
-                    )
-
-                    service.sendMessage(
-                        messages: [Message(role: .user, content: "Real chat request")],
-                        model: nil,
-                        temperature: nil,
-                        stream: false,
-                        tools: nil,
-                        conversationId: nil,
-                        onChunk: { chunk in
-                            chatChunk.value += chunk
-                        },
-                        onComplete: {
-                            chatCompleted()
-                            chatWaiter.signal()
-                        },
-                        onError: { error in
-                            Issue.record("Unexpected chat error: \(error)")
-                            chatWaiter.signal()
-                        },
-                        onToolCall: nil,
-                        onToolCallRequested: nil,
-                        onReasoning: nil
-                    )
-
-                    await titleWaiter.wait()
-                    await chatWaiter.wait()
-                }
-            }
-
-            #expect(titleChunk.value == "Generated Title")
-            #expect(chatChunk.value == "Chat Response")
-        }
-
-        @Test
-        func `untracked Anthropic request does not replace current request`() async throws {
-            let factory = ControllableAnthropicProviderFactory()
-            let service = makeService { _ in
-                factory.makeProvider()
-            }
-            let model = "claude-test"
-            service.customModels = [model]
-            service.selectedModel = model
-            service.modelProviders[model] = .anthropic
-            service.modelAPIKeys[model] = "sk-ant-unit-test"
-
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Foreground chat")],
-                model: model,
-                stream: true,
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in }
-            )
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Background title")],
-                model: model,
-                stream: false,
-                tracksCurrentRequest: false,
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in }
-            )
-
-            let providers = factory.providers
-            #expect(providers.count == 2)
-
-            let foregroundProvider = try #require(providers.first)
-            let backgroundProvider = try #require(providers.last)
-            backgroundProvider.complete()
-            await Task.yield()
-
-            service.cancelCurrentRequest()
-
-            #expect(foregroundProvider.isCancelled)
-            #expect(!backgroundProvider.isCancelled)
-        }
-
-        @Test
-        func `anthropic multi-model requests remain independently tracked`() {
-            let factory = ControllableAnthropicProviderFactory()
-            let service = makeService { _ in
-                factory.makeProvider()
-            }
-            let models = ["claude-a", "claude-b"]
-            service.customModels = models
-            service.selectedModel = models[0]
-            for model in models {
-                service.modelProviders[model] = .anthropic
-                service.modelAPIKeys[model] = "sk-ant-unit-test"
-                service.sendMessage(
-                    messages: [Message(role: .user, content: "Compare")],
-                    model: model,
-                    stream: true,
-                    isMultiModelRequest: true,
-                    onChunk: { _ in },
-                    onComplete: {},
-                    onError: { _ in }
-                )
-            }
-
-            let providers = factory.providers
-            #expect(providers.count == models.count)
-            #expect(providers.allSatisfy { !$0.isCancelled })
-
-            service.cancelCurrentRequest()
-
-            #expect(!providers.contains { !$0.isCancelled })
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func `send message parses structured content response`() async {
+        func `Send message parses structured content response`() async {
             let service = makeService()
             service.modelAPIKeys["gpt-4o"] = "sk-unit-test"
 
@@ -502,7 +598,6 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
-            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Structured response parsed") { completed in
                 service.sendMessage(
@@ -518,23 +613,22 @@ extension AIServiceGlobalStateTests {
                     onComplete: {
                         #expect(receivedChunk.value == "Structured hello")
                         completed()
-                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
-                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                await callbackWaiter.wait()
+                // Give time for async callback
+                try? await Task.sleep(for: .milliseconds(500))
             }
         }
 
         @Test
-        func `gitHub Models rate limit tracking is per token`() throws {
+        func `GitHub Models rate limit tracking is per token`() throws {
             let oauth = GitHubOAuthService()
 
             let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
@@ -572,7 +666,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test
-        func `gitHub Models retry after is per token`() throws {
+        func `GitHub Models retry after is per token`() throws {
             let oauth = GitHubOAuthService()
 
             let url = try #require(URL(string: "https://models.github.ai/inference/chat/completions"))
@@ -594,6 +688,134 @@ extension AIServiceGlobalStateTests {
             #expect(oauth.retryAfterDate(forAccessToken: "token-A") == nil)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `Stale Anthropic callbacks cannot clear or deliver into a replacement`() async throws {
+            let factory = FlightTestAnthropicProviderFactory()
+            let staleTerminalProcessed = FlightTestSignal()
+            let service = AIService(
+                anthropicProviderFactory: { _ in factory.makeProvider() },
+                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
+                    if checkpoint == .anthropicTerminal, !ownsFlight {
+                        staleTerminalProcessed.signal()
+                    }
+                }
+            )
+            let model = "claude-flight"
+            service.customModels = [model]
+            service.selectedModel = model
+            service.modelProviders[model] = .anthropic
+            service.modelAPIKeys[model] = "sk-ant-unit-test"
+
+            let staleChunks = FlightTestBox("")
+            let staleReasoning = FlightTestBox("")
+            let staleTools = FlightTestBox([String]())
+            let staleCompleted = FlightTestBox(false)
+            let staleErrors = FlightTestBox(0)
+            service.sendMessage(
+                messages: [Message(role: .user, content: "First")],
+                model: model,
+                stream: true,
+                onChunk: { staleChunks.value += $0 },
+                onComplete: { staleCompleted.value = true },
+                onError: { _ in staleErrors.value += 1 },
+                onToolCallRequested: { _, name, _ in staleTools.update { $0.append(name) } },
+                onReasoning: { staleReasoning.value += $0 }
+            )
+
+            let currentChunk = FlightTestBox("")
+            let currentChunkReceived = FlightTestSignal()
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Replacement")],
+                model: model,
+                stream: true,
+                onChunk: {
+                    currentChunk.value += $0
+                    currentChunkReceived.signal()
+                },
+                onComplete: {},
+                onError: { _ in }
+            )
+
+            #expect(factory.providers.count == 2)
+            let stale = try #require(factory.providers.first)
+            let current = try #require(factory.providers.last)
+            stale.emitChunk("stale chunk")
+            stale.emitReasoning("stale reasoning")
+            stale.emitToolRequest(name: "stale_tool")
+            stale.complete()
+            stale.fail(URLError(.badServerResponse))
+
+            let rejectedStaleTerminal = await staleTerminalProcessed.wait(timeout: .seconds(2))
+            #expect(rejectedStaleTerminal)
+            current.emitChunk("current chunk")
+            let deliveredCurrentChunk = await currentChunkReceived.wait(timeout: .seconds(2))
+            #expect(deliveredCurrentChunk)
+            #expect(staleChunks.value.isEmpty)
+            #expect(staleReasoning.value.isEmpty)
+            #expect(staleTools.value.isEmpty)
+            #expect(!staleCompleted.value)
+            #expect(staleErrors.value == 0)
+            #expect(currentChunk.value == "current chunk")
+
+            service.cancelCurrentRequest()
+            #expect(current.isCancelled)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Anthropic foreground and per-model multi handles remain independent`() async {
+            let factory = FlightTestAnthropicProviderFactory()
+            let service = AIService(anthropicProviderFactory: { _ in factory.makeProvider() })
+            let models = ["claude-foreground", "claude-multi-a", "claude-multi-b"]
+            service.customModels = models
+            service.selectedModel = models[0]
+            for model in models {
+                service.modelProviders[model] = .anthropic
+                service.modelAPIKeys[model] = "sk-ant-unit-test"
+            }
+
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Foreground")],
+                model: models[0],
+                stream: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+
+            let firstMultiCompleted = FlightTestSignal()
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Multi A")],
+                model: models[1],
+                stream: true,
+                isMultiModelRequest: true,
+                onChunk: { _ in },
+                onComplete: { firstMultiCompleted.signal() },
+                onError: { _ in }
+            )
+            service.sendMessage(
+                messages: [Message(role: .user, content: "Multi B")],
+                model: models[2],
+                stream: true,
+                isMultiModelRequest: true,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in }
+            )
+
+            #expect(factory.providers.count == 3)
+            let foreground = factory.providers[0]
+            let completedMulti = factory.providers[1]
+            let activeMulti = factory.providers[2]
+            completedMulti.complete()
+            let didCompleteMulti = await firstMultiCompleted.wait(timeout: .seconds(2))
+            #expect(didCompleteMulti)
+
+            service.cancelCurrentRequest()
+            #expect(foreground.isCancelled)
+            #expect(activeMulti.isCancelled)
+            #expect(!completedMulti.isCancelled)
+        }
+
         // MARK: - Anthropic Integration Tests
 
         private func makeAnthropicService() -> AIService {
@@ -608,7 +830,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `anthropic model routes to Anthropic provider`() async {
+        func `Anthropic model routes to Anthropic provider`() async {
             let service = makeAnthropicService()
             service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-test-key"
 
@@ -636,7 +858,6 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
-            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Anthropic response received") { completed in
                 service.sendMessage(
@@ -651,18 +872,16 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
-                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
-                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                await callbackWaiter.wait()
+                try? await Task.sleep(for: .milliseconds(500))
             }
 
             // Verify request went to Anthropic endpoint
@@ -677,7 +896,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `anthropic model without API key returns missing key error`() async {
+        func `Anthropic model without API key returns missing key error`() async {
             let service = makeAnthropicService()
             service.modelAPIKeys["claude-sonnet-4-20250514"] = ""
 
@@ -712,7 +931,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `anthropic HTTP 401 error returns API key error`() async {
+        func `Anthropic HTTP 401 error returns API key error`() async {
             let service = makeAnthropicService()
             service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-invalid-key"
 
@@ -731,7 +950,6 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedErrorHolder = ErrorHolder()
-            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Error received") { errorReceived in
                 service.sendMessage(
@@ -744,19 +962,17 @@ extension AIServiceGlobalStateTests {
                     onChunk: { _ in },
                     onComplete: {
                         Issue.record("Should not complete on 401 error")
-                        callbackWaiter.signal()
                     },
                     onError: { error in
                         receivedErrorHolder.error = error
                         errorReceived()
-                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                await callbackWaiter.wait()
+                try? await Task.sleep(for: .milliseconds(500))
             }
 
             #expect(receivedErrorHolder.error != nil)
@@ -765,7 +981,7 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `anthropic response with thinking content delivers to reasoning callback`() async {
+        func `Anthropic response with thinking content delivers to reasoning callback`() async {
             let service = makeAnthropicService()
             service.modelAPIKeys["claude-sonnet-4-20250514"] = "sk-ant-test-key"
 
@@ -794,7 +1010,6 @@ extension AIServiceGlobalStateTests {
 
             let receivedChunks = ResultHolder()
             let receivedReasoning = ResultHolder()
-            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Response completes") { completed in
                 service.sendMessage(
@@ -809,11 +1024,9 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
-                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
-                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
@@ -822,140 +1035,52 @@ extension AIServiceGlobalStateTests {
                     }
                 )
 
-                await callbackWaiter.wait()
+                try? await Task.sleep(for: .milliseconds(500))
             }
 
             #expect(receivedChunks.value == "Here is my answer.")
             #expect(receivedReasoning.value == "Let me think about this...")
         }
     }
+}
 
-    @Suite("AIService Concurrency Tests", .serialized)
-    @MainActor
-    struct AIServiceConcurrencyTests {
-        @Test
-        func `nil-owned tracked requests are treated as distinct owners`() async throws {
-            let factory = ControllableAnthropicProviderFactory()
-            let service = AIService(
-                urlSession: URLSession(configuration: .ephemeral),
-                anthropicProviderFactory: { _ in factory.makeProvider() }
-            )
-            let model = "claude-nil-owner-test"
-            service.customModels = [model]
-            service.selectedModel = model
-            service.modelProviders[model] = .anthropic
-            service.modelAPIKeys[model] = "sk-ant-test"
-            let cancellation = TestCallbackWaiter()
+typealias AIServiceTests = AIServiceGlobalStateTests.AIServiceTests
 
-            service.sendMessage(
-                messages: [Message(role: .user, content: "First nil owner")],
-                model: model,
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { error in
-                    if error is CancellationError {
-                        cancellation.signal()
-                    }
-                }
-            )
-            let firstProvider = try #require(factory.providers.first)
+// swiftlint:enable identifier_name type_body_length
 
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Second nil owner")],
-                model: model,
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in }
-            )
-            await cancellation.wait()
+enum DataFlightVariant: String, CaseIterable, Sendable, CustomTestStringConvertible {
+    case chatCompletions
+    case responses
 
-            #expect(firstProvider.isCancelled)
-            #expect(factory.providers.count == 2)
-            service.cancelCurrentRequest()
+    var model: String {
+        switch self {
+        case .chatCompletions:
+            "data-chat"
+        case .responses:
+            "data-responses"
         }
+    }
 
-        @Test
-        func `replacing a tracked single-model owner emits cancellation`() async throws {
-            let factory = ControllableAnthropicProviderFactory()
-            let service = AIService(
-                urlSession: URLSession(configuration: .ephemeral),
-                anthropicProviderFactory: { _ in factory.makeProvider() }
-            )
-            let model = "claude-owner-test"
-            service.customModels = [model]
-            service.selectedModel = model
-            service.modelProviders[model] = .anthropic
-            service.modelAPIKeys[model] = "sk-ant-test"
-            let cancellation = TestCallbackWaiter()
-
-            service.sendMessage(
-                messages: [Message(role: .user, content: "First owner")],
-                model: model,
-                requestOwnerID: UUID(),
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { error in
-                    if error is CancellationError {
-                        cancellation.signal()
-                    }
-                }
-            )
-            let firstProvider = try #require(factory.providers.first)
-
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Second owner")],
-                model: model,
-                requestOwnerID: UUID(),
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in }
-            )
-            await cancellation.wait()
-
-            #expect(firstProvider.isCancelled)
-            #expect(factory.providers.count == 2)
-            service.cancelCurrentRequest()
+    var endpointType: APIEndpointType {
+        switch self {
+        case .chatCompletions:
+            .chatCompletions
+        case .responses:
+            .responses
         }
+    }
 
-        @Test
-        func `cancelling a multi-model Anthropic request completes its child`() async throws {
-            let factory = ControllableAnthropicProviderFactory()
-            let config = URLSessionConfiguration.ephemeral
-            config.protocolClasses = [MockURLProtocol.self]
-            let service = AIService(
-                urlSession: URLSession(configuration: config),
-                anthropicProviderFactory: { _ in factory.makeProvider() }
-            )
-            let model = "claude-cancel-test"
-            service.customModels = [model]
-            service.selectedModel = model
-            service.modelProviders[model] = .anthropic
-            service.modelAPIKeys[model] = "sk-ant-test"
-            let cancellation = TestCallbackWaiter()
-
-            service.sendToMultipleModels(
-                messages: [Message(role: .user, content: "Cancel me")],
-                models: [model],
-                requestOwnerID: UUID(),
-                onChunk: { _, _ in },
-                onModelComplete: { _ in },
-                onAllComplete: {},
-                onError: { _, error in
-                    if error is CancellationError {
-                        cancellation.signal()
-                    }
-                }
-            )
-            for _ in 0 ..< 1000 where factory.providers.isEmpty {
-                await Task.yield()
-            }
-            let provider = try #require(factory.providers.first)
-
-            service.cancelCurrentRequest()
-            await cancellation.wait()
-
-            #expect(provider.isCancelled)
+    var responseData: Data {
+        switch self {
+        case .chatCompletions:
+            Data("{\"choices\":[{\"message\":{\"content\":\"stale\"}}]}".utf8)
+        case .responses:
+            Data("{\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"stale\"}]}]}".utf8)
         }
+    }
+
+    var testDescription: String {
+        rawValue
     }
 }
 
@@ -996,137 +1121,10 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-@MainActor
-private final class ControllableAnthropicProviderFactory {
-    private(set) var providers: [ControllableAnthropicProvider] = []
-
-    func makeProvider() -> any AIProviderProtocol {
-        let provider = ControllableAnthropicProvider()
-        providers.append(provider)
-        return provider
-    }
-}
-
-@MainActor
-private final class ControllableAnthropicProvider: AIProviderProtocol, @unchecked Sendable {
-    let providerType: AIProvider = .anthropic
-    let requiresAPIKey = true
-    private(set) var isCancelled = false
-    private var callbacks: AIProviderStreamCallbacks?
-
-    func sendMessage(
-        messages _: [Message],
-        config _: AIProviderRequestConfig,
-        stream _: Bool,
-        tools _: [[String: Any]]?,
-        callbacks: AIProviderStreamCallbacks
-    ) {
-        self.callbacks = callbacks
-    }
-
-    func cancelRequest() {
-        isCancelled = true
-    }
-
-    func complete() {
-        callbacks?.onComplete()
-    }
-}
-
 final class ResultHolder: @unchecked Sendable {
     var value = ""
 }
 
-final class DataHolder: @unchecked Sendable {
-    var value = Data()
-}
-
 final class ErrorHolder: @unchecked Sendable {
     var error: Error?
-}
-
-private final class RequestBodyCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var bodies: [String] = []
-
-    var values: [String] {
-        lock.withLock { bodies }
-    }
-
-    func append(_ body: String) {
-        lock.withLock {
-            bodies.append(body)
-        }
-    }
-}
-
-private actor StreamRetryGate {
-    private var started = false
-    private var released = false
-    private var startedContinuations: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
-
-    func wait() async {
-        started = true
-        for continuation in startedContinuations {
-            continuation.resume()
-        }
-        startedContinuations.removeAll()
-        if !released {
-            await withCheckedContinuation { continuation in
-                releaseContinuations.append(continuation)
-            }
-        }
-    }
-
-    func waitUntilStarted() async {
-        guard !started else { return }
-        await withCheckedContinuation { continuation in
-            startedContinuations.append(continuation)
-        }
-    }
-
-    func release() {
-        released = true
-        for continuation in releaseContinuations {
-            continuation.resume()
-        }
-        releaseContinuations.removeAll()
-    }
-}
-
-private final class RetryingRequestResponder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-    private var bodies: [String] = []
-
-    var requestCount: Int {
-        lock.withLock { count }
-    }
-
-    var requestBodies: [String] {
-        lock.withLock { bodies }
-    }
-
-    func response(for request: URLRequest) -> (HTTPURLResponse, Data) {
-        let attempt = lock.withLock { () -> Int in
-            count += 1
-            bodies.append(AIServiceGlobalStateTests.AIServiceTests.bodyString(from: request))
-            return count
-        }
-        let statusCode = attempt == 1 ? 500 : 200
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: statusCode,
-            httpVersion: nil,
-            headerFields: nil
-        )!
-        if attempt == 1 {
-            return (response, Data(#"{"error":{"message":"temporary 500"}}"#.utf8))
-        }
-        return (
-            response,
-            Data("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n".utf8)
-        )
-    }
 }

@@ -203,6 +203,12 @@
                 selectedConversationId = nil
                 selectedConversations.removeAll()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .conversationDeleteRolledBack)) { notification in
+                guard let id = notification.userInfo?["conversationId"] as? UUID,
+                      conversationManager.selectedConversationId == id
+                else { return }
+                selectedConversations.insert(id)
+            }
         }
 
         private func startNewConversation() {

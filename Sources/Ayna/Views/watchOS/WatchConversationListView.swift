@@ -34,7 +34,7 @@
                     Text("No Conversations")
                         .font(.headline)
 
-                    if !connectivityService.isReachable || !connectivityService.isConversationSyncReady {
+                    if !connectivityService.isReachable {
                         Text("Open Ayna on iPhone to sync")
                             .font(.caption)
                             .foregroundStyle(.secondary)

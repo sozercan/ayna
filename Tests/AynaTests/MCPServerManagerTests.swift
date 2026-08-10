@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("MCPServerManager Tests", .tags(.async, .slow))
+@Suite("MCPServerManager Tests", .tags(.async, .slow), .serialized)
 @MainActor
 struct MCPServerManagerTests {
     private var suiteName: String
@@ -173,31 +173,42 @@ struct MCPServerManagerTests {
     @Test("Discovery lists tools and resources concurrently", .timeLimit(.minutes(1)))
     func discoveryListsToolsAndResourcesConcurrently() async {
         let config = MCPServerConfig(name: "catalog", command: "cmd", enabled: true)
-        let tool = makeTool(name: "search", serverName: config.name)
-        let resource = MCPResource(uri: "file:///tmp/example.txt", name: "Example", serverName: config.name)
-        let stub = StubMCPService(config: config)
-        stub.listToolsResult = .success([tool])
-        stub.listResourcesResult = .success([resource])
-        let overlapProbe = DiscoveryOverlapProbe()
-        stub.discoveryOverlapProbe = overlapProbe
-
+        let tool = makeMCPTool(name: "search", serverName: config.name)
+        let resource = makeMCPResource(name: "example", serverName: config.name)
+        let toolsStarted = FlightTestSignal()
+        let resourcesStarted = FlightTestSignal()
+        let releaseCatalog = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.listToolsHandler = {
+            toolsStarted.signal()
+            await releaseCatalog.wait()
+            return [tool]
+        }
+        service.listResourcesHandler = {
+            resourcesStarted.signal()
+            await releaseCatalog.wait()
+            return [resource]
+        }
         let manager = MCPServerManager(
-            serviceFactory: { _ in stub },
+            serviceFactory: { _ in service },
             retryDelayProvider: { _ in 0 },
             reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [config]
         manager.updateServerConfig(config)
 
-        await manager.connectToServer(config)
-        let didOverlap = await overlapProbe.didOverlap()
+        let connection = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        let didStartTools = await toolsStarted.wait(timeout: .seconds(1))
+        let didStartResources = await resourcesStarted.wait(timeout: .seconds(1))
+        releaseCatalog.signal()
+        await connection.value
 
-        #expect(didOverlap)
-        #expect(stub.listToolsCallCount == 1)
-        #expect(stub.listResourcesCallCount == 1)
+        #expect(didStartTools)
+        #expect(didStartResources)
         #expect(manager.availableTools == [tool])
         #expect(manager.availableResources == [resource])
-        #expect(manager.getServerStatus(config.name)?.toolsCount == 1)
     }
 
     @Test("Enabled tool cache refresh handles bulk configs", .timeLimit(.minutes(1)))
@@ -209,10 +220,9 @@ struct MCPServerManagerTests {
         }
         let tools = configs.flatMap { config in
             (0 ..< toolsPerServer).map { toolIndex in
-                makeTool(name: "\(config.name)-tool-\(toolIndex)", serverName: config.name)
+                makeMCPTool(name: "\(config.name)-tool-\(toolIndex)", serverName: config.name)
             }
         }
-
         let manager = MCPServerManager(
             serviceFactory: { StubMCPService(config: $0) },
             retryDelayProvider: { _ in 0 },
@@ -221,53 +231,557 @@ struct MCPServerManagerTests {
         manager.serverConfigs = configs
         manager.availableTools = tools
 
-        let start = Date()
         let enabledTools = manager.getEnabledTools()
-        let elapsed = Date().timeIntervalSince(start)
 
-        print("BENCH mcp.cache.enabledTools tools=\(tools.count) configs=\(configs.count) seconds=\(elapsed)")
         #expect(enabledTools.count == (configCount / 2) * toolsPerServer)
+        #expect(manager.getEnabledTools().count == enabledTools.count)
+    }
+
+    @Test("Disconnecting during retry backoff prevents another connection attempt", .timeLimit(.minutes(1)))
+    func disconnectingDuringRetryBackoffPreventsAnotherAttempt() async {
+        let config = MCPServerConfig(name: "backoff", command: "cmd", enabled: true)
+        let service = StubMCPService(
+            config: config,
+            connectResults: [.failure(MCPTestError.expected), .success(())]
+        )
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 60 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let task = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while service.connectCallCount == 0, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(service.connectCallCount == 1)
+        manager.disconnectServer(config.name)
+        await task.value
+
+        #expect(service.connectCallCount == 1)
+        #expect(manager.serverConfigs.first?.enabled == true)
+        #expect(manager.getServerStatus(config.name)?.state == .idle)
+    }
+
+    @Test("Cancellation after discovery commit removes stale tools", .timeLimit(.minutes(1)))
+    func cancellationAfterDiscoveryCommitRemovesStaleTools() async {
+        let config = MCPServerConfig(name: "stale-tools", command: "cmd", enabled: true)
+        let service = StubMCPService(config: config)
+        service.listToolsHandler = {
+            withUnsafeCurrentTask { task in
+                task?.cancel()
+            }
+            return [
+                MCPTool(
+                    name: "stale",
+                    description: "stale",
+                    inputSchema: JSONSchema(type: "object", properties: nil, required: nil, items: nil),
+                    serverName: config.name
+                )
+            ]
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        await manager.connectToServer(config)
+
+        #expect(!manager.availableTools.contains { $0.serverName == config.name })
+        #expect(!manager.getEnabledTools().contains { $0.serverName == config.name })
+        #expect(manager.getServerStatus(config.name)?.state == .idle)
+    }
+
+    @Test("Disconnecting during tool discovery does not commit connected state", .timeLimit(.minutes(1)))
+    func disconnectingDuringToolDiscoveryDoesNotCommitConnectedState() async {
+        let config = MCPServerConfig(name: "discovery", command: "cmd", enabled: true)
+        let discoveryStarted = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.listToolsHandler = {
+            discoveryStarted.signal()
+            try await Task.sleep(for: .seconds(60))
+            return []
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let task = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        #expect(await discoveryStarted.wait(timeout: .seconds(1)))
+        manager.disconnectServer(config.name)
+        await task.value
+
+        #expect(service.connectCallCount == 1)
+        #expect(service.disconnectCallCount >= 1)
+        #expect(manager.getServerStatus(config.name)?.state == .idle)
+        #expect(manager.getConnectedServerCount() == 0)
+    }
+
+    @Test("Replacement discovery batch starts fresh work without reusing its predecessor", .timeLimit(.minutes(1)))
+    func replacementDiscoveryBatchStartsFreshWork() async {
+        let config = MCPServerConfig(name: "replacement-discovery", command: "cmd", enabled: true)
+        let service = StubMCPService(config: config)
+        service.listToolsResult = .success([makeMCPTool(name: "initial", serverName: config.name)])
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+        await manager.connectToServer(config)
+
+        let firstDiscoveryStarted = FlightTestSignal()
+        let releaseFirstDiscovery = FlightTestSignal()
+        let invocationCount = FlightTestBox(0)
+        service.listToolsHandler = {
+            invocationCount.update { $0 += 1 }
+            if invocationCount.value == 1 {
+                firstDiscoveryStarted.signal()
+                await releaseFirstDiscovery.wait()
+            }
+            return [makeMCPTool(name: "fresh", serverName: config.name)]
+        }
+
+        let firstBatch = Task { @MainActor in
+            await manager.discoverAllTools()
+        }
+        #expect(await firstDiscoveryStarted.wait(timeout: .seconds(1)))
+
+        let replacementBatch = Task { @MainActor in
+            await manager.discoverAllTools()
+        }
+        await replacementBatch.value
+        releaseFirstDiscovery.signal()
+        await firstBatch.value
+
+        #expect(invocationCount.value == 2)
+        #expect(manager.availableTools.map(\.name) == ["fresh"])
+    }
+
+    @Test("Superseded resource discovery cannot overwrite a newer catalog", .timeLimit(.minutes(1)))
+    func supersededResourceDiscoveryCannotOverwriteNewerCatalog() async {
+        let config = MCPServerConfig(name: "resource-fence", command: "cmd", enabled: true)
+        let service = StubMCPService(config: config)
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+        await manager.connectToServer(config)
+
+        let firstResourceStarted = FlightTestSignal()
+        let releaseFirstResource = FlightTestSignal()
+        let toolInvocationCount = FlightTestBox(0)
+        let resourceInvocationCount = FlightTestBox(0)
+        service.listToolsHandler = {
+            toolInvocationCount.update { $0 += 1 }
+            let name = toolInvocationCount.value == 1 ? "stale-tool" : "fresh-tool"
+            return [makeMCPTool(name: name, serverName: config.name)]
+        }
+        service.listResourcesHandler = {
+            resourceInvocationCount.update { $0 += 1 }
+            if resourceInvocationCount.value == 1 {
+                firstResourceStarted.signal()
+                await releaseFirstResource.wait()
+                return [makeMCPResource(name: "stale-resource", serverName: config.name)]
+            }
+            return [makeMCPResource(name: "fresh-resource", serverName: config.name)]
+        }
+
+        let staleDiscovery = Task { @MainActor in
+            await manager.discoverTools(for: config.name)
+        }
+        #expect(await firstResourceStarted.wait(timeout: .seconds(1)))
+
+        let freshDiscovery = Task { @MainActor in
+            await manager.discoverTools(for: config.name)
+        }
+        await freshDiscovery.value
+        releaseFirstResource.signal()
+        await staleDiscovery.value
+
+        #expect(manager.availableTools.map(\.name) == ["fresh-tool"])
+        #expect(manager.availableResources.map(\.name) == ["fresh-resource"])
+    }
+
+    @Test("Repeated refreshes during initial discovery are adopted by the connection", .timeLimit(.minutes(1)))
+    func repeatedRefreshesDuringInitialDiscoveryAreAdoptedByConnection() async {
+        let config = MCPServerConfig(name: "connection-refresh", command: "cmd", enabled: true)
+        let service = StubMCPService(config: config)
+        let firstDiscoveryStarted = FlightTestSignal()
+        let secondDiscoveryStarted = FlightTestSignal()
+        let thirdDiscoveryStarted = FlightTestSignal()
+        let releaseFirstDiscovery = FlightTestSignal()
+        let releaseSecondDiscovery = FlightTestSignal()
+        let releaseThirdDiscovery = FlightTestSignal()
+        let invocationCount = FlightTestBox(0)
+        service.listToolsHandler = {
+            invocationCount.update { $0 += 1 }
+            switch invocationCount.value {
+            case 1:
+                firstDiscoveryStarted.signal()
+                await releaseFirstDiscovery.wait()
+                return [makeMCPTool(name: "superseded", serverName: config.name)]
+            case 2:
+                secondDiscoveryStarted.signal()
+                await releaseSecondDiscovery.wait()
+                return [makeMCPTool(name: "superseded-again", serverName: config.name)]
+            default:
+                thirdDiscoveryStarted.signal()
+                await releaseThirdDiscovery.wait()
+                return [makeMCPTool(name: "fresh", serverName: config.name)]
+            }
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let connection = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        #expect(await firstDiscoveryStarted.wait(timeout: .seconds(1)))
+
+        let firstRefresh = Task { @MainActor in
+            await manager.discoverAllTools()
+        }
+        #expect(await secondDiscoveryStarted.wait(timeout: .seconds(1)))
+
+        let secondRefresh = Task { @MainActor in
+            await manager.discoverAllTools()
+        }
+        #expect(await thirdDiscoveryStarted.wait(timeout: .seconds(1)))
+        releaseFirstDiscovery.signal()
+        releaseSecondDiscovery.signal()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(service.disconnectCallCount == 0)
+
+        releaseThirdDiscovery.signal()
+        await firstRefresh.value
+        await secondRefresh.value
+        await connection.value
+
+        #expect(manager.isServerConnected(config.name))
+        #expect(manager.availableTools.map(\.name) == ["fresh"])
+    }
+
+    @Test("Stale service termination cannot remove replacement", .timeLimit(.minutes(1)))
+    func staleServiceTerminationCannotRemoveReplacement() async {
+        let original = MCPServerConfig(name: "identity", command: "cmd", args: ["old"], enabled: true)
+        var updated = original
+        updated.args = ["new"]
+
+        let initialService = StubMCPService(config: original)
+        initialService.listToolsResult = .success([makeMCPTool(name: "old-tool", serverName: original.name)])
+        let replacementService = StubMCPService(config: updated)
+        replacementService.listToolsResult = .success([makeMCPTool(name: "new-tool", serverName: updated.name)])
+        let manager = MCPServerManager(
+            serviceFactory: { config in config.args == updated.args ? replacementService : initialService },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [original]
+        manager.updateServerConfig(original)
+
+        await manager.connectToServer(original)
+        let staleDelegate = initialService.delegate
+        manager.updateServerConfig(updated)
+        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        #expect(manager.availableTools.contains { $0.name == "new-tool" })
+
+        staleDelegate?.mcpService(initialService, didTerminateWithError: "stale")
+        await Task.yield()
+
+        #expect(manager.isServerConnected(updated.name))
+        #expect(replacementService.disconnectCallCount == 0)
+        #expect(manager.availableTools.contains { $0.name == "new-tool" })
+        #expect(!manager.availableTools.contains { $0.name == "old-tool" })
+    }
+
+    @Test("Manual disconnect cancels retained scheduled reconnect", .timeLimit(.minutes(1)))
+    func manualDisconnectCancelsRetainedScheduledReconnect() async {
+        let config = MCPServerConfig(name: "cancel-reconnect", command: "cmd", enabled: true)
+        let primaryService = StubMCPService(config: config)
+        let reconnectService = StubMCPService(config: config)
+        let reconnectSleepEntered = FlightTestSignal()
+        let releaseReconnectSleep = FlightTestSignal()
+        let reconnectSleepCancelled = FlightTestSignal()
+        var services = [primaryService, reconnectService]
+        let manager = MCPServerManager(
+            serviceFactory: { _ in services.removeFirst() },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 60 },
+            reconnectSleeper: { _ in
+                reconnectSleepEntered.signal()
+                do {
+                    try await withTaskCancellationHandler {
+                        await releaseReconnectSleep.wait()
+                        try Task.checkCancellation()
+                    } onCancel: {
+                        releaseReconnectSleep.signal()
+                    }
+                } catch {
+                    reconnectSleepCancelled.signal()
+                    throw error
+                }
+            }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        await manager.connectToServer(config)
+        primaryService.simulateUnexpectedTermination(error: "boom")
+        await reconnectSleepEntered.wait()
+        #expect(manager.getServerStatus(config.name)?.state == .reconnecting)
+
+        manager.disconnectServer(config.name)
+        await reconnectSleepCancelled.wait()
+
+        #expect(reconnectService.connectCallCount == 0)
+        #expect(manager.getServerStatus(config.name)?.state == .idle)
+        #expect(!manager.isServerConnected(config.name))
+    }
+
+    @Test("Stale connection completion cannot replace newer generation", .timeLimit(.minutes(1)))
+    func staleConnectionCompletionCannotReplaceNewerGeneration() async {
+        let original = MCPServerConfig(name: "connect-generation", command: "cmd", args: ["old"], enabled: true)
+        var updated = original
+        updated.args = ["new"]
+
+        let oldConnectStarted = FlightTestSignal()
+        let releaseOldConnect = FlightTestSignal()
+        let oldService = StubMCPService(config: original)
+        oldService.connectHandler = {
+            oldConnectStarted.signal()
+            await releaseOldConnect.wait()
+        }
+        let replacementService = StubMCPService(config: updated)
+        replacementService.listToolsResult = .success([makeMCPTool(name: "replacement", serverName: updated.name)])
+        let manager = MCPServerManager(
+            serviceFactory: { config in config.args == updated.args ? replacementService : oldService },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [original]
+        manager.updateServerConfig(original)
+
+        let oldConnection = Task { @MainActor in
+            await manager.connectToServer(original)
+        }
+        #expect(await oldConnectStarted.wait(timeout: .seconds(1)))
+
+        manager.updateServerConfig(updated)
+        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        releaseOldConnect.signal()
+        await oldConnection.value
+
+        #expect(manager.isServerConnected(updated.name))
+        #expect(replacementService.disconnectCallCount == 0)
+        #expect(manager.availableTools.map(\.name) == ["replacement"])
+    }
+
+    @Test("Stale discovery cannot overwrite replacement tools", .timeLimit(.minutes(1)))
+    func staleDiscoveryCannotOverwriteReplacementTools() async {
+        let original = MCPServerConfig(name: "discovery-generation", command: "cmd", args: ["old"], enabled: true)
+        var updated = original
+        updated.args = ["new"]
+
+        let oldService = StubMCPService(config: original)
+        oldService.listToolsResult = .success([makeMCPTool(name: "initial", serverName: original.name)])
+        let replacementService = StubMCPService(config: updated)
+        replacementService.listToolsResult = .success([makeMCPTool(name: "replacement", serverName: updated.name)])
+        let manager = MCPServerManager(
+            serviceFactory: { config in config.args == updated.args ? replacementService : oldService },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [original]
+        manager.updateServerConfig(original)
+        await manager.connectToServer(original)
+
+        let staleDiscoveryStarted = FlightTestSignal()
+        let releaseStaleDiscovery = FlightTestSignal()
+        oldService.listToolsHandler = {
+            staleDiscoveryStarted.signal()
+            await releaseStaleDiscovery.wait()
+            return [makeMCPTool(name: "stale", serverName: original.name)]
+        }
+        let staleDiscovery = Task { @MainActor in
+            await manager.discoverTools(for: original.name)
+        }
+        #expect(await staleDiscoveryStarted.wait(timeout: .seconds(1)))
+
+        manager.updateServerConfig(updated)
+        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        releaseStaleDiscovery.signal()
+        await staleDiscovery.value
+
+        #expect(manager.availableTools.map(\.name) == ["replacement"])
+        #expect(manager.getServerStatus(updated.name)?.state == .connected)
+    }
+
+    @Test("Disconnecting a connection does not retry or disable the server", .timeLimit(.minutes(1)))
+    func disconnectingConnectionDoesNotRetryOrDisableServer() async {
+        let config = MCPServerConfig(name: "cancelled", command: "cmd", enabled: true)
+        let started = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.connectHandler = {
+            started.signal()
+            try await Task.sleep(for: .seconds(60))
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let task = Task { @MainActor in
+            await manager.connectToServer(config)
+        }
+        #expect(await started.wait(timeout: .seconds(1)))
+        manager.disconnectServer(config.name)
+        await task.value
+
+        #expect(service.connectCallCount == 1)
+        #expect(manager.serverConfigs.first?.enabled == true)
+        #expect(manager.getServerStatus(config.name)?.state == .idle)
+    }
+
+    @Test("Cancelling one connection waiter preserves the shared connection", .timeLimit(.minutes(1)))
+    func cancellingOneConnectionWaiterPreservesSharedConnection() async {
+        let config = MCPServerConfig(name: "shared-waiter", command: "cmd", enabled: true)
+        let connectionStarted = FlightTestSignal()
+        let connectionCancelled = FlightTestSignal()
+        let releaseConnection = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.connectHandler = {
+            connectionStarted.signal()
+            try await withTaskCancellationHandler {
+                await releaseConnection.wait()
+                try Task.checkCancellation()
+            } onCancel: {
+                connectionCancelled.signal()
+                releaseConnection.signal()
+            }
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let activeWaiterFinished = FlightTestSignal()
+        let activeWaiter = Task { @MainActor in
+            await manager.connectToServer(config)
+            activeWaiterFinished.signal()
+        }
+        #expect(await connectionStarted.wait(timeout: .seconds(1)))
+
+        let releaseCancelledWaiter = FlightTestSignal()
+        let cancelledWaiterFinished = FlightTestSignal()
+        let cancelledWaiter = Task { @MainActor in
+            await releaseCancelledWaiter.wait()
+            await manager.connectToServer(config)
+            cancelledWaiterFinished.signal()
+        }
+        cancelledWaiter.cancel()
+        releaseCancelledWaiter.signal()
+
+        let didCancelledWaiterFinish = await cancelledWaiterFinished.wait(timeout: .seconds(1))
+        #expect(didCancelledWaiterFinish)
+        let wasConnectionCancelled = await connectionCancelled.wait(timeout: .milliseconds(100))
+        #expect(!wasConnectionCancelled)
+        #expect(!activeWaiterFinished.isSignaled)
+
+        releaseConnection.signal()
+        await activeWaiter.value
+        await cancelledWaiter.value
+
+        #expect(service.connectCallCount == 1)
+        #expect(service.disconnectCallCount == 0)
+        #expect(manager.isServerConnected(config.name))
+        #expect(manager.getServerStatus(config.name)?.state == .connected)
+    }
+
+    @Test("Cancelling registered operation waiters unregisters them immediately", .timeLimit(.minutes(1)))
+    func cancellingRegisteredOperationWaitersUnregistersImmediately() async {
+        let completion = ManagedMCPTaskCompletion()
+        let waiters = (0 ..< 32).map { _ in
+            Task {
+                await completion.wait()
+            }
+        }
+
+        let allWaitersRegistered = await waitUntil {
+            completion.pendingWaiterCount == waiters.count
+        }
+        #expect(allWaitersRegistered)
+
+        waiters.forEach { $0.cancel() }
+        for waiter in waiters {
+            await waiter.value
+        }
+
+        #expect(completion.pendingWaiterCount == 0)
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(2),
+        condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition(), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return condition()
     }
 }
 
-private func makeTool(name: String, serverName: String) -> MCPTool {
+private func makeMCPTool(name: String, serverName: String) -> MCPTool {
     MCPTool(
         name: name,
-        description: "Test tool",
+        description: name,
         inputSchema: JSONSchema(type: "object", properties: nil, required: nil, items: nil),
+        serverName: serverName
+    )
+}
+
+private func makeMCPResource(name: String, serverName: String) -> MCPResource {
+    MCPResource(
+        uri: "resource://\(name)",
+        name: name,
         serverName: serverName
     )
 }
 
 private enum MCPTestError: Error {
     case expected
-    case discoveryDidNotOverlap
-}
-
-private actor DiscoveryOverlapProbe {
-    enum Operation: CaseIterable, Hashable {
-        case tools
-        case resources
-    }
-
-    private var enteredOperations: Set<Operation> = []
-
-    func enterAndWaitForOverlap(_ operation: Operation) async throws {
-        enteredOperations.insert(operation)
-
-        for _ in 0 ..< 100 {
-            if enteredOperations.count == Operation.allCases.count {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-
-        throw MCPTestError.discoveryDidNotOverlap
-    }
-
-    func didOverlap() -> Bool {
-        enteredOperations.count == Operation.allCases.count
-    }
 }
 
 private final class StubMCPService: MCPServicing, @unchecked Sendable {
@@ -280,12 +794,12 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
 
     var connectCallCount = 0
     var disconnectCallCount = 0
-    var listToolsCallCount = 0
-    var listResourcesCallCount = 0
     var listToolsResult: Result<[MCPTool], Error> = .success([])
     var listResourcesResult: Result<[MCPResource], Error> = .success([])
-    var discoveryOverlapProbe: DiscoveryOverlapProbe?
+    var listToolsHandler: (@Sendable () async throws -> [MCPTool])?
+    var listResourcesHandler: (@Sendable () async throws -> [MCPResource])?
     var onConnect: (() -> Void)?
+    var connectHandler: (@Sendable () async throws -> Void)?
 
     init(config: MCPServerConfig, connectResults: [Result<Void, Error>] = [.success(())]) {
         serverConfig = config
@@ -294,6 +808,12 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
 
     func connect() async throws {
         connectCallCount += 1
+        if let connectHandler {
+            try await connectHandler()
+            isConnected = true
+            onConnect?()
+            return
+        }
         let index = min(connectCallCount - 1, connectResults.count - 1)
         let result = connectResults[index]
         switch result {
@@ -311,14 +831,16 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
     }
 
     func listTools() async throws -> [MCPTool] {
-        listToolsCallCount += 1
-        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.tools)
+        if let listToolsHandler {
+            return try await listToolsHandler()
+        }
         return try listToolsResult.get()
     }
 
     func listResources() async throws -> [MCPResource] {
-        listResourcesCallCount += 1
-        try await discoveryOverlapProbe?.enterAndWaitForOverlap(.resources)
+        if let listResourcesHandler {
+            return try await listResourcesHandler()
+        }
         return try listResourcesResult.get()
     }
 

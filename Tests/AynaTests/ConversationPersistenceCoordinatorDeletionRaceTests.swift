@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @Suite("ConversationPersistenceCoordinator Deletion Race Tests", .tags(.persistence, .async), .serialized)
+@MainActor
 struct CoordinatorDeletionRaceTests {
     @Test
     func `repeated delete retry remains registered while original caller unwinds`() async throws {
@@ -160,14 +161,9 @@ struct CoordinatorDeletionRaceTests {
         let blocker = TestHelpers.sampleConversation(id: blockerId, title: "Clear blocker")
         try await store.save(original)
 
-        let targetSave = Task {
-            try await coordinator.saveImmediately(queuedSnapshot)
-        }
-        let blockerSave = Task {
-            try await coordinator.saveImmediately(blocker)
-        }
+        let targetSave = coordinator.registerImmediateSave(queuedSnapshot)
         await saveGate.waitUntilInitialSaveStarted(for: conversationId)
-        await saveGate.waitUntilInitialSaveStarted(for: blockerId)
+        let blockerSave = coordinator.registerImmediateSave(blocker)
 
         let clearGeneration = await coordinator.clearGeneration()
         let clearTask = Task {
@@ -186,9 +182,8 @@ struct CoordinatorDeletionRaceTests {
         }
 
         await saveGate.releaseInitialSave(for: conversationId)
-        await #expect(throws: CancellationError.self) {
-            try await targetSave.value
-        }
+        #expect(await targetSave.value == .superseded)
+        await saveGate.waitUntilInitialSaveStarted(for: blockerId)
 
         let firstDeleteGeneration = await coordinator.deletionGeneration(for: conversationId)
         let secondDelete = Task {
@@ -199,17 +194,18 @@ struct CoordinatorDeletionRaceTests {
         }
 
         await saveGate.releaseInitialSave(for: blockerId)
-        await #expect(throws: CancellationError.self) {
-            try await blockerSave.value
-        }
-        await #expect(throws: ExpectedClearFailure.self) {
+        #expect(await blockerSave.value == .superseded)
+        do {
             try await clearTask.value
-        }
-        await #expect(throws: CancellationError.self) {
-            try await firstDelete.value
+            Issue.record("Expected clear to fail")
+        } catch {
+            // The compatibility API intentionally erases the store's concrete error type.
         }
 
         await deleteGate.waitUntilStarted()
+        await #expect(throws: CancellationError.self) {
+            try await firstDelete.value
+        }
         await deleteGate.releaseWithFailure()
         await #expect(throws: CocoaError.self) {
             try await secondDelete.value
@@ -217,6 +213,72 @@ struct CoordinatorDeletionRaceTests {
         await coordinator.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversationId)?.title == expectedQueuedTitle)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `delete waiting on a superseded clear observes a newer committed clear`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let conversation = TestHelpers.sampleConversation(title: "Cleared conversation")
+        let saveGate = ClearWaitingRollbackSaveGate(
+            store: store,
+            initiallyBlockedIds: [conversation.id]
+        )
+        let deleteRecorder = UnexpectedFailingDeleteRecorder()
+        let coordinator = ConversationPersistenceCoordinator(
+            store: store,
+            debounceDuration: .seconds(10),
+            saveOperation: { conversation in
+                try await saveGate.save(conversation)
+            },
+            deleteOperation: { conversationId in
+                try await deleteRecorder.delete(conversationId)
+            },
+            clearOperation: {
+                try store.clear()
+            }
+        )
+        try await store.save(conversation)
+        let save = coordinator.registerImmediateSave(conversation)
+        await saveGate.waitUntilInitialSaveStarted(for: conversation.id)
+
+        let firstClearGeneration = coordinator.clearGeneration()
+        let firstClear = Task {
+            try await coordinator.clearAll(suppressing: [conversation.id])
+        }
+        while coordinator.clearGeneration() == firstClearGeneration {
+            await Task.yield()
+        }
+
+        let deleteGeneration = coordinator.deletionGeneration(for: conversation.id)
+        let deletion = Task {
+            try await coordinator.delete(conversation.id)
+        }
+        while coordinator.deletionGeneration(for: conversation.id) == deleteGeneration {
+            await Task.yield()
+        }
+
+        let secondClearGeneration = coordinator.clearGeneration()
+        let secondClear = Task {
+            try await coordinator.clearAll(suppressing: [conversation.id])
+        }
+        while coordinator.clearGeneration() == secondClearGeneration {
+            await Task.yield()
+        }
+
+        await saveGate.releaseInitialSave(for: conversation.id)
+        #expect(await save.value == .superseded)
+        try await firstClear.value
+        try await secondClear.value
+        do {
+            try await deletion.value
+        } catch {
+            Issue.record("Delete should be settled by the newer committed clear: \(error)")
+        }
+        await coordinator.flushPendingSaves()
+
+        #expect(await deleteRecorder.invocationCount == 0)
+        #expect(try await store.loadConversation(id: conversation.id) == nil)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -286,10 +348,13 @@ struct CoordinatorDeletionRaceTests {
         await coordinator.enqueueSave(conversation)
         await saveGate.waitUntilFirstSaveStarted()
 
+        let clearGeneration = coordinator.clearGeneration()
         let clearTask = Task {
             try await coordinator.clearAll(suppressing: [conversation.id])
         }
-        await saveGate.waitUntilFirstSaveCancellationObserved()
+        while coordinator.clearGeneration() == clearGeneration {
+            await Task.yield()
+        }
 
         let initialDeleteGeneration = await coordinator.deletionGeneration(for: conversation.id)
         let firstDelete = Task {
@@ -307,8 +372,11 @@ struct CoordinatorDeletionRaceTests {
         }
 
         await saveGate.releaseFirstSave()
-        await #expect(throws: ExpectedClearFailure.self) {
+        do {
             try await clearTask.value
+            Issue.record("Expected clear to fail")
+        } catch {
+            // The compatibility API intentionally erases the store's concrete error type.
         }
         await deleteGate.waitUntilStarted()
         await #expect(throws: CancellationError.self) {
@@ -351,9 +419,7 @@ struct CoordinatorDeletionRaceTests {
             title: "Delete after failed clear"
         )
         try await store.save(conversation)
-        let saveTask = Task {
-            try await coordinator.saveImmediately(conversation)
-        }
+        let saveTask = coordinator.registerImmediateSave(conversation)
         await saveGate.waitUntilInitialSaveStarted(for: conversation.id)
 
         let clearGeneration = await coordinator.clearGeneration()
@@ -373,11 +439,12 @@ struct CoordinatorDeletionRaceTests {
         }
 
         await saveGate.releaseInitialSave(for: conversation.id)
-        await #expect(throws: CancellationError.self) {
-            try await saveTask.value
-        }
-        await #expect(throws: ExpectedClearFailure.self) {
+        #expect(await saveTask.value == .superseded)
+        do {
             try await clearTask.value
+            Issue.record("Expected clear to fail")
+        } catch {
+            // The compatibility API intentionally erases the store's concrete error type.
         }
         await deleteGate.waitUntilFirstStarted()
 
@@ -479,6 +546,15 @@ private actor DeletionRaceFailingDeletionGate {
         released = true
         releaseContinuation?.resume()
         releaseContinuation = nil
+    }
+}
+
+private actor UnexpectedFailingDeleteRecorder {
+    private(set) var invocationCount = 0
+
+    func delete(_: UUID) async throws {
+        invocationCount += 1
+        throw CocoaError(.fileWriteUnknown)
     }
 }
 
