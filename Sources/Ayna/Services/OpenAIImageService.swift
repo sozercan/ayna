@@ -208,13 +208,14 @@ final class OpenAIImageService: @unchecked Sendable {
                 "n": 1
             ]
         } else {
+            // GPT Image models reject response_format and return base64 by default.
+            // DALL·E defaults to URLs, which parseResponse downloads immediately.
             [
                 "prompt": prompt,
                 "model": requestConfig.model,
                 "size": imageConfig.size,
                 "quality": imageConfig.quality,
-                "n": 1,
-                "response_format": "b64_json"
+                "n": 1
             ]
         }
 
