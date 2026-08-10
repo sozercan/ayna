@@ -3,6 +3,54 @@ import CryptoKit
 import Foundation
 import Testing
 
+private actor SaveCommitGate {
+    private var expectedEntryCount = 0
+    private var entryCount = 0
+    private var isReleased = true
+    private var allEnteredContinuations: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+    func arm(expectedEntryCount: Int) {
+        precondition(expectedEntryCount > 0)
+        self.expectedEntryCount = expectedEntryCount
+        entryCount = 0
+        isReleased = false
+    }
+
+    func waitBeforeCommit() async {
+        guard !isReleased else { return }
+
+        entryCount += 1
+        if entryCount == expectedEntryCount {
+            for continuation in allEnteredContinuations {
+                continuation.resume()
+            }
+            allEnteredContinuations.removeAll()
+        }
+
+        if !isReleased {
+            await withCheckedContinuation { continuation in
+                releaseContinuations.append(continuation)
+            }
+        }
+    }
+
+    func waitUntilAllEntered() async {
+        guard entryCount < expectedEntryCount else { return }
+        await withCheckedContinuation { continuation in
+            allEnteredContinuations.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        for continuation in releaseContinuations {
+            continuation.resume()
+        }
+        releaseContinuations.removeAll()
+    }
+}
+
 @Suite("EncryptedConversationStore Tests", .tags(.persistence, .slow))
 struct EncryptedConversationStoreTests {
     @Test
@@ -727,20 +775,28 @@ struct EncryptedConversationStoreTests {
         #expect(metadata == [])
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func `in-flight saves cannot recreate a deleted conversation`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
-        let store = TestHelpers.makeTestStore(directory: directory)
+        let saveCommitGate = SaveCommitGate()
+        let store = EncryptedConversationStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage(),
+            saveCommitOperation: { _ in await saveCommitGate.waitBeforeCommit() }
+        )
         let conversation = TestHelpers.sampleConversation(title: "Delete Race")
         try await store.save(conversation)
 
+        await saveCommitGate.arm(expectedEntryCount: 8)
         let saveTasks = (0 ..< 8).map { _ in
             Task {
                 try? await store.save(conversation)
             }
         }
-        try await Task.sleep(for: .milliseconds(10))
+        await saveCommitGate.waitUntilAllEntered()
         try await store.delete(conversation.id)
+        await saveCommitGate.release()
         for task in saveTasks {
             await task.value
         }
@@ -790,21 +846,29 @@ struct EncryptedConversationStoreTests {
         #expect(restored.title == "Restored from sync")
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func `in-flight saves cannot repopulate a cleared store`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
-        let store = TestHelpers.makeTestStore(directory: directory)
+        let saveCommitGate = SaveCommitGate()
+        let store = EncryptedConversationStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage(),
+            saveCommitOperation: { _ in await saveCommitGate.waitBeforeCommit() }
+        )
         let conversations = (0 ..< 8).map { index in
             TestHelpers.sampleConversation(title: "Clear Race \(index)")
         }
+        await saveCommitGate.arm(expectedEntryCount: conversations.count)
         let saveTasks = conversations.map { conversation in
             Task {
                 try? await store.save(conversation)
             }
         }
-        try await Task.sleep(for: .milliseconds(10))
+        await saveCommitGate.waitUntilAllEntered()
 
         try store.clear()
+        await saveCommitGate.release()
         for task in saveTasks {
             await task.value
         }
@@ -839,15 +903,17 @@ struct EncryptedConversationStoreTests {
         #expect(FileManager.default.fileExists(atPath: store.searchIndexFileURL(for: retained.id).path))
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func `separate store instances share clear generations`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let keyIdentifier = UUID().uuidString
         let keychain = InMemoryKeychainStorage()
-        let savingStore = TestHelpers.makeTestStore(
-            directory: directory,
+        let saveCommitGate = SaveCommitGate()
+        let savingStore = EncryptedConversationStore(
+            directoryURL: directory,
             keyIdentifier: keyIdentifier,
-            keychain: keychain
+            keychain: keychain,
+            saveCommitOperation: { _ in await saveCommitGate.waitBeforeCommit() }
         )
         let clearingStore = TestHelpers.makeTestStore(
             directory: directory,
@@ -861,14 +927,16 @@ struct EncryptedConversationStoreTests {
             ]
             return conversation
         }
+        await saveCommitGate.arm(expectedEntryCount: conversations.count)
         let saveTasks = conversations.map { conversation in
             Task {
                 try? await savingStore.save(conversation)
             }
         }
-        try await Task.sleep(for: .milliseconds(10))
+        await saveCommitGate.waitUntilAllEntered()
 
         try clearingStore.clear()
+        await saveCommitGate.release()
         for task in saveTasks {
             await task.value
         }

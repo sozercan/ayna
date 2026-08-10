@@ -27,6 +27,22 @@ actor ConversationPersistenceCoordinator {
         let allowsRecreation: Bool
     }
 
+    private struct DeletionRollback: Sendable {
+        let snapshot: Conversation
+        let clearGeneration: UInt64
+    }
+
+    private struct DeletionAttempt {
+        let generation: UInt64
+        let requestRollback: DeletionRollback?
+        let task: Task<Void, Error>
+    }
+
+    private struct DeletionTaskFailure: Error {
+        let underlyingError: any Error
+        let rollback: DeletionRollback?
+    }
+
     private var pendingSaves: [UUID: Conversation] = [:]
     private var activeSaveTasks: [UUID: Task<Void, Error>] = [:]
     private var activeSaveTaskVersions: [UUID: UInt64] = [:]
@@ -39,8 +55,9 @@ actor ConversationPersistenceCoordinator {
     private var persistingConversationIds: Set<UUID> = []
     private var persistingConversations: [UUID: Conversation] = [:]
     private var suppressedSaveIds: Set<UUID> = []
-    private var deletionTasks: [UUID: Task<Void, Error>] = [:]
+    private var deletionTasks: [UUID: DeletionAttempt] = [:]
     private var deletionGenerationById: [UUID: UInt64] = [:]
+    private var clearWaitingDeletionRollbacks: [UUID: DeletionRollback] = [:]
     private var deletionOverridesRecreationIds: Set<UUID> = []
     private var pendingRecreations: [UUID: Conversation] = [:]
     private var activeClearTask: Task<Void, Error>?
@@ -161,8 +178,8 @@ actor ConversationPersistenceCoordinator {
                 pendingRecreations[conversation.id] = conversation
                 _ = recordLatestSnapshotIfImmediateRequestActive(conversation)
             }
-            while let deletionTask = deletionTasks[conversation.id] {
-                try await deletionTask.value
+            while let deletionAttempt = deletionTasks[conversation.id] {
+                try await deletionAttempt.task.value
                 await Task.yield()
             }
         }
@@ -240,96 +257,137 @@ actor ConversationPersistenceCoordinator {
             ?? latestSnapshotById[conversationId]
             ?? persistingConversations[conversationId]
         let clearGenerationAtDeleteStart = clearRequestGeneration
-        deletionGenerationById[conversationId, default: 0] &+= 1
+        var requestRollback = snapshotToRestoreOnFailure.map {
+            DeletionRollback(snapshot: $0, clearGeneration: clearGenerationAtDeleteStart)
+        }
+        let requestGeneration = (deletionGenerationById[conversationId] ?? 0) &+ 1
+        deletionGenerationById[conversationId] = requestGeneration
         purgeLatestSnapshot(for: conversationId)
         if let activeClearTask {
+            if let clearWaitingRollback = clearWaitingDeletionRollbacks[conversationId] {
+                requestRollback = clearWaitingRollback
+            } else if let requestRollback {
+                clearWaitingDeletionRollbacks[conversationId] = requestRollback
+            }
             mergeClearRequest(suppressing: [conversationId])
             do {
                 try await activeClearTask.value
+                if isCurrentDeletionRequest(conversationId, generation: requestGeneration) {
+                    clearWaitingDeletionRollbacks.removeValue(forKey: conversationId)
+                }
                 return
             } catch {
                 // The clear failed and restored save eligibility; finish the explicit delete below.
             }
+
+            guard isCurrentDeletionRequest(conversationId, generation: requestGeneration) else {
+                throw CancellationError()
+            }
+            requestRollback = clearWaitingDeletionRollbacks.removeValue(forKey: conversationId)
+                ?? requestRollback
         }
 
-        if let existingDeletion = deletionTasks[conversationId] {
+        let previousDeletionAttempt = deletionTasks[conversationId]
+        if previousDeletionAttempt != nil {
             deletionOverridesRecreationIds.insert(conversationId)
             pendingRecreations.removeValue(forKey: conversationId)
-            suppressedSaveIds.insert(conversationId)
-            _ = try? await existingDeletion.value
-
-            deletionOverridesRecreationIds.insert(conversationId)
-            suppressedSaveIds.insert(conversationId)
-            pendingRecreations.removeValue(forKey: conversationId)
-            pendingSaves.removeValue(forKey: conversationId)
-            if let recreationTask = activeSaveTasks.removeValue(forKey: conversationId) {
-                activeSaveTaskVersions.removeValue(forKey: conversationId)
-                recreationTask.cancel()
-                _ = try? await recreationTask.value
-            }
-            do {
-                try await deleteOperation(conversationId)
-                deletionOverridesRecreationIds.remove(conversationId)
-            } catch {
-                await recoverFromFailedDeletion(
-                    conversationId,
-                    snapshotToRestoreOnFailure: snapshotToRestoreOnFailure,
-                    clearGenerationAtDeleteStart: clearGenerationAtDeleteStart,
-                    error: error
-                )
-                throw error
-            }
-            suppressedSaveIds.insert(conversationId)
-            return
         }
 
         suppressedSaveIds.insert(conversationId)
         pendingSaves.removeValue(forKey: conversationId)
 
-        let previousTask = activeSaveTasks.removeValue(forKey: conversationId)
+        let previousSaveTask = activeSaveTasks.removeValue(forKey: conversationId)
         activeSaveTaskVersions.removeValue(forKey: conversationId)
-        previousTask?.cancel()
+        previousSaveTask?.cancel()
         let deleteOperation = deleteOperation
+        let taskRequestRollback = requestRollback
         let deletionTask = Task<Void, Error> {
-            if let previousTask {
-                _ = try? await previousTask.value
+            var rollbackForFailure = taskRequestRollback
+            if let previousDeletionAttempt {
+                do {
+                    try await previousDeletionAttempt.task.value
+                } catch let previousFailure as DeletionTaskFailure {
+                    rollbackForFailure = previousFailure.rollback ?? rollbackForFailure
+                } catch {
+                    rollbackForFailure = previousDeletionAttempt.requestRollback
+                        ?? rollbackForFailure
+                }
             }
-            try await deleteOperation(conversationId)
+            if let previousSaveTask {
+                _ = try? await previousSaveTask.value
+            }
+            do {
+                try await deleteOperation(conversationId)
+            } catch {
+                throw DeletionTaskFailure(
+                    underlyingError: error,
+                    rollback: rollbackForFailure
+                )
+            }
         }
-        deletionTasks[conversationId] = deletionTask
+        deletionTasks[conversationId] = DeletionAttempt(
+            generation: requestGeneration,
+            requestRollback: taskRequestRollback,
+            task: deletionTask
+        )
 
         do {
             try await deletionTask.value
-            deletionTasks.removeValue(forKey: conversationId)
-            if deletionOverridesRecreationIds.contains(conversationId) {
-                pendingRecreations.removeValue(forKey: conversationId)
-                suppressedSaveIds.insert(conversationId)
-            } else if let recreation = pendingRecreations.removeValue(forKey: conversationId) {
-                suppressedSaveIds.remove(conversationId)
-                enqueueSave(recreation, allowsRecreation: true)
-            }
         } catch {
+            let recoveryError: any Error
+            let rollback: DeletionRollback?
+            if let deletionFailure = error as? DeletionTaskFailure {
+                recoveryError = deletionFailure.underlyingError
+                rollback = deletionFailure.rollback
+            } else {
+                recoveryError = error
+                rollback = requestRollback
+            }
             await recoverFromFailedDeletion(
                 conversationId,
-                snapshotToRestoreOnFailure: snapshotToRestoreOnFailure,
+                generation: requestGeneration,
+                rollback: rollback,
                 clearGenerationAtDeleteStart: clearGenerationAtDeleteStart,
-                error: error
+                error: recoveryError
             )
-            throw error
+            throw recoveryError
         }
+
+        guard finishSuccessfulDeletion(conversationId, generation: requestGeneration) else {
+            throw CancellationError()
+        }
+    }
+
+    private func finishSuccessfulDeletion(_ conversationId: UUID, generation: UInt64) -> Bool {
+        guard isCurrentDeletionAttempt(conversationId, generation: generation) else { return false }
+
+        deletionTasks.removeValue(forKey: conversationId)
+        if deletionOverridesRecreationIds.remove(conversationId) != nil {
+            pendingRecreations.removeValue(forKey: conversationId)
+            suppressedSaveIds.insert(conversationId)
+        } else if let recreation = pendingRecreations.removeValue(forKey: conversationId) {
+            suppressedSaveIds.remove(conversationId)
+            enqueueSave(recreation, allowsRecreation: true)
+        }
+        return true
     }
 
     private func recoverFromFailedDeletion(
         _ conversationId: UUID,
-        snapshotToRestoreOnFailure: Conversation?,
+        generation: UInt64,
+        rollback: DeletionRollback?,
         clearGenerationAtDeleteStart: UInt64,
         error: Error
     ) async {
+        guard isCurrentDeletionAttempt(conversationId, generation: generation) else { return }
+
         deletionTasks.removeValue(forKey: conversationId)
         deletionOverridesRecreationIds.remove(conversationId)
+        let snapshotToRestoreOnFailure = rollback?.snapshot
+        let rollbackClearGeneration = rollback?.clearGeneration ?? clearGenerationAtDeleteStart
         let clearOwnsSuppression = activeClearTask != nil
             || clearSuppressedIds.contains(conversationId)
-            || latestCommittedClearGeneration > clearGenerationAtDeleteStart
+            || latestCommittedClearGeneration > rollbackClearGeneration
             || recoveryBlockedConversationIds.contains(conversationId)
             || ((error as? EncryptedStoreError)?.clearNeedsRecovery == true)
         if clearOwnsSuppression {
@@ -364,6 +422,15 @@ actor ConversationPersistenceCoordinator {
                 }
             }
         }
+    }
+
+    private func isCurrentDeletionRequest(_ conversationId: UUID, generation: UInt64) -> Bool {
+        deletionGenerationById[conversationId] == generation
+    }
+
+    private func isCurrentDeletionAttempt(_ conversationId: UUID, generation: UInt64) -> Bool {
+        isCurrentDeletionRequest(conversationId, generation: generation)
+            && deletionTasks[conversationId]?.generation == generation
     }
 
     /// Clears persisted conversations while deferring saves created after the clear began.
@@ -415,7 +482,7 @@ actor ConversationPersistenceCoordinator {
                 _ = try? await activeClearTask.value
             }
 
-            let deletions = Array(deletionTasks.values)
+            let deletions = Array(deletionTasks.values.map(\.task))
             for deletion in deletions {
                 _ = try? await deletion.value
             }
@@ -515,7 +582,7 @@ actor ConversationPersistenceCoordinator {
         }
         pendingSaves.removeAll()
 
-        let activeDeletions = Array(deletionTasks.values)
+        let activeDeletions = Array(deletionTasks.values.map(\.task))
         for task in saveTasks {
             _ = try? await task.value
         }

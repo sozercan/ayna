@@ -183,6 +183,36 @@ private struct CurrentRequestCancellationCallbacks {
 }
 
 @MainActor
+protocol AppleIntelligenceServicing: AnyObject {
+    var isAvailable: Bool { get }
+
+    func availabilityDescription() -> String
+    func clearSession(conversationId: String)
+    func streamResponse(
+        conversationId: String,
+        prompt: String,
+        systemInstructions: String,
+        temperature: Double,
+        onChunk: @escaping (String) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (Error) -> Void
+    ) async
+    func generateResponse(
+        conversationId: String,
+        prompt: String,
+        systemInstructions: String,
+        temperature: Double,
+        onComplete: @escaping (String) -> Void,
+        onError: @escaping (Error) -> Void
+    ) async
+}
+
+#if !os(watchOS)
+    @available(macOS 26.0, iOS 26.0, *)
+    extension AppleIntelligenceService: AppleIntelligenceServicing {}
+#endif
+
+@MainActor
 class AIService: ObservableObject {
     static let shared = AIService()
     static var keychain: KeychainStoring = KeychainStorage.standard
@@ -252,6 +282,7 @@ class AIService: ObservableObject {
     private let anthropicProviderFactory: @MainActor (URLSession) -> any AIProviderProtocol
     private let streamRetryDelayOperation: @Sendable (Int, Date?) async -> Void
     private let requestBuildOverride: (@Sendable (APIEndpointType) async -> URLRequest?)?
+    private let appleIntelligenceServiceOverride: (any AppleIntelligenceServicing)?
 
     // Image generation service
     #if !os(watchOS)
@@ -373,11 +404,13 @@ class AIService: ObservableObject {
         streamRetryDelayOperation: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfterDate in
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
         },
-        requestBuildOverride: (@Sendable (APIEndpointType) async -> URLRequest?)? = nil
+        requestBuildOverride: (@Sendable (APIEndpointType) async -> URLRequest?)? = nil,
+        appleIntelligenceService: (any AppleIntelligenceServicing)? = nil
     ) {
         self.anthropicProviderFactory = anthropicProviderFactory
         self.streamRetryDelayOperation = streamRetryDelayOperation
         self.requestBuildOverride = requestBuildOverride
+        appleIntelligenceServiceOverride = appleIntelligenceService
         if let session = urlSession {
             self.urlSession = session
             #if !os(watchOS)
@@ -1405,13 +1438,22 @@ class AIService: ObservableObject {
         onReasoning: (@Sendable (String, String) -> Void)? = nil
     ) {
         let effectiveRequestOwnerID = requestOwnerID ?? UUID()
-        // Validate we have models to query
-        guard !models.isEmpty else {
+        var seenModels: Set<String> = []
+        let normalizedModels = models.compactMap { model -> String? in
+            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedModel.isEmpty,
+                  seenModels.insert(normalizedModel).inserted
+            else { return nil }
+            return normalizedModel
+        }
+
+        // Validate we have models to query after normalizing caller input.
+        guard !normalizedModels.isEmpty else {
             onError("", AIError.missingModel)
             return
         }
         let provisionalCancellation = OneShot {
-            for model in models {
+            for model in normalizedModels {
                 onError(model, CancellationError())
             }
         }
@@ -1428,7 +1470,7 @@ class AIService: ObservableObject {
             .aiService,
             level: .info,
             message: "🔀 Starting multi-model request",
-            metadata: ["models": models.joined(separator: ", ")]
+            metadata: ["models": normalizedModels.joined(separator: ", ")]
         )
 
         let multiModelRequestID = UUID()
@@ -1437,9 +1479,9 @@ class AIService: ObservableObject {
         multiModelCompletionRegistry = completionRegistry
 
         // Use a TaskGroup to send requests in parallel
-        let task = Task {
+        let task = Task { [self] in
             await withTaskGroup(of: Void.self) { group in
-                for model in models {
+                for model in normalizedModels {
                     group.addTask { [weak self] in
                         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                             let completion = MultiModelChildCompletion(
@@ -2863,7 +2905,8 @@ class AIService: ObservableObject {
             onComplete: @escaping @Sendable () -> Void,
             onError: @escaping @Sendable (Error) -> Void
         ) {
-            let service = AppleIntelligenceService.shared
+            let service: any AppleIntelligenceServicing = appleIntelligenceServiceOverride
+                ?? AppleIntelligenceService.shared
 
             // Check availability
             guard service.isAvailable else {
@@ -2923,6 +2966,17 @@ class AIService: ObservableObject {
             }
 
             @MainActor
+            func isAppleRequestCurrent() -> Bool {
+                if isMultiModelRequest {
+                    return multiModelAppleIntelligenceTasks[taskID] != nil
+                }
+                if tracksCurrentRequest {
+                    return appleIntelligenceTaskID == taskID
+                }
+                return untrackedAppleIntelligenceTasks[taskID] != nil
+            }
+
+            @MainActor
             func finishAppleRequest() -> Bool {
                 if isMultiModelRequest {
                     return multiModelAppleIntelligenceTasks.removeValue(forKey: taskID) != nil
@@ -2950,6 +3004,7 @@ class AIService: ObservableObject {
                         systemInstructions: systemInstructions,
                         temperature: requestTemp,
                         onChunk: { chunk in
+                            guard isAppleRequestCurrent() else { return }
                             onChunk(chunk)
                         },
                         onComplete: {
@@ -2968,8 +3023,9 @@ class AIService: ObservableObject {
                         systemInstructions: systemInstructions,
                         temperature: requestTemp,
                         onComplete: { response in
-                            guard finishAppleRequest() else { return }
+                            guard isAppleRequestCurrent() else { return }
                             onChunk(response)
+                            guard finishAppleRequest() else { return }
                             onComplete()
                         },
                         onError: { error in

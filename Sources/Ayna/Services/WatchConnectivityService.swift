@@ -52,47 +52,51 @@
         static let typeRequestSync = "requestSync"
         static let typeSyncResponse = "syncResponse"
         static let typeTitleUpdate = "titleUpdate"
+        static let mutationId = "mutationId"
         static let conversationSyncEpoch = "conversationSyncEpoch"
         static let conversationClearGeneration = "conversationClearGeneration"
     }
 
-    private enum WatchSyncGenerationStore {
+    private enum WatchSyncPersistence {
         private static let epochKey = "com.sertacozercan.ayna.watch.conversation-sync-epoch"
         private static let generationKey = "com.sertacozercan.ayna.watch.conversation-clear-generation"
         private static let pendingClearCountKey = "com.sertacozercan.ayna.watch.pending-conversation-clears"
+        private static let persistenceDirectory = WatchConversationSyncPersistenceLocations.directoryURL
 
-        static func loadOrCreatePhoneEpoch() -> UUID {
-            if let epoch = loadEpoch() {
-                return epoch
+        static let stateStore = WatchConversationSyncStateStore(
+            fileURL: persistenceDirectory.appendingPathComponent("conversation-sync-state.json")
+        )
+        static let mutationInbox = WatchConversationMutationInbox(
+            fileURL: persistenceDirectory.appendingPathComponent("phone-mutation-inbox.json")
+        )
+
+        static func loadState(creatingPhoneEpoch: Bool) -> WatchConversationSyncState {
+            var initialState = legacyState()
+            if creatingPhoneEpoch, initialState.identity.epoch == nil {
+                initialState.identity = WatchConversationSyncIdentity(
+                    epoch: UUID(),
+                    generation: initialState.identity.generation
+                )
             }
-            let epoch = UUID()
-            saveEpoch(epoch)
-            return epoch
-        }
 
-        static func loadEpoch() -> UUID? {
-            guard let value = UserDefaults.standard.string(forKey: epochKey) else { return nil }
-            return UUID(uuidString: value)
-        }
-
-        static func saveEpoch(_ epoch: UUID) {
-            UserDefaults.standard.set(epoch.uuidString, forKey: epochKey)
-        }
-
-        static func loadGeneration() -> UInt64 {
-            (UserDefaults.standard.object(forKey: generationKey) as? NSNumber)?.uint64Value ?? 0
-        }
-
-        static func saveGeneration(_ generation: UInt64) {
-            UserDefaults.standard.set(NSNumber(value: generation), forKey: generationKey)
-        }
-
-        static func loadPendingClearCount() -> Int {
-            max(0, UserDefaults.standard.integer(forKey: pendingClearCountKey))
-        }
-
-        static func savePendingClearCount(_ count: Int) {
-            UserDefaults.standard.set(max(0, count), forKey: pendingClearCountKey)
+            do {
+                let state = try stateStore.load(orCreating: initialState)
+                removeLegacyState()
+                return state
+            } catch {
+                DiagnosticsLogger.log(
+                    .watchConnectivity,
+                    level: .error,
+                    message: "Failed to load durable Watch synchronization state",
+                    metadata: ["error": error.localizedDescription]
+                )
+                if creatingPhoneEpoch, initialState.pendingClears.isEmpty {
+                    initialState.pendingClears = [
+                        WatchConversationClearTransaction(baselinePrivacyMarkerToken: nil)
+                    ]
+                }
+                return initialState
+            }
         }
 
         static func epoch(from value: Any?) -> UUID? {
@@ -102,6 +106,29 @@
 
         static func generation(from value: Any?) -> UInt64? {
             (value as? NSNumber)?.uint64Value
+        }
+
+        private static func legacyState() -> WatchConversationSyncState {
+            let epoch = UserDefaults.standard.string(forKey: epochKey).flatMap(UUID.init(uuidString:))
+            let generation = (UserDefaults.standard.object(forKey: generationKey) as? NSNumber)?
+                .uint64Value ?? 0
+            let pendingClearCount = max(
+                0,
+                UserDefaults.standard.integer(forKey: pendingClearCountKey)
+            )
+            let pendingClears = (0 ..< pendingClearCount).map { _ in
+                WatchConversationClearTransaction(baselinePrivacyMarkerToken: nil)
+            }
+            return WatchConversationSyncState(
+                identity: WatchConversationSyncIdentity(epoch: epoch, generation: generation),
+                pendingClears: pendingClears
+            )
+        }
+
+        private static func removeLegacyState() {
+            UserDefaults.standard.removeObject(forKey: epochKey)
+            UserDefaults.standard.removeObject(forKey: generationKey)
+            UserDefaults.standard.removeObject(forKey: pendingClearCountKey)
         }
     }
 
@@ -123,13 +150,31 @@
             private var conversationManager: ConversationManager?
             private var cancellables = Set<AnyCancellable>()
             private var syncGeneration = 0
-            private let conversationSyncEpoch = WatchSyncGenerationStore.loadOrCreatePhoneEpoch()
-            private var conversationClearGeneration = WatchSyncGenerationStore.loadGeneration()
-            private var pendingConversationClearCount = WatchSyncGenerationStore.loadPendingClearCount()
+            private let syncStateStore: WatchConversationSyncStateStore
+            private nonisolated let mutationInbox: WatchConversationMutationInbox
+            private var conversationSyncState: WatchConversationSyncState
             private var conversationHistoryIsLoaded = false
-            private var pendingConversationMutationMessages: [[String: Any]] = []
+            private var mutationReplayTask: Task<Void, Never>?
+
+            private var conversationSyncEpoch: UUID {
+                guard let epoch = conversationSyncState.identity.epoch else {
+                    preconditionFailure("The iPhone Watch synchronization epoch must be initialized")
+                }
+                return epoch
+            }
+
+            private var conversationClearGeneration: UInt64 {
+                conversationSyncState.identity.generation
+            }
+
+            private var pendingConversationClearCount: Int {
+                conversationSyncState.pendingClearCount
+            }
 
             override private init() {
+                syncStateStore = WatchSyncPersistence.stateStore
+                mutationInbox = WatchSyncPersistence.mutationInbox
+                conversationSyncState = WatchSyncPersistence.loadState(creatingPhoneEpoch: true)
                 super.init()
                 setupSession()
             }
@@ -173,8 +218,18 @@
                     for: .conversationHistoryClearStarted,
                     object: conversationManager
                 )
-                .sink { [weak self] _ in
-                    self?.beginConversationClearFence()
+                .sink { [weak self] notification in
+                    guard let transaction = WatchConversationClearTransaction(
+                        notification: notification
+                    ) else {
+                        DiagnosticsLogger.log(
+                            .watchConnectivity,
+                            level: .error,
+                            message: "Conversation clear started without a transaction identity"
+                        )
+                        return
+                    }
+                    self?.beginConversationClearFence(transaction)
                 }
                 .store(in: &cancellables)
 
@@ -182,8 +237,18 @@
                     for: .conversationHistoryClearCommitted,
                     object: conversationManager
                 )
-                .sink { [weak self] _ in
-                    self?.publishCommittedConversationClear()
+                .sink { [weak self] notification in
+                    guard let transaction = WatchConversationClearTransaction(
+                        notification: notification
+                    ) else {
+                        DiagnosticsLogger.log(
+                            .watchConnectivity,
+                            level: .error,
+                            message: "Conversation clear committed without a transaction identity"
+                        )
+                        return
+                    }
+                    self?.publishCommittedConversationClear(transaction)
                 }
                 .store(in: &cancellables)
 
@@ -191,8 +256,18 @@
                     for: .conversationHistoryClearRolledBack,
                     object: conversationManager
                 )
-                .sink { [weak self] _ in
-                    self?.publishRolledBackConversationClear()
+                .sink { [weak self] notification in
+                    guard let transaction = WatchConversationClearTransaction(
+                        notification: notification
+                    ) else {
+                        DiagnosticsLogger.log(
+                            .watchConnectivity,
+                            level: .error,
+                            message: "Conversation clear rolled back without a transaction identity"
+                        )
+                        return
+                    }
+                    self?.publishRolledBackConversationClear(transaction)
                 }
                 .store(in: &cancellables)
             }
@@ -205,24 +280,37 @@
                 }
             }
 
-            private func beginConversationClearFence() {
+            private func beginConversationClearFence(
+                _ transaction: WatchConversationClearTransaction
+            ) {
                 syncGeneration &+= 1
-                pendingConversationClearCount += 1
-                WatchSyncGenerationStore.savePendingClearCount(pendingConversationClearCount)
+                updateConversationSyncState { state in
+                    state.beginClear(transaction)
+                }
             }
 
-            private func publishCommittedConversationClear() {
-                pendingConversationClearCount = max(0, pendingConversationClearCount - 1)
-                conversationClearGeneration &+= 1
-                WatchSyncGenerationStore.saveGeneration(conversationClearGeneration)
-                WatchSyncGenerationStore.savePendingClearCount(pendingConversationClearCount)
-                pendingConversationMutationMessages.removeAll(keepingCapacity: true)
+            private func publishCommittedConversationClear(
+                _ transaction: WatchConversationClearTransaction
+            ) {
+                let stateWasPersisted = updateConversationSyncState { state in
+                    state.commitClear(id: transaction.id)
+                }
+                if stateWasPersisted {
+                    conversationManager?.acknowledgeWatchConversationClear(transaction)
+                }
+                replayPendingConversationMutationsIfPossible()
                 syncConversationsToWatch(conversationManager?.conversations ?? [])
             }
 
-            private func publishRolledBackConversationClear() {
-                pendingConversationClearCount = max(0, pendingConversationClearCount - 1)
-                WatchSyncGenerationStore.savePendingClearCount(pendingConversationClearCount)
+            private func publishRolledBackConversationClear(
+                _ transaction: WatchConversationClearTransaction
+            ) {
+                let stateWasPersisted = updateConversationSyncState { state in
+                    state.rollBackClear(id: transaction.id)
+                }
+                if stateWasPersisted {
+                    conversationManager?.acknowledgeWatchConversationClear(transaction)
+                }
                 guard pendingConversationClearCount == 0,
                       let conversations = conversationManager?.conversations
                 else {
@@ -235,23 +323,43 @@
             private func recoverInterruptedConversationClearIfNeeded(
                 using conversationManager: ConversationManager
             ) {
-                guard pendingConversationClearCount > 0 else { return }
+                let pendingTransactions = conversationSyncState.pendingClears
+                guard !pendingTransactions.isEmpty else { return }
                 do {
-                    let clearWasCommitted = try conversationManager
-                        .interruptedConversationClearWasCommitted()
-                    pendingConversationClearCount = 0
-                    WatchSyncGenerationStore.savePendingClearCount(0)
-                    if clearWasCommitted {
-                        conversationClearGeneration &+= 1
-                        WatchSyncGenerationStore.saveGeneration(conversationClearGeneration)
-                        pendingConversationMutationMessages.removeAll(keepingCapacity: true)
+                    var committedTransactionIds = Set<UUID>()
+                    for transaction in pendingTransactions {
+                        if try conversationManager.interruptedConversationClearWasCommitted(
+                            transaction
+                        ) {
+                            committedTransactionIds.insert(transaction.id)
+                        }
                     }
+
+                    let stateWasPersisted = updateConversationSyncState { state in
+                        for transaction in pendingTransactions {
+                            if committedTransactionIds.contains(transaction.id) {
+                                state.commitClear(id: transaction.id)
+                            } else {
+                                state.rollBackClear(id: transaction.id)
+                            }
+                        }
+                    }
+                    if stateWasPersisted {
+                        for transaction in pendingTransactions {
+                            conversationManager.acknowledgeWatchConversationClear(transaction)
+                        }
+                    }
+
                     DiagnosticsLogger.log(
                         .watchConnectivity,
                         level: .info,
-                        message: clearWasCommitted
-                            ? "Recovered committed interrupted clear for authoritative Watch rebase"
-                            : "Recovered rolled-back interrupted clear without advancing Watch generation"
+                        message: "Recovered interrupted Watch conversation clears",
+                        metadata: [
+                            "committed": String(committedTransactionIds.count),
+                            "rolledBack": String(
+                                pendingTransactions.count - committedTransactionIds.count
+                            ),
+                        ]
                     )
                 } catch {
                     DiagnosticsLogger.log(
@@ -260,6 +368,28 @@
                         message: "Could not resolve interrupted clear outcome; keeping Watch fence active",
                         metadata: ["error": error.localizedDescription]
                     )
+                }
+            }
+
+            @discardableResult
+            private func updateConversationSyncState(
+                _ mutation: (inout WatchConversationSyncState) -> Void
+            ) -> Bool {
+                do {
+                    conversationSyncState = try syncStateStore.update(
+                        initialState: conversationSyncState,
+                        mutation
+                    )
+                    return true
+                } catch {
+                    mutation(&conversationSyncState)
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "Failed to persist Watch synchronization state",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                    return false
                 }
             }
 
@@ -425,11 +555,18 @@
             }
 
             /// Handle new message from Watch
-            private func handleNewMessage(from watchMessage: WatchMessage, conversationId: UUID) {
-                guard let conversationManager else { return }
+            private func handleNewMessage(
+                from watchMessage: WatchMessage,
+                conversationId: UUID
+            ) async -> Bool {
+                guard let conversationManager else { return false }
 
                 // Find the conversation or create it if it doesn't exist
                 if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
+                    if conversation.messages.contains(where: { $0.id == watchMessage.id }) {
+                        return await conversationManager
+                            .saveImmediatelyReportingDurability(conversation).value
+                    }
                     let message = watchMessage.toMessage()
                     conversationManager.addMessage(to: conversation, message: message)
 
@@ -461,21 +598,37 @@
                         metadata: ["conversationId": conversationId.uuidString]
                     )
                 }
+                guard let updatedConversation = conversationManager.conversations.first(where: {
+                    $0.id == conversationId
+                }) else {
+                    return false
+                }
+                return await conversationManager
+                    .saveImmediatelyReportingDurability(updatedConversation).value
             }
 
             /// Handle new conversation created on Watch
-            private func handleNewConversation(_ watchConversation: WatchConversation) {
-                guard let conversationManager else { return }
+            private func handleNewConversation(
+                _ watchConversation: WatchConversation
+            ) async -> Bool {
+                guard let conversationManager else { return false }
 
                 // Check if conversation already exists
                 if conversationManager.conversations.contains(where: { $0.id == watchConversation.id }) {
+                    let existingConversation = conversationManager.conversations.first(where: {
+                        $0.id == watchConversation.id
+                    })
                     DiagnosticsLogger.log(
                         .watchConnectivity,
                         level: .debug,
                         message: "📱 Conversation already exists",
                         metadata: ["conversationId": watchConversation.id.uuidString]
                     )
-                    return
+                    if let existingConversation {
+                        return await conversationManager
+                            .saveImmediatelyReportingDurability(existingConversation).value
+                    }
+                    return false
                 }
 
                 // Create the conversation on iPhone
@@ -488,15 +641,25 @@
                     message: "📱 Created conversation from Watch",
                     metadata: ["conversationId": watchConversation.id.uuidString, "title": watchConversation.title]
                 )
+                return await conversationManager
+                    .saveImmediatelyReportingDurability(conversation).value
             }
 
             /// Handle title update from Watch
-            private func handleTitleUpdate(conversationId: UUID, newTitle: String) {
-                guard let conversationManager else { return }
+            private func handleTitleUpdate(
+                conversationId: UUID,
+                newTitle: String
+            ) async -> Bool {
+                guard let conversationManager else { return false }
 
                 if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversationId }) {
+                    if conversationManager.conversations[index].title == newTitle {
+                        return await conversationManager.saveImmediatelyReportingDurability(
+                            conversationManager.conversations[index]
+                        ).value
+                    }
                     conversationManager.conversations[index].title = newTitle
-                    conversationManager.save(conversationManager.conversations[index])
+                    let updatedConversation = conversationManager.conversations[index]
 
                     DiagnosticsLogger.log(
                         .watchConnectivity,
@@ -504,7 +667,10 @@
                         message: "📱 Updated conversation title from Watch",
                         metadata: ["conversationId": conversationId.uuidString, "title": newTitle]
                     )
+                    return await conversationManager
+                        .saveImmediatelyReportingDurability(updatedConversation).value
                 }
+                return true
             }
         }
 
@@ -603,8 +769,17 @@
 
             nonisolated func session(_: WCSession, didReceiveMessage message: [String: Any]) {
                 nonisolated(unsafe) let message = message
-                Task { @MainActor in
-                    handleReceivedMessage(message)
+                switch persistConversationMutationIfPresent(message) {
+                case .persisted:
+                    Task { @MainActor in
+                        replayPendingConversationMutationsIfPossible()
+                    }
+                case .notMutation:
+                    Task { @MainActor in
+                        handleNonMutationMessage(message)
+                    }
+                case .failed:
+                    break
                 }
             }
 
@@ -615,29 +790,147 @@
             ) {
                 nonisolated(unsafe) let message = message
                 nonisolated(unsafe) let replyHandler = replyHandler
-                Task { @MainActor in
-                    handleReceivedMessage(message)
-                    replyHandler(["status": "received"])
+                switch persistConversationMutationIfPresent(message) {
+                case .persisted:
+                    replyHandler(["status": "persisted"])
+                    Task { @MainActor in
+                        replayPendingConversationMutationsIfPossible()
+                    }
+                case .notMutation:
+                    Task { @MainActor in
+                        handleNonMutationMessage(message)
+                        replyHandler(["status": "received"])
+                    }
+                case .failed:
+                    replyHandler(["status": "persistenceFailed"])
                 }
             }
 
             nonisolated func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
                 nonisolated(unsafe) let userInfo = userInfo
-                Task { @MainActor in
-                    handleReceivedMessage(userInfo)
+                switch persistConversationMutationIfPresent(userInfo) {
+                case .persisted:
+                    Task { @MainActor in
+                        replayPendingConversationMutationsIfPossible()
+                    }
+                case .notMutation:
+                    Task { @MainActor in
+                        handleNonMutationMessage(userInfo)
+                    }
+                case .failed:
+                    break
                 }
             }
 
-            private func acceptsConversationMutation(_ message: [String: Any]) -> Bool {
-                let incomingEpoch = WatchSyncGenerationStore.epoch(
+            private enum IncomingMutationPersistenceResult {
+                case notMutation
+                case persisted
+                case failed
+            }
+
+            private enum IncomingMutationError: LocalizedError {
+                case invalidPayload(String)
+
+                var errorDescription: String? {
+                    switch self {
+                    case let .invalidPayload(type):
+                        "Invalid Watch conversation mutation payload for type \(type)."
+                    }
+                }
+            }
+
+            private nonisolated func persistConversationMutationIfPresent(
+                _ message: [String: Any]
+            ) -> IncomingMutationPersistenceResult {
+                do {
+                    guard let mutation = try conversationMutation(from: message) else {
+                        return .notMutation
+                    }
+                    try mutationInbox.enqueue(mutation)
+                    return .persisted
+                } catch {
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "Failed to durably queue Watch conversation mutation",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                    return .failed
+                }
+            }
+
+            private nonisolated func conversationMutation(
+                from message: [String: Any]
+            ) throws -> WatchConversationMutation? {
+                guard let type = message[WatchMessageKeys.type] as? String else { return nil }
+                let explicitMutationId = (message[WatchMessageKeys.mutationId] as? String)
+                    .flatMap(UUID.init(uuidString:))
+                let incomingEpoch = WatchSyncPersistence.epoch(
                     from: message[WatchMessageKeys.conversationSyncEpoch]
                 )
-                let incomingGeneration = WatchSyncGenerationStore.generation(
+                let incomingGeneration = WatchSyncPersistence.generation(
                     from: message[WatchMessageKeys.conversationClearGeneration]
                 )
+
+                switch type {
+                case WatchMessageKeys.typeNewMessage:
+                    guard let messageData = message[WatchMessageKeys.newMessage] as? Data,
+                          let conversationIdString = message[WatchMessageKeys.conversationId] as? String,
+                          let conversationId = UUID(uuidString: conversationIdString)
+                    else {
+                        throw IncomingMutationError.invalidPayload(type)
+                    }
+                    let watchMessage = try JSONDecoder().decode(WatchMessage.self, from: messageData)
+                    return WatchConversationMutation(
+                        id: explicitMutationId ?? watchMessage.id,
+                        syncEpoch: incomingEpoch,
+                        clearGeneration: incomingGeneration,
+                        payload: .newMessage(
+                            message: watchMessage,
+                            conversationId: conversationId
+                        )
+                    )
+
+                case WatchMessageKeys.typeNewConversation:
+                    guard let conversationData = message[WatchMessageKeys.conversation] as? Data else {
+                        throw IncomingMutationError.invalidPayload(type)
+                    }
+                    let conversation = try JSONDecoder().decode(
+                        WatchConversation.self,
+                        from: conversationData
+                    )
+                    return WatchConversationMutation(
+                        id: explicitMutationId ?? conversation.id,
+                        syncEpoch: incomingEpoch,
+                        clearGeneration: incomingGeneration,
+                        payload: .newConversation(conversation)
+                    )
+
+                case WatchMessageKeys.typeTitleUpdate:
+                    guard let conversationIdString = message[WatchMessageKeys.conversationId] as? String,
+                          let conversationId = UUID(uuidString: conversationIdString),
+                          let title = message[WatchMessageKeys.title] as? String
+                    else {
+                        throw IncomingMutationError.invalidPayload(type)
+                    }
+                    return WatchConversationMutation(
+                        id: explicitMutationId ?? UUID(),
+                        syncEpoch: incomingEpoch,
+                        clearGeneration: incomingGeneration,
+                        payload: .titleUpdate(conversationId: conversationId, title: title)
+                    )
+
+                default:
+                    return nil
+                }
+            }
+
+            private func acceptsConversationMutation(
+                _ mutation: WatchConversationMutation
+            ) -> Bool {
                 guard WatchConversationSyncFence.acceptsMutation(
-                    incomingEpoch: incomingEpoch,
-                    incomingGeneration: incomingGeneration,
+                    incomingEpoch: mutation.syncEpoch,
+                    incomingGeneration: mutation.clearGeneration,
                     currentEpoch: conversationSyncEpoch,
                     currentGeneration: conversationClearGeneration,
                     pendingClearCount: pendingConversationClearCount
@@ -647,9 +940,9 @@
                         level: .info,
                         message: "Ignoring fenced or stale Watch conversation mutation",
                         metadata: [
-                            "incomingEpoch": incomingEpoch?.uuidString ?? "legacy",
+                            "incomingEpoch": mutation.syncEpoch?.uuidString ?? "legacy",
                             "currentEpoch": conversationSyncEpoch.uuidString,
-                            "incomingGeneration": incomingGeneration.map(String.init) ?? "legacy",
+                            "incomingGeneration": mutation.clearGeneration.map(String.init) ?? "legacy",
                             "currentGeneration": String(conversationClearGeneration),
                             "pendingClears": String(pendingConversationClearCount),
                         ]
@@ -659,84 +952,14 @@
                 return true
             }
 
-            @MainActor
-            private func handleReceivedMessage(_ message: [String: Any]) {
+            private func handleNonMutationMessage(_ message: [String: Any]) {
                 guard let type = message[WatchMessageKeys.type] as? String else { return }
-                if isConversationMutationType(type),
-                   !conversationHistoryIsLoaded || pendingConversationClearCount > 0
-                {
-                    pendingConversationMutationMessages.append(message)
-                    DiagnosticsLogger.log(
-                        .watchConnectivity,
-                        level: .info,
-                        message: "Queued Watch conversation mutation behind synchronization fence",
-                        metadata: [
-                            "type": type,
-                            "historyLoaded": String(conversationHistoryIsLoaded),
-                            "pendingClears": String(pendingConversationClearCount),
-                        ]
-                    )
-                    return
-                }
-
                 switch type {
-                case WatchMessageKeys.typeNewMessage:
-                    guard acceptsConversationMutation(message) else { return }
-                    // Handle new message from Watch
-                    guard let messageData = message[WatchMessageKeys.newMessage] as? Data,
-                          let conversationIdString = message[WatchMessageKeys.conversationId] as? String,
-                          let conversationId = UUID(uuidString: conversationIdString)
-                    else {
-                        return
-                    }
-
-                    do {
-                        let watchMessage = try JSONDecoder().decode(WatchMessage.self, from: messageData)
-                        handleNewMessage(from: watchMessage, conversationId: conversationId)
-                    } catch {
-                        DiagnosticsLogger.log(
-                            .watchConnectivity,
-                            level: .error,
-                            message: "❌ Failed to decode message from Watch",
-                            metadata: ["error": error.localizedDescription]
-                        )
-                    }
-
-                case WatchMessageKeys.typeNewConversation:
-                    guard acceptsConversationMutation(message) else { return }
-                    // Handle new conversation created on Watch
-                    guard let conversationData = message[WatchMessageKeys.conversation] as? Data else {
-                        return
-                    }
-
-                    do {
-                        let watchConversation = try JSONDecoder().decode(WatchConversation.self, from: conversationData)
-                        handleNewConversation(watchConversation)
-                    } catch {
-                        DiagnosticsLogger.log(
-                            .watchConnectivity,
-                            level: .error,
-                            message: "❌ Failed to decode conversation from Watch",
-                            metadata: ["error": error.localizedDescription]
-                        )
-                    }
-
                 case WatchMessageKeys.typeRequestSync:
                     // Watch requested a sync
                     if let conversations = conversationManager?.conversations {
                         syncConversationsToWatch(conversations)
                     }
-
-                case WatchMessageKeys.typeTitleUpdate:
-                    guard acceptsConversationMutation(message) else { return }
-                    // Handle title update from Watch
-                    guard let conversationIdString = message[WatchMessageKeys.conversationId] as? String,
-                          let conversationId = UUID(uuidString: conversationIdString),
-                          let newTitle = message[WatchMessageKeys.title] as? String
-                    else {
-                        return
-                    }
-                    handleTitleUpdate(conversationId: conversationId, newTitle: newTitle)
 
                 default:
                     DiagnosticsLogger.log(
@@ -748,18 +971,88 @@
                 }
             }
 
-            private func isConversationMutationType(_ type: String) -> Bool {
-                type == WatchMessageKeys.typeNewMessage
-                    || type == WatchMessageKeys.typeNewConversation
-                    || type == WatchMessageKeys.typeTitleUpdate
+            private func replayPendingConversationMutationsIfPossible() {
+                guard conversationHistoryIsLoaded,
+                      pendingConversationClearCount == 0,
+                      mutationReplayTask == nil
+                else {
+                    return
+                }
+
+                mutationReplayTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let completedReplay = await self.replayPendingConversationMutations()
+                    self.mutationReplayTask = nil
+                    guard completedReplay,
+                          self.conversationHistoryIsLoaded,
+                          self.pendingConversationClearCount == 0,
+                          let remainingMutations = try? self.mutationInbox.load(),
+                          !remainingMutations.isEmpty
+                    else {
+                        return
+                    }
+                    self.replayPendingConversationMutationsIfPossible()
+                }
             }
 
-            private func replayPendingConversationMutationsIfPossible() {
-                guard conversationHistoryIsLoaded, pendingConversationClearCount == 0 else { return }
-                let queuedMutations = pendingConversationMutationMessages
-                pendingConversationMutationMessages.removeAll(keepingCapacity: true)
-                for message in queuedMutations {
-                    handleReceivedMessage(message)
+            private func replayPendingConversationMutations() async -> Bool {
+                let mutations: [WatchConversationMutation]
+                do {
+                    mutations = try mutationInbox.load()
+                } catch {
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "Failed to load queued Watch conversation mutations",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                    return false
+                }
+
+                for mutation in mutations {
+                    guard conversationHistoryIsLoaded, pendingConversationClearCount == 0 else {
+                        return false
+                    }
+
+                    if acceptsConversationMutation(mutation) {
+                        guard await applyConversationMutation(mutation) else { return false }
+                        guard conversationHistoryIsLoaded,
+                              pendingConversationClearCount == 0,
+                              mutation.clearGeneration == nil
+                              || mutation.clearGeneration == conversationClearGeneration
+                        else {
+                            return false
+                        }
+                    }
+
+                    do {
+                        try mutationInbox.remove(id: mutation.id)
+                    } catch {
+                        DiagnosticsLogger.log(
+                            .watchConnectivity,
+                            level: .error,
+                            message: "Failed to acknowledge queued Watch conversation mutation",
+                            metadata: [
+                                "mutationId": mutation.id.uuidString,
+                                "error": error.localizedDescription,
+                            ]
+                        )
+                        return false
+                    }
+                }
+                return true
+            }
+
+            private func applyConversationMutation(
+                _ mutation: WatchConversationMutation
+            ) async -> Bool {
+                switch mutation.payload {
+                case let .newMessage(message, conversationId):
+                    await handleNewMessage(from: message, conversationId: conversationId)
+                case let .newConversation(conversation):
+                    await handleNewConversation(conversation)
+                case let .titleUpdate(conversationId, title):
+                    await handleTitleUpdate(conversationId: conversationId, newTitle: title)
                 }
             }
         }
@@ -783,8 +1076,16 @@
 
             private var session: WCSession?
             private var conversationStore: WatchConversationStore?
-            private var conversationSyncEpoch = WatchSyncGenerationStore.loadEpoch()
-            private var conversationClearGeneration = WatchSyncGenerationStore.loadGeneration()
+            private let syncStateStore: WatchConversationSyncStateStore
+            private var conversationSyncState: WatchConversationSyncState
+
+            private var conversationSyncEpoch: UUID? {
+                conversationSyncState.identity.epoch
+            }
+
+            private var conversationClearGeneration: UInt64 {
+                conversationSyncState.identity.generation
+            }
 
             var currentConversationSyncIdentity: WatchConversationSyncIdentity {
                 WatchConversationSyncIdentity(
@@ -802,6 +1103,8 @@
             }
 
             override private init() {
+                syncStateStore = WatchSyncPersistence.stateStore
+                conversationSyncState = WatchSyncPersistence.loadState(creatingPhoneEpoch: false)
                 super.init()
                 setupSession()
             }
@@ -885,6 +1188,7 @@
                     let messageData = try JSONEncoder().encode(watchMessage)
                     var message: [String: Any] = [
                         WatchMessageKeys.type: WatchMessageKeys.typeNewMessage,
+                        WatchMessageKeys.mutationId: UUID().uuidString,
                         WatchMessageKeys.newMessage: messageData,
                         WatchMessageKeys.conversationId: conversationId.uuidString,
                     ]
@@ -931,6 +1235,7 @@
                     let conversationData = try JSONEncoder().encode(conversation)
                     var message: [String: Any] = [
                         WatchMessageKeys.type: WatchMessageKeys.typeNewConversation,
+                        WatchMessageKeys.mutationId: UUID().uuidString,
                         WatchMessageKeys.conversation: conversationData,
                     ]
                     guard appendConversationSyncIdentity(to: &message) else {
@@ -974,6 +1279,7 @@
 
                 var message: [String: Any] = [
                     WatchMessageKeys.type: WatchMessageKeys.typeTitleUpdate,
+                    WatchMessageKeys.mutationId: UUID().uuidString,
                     WatchMessageKeys.conversationId: conversationId.uuidString,
                     WatchMessageKeys.title: newTitle,
                 ]
@@ -1020,10 +1326,10 @@
 
             /// Process conversations data from iPhone context
             private func processConversationsFromContext(_ context: [String: Any]) {
-                let incomingEpoch = WatchSyncGenerationStore.epoch(
+                let incomingEpoch = WatchSyncPersistence.epoch(
                     from: context[WatchContextKeys.conversationSyncEpoch]
                 )
-                let incomingGeneration = WatchSyncGenerationStore.generation(
+                let incomingGeneration = WatchSyncPersistence.generation(
                     from: context[WatchContextKeys.conversationClearGeneration]
                 )
                 guard WatchConversationSyncFence.acceptsContext(
@@ -1061,16 +1367,18 @@
                     if discardsLocalOnlyConversations {
                         AIService.shared.cancelCurrentRequest()
                     }
-                    if let incomingEpoch, let incomingGeneration {
-                        conversationSyncEpoch = incomingEpoch
-                        conversationClearGeneration = incomingGeneration
-                        WatchSyncGenerationStore.saveEpoch(incomingEpoch)
-                        WatchSyncGenerationStore.saveGeneration(incomingGeneration)
-                    }
                     conversationStore.updateConversations(
                         watchConversations,
                         discardingLocalOnlyConversations: discardsLocalOnlyConversations
                     )
+                    if let incomingEpoch, let incomingGeneration {
+                        updateConversationSyncIdentity(
+                            WatchConversationSyncIdentity(
+                                epoch: incomingEpoch,
+                                generation: incomingGeneration
+                            )
+                        )
+                    }
 
                     DiagnosticsLogger.log(
                         .watchConnectivity,
@@ -1082,6 +1390,26 @@
                         .watchConnectivity,
                         level: .error,
                         message: "❌ Failed to decode conversations from iPhone",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
+            }
+
+            private func updateConversationSyncIdentity(
+                _ identity: WatchConversationSyncIdentity
+            ) {
+                do {
+                    conversationSyncState = try syncStateStore.update(
+                        initialState: conversationSyncState
+                    ) { state in
+                        state.identity = identity
+                    }
+                } catch {
+                    conversationSyncState.identity = identity
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "Failed to persist Watch synchronization identity",
                         metadata: ["error": error.localizedDescription]
                     )
                 }

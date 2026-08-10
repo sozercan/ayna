@@ -520,9 +520,15 @@ struct ConversationPersistenceCoordinatorTests {
         var recreation = original
         recreation.title = "Should not survive"
         await coordinator.enqueueSave(recreation, allowsRecreation: true)
+        let firstDeleteGeneration = await coordinator.deletionGeneration(for: conversationId)
         let secondDelete = Task { try await coordinator.delete(conversationId) }
+        while await coordinator.deletionGeneration(for: conversationId) == firstDeleteGeneration {
+            await Task.yield()
+        }
 
-        try await firstDelete.value
+        await #expect(throws: CancellationError.self) {
+            try await firstDelete.value
+        }
         try await secondDelete.value
         await coordinator.flushPendingSaves()
 
@@ -587,12 +593,18 @@ struct ConversationPersistenceCoordinatorTests {
         var recreation = original
         recreation.title = "Queued recreation"
         await coordinator.enqueueSave(recreation, allowsRecreation: true)
+        let firstDeleteGeneration = await coordinator.deletionGeneration(for: conversationId)
         let secondDelete = Task {
             try await coordinator.delete(conversationId)
         }
+        while await coordinator.deletionGeneration(for: conversationId) == firstDeleteGeneration {
+            await Task.yield()
+        }
 
         await deleteGate.releaseFirstWithSuccess()
-        try await firstDelete.value
+        await #expect(throws: CancellationError.self) {
+            try await firstDelete.value
+        }
         await #expect(throws: CocoaError.self) {
             try await secondDelete.value
         }

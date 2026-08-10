@@ -457,6 +457,57 @@ extension AIServiceGlobalStateTests {
             #expect(replacementProvider.isCancelled)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `whitespace equivalent multi model names share one completing child`() async throws {
+            let factory = TerminalAnthropicProviderFactory()
+            let service = AIService(
+                urlSession: URLSession(configuration: .ephemeral),
+                anthropicProviderFactory: { _ in
+                    factory.makeProvider()
+                }
+            )
+            let model = "claude-normalized-multi-model"
+            service.customModels = [model]
+            service.selectedModel = model
+            service.provider = .anthropic
+            service.modelProviders[model] = .anthropic
+            service.modelAPIKeys[model] = "sk-ant-unit-test"
+            let completedModels = LockedStringSet()
+            let allCompleteCounter = TerminalCallbackCounter()
+
+            service.sendToMultipleModels(
+                messages: [Message(role: .user, content: "Compare")],
+                models: [model, "  \(model)  ", "\n\(model)\t"],
+                requestOwnerID: UUID(),
+                onChunk: { _, _ in },
+                onModelComplete: { completedModels.insert($0) },
+                onAllComplete: { allCompleteCounter.increment() },
+                onError: { _, error in
+                    if !(error is CancellationError) {
+                        Issue.record("Unexpected multi-model error: \(error)")
+                    }
+                }
+            )
+            for _ in 0 ..< 1000 where factory.providers.isEmpty {
+                await Task.yield()
+            }
+            let provider = try #require(factory.providers.first)
+
+            provider.complete()
+            for _ in 0 ..< 1000
+                where factory.providers.count == 1 && allCompleteCounter.value == 0
+            {
+                await Task.yield()
+            }
+
+            #expect(factory.providers.count == 1)
+            #expect(completedModels.value == [model])
+            #expect(allCompleteCounter.value == 1)
+            if allCompleteCounter.value == 0 {
+                service.cancelCurrentRequest()
+            }
+        }
+
         #if !os(watchOS)
             @Test
             func `apple Intelligence ephemeral requests use distinct session keys`() {
@@ -479,6 +530,57 @@ extension AIServiceGlobalStateTests {
 
                 #expect(firstEphemeralKey != secondEphemeralKey)
                 #expect(persistentKey == conversationId.uuidString)
+            }
+
+            @available(macOS 26.0, iOS 26.0, *)
+            @Test(.timeLimit(.minutes(1)))
+            func `replaced Apple Intelligence request suppresses stale streaming chunks`() async throws {
+                let appleService = ControllableAppleIntelligenceService()
+                let service = AIService(
+                    urlSession: URLSession(configuration: .ephemeral),
+                    appleIntelligenceService: appleService
+                )
+                let model = "apple-intelligence-ownership"
+                service.customModels = [model]
+                service.selectedModel = model
+                service.modelProviders[model] = .appleIntelligence
+                let receivedText = LockedStringAccumulator()
+                let replacementComplete = TestCallbackWaiter()
+
+                service.sendMessage(
+                    messages: [Message(role: .user, content: "Original")],
+                    model: model,
+                    stream: true,
+                    requestOwnerID: UUID(),
+                    onChunk: { receivedText.append($0) },
+                    onComplete: {},
+                    onError: { _ in }
+                )
+                await appleService.waitForRequestCount(1)
+                try #require(appleService.requestCount == 1)
+
+                service.sendMessage(
+                    messages: [Message(role: .user, content: "Replacement")],
+                    model: model,
+                    stream: true,
+                    requestOwnerID: UUID(),
+                    onChunk: { receivedText.append($0) },
+                    onComplete: { replacementComplete.signal() },
+                    onError: { error in
+                        if !(error is CancellationError) {
+                            Issue.record("Unexpected replacement error: \(error)")
+                        }
+                    }
+                )
+                await appleService.waitForRequestCount(2)
+                try #require(appleService.requestCount == 2)
+
+                appleService.emitChunk("stale", forRequestAt: 0)
+                appleService.emitChunk("current", forRequestAt: 1)
+                appleService.completeRequest(at: 1)
+                await replacementComplete.wait()
+
+                #expect(receivedText.value == "current")
             }
         #endif
 
@@ -748,6 +850,65 @@ private final class TerminalAnthropicProvider: AIProviderProtocol, @unchecked Se
         callbacks?.onToolCallRequested?("call-stale", "web_search", ["query": "stale"])
     }
 }
+
+#if !os(watchOS)
+    @available(macOS 26.0, iOS 26.0, *)
+    @MainActor
+    private final class ControllableAppleIntelligenceService: AppleIntelligenceServicing {
+        private struct Request {
+            let onChunk: (String) -> Void
+            let onComplete: () -> Void
+        }
+
+        let isAvailable = true
+        private var requests: [Request] = []
+
+        var requestCount: Int {
+            requests.count
+        }
+
+        func availabilityDescription() -> String {
+            "Available for tests"
+        }
+
+        func clearSession(conversationId _: String) {}
+
+        func streamResponse(
+            conversationId _: String,
+            prompt _: String,
+            systemInstructions _: String,
+            temperature _: Double,
+            onChunk: @escaping (String) -> Void,
+            onComplete: @escaping () -> Void,
+            onError _: @escaping (Error) -> Void
+        ) async {
+            requests.append(Request(onChunk: onChunk, onComplete: onComplete))
+        }
+
+        func generateResponse(
+            conversationId _: String,
+            prompt _: String,
+            systemInstructions _: String,
+            temperature _: Double,
+            onComplete _: @escaping (String) -> Void,
+            onError _: @escaping (Error) -> Void
+        ) async {}
+
+        func waitForRequestCount(_ expectedCount: Int) async {
+            for _ in 0 ..< 1000 where requests.count < expectedCount {
+                await Task.yield()
+            }
+        }
+
+        func emitChunk(_ chunk: String, forRequestAt index: Int) {
+            requests[index].onChunk(chunk)
+        }
+
+        func completeRequest(at index: Int) {
+            requests[index].onComplete()
+        }
+    }
+#endif
 
 private final class TerminalCallbackCounter: @unchecked Sendable {
     private let lock = NSLock()

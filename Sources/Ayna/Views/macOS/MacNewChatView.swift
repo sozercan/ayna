@@ -77,31 +77,11 @@
         private var visibleMessages: [Message] {
             guard let conversation = currentConversation else { return [] }
             return conversation.messages.filter { message in
-                if message.role == .system {
-                    return false
-                }
-
-                if message.role == .tool {
-                    if message.toolCalls?.first?.toolName == "web_search" {
-                        return false
-                    }
-                    return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                }
-
-                if message.role == .assistant && message.content.isEmpty && message.imageData == nil {
-                    // Hide assistant messages that only have tool calls (intermediate steps)
-                    // These are placeholders that triggered tool execution but have no response content
-                    if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                        return false
-                    }
-                    // Always show assistant messages in a response group (multi-model mode)
-                    // They need to remain visible even after generation to show failed/empty states
-                    if message.responseGroupId != nil {
-                        return true
-                    }
-                    return message.id == conversation.messages.last?.id && isGenerating
-                }
-                return !message.content.isEmpty || message.imageData != nil || message.mediaType == .image
+                MacChatMessagePresentation.isVisible(
+                    message,
+                    lastMessageID: conversation.messages.last?.id,
+                    isGenerating: isGenerating
+                )
             }
         }
 
@@ -756,14 +736,13 @@
                let conversationId = currentConversationId,
                let conversationIndex = conversationManager.conversations.firstIndex(where: {
                    $0.id == conversationId
-               }),
-               let lastMessage = conversationManager.conversations[conversationIndex].messages.last,
-               lastMessage.role == .assistant,
-               lastMessage.content.isEmpty,
-               lastMessage.mediaType != .image,
-               lastMessage.toolCalls?.isEmpty != false
+               })
             {
-                conversationManager.conversations[conversationIndex].messages.removeLast()
+                if let lastMessage = conversationManager.conversations[conversationIndex].messages.last,
+                   MacChatMessagePresentation.isRemovableAssistantPlaceholder(lastMessage)
+                {
+                    conversationManager.conversations[conversationIndex].messages.removeLast()
+                }
                 conversationManager.saveImmediately(conversationManager.conversations[conversationIndex])
             }
             cancelActiveImageRequests()

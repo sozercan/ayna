@@ -5,10 +5,38 @@
 //  Created on 11/29/25.
 //
 
+import Foundation
+
+struct WatchChatRequestOwnership {
+    private(set) var activeRequestID: UUID?
+
+    mutating func begin() -> UUID {
+        let requestID = UUID()
+        activeRequestID = requestID
+        return requestID
+    }
+
+    func owns(_ requestID: UUID) -> Bool {
+        activeRequestID == requestID
+    }
+
+    @discardableResult
+    mutating func finish(ifOwnedBy requestID: UUID) -> Bool {
+        guard owns(requestID) else { return false }
+        activeRequestID = nil
+        return true
+    }
+
+    @discardableResult
+    mutating func invalidate() -> UUID? {
+        defer { activeRequestID = nil }
+        return activeRequestID
+    }
+}
+
 #if os(watchOS)
 
     import Combine
-    import Foundation
     import os
     import SwiftUI
     import WatchKit
@@ -29,6 +57,7 @@
         private let aiService: AIService
         private var currentConversationId: UUID?
         private var toolCallDepth = 0
+        private var requestOwnership = WatchChatRequestOwnership()
 
         /// Maximum tool chain depth for watchOS.
         /// Intentionally low (5) due to watchOS resource constraints (memory, battery, network).
@@ -52,7 +81,10 @@
 
         /// Set the current conversation being viewed
         func setConversation(_ id: UUID) {
+            requestOwnership.invalidate()
             currentConversationId = id
+            isLoading = false
+            isStreaming = false
             errorMessage = nil
             streamingContent = ""
             currentToolName = nil
@@ -66,7 +98,8 @@
             WKInterfaceDevice.current().play(type)
         }
 
-        private func resetAfterConversationSyncInvalidation() {
+        private func resetAfterConversationSyncInvalidation(ifOwnedBy requestID: UUID) {
+            guard requestOwnership.finish(ifOwnedBy: requestID) else { return }
             isLoading = false
             isStreaming = false
             currentToolName = nil
@@ -92,6 +125,7 @@
             }
 
             let syncIdentity = connectivityService.currentConversationSyncIdentity
+            let requestID = requestOwnership.begin()
 
             // Clear any previous error
             errorMessage = nil
@@ -134,6 +168,7 @@
 
             // Get updated conversation with messages
             guard let updatedConversation = conversationStore.conversation(for: conversationId) else {
+                requestOwnership.finish(ifOwnedBy: requestID)
                 isLoading = false
                 isStreaming = false
                 errorMessage = "Failed to update conversation"
@@ -160,6 +195,7 @@
                 if let fallback = usableModels.first {
                     model = fallback
                 } else {
+                    requestOwnership.finish(ifOwnedBy: requestID)
                     isLoading = false
                     isStreaming = false
                     errorMessage = "No compatible models available. Please add a model on iPhone."
@@ -170,6 +206,7 @@
 
             // Check if the model is configured (has API key or doesn't need one like Apple Intelligence)
             guard aiService.isModelConfigured(model) else {
+                requestOwnership.finish(ifOwnedBy: requestID)
                 isLoading = false
                 isStreaming = false
                 errorMessage = "API key not configured. Please configure on iPhone."
@@ -187,7 +224,8 @@
                 tools: tools,
                 isFirstMessage: isFirstMessage,
                 userContent: userContent,
-                syncIdentity: syncIdentity
+                syncIdentity: syncIdentity,
+                requestID: requestID
             )
         }
 
@@ -199,10 +237,12 @@
             tools: [[String: Any]]?,
             isFirstMessage: Bool,
             userContent: String,
-            syncIdentity: WatchConversationSyncIdentity
+            syncIdentity: WatchConversationSyncIdentity,
+            requestID: UUID
         ) {
+            guard requestOwnership.owns(requestID) else { return }
             guard connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                resetAfterConversationSyncInvalidation()
+                resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                 return
             }
             nonisolated(unsafe) let tools = tools
@@ -212,11 +252,13 @@
                 stream: true,
                 tools: tools,
                 conversationId: conversationId,
+                requestOwnerID: requestID,
                 onChunk: { [weak self] chunk in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.requestOwnership.owns(requestID) else { return }
                         guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                            self.resetAfterConversationSyncInvalidation()
+                            self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                             return
                         }
 
@@ -247,8 +289,9 @@
                 onComplete: { [weak self] in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.requestOwnership.owns(requestID) else { return }
                         guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                            self.resetAfterConversationSyncInvalidation()
+                            self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                             return
                         }
 
@@ -274,6 +317,7 @@
                         self.conversationStore.persistCurrentState()
                         self.pendingContent = ""
 
+                        guard self.requestOwnership.finish(ifOwnedBy: requestID) else { return }
                         self.isLoading = false
                         self.isStreaming = false
                         self.toolCallDepth = 0
@@ -312,10 +356,13 @@
                 onError: { [weak self] error in
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.requestOwnership.owns(requestID) else { return }
                         guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                            self.resetAfterConversationSyncInvalidation()
+                            self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                             return
                         }
+
+                        guard self.requestOwnership.finish(ifOwnedBy: requestID) else { return }
 
                         // Handle cancellation silently - don't show error UI for user-initiated cancels
                         if error is CancellationError {
@@ -380,8 +427,9 @@
                     let toolNameCopy = toolName
                     Task { @MainActor in
                         guard let self else { return }
+                        guard self.requestOwnership.owns(requestID) else { return }
                         guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                            self.resetAfterConversationSyncInvalidation()
+                            self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                             return
                         }
                         // Set currentToolName first thing to prevent race condition with onComplete
@@ -396,6 +444,7 @@
                                 level: .error,
                                 message: "⌚ Max tool call depth reached"
                             )
+                            guard self.requestOwnership.finish(ifOwnedBy: requestID) else { return }
                             self.isLoading = false
                             self.isStreaming = false
                             self.currentToolName = nil
@@ -417,8 +466,9 @@
 
                         // Execute the tool
                         Task { @MainActor in
+                            guard self.requestOwnership.owns(requestID) else { return }
                             guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                                self.resetAfterConversationSyncInvalidation()
+                                self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                                 return
                             }
                             let result: String = if self.aiService.isBuiltInTool(toolName) {
@@ -427,8 +477,9 @@
                                 "Tool not available on Apple Watch"
                             }
 
+                            guard self.requestOwnership.owns(requestID) else { return }
                             guard self.connectivityService.matchesConversationSyncIdentity(syncIdentity) else {
-                                self.resetAfterConversationSyncInvalidation()
+                                self.resetAfterConversationSyncInvalidation(ifOwnedBy: requestID)
                                 return
                             }
 
@@ -452,6 +503,7 @@
 
                             // Get updated messages
                             guard let updatedConv = self.conversationStore.conversation(for: conversationId) else {
+                                guard self.requestOwnership.finish(ifOwnedBy: requestID) else { return }
                                 self.isLoading = false
                                 self.isStreaming = false
                                 self.currentToolName = nil
@@ -471,7 +523,8 @@
                                 tools: tools,
                                 isFirstMessage: false,
                                 userContent: userContent,
-                                syncIdentity: syncIdentity
+                                syncIdentity: syncIdentity,
+                                requestID: requestID
                             )
                         }
                     }
@@ -482,7 +535,21 @@
 
         /// Cancel the current request
         func cancelRequest() {
-            aiService.cancelCurrentRequest()
+            let requestID = requestOwnership.invalidate()
+            if !pendingContent.isEmpty, let conversationId = currentConversationId {
+                streamingContent = pendingContent
+                conversationStore.updateLastMessage(
+                    in: conversationId,
+                    content: streamingContent
+                )
+            }
+            if requestID != nil {
+                conversationStore.persistCurrentState()
+            }
+            pendingContent = ""
+            if let requestID {
+                aiService.cancelCurrentRequest(ifOwnedBy: requestID)
+            }
             isLoading = false
             isStreaming = false
             currentToolName = nil
@@ -530,7 +597,7 @@
             }
 
             let conversation = conversationStore.createConversation(model: model)
-            currentConversationId = conversation.id
+            setConversation(conversation.id)
             playHaptic(.click)
             return conversation.id
         }

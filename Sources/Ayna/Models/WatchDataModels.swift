@@ -8,9 +8,76 @@
 
 import Foundation
 
-struct WatchConversationSyncIdentity: Equatable, Sendable {
+struct WatchConversationSyncIdentity: Codable, Equatable, Sendable {
     let epoch: UUID?
     let generation: UInt64
+}
+
+struct WatchConversationClearTransaction: Codable, Equatable, Identifiable, Sendable {
+    let id: UUID
+    let baselinePrivacyMarkerToken: String?
+
+    init(id: UUID = UUID(), baselinePrivacyMarkerToken: String?) {
+        self.id = id
+        self.baselinePrivacyMarkerToken = baselinePrivacyMarkerToken
+    }
+
+    private static let notificationUserInfoKey = "watchConversationClearTransaction"
+
+    var notificationUserInfo: [AnyHashable: Any] {
+        [Self.notificationUserInfoKey: self]
+    }
+
+    init?(notification: Notification) {
+        guard let transaction = notification.userInfo?[Self.notificationUserInfoKey]
+            as? WatchConversationClearTransaction
+        else {
+            return nil
+        }
+        self = transaction
+    }
+}
+
+struct WatchConversationSyncState: Codable, Equatable, Sendable {
+    var identity: WatchConversationSyncIdentity
+    var pendingClears: [WatchConversationClearTransaction]
+
+    init(
+        identity: WatchConversationSyncIdentity = .init(epoch: nil, generation: 0),
+        pendingClears: [WatchConversationClearTransaction] = []
+    ) {
+        self.identity = identity
+        self.pendingClears = pendingClears
+    }
+
+    var pendingClearCount: Int {
+        pendingClears.count
+    }
+
+    @discardableResult
+    mutating func beginClear(_ transaction: WatchConversationClearTransaction) -> Bool {
+        guard !pendingClears.contains(where: { $0.id == transaction.id }) else { return false }
+        pendingClears.append(transaction)
+        return true
+    }
+
+    @discardableResult
+    mutating func commitClear(id: UUID) -> Bool {
+        guard pendingClears.contains(where: { $0.id == id }) else { return false }
+        pendingClears.removeAll { $0.id == id }
+        identity = WatchConversationSyncIdentity(
+            epoch: identity.epoch,
+            generation: identity.generation &+ 1
+        )
+        return true
+    }
+
+    @discardableResult
+    mutating func rollBackClear(id: UUID) -> Bool {
+        let previousCount = pendingClears.count
+        pendingClears.removeAll { $0.id == id }
+        return pendingClears.count != previousCount
+    }
 }
 
 enum WatchConversationSyncFence {
@@ -59,7 +126,7 @@ enum WatchConversationSyncFence {
 }
 
 /// Lightweight conversation model for Watch sync (strips heavy data like images and attachments)
-struct WatchConversation: Codable, Identifiable {
+struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var title: String
     var messages: [WatchMessage]
@@ -91,7 +158,7 @@ struct WatchConversation: Codable, Identifiable {
 }
 
 /// Lightweight message model for Watch sync (no images or attachments)
-struct WatchMessage: Codable, Identifiable {
+struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var role: String
     var content: String
@@ -122,5 +189,30 @@ struct WatchMessage: Codable, Identifiable {
             timestamp: timestamp,
             model: model
         )
+    }
+}
+
+struct WatchConversationMutation: Codable, Equatable, Identifiable, Sendable {
+    enum Payload: Codable, Equatable, Sendable {
+        case newMessage(message: WatchMessage, conversationId: UUID)
+        case newConversation(WatchConversation)
+        case titleUpdate(conversationId: UUID, title: String)
+    }
+
+    let id: UUID
+    let syncEpoch: UUID?
+    let clearGeneration: UInt64?
+    let payload: Payload
+
+    init(
+        id: UUID = UUID(),
+        syncEpoch: UUID?,
+        clearGeneration: UInt64?,
+        payload: Payload
+    ) {
+        self.id = id
+        self.syncEpoch = syncEpoch
+        self.clearGeneration = clearGeneration
+        self.payload = payload
     }
 }

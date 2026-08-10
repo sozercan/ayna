@@ -126,6 +126,8 @@ final class EncryptedConversationStore: Sendable {
     private let legacyFileURL: URL
     private let keyIdentifier: String
     private let keychain: KeychainStoring
+    private let saveCommitOperation: @Sendable (UUID) async throws -> Void
+    private let metadataRemovalOperation: @Sendable (URL) throws -> Void
     private let backupRemovalOperation: @Sendable (URL) throws -> Void
     private let clearArtifactDirectoryContentsOperation: @Sendable (URL) throws -> [URL]
     private let moveOperation: @Sendable (URL, URL) throws -> Void
@@ -970,6 +972,10 @@ final class EncryptedConversationStore: Sendable {
         legacyFileURL: URL? = nil,
         keyIdentifier: String = "conversation_encryption_key",
         keychain: KeychainStoring = KeychainStorage.standard,
+        saveCommitOperation: @escaping @Sendable (UUID) async throws -> Void = { _ in },
+        metadataRemovalOperation: @escaping @Sendable (URL) throws -> Void = {
+            try FileManager.default.removeItem(at: $0)
+        },
         backupRemovalOperation: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.removeItem(at: $0)
         },
@@ -1023,6 +1029,8 @@ final class EncryptedConversationStore: Sendable {
         self.legacyFileURL = legacyFileURL ?? baseDirectory.appendingPathComponent("conversations.enc")
         self.keyIdentifier = keyIdentifier
         self.keychain = keychain
+        self.saveCommitOperation = saveCommitOperation
+        self.metadataRemovalOperation = metadataRemovalOperation
         self.backupRemovalOperation = backupRemovalOperation
         self.clearArtifactDirectoryContentsOperation = clearArtifactDirectoryContentsOperation
         self.moveOperation = moveOperation
@@ -1874,6 +1882,7 @@ final class EncryptedConversationStore: Sendable {
         let sharedMutationState = sharedMutationState
         let searchIndexCache = searchIndexCache
         let operationGenerations = operationGenerations
+        let saveCommitOperation = saveCommitOperation
         let saveGeneration = operationGenerations.currentGeneration(for: conversation.id)
 
         let saveTask = Task.detached(priority: .userInitiated) {
@@ -1881,53 +1890,56 @@ final class EncryptedConversationStore: Sendable {
             let keyData = try keyCache.keyData()
             let preparedWrite = try Self.prepareWrite(conversation, keyData: keyData)
             try Task.checkCancellation()
-            try Self.withStagedWrite(
+            let stagedWrite = try Self.stage(
                 preparedWrite,
-                stagingDirectory: stagingDirectoryURL
-            ) { stagedWrite in
-                try mutationLock.withLock {
-                    if let unresolvedBackupPaths = sharedMutationState.unresolvedClearBackupPaths {
-                        throw EncryptedStoreError.clearRecoveryRequired(paths: unresolvedBackupPaths)
-                    }
-                    if let scanFailurePaths = sharedMutationState.privacyCleanupMarkerScanFailurePaths {
-                        throw EncryptedStoreError.clearRecoveryRequired(paths: scanFailurePaths)
-                    }
-                    guard operationGenerations.matches(saveGeneration, for: conversation.id) else {
+                in: stagingDirectoryURL
+            )
+            defer { Self.cleanup(stagedWrite) }
+            try Task.checkCancellation()
+            try await saveCommitOperation(conversation.id)
+            try Task.checkCancellation()
+            try mutationLock.withLock {
+                if let unresolvedBackupPaths = sharedMutationState.unresolvedClearBackupPaths {
+                    throw EncryptedStoreError.clearRecoveryRequired(paths: unresolvedBackupPaths)
+                }
+                if let scanFailurePaths = sharedMutationState.privacyCleanupMarkerScanFailurePaths {
+                    throw EncryptedStoreError.clearRecoveryRequired(paths: scanFailurePaths)
+                }
+                guard operationGenerations.matches(saveGeneration, for: conversation.id) else {
+                    DiagnosticsLogger.log(
+                        .encryptedStore,
+                        level: .info,
+                        message: "Skipped save for deleted conversation",
+                        metadata: ["id": conversation.id.uuidString]
+                    )
+                    return
+                }
+                let searchIndexURL = Self.searchIndexFileURL(
+                    for: conversation.id,
+                    in: searchIndexDirectoryURL
+                )
+                if FileManager.default.fileExists(atPath: searchIndexURL.path) {
+                    do {
+                        try Data().write(to: searchIndexURL, options: .atomic)
+                        try? FileManager.default.removeItem(at: searchIndexURL)
+                    } catch {
                         DiagnosticsLogger.log(
                             .encryptedStore,
-                            level: .info,
-                            message: "Skipped save for deleted conversation",
-                            metadata: ["id": conversation.id.uuidString]
+                            level: .error,
+                            message: "Failed to invalidate stale conversation search index",
+                            metadata: [
+                                "id": conversation.id.uuidString,
+                                "error": error.localizedDescription
+                            ]
                         )
-                        return
                     }
-                    let searchIndexURL = Self.searchIndexFileURL(
-                        for: conversation.id,
-                        in: searchIndexDirectoryURL
-                    )
-                    if FileManager.default.fileExists(atPath: searchIndexURL.path) {
-                        do {
-                            try Data().write(to: searchIndexURL, options: .atomic)
-                            try? FileManager.default.removeItem(at: searchIndexURL)
-                        } catch {
-                            DiagnosticsLogger.log(
-                                .encryptedStore,
-                                level: .error,
-                                message: "Failed to invalidate stale conversation search index",
-                                metadata: [
-                                    "id": conversation.id.uuidString,
-                                    "error": error.localizedDescription
-                                ]
-                            )
-                        }
-                    }
-                    try Self.commit(
-                        stagedWrite,
-                        to: directoryURL,
-                        metadataDirectory: metadataDirectoryURL
-                    )
-                    searchIndexCache.remove(conversation.id)
                 }
+                try Self.commit(
+                    stagedWrite,
+                    to: directoryURL,
+                    metadataDirectory: metadataDirectoryURL
+                )
+                searchIndexCache.remove(conversation.id)
             }
         }
 
@@ -1950,6 +1962,7 @@ final class EncryptedConversationStore: Sendable {
         let directoryURL = directoryURL
         let metadataDirectoryURL = metadataDirectoryURL
         let searchIndexDirectoryURL = searchIndexDirectoryURL
+        let metadataRemovalOperation = metadataRemovalOperation
         let mutationLock = mutationLock
         let sharedMutationState = sharedMutationState
         let searchIndexCache = searchIndexCache
@@ -1982,24 +1995,26 @@ final class EncryptedConversationStore: Sendable {
                     try FileManager.default.removeItem(at: searchIndexURL)
                 }
 
-                for fileURL in try Self.conversationFileURLs(matching: conversationId, in: directoryURL) {
-                    try FileManager.default.removeItem(at: fileURL)
-                }
-                operationGenerations.advanceGeneration(for: conversationId)
-                searchIndexCache.remove(conversationId)
-
                 for metadataURL in try Self.metadataFileURLs(matching: conversationId, in: metadataDirectoryURL) {
                     do {
-                        try FileManager.default.removeItem(at: metadataURL)
+                        try metadataRemovalOperation(metadataURL)
                     } catch {
                         DiagnosticsLogger.log(
                             .encryptedStore,
                             level: .error,
-                            message: "Failed to remove conversation metadata after deletion",
+                            message: "Failed to remove conversation metadata during deletion",
                             metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
                         )
+                        throw error
                     }
                 }
+
+                for fileURL in try Self.conversationFileURLs(matching: conversationId, in: directoryURL) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+
+                operationGenerations.advanceGeneration(for: conversationId)
+                searchIndexCache.remove(conversationId)
             }
         }.value
     }

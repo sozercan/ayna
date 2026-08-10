@@ -547,6 +547,8 @@ final class ConversationSummaryService {
                 throw error
             }
 
+            guard conversationClearGeneration == clearGeneration else { return }
+
             var mergedDigest = resultBox.digest ?? digestAtCleanup
             if preservingCurrentDigest {
                 for summary in digest.summaries {

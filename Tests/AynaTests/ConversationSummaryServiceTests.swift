@@ -128,6 +128,46 @@ struct ConversationSummaryServiceTests {
     }
 
     @Test
+    func `earlier transactional cleanup cannot republish after a newer clear`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let cleanupGate = SummaryTransactionalCleanupGate()
+        let persistenceProbe = SummaryPersistenceProbe()
+        let service = ConversationSummaryService(
+            store: store,
+            summarySaveOperation: { digest in
+                persistenceProbe.save(digest)
+            },
+            summaryTransactionalCleanupOperation: { digest, _ in
+                await cleanupGate.run(returning: digest)
+            }
+        )
+
+        _ = service.invalidateForConversationClear()
+        service.updateSummary(for: TestHelpers.sampleConversation(title: "Stale Transactional Summary"))
+        let firstCleanup = Task { @MainActor in
+            try await service.clearAllSummaries(
+                preservingCurrentDigest: true,
+                completingConversationClear: true,
+                cleanupToken: "first-cleanup"
+            )
+        }
+        await cleanupGate.waitUntilStarted()
+
+        _ = service.invalidateForConversationClear()
+        await cleanupGate.release()
+        try await firstCleanup.value
+
+        #expect(service.summaryCount == 0)
+        #expect(service.formattedForContext() == nil)
+        #expect(persistenceProbe.persistedDigest == nil)
+    }
+
+    @Test
     func `clear waits for an immediate summary save before deleting storage`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = EncryptedMemoryStore(
@@ -612,6 +652,42 @@ private actor ConversationSummaryLoadGate {
     }
 
     func load() async throws -> RecentConversationsDigest {
+        started = true
+        for continuation in startedContinuations {
+            continuation.resume()
+        }
+        startedContinuations.removeAll()
+        if !released {
+            await withCheckedContinuation { continuation in
+                releaseContinuations.append(continuation)
+            }
+        }
+        return digest
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuations.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        for continuation in releaseContinuations {
+            continuation.resume()
+        }
+        releaseContinuations.removeAll()
+    }
+}
+
+private actor SummaryTransactionalCleanupGate {
+    private var started = false
+    private var released = false
+    private var startedContinuations: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+    func run(returning digest: RecentConversationsDigest) async -> RecentConversationsDigest {
         started = true
         for continuation in startedContinuations {
             continuation.resume()

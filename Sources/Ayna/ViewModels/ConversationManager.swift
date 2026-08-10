@@ -52,6 +52,18 @@ private struct AttachmentCleanupPreparation: Sendable {
 final class ConversationManager: ObservableObject {
     private static let searchIndexWarmupLimit = 16
 
+    private actor ImmediateSaveOutcome {
+        private var wasDurablySaved = false
+
+        func markDurablySaved() {
+            wasDurablySaved = true
+        }
+
+        func value() -> Bool {
+            wasDurablySaved
+        }
+    }
+
     @Published var conversations: [Conversation] = []
     @Published private(set) var persistenceErrorMessage: String?
     @Published var selectedConversationId: UUID? {
@@ -121,6 +133,7 @@ final class ConversationManager: ObservableObject {
     private let spotlightBatchIndexOperation: @Sendable ([Conversation], Bool) async throws -> Void
     private let spotlightDeleteOperation: @Sendable (UUID) async throws -> Void
     private let spotlightIndexingEnabled: Bool
+    private let watchConversationClearJournalStore: WatchConversationClearJournalStore?
 
     // Performance: Spotlight indexing debounce (3 seconds per conversation)
     private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
@@ -207,11 +220,22 @@ final class ConversationManager: ObservableObject {
         spotlightCleanupOperation: (@Sendable () async throws -> Void)? = nil,
         spotlightBatchIndexOperation: (@Sendable ([Conversation], Bool) async throws -> Void)? = nil,
         spotlightDeleteOperation: (@Sendable (UUID) async throws -> Void)? = nil,
+        saveOperation: (@Sendable (Conversation) async throws -> Void)? = nil,
         deleteOperation: (@Sendable (UUID) async throws -> Void)? = nil,
-        clearOperation: (@Sendable () throws -> Void)? = nil
+        clearOperation: (@Sendable () throws -> Void)? = nil,
+        watchConversationClearJournalStore: WatchConversationClearJournalStore? = nil
     ) {
         let effectiveStore = store ?? .shared
         self.store = effectiveStore
+        #if os(iOS)
+            self.watchConversationClearJournalStore = watchConversationClearJournalStore
+                ?? WatchConversationClearJournalStore(
+                    fileURL: WatchConversationSyncPersistenceLocations.directoryURL
+                        .appendingPathComponent("conversation-clear-journal.json")
+                )
+        #else
+            self.watchConversationClearJournalStore = watchConversationClearJournalStore
+        #endif
         self.conversationLoader = conversationLoader ?? { conversationId in
             try await effectiveStore.loadConversation(id: conversationId)
         }
@@ -333,6 +357,7 @@ final class ConversationManager: ObservableObject {
         persistenceCoordinator = ConversationPersistenceCoordinator(
             store: effectiveStore,
             debounceDuration: saveDebounceDuration,
+            saveOperation: saveOperation,
             deleteOperation: deleteOperation,
             clearOperation: clearOperation
         )
@@ -456,6 +481,24 @@ final class ConversationManager: ObservableObject {
 
     @discardableResult
     func saveImmediately(_ conversation: Conversation) -> Task<Void, Never> {
+        startImmediateSave(conversation)
+    }
+
+    func saveImmediatelyReportingDurability(
+        _ conversation: Conversation
+    ) -> Task<Bool, Never> {
+        let outcome = ImmediateSaveOutcome()
+        let saveTask = startImmediateSave(conversation, outcome: outcome)
+        return Task { @MainActor in
+            await saveTask.value
+            return await outcome.value()
+        }
+    }
+
+    private func startImmediateSave(
+        _ conversation: Conversation,
+        outcome: ImmediateSaveOutcome? = nil
+    ) -> Task<Void, Never> {
         let isMetadataBackedSnapshot = isMetadataBackedSnapshot(conversation)
         let activeClearTask = clearConversationsTask
         let activeDeletionTask = managerDeletionTasks[conversation.id]
@@ -503,6 +546,15 @@ final class ConversationManager: ObservableObject {
                     conversationToSave,
                     allowsRecreation: effectiveAllowsRecreation
                 )
+                if outcome != nil,
+                   persistenceSequenceById[conversation.id] != persistenceSequence
+                {
+                    await waitForSupersedingImmediatePersistence(
+                        conversationId: conversation.id,
+                        supersededSequence: persistenceSequence
+                    )
+                    return
+                }
                 if persistenceSequenceById[conversation.id] == persistenceSequence {
                     if effectiveAllowsRecreation {
                         persistenceRecreationAuthorizationIds.remove(conversation.id)
@@ -512,6 +564,9 @@ final class ConversationManager: ObservableObject {
                 #if !os(watchOS)
                     indexConversation(conversationToSave)
                 #endif
+                if let outcome {
+                    await outcome.markDurablySaved()
+                }
             } catch {
                 logManager(
                     "❌ Failed to save conversation",
@@ -1188,8 +1243,16 @@ final class ConversationManager: ObservableObject {
         }
         clearConversationsGeneration &+= 1
         let generation = clearConversationsGeneration
+        let watchClearTransaction = WatchConversationClearTransaction(
+            baselinePrivacyMarkerToken: privacyMarkersBeforeClear.summaryCleanupToken
+        )
+        recordWatchConversationClearOutcome(.pending, for: watchClearTransaction)
         let attachmentCleanupFencePreparation = beginAttachmentCleanupFence()
-        NotificationCenter.default.post(name: .conversationHistoryClearStarted, object: self)
+        NotificationCenter.default.post(
+            name: .conversationHistoryClearStarted,
+            object: self,
+            userInfo: watchClearTransaction.notificationUserInfo
+        )
 
         clearFailureNeedsReload = clearFailureNeedsReload || !isLoaded
         let summarySnapshot = conversationSummaryInvalidateOperation()
@@ -1235,9 +1298,11 @@ final class ConversationManager: ObservableObject {
             var clearNeedsRecovery = false
             defer {
                 if !clearCommitted, !clearNeedsRecovery {
+                    recordWatchConversationClearOutcome(.rolledBack, for: watchClearTransaction)
                     NotificationCenter.default.post(
                         name: .conversationHistoryClearRolledBack,
-                        object: self
+                        object: self,
+                        userInfo: watchClearTransaction.notificationUserInfo
                     )
                 }
             }
@@ -1250,7 +1315,12 @@ final class ConversationManager: ObservableObject {
                     attachmentCleanupSnapshot: attachmentCleanupSnapshot
                 )
                 clearCommitted = true
-                NotificationCenter.default.post(name: .conversationHistoryClearCommitted, object: self)
+                recordWatchConversationClearOutcome(.committed, for: watchClearTransaction)
+                NotificationCenter.default.post(
+                    name: .conversationHistoryClearCommitted,
+                    object: self,
+                    userInfo: watchClearTransaction.notificationUserInfo
+                )
                 discardClearRollbackState(for: conversationIds, generation: generation)
                 await completePostClearPrivacyCleanup(
                     attachmentCleanupSnapshot: attachmentCleanupSnapshot,
@@ -1267,7 +1337,12 @@ final class ConversationManager: ObservableObject {
                     attachmentCleanupReleaseOperation()
                 }
                 if clearCommitted {
-                    NotificationCenter.default.post(name: .conversationHistoryClearCommitted, object: self)
+                    recordWatchConversationClearOutcome(.committed, for: watchClearTransaction)
+                    NotificationCenter.default.post(
+                        name: .conversationHistoryClearCommitted,
+                        object: self,
+                        userInfo: watchClearTransaction.notificationUserInfo
+                    )
                     discardClearRollbackState(for: conversationIds, generation: generation)
                     await completePostClearPrivacyCleanup(
                         attachmentCleanupSnapshot: attachmentCleanupSnapshot,
@@ -1359,8 +1434,66 @@ final class ConversationManager: ObservableObject {
         clearConversationsTask = task
     }
 
-    func interruptedConversationClearWasCommitted() throws -> Bool {
-        try !store.pendingPrivacyCleanupMarkerSnapshotThrowing().isEmpty
+    func interruptedConversationClearWasCommitted(
+        _ transaction: WatchConversationClearTransaction
+    ) throws -> Bool {
+        if let outcome = try watchConversationClearJournalStore?.outcome(for: transaction.id) {
+            switch outcome {
+            case .committed:
+                return true
+            case .rolledBack:
+                return false
+            case .pending:
+                break
+            }
+        }
+        let currentMarkers = try store.pendingPrivacyCleanupMarkerSnapshotThrowing()
+        guard let baselineToken = transaction.baselinePrivacyMarkerToken else {
+            // Compatibility for a pending fence migrated from the former count-only record.
+            return !currentMarkers.isEmpty
+        }
+        return currentMarkers.summaryCleanupToken != baselineToken
+    }
+
+    func acknowledgeWatchConversationClear(_ transaction: WatchConversationClearTransaction) {
+        do {
+            try watchConversationClearJournalStore?.remove(transactionId: transaction.id)
+        } catch {
+            logManager(
+                "Failed to acknowledge Watch conversation clear transaction",
+                level: .error,
+                metadata: [
+                    "transactionId": transaction.id.uuidString,
+                    "error": error.localizedDescription,
+                ]
+            )
+        }
+    }
+
+    private func recordWatchConversationClearOutcome(
+        _ outcome: WatchConversationClearOutcome,
+        for transaction: WatchConversationClearTransaction
+    ) {
+        do {
+            if outcome == .pending {
+                try watchConversationClearJournalStore?.recordPending(transaction)
+            } else {
+                try watchConversationClearJournalStore?.recordOutcome(
+                    outcome,
+                    for: transaction.id
+                )
+            }
+        } catch {
+            logManager(
+                "Failed to persist Watch conversation clear transaction",
+                level: .error,
+                metadata: [
+                    "transactionId": transaction.id.uuidString,
+                    "outcome": outcome.rawValue,
+                    "error": error.localizedDescription,
+                ]
+            )
+        }
     }
 
     private func beginAttachmentCleanupFence() -> AttachmentCleanupFencePreparation {

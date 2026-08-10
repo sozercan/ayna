@@ -1916,6 +1916,7 @@
                 models: models, userMessageId: userMessage.id, responseGroupId: responseGroupId,
                 messageIds: &messageIds, placeholderMessages: &placeholderMessages
             )
+            let messageIdsSnapshot = messageIds
             conversationManager.addMultiModelResponse(to: targetConversation, messages: placeholderMessages, responseGroup: responseGroup)
 
             guard let updatedConversation = conversation else {
@@ -1952,7 +1953,7 @@
                         self.processMultiModelChunk(
                             model: model,
                             chunk: chunk,
-                            messageIds: messageIds,
+                            messageIds: messageIdsSnapshot,
                             conversationId: conversationId
                         )
                     }
@@ -1962,7 +1963,7 @@
                         guard let self, self.isActiveMultiModelRequest(requestVersion) else { return }
                         self.processMultiModelCompletion(
                             model: model,
-                            messageIds: messageIds,
+                            messageIds: messageIdsSnapshot,
                             conversationId: conversationId,
                             responseGroupId: responseGroupId
                         )
@@ -1998,7 +1999,7 @@
                         self.processMultiModelError(
                             model: model,
                             error: error,
-                            messageIds: messageIds,
+                            messageIds: messageIdsSnapshot,
                             conversationId: conversationId,
                             responseGroupId: responseGroupId
                         )

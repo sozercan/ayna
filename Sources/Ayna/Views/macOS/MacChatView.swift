@@ -14,6 +14,59 @@
     // tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
     // the larger body here until the view hierarchy is modularized.
 
+    enum MacChatMessagePresentation {
+        static func isVisible(
+            _ message: Message,
+            lastMessageID: UUID?,
+            isGenerating: Bool
+        ) -> Bool {
+            if message.role == .system {
+                return false
+            }
+
+            if message.role == .tool {
+                if message.toolCalls?.first?.toolName == "web_search" {
+                    return false
+                }
+                return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+
+            guard message.role == .assistant else {
+                return !message.content.isEmpty
+                    || message.imageData != nil
+                    || message.imagePath != nil
+                    || message.mediaType == .image
+            }
+
+            if hasVisibleAssistantOutput(message) {
+                return true
+            }
+            if message.toolCalls?.isEmpty == false {
+                return false
+            }
+            if message.responseGroupId != nil {
+                return true
+            }
+            return message.id == lastMessageID && isGenerating
+        }
+
+        static func isRemovableAssistantPlaceholder(_ message: Message) -> Bool {
+            message.role == .assistant
+                && !hasVisibleAssistantOutput(message)
+                && message.toolCalls?.isEmpty != false
+                && message.responseGroupId == nil
+        }
+
+        private static func hasVisibleAssistantOutput(_ message: Message) -> Bool {
+            !message.content.isEmpty
+                || message.reasoning?.isEmpty == false
+                || message.imageData != nil
+                || message.imagePath != nil
+                || message.mediaType == .image
+                || message.citations?.isEmpty == false
+        }
+    }
+
     // swiftlint:disable:next type_body_length
     struct MacChatView: View {
         let conversation: Conversation
@@ -114,42 +167,11 @@
         /// Helper to filter visible messages
         private func updateVisibleMessages() {
             visibleMessages = currentConversation.messages.filter { message in
-                // Hide system messages entirely
-                if message.role == .system {
-                    return false
-                }
-
-                // Always show tool messages when they have content (tool replies are the "first" assistant response)
-                if message.role == .tool {
-                    if message.toolCalls?.first?.toolName == "web_search" {
-                        return false
-                    }
-                    return !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                }
-
-                // Always show assistant messages that have citations (from web search)
-                if message.role == .assistant, let citations = message.citations, !citations.isEmpty {
-                    return true
-                }
-
-                // Show if: has content, has image data, or is generating image
-                // Don't show empty assistant messages unless we're actively generating
-                if message.role == .assistant && message.content.isEmpty && message.imageData == nil && message.imagePath == nil {
-                    // Hide assistant messages that only have tool calls (intermediate steps)
-                    // These are placeholders that triggered tool execution but have no response content
-                    if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                        return false
-                    }
-                    // Always show assistant messages in a response group (multi-model mode)
-                    // They need to remain visible even after generation to show failed/empty states
-                    if message.responseGroupId != nil {
-                        return true
-                    }
-                    // Only show empty assistant message if it's the last message and we're generating
-                    return message.id == currentConversation.messages.last?.id && isGenerating
-                }
-
-                return !message.content.isEmpty || message.imageData != nil || message.imagePath != nil || message.mediaType == .image
+                MacChatMessagePresentation.isVisible(
+                    message,
+                    lastMessageID: currentConversation.messages.last?.id,
+                    isGenerating: isGenerating
+                )
             }
 
             // Update displayable items after visible messages change
@@ -1326,10 +1348,7 @@
                    $0.id == conversation.id
                }),
                let lastMessage = conversationManager.conversations[index].messages.last,
-               lastMessage.role == .assistant,
-               lastMessage.content.isEmpty,
-               lastMessage.mediaType != .image,
-               lastMessage.toolCalls?.isEmpty != false
+               MacChatMessagePresentation.isRemovableAssistantPlaceholder(lastMessage)
             {
                 conversationManager.conversations[index].messages.removeLast()
             }
