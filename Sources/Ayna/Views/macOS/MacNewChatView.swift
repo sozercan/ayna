@@ -128,6 +128,7 @@ struct MacNewChatView: View {
                                         let message = transcriptMessage.message
                                         MacMessageView(
                                             message: message,
+                                            displayKind: transcriptMessage.displayKind,
                                             modelName: message.model,
                                             onRetry: nil,
                                             onSwitchModel: nil,
