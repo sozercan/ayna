@@ -92,6 +92,56 @@ jobs:
     - name: Compile for watchOS
       run: swift build --triple arm64-apple-watchos26.0 --sdk "$(xcrun --sdk watchos --show-sdk-path)"
 
+  watchos_unit_tests:
+    name: watchOS Unit Tests
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+    - name: Resolve watchOS Simulator
+      id: watch_destination
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        destination_id="$(
+          xcrun simctl list devices available | \
+            sed -nE '/^[[:space:]]+Apple Watch /{s/.*\(([[:xdigit:]-]{36})\).*/\1/p;}' | \
+            sed -n '1p'
+        )"
+        test -n "$destination_id"
+        echo "id=$destination_id" >> "$GITHUB_OUTPUT"
+
+    - name: Run native watchOS unit tests
+      run: |
+        set -o pipefail
+        xcodebuild \
+          -project AynaMobile.xcodeproj \
+          -scheme Ayna-watchOS \
+          -destination "id=${{ steps.watch_destination.outputs.id }}" \
+          -destination-timeout 120 \
+          -derivedDataPath ./build/watchos-unit \
+          -configuration Debug \
+          -resultBundlePath ./TestResults-watchOS-Unit.xcresult \
+          -parallel-testing-enabled NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          test
+
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: watchOS-Unit-TestResults
+        path: TestResults-watchOS-Unit.xcresult
+        retention-days: 7
+
   macos_ui_tests:
     name: macOS UI Tests
     runs-on: macos-26
@@ -278,7 +328,7 @@ jobs:
         xcrun simctl shutdown "$DEVICE_UDID" 2>/dev/null || true
         sleep 3
 
-    - name: Run watchOS unit tests
+    - name: Build watchOS app
       run: |
         set -o pipefail
         xcodebuild \
@@ -287,12 +337,10 @@ jobs:
           -destination "id=$DEVICE_UDID" \
           -derivedDataPath ./build \
           -configuration Debug \
-          -resultBundlePath ./build/TestResults-watchOS-Unit.xcresult \
-          -parallel-testing-enabled NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
-          test
+          build
 
     - name: Install watchOS app on simulator
       run: |
