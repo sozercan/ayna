@@ -467,7 +467,6 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            preparedAPIKey: String?,
             requestFlightID: RequestFlightID?
         ) -> AITextRequest {
             let requestModel = model ?? selectedModel
@@ -492,7 +491,6 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                preparedAPIKey: preparedAPIKey,
                 requestFlightID: requestFlightID
             )
         }
@@ -522,7 +520,6 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            preparedAPIKey: String?,
             requestFlightID: RequestFlightID?
         ) -> AITextRequest {
             if !isMultiModelRequest {
@@ -543,7 +540,6 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                preparedAPIKey: preparedAPIKey,
                 requestFlightID: requestFlightID
             )
         }

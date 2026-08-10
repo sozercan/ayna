@@ -1603,7 +1603,6 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            preparedAPIKey: String?,
             requestFlightID: RequestFlightID?
         ) -> AITextRequest {
             capturedRequests.update {
@@ -1632,7 +1631,6 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                preparedAPIKey: preparedAPIKey,
                 requestFlightID: requestFlightID
             )
         }

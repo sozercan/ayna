@@ -18,6 +18,7 @@
     struct WatchChatViewModelNativeTests {
         private let viewModel: WatchChatViewModel
         private let store: WatchConversationStore
+        private let aiService: AIService
 
         init() {
             let suiteName = "WatchChatViewModelNativeTests.\(UUID().uuidString)"
@@ -34,11 +35,16 @@
             let aiService = AIService()
             aiService.modelProviders = ["gpt-4o": .openai]
             aiService.modelEndpoints = [:]
-            aiService.modelAPIKeys = [:]
+            aiService.modelAPIKeys = ["gpt-4o": "sk-watch-test"]
+            let connectivityService = WatchConnectivityService.shared
+            connectivityService.selectedModel = "gpt-4o"
+            connectivityService.availableModels = ["gpt-4o"]
 
             self.store = store
+            self.aiService = aiService
             viewModel = WatchChatViewModel(
                 conversationStore: store,
+                connectivityService: connectivityService,
                 aiService: aiService
             )
         }
@@ -102,6 +108,7 @@
         func `Dismiss error clears state`() async throws {
             let conversation = try #require(store.createConversation(model: "gpt-4o"))
             viewModel.setConversation(conversation.id)
+            aiService.modelAPIKeys = [:]
 
             // Trigger an error by sending without API key configured
             viewModel.sendMessage("Hello")
