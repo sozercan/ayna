@@ -262,6 +262,12 @@ struct IOSNewChatView: View {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
+                    .onChange(of: conversation.messages.last?.reasoning) {
+                        updateDisplayableItems()
+                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
+                    }
                     .onChange(of: viewModel.isGenerating) { _, _ in
                         updateDisplayableItems()
                     }
