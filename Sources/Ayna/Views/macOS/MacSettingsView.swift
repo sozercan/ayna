@@ -8,8 +8,8 @@
 
 import SwiftUI
 
-// swiftlint:disable:next superfluous_disable_command
-// swiftlint:disable file_length type_body_length
+// This legacy settings surface is split into sections but remains in one source file.
+// swiftlint:disable file_length
 
 struct MacSettingsView: View {
     @ObservedObject private var aiService = AIService.shared
@@ -2581,5 +2581,4 @@ struct AnthropicConfigurationView: View {
     MacSettingsView()
 }
 
-// swiftlint:enable file_length type_body_length
 #endif

@@ -10,9 +10,7 @@ excluded:
 
 # Paths to include in linting (optional, defaults to all Swift files)
 included:
-  - App
-  - Core
-  - Views
+  - Sources/Ayna
   - Tests
 
 # Disable some rules that may be too strict

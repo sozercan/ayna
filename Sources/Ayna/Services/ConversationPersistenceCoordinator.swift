@@ -5,6 +5,9 @@
 //  Created on 11/24/25.
 //
 
+// This legacy coordinator remains in one file while its persistence state machine is stabilized.
+// swiftlint:disable file_length
+
 import Foundation
 import OSLog
 
@@ -36,6 +39,8 @@ extension EncryptedConversationStore: ConversationStoreAdapter {
     }
 }
 
+// The full name distinguishes manager reconciliation state from store transaction state.
+// swiftlint:disable:next type_name
 struct ConversationPersistenceReconciliationState: Sendable {
     let dirtyIds: Set<UUID>
     let deletingIds: Set<UUID>
@@ -96,6 +101,8 @@ private final class OperationOverridingConversationStore: ConversationStoreAdapt
     }
 }
 
+// The full name identifies the compatibility boundary that erases concrete store errors.
+// swiftlint:disable:next type_name
 private struct ConversationPersistenceCompatibilityError: LocalizedError {
     let message: String
 
@@ -861,6 +868,8 @@ final class ConversationPersistenceCoordinator {
         }
 
         ensureRewriteScheduled()
+        // The tuple is local transition state and is destructured immediately below.
+        // swiftlint:disable:next large_tuple
         let pendingIntents = dirty.compactMap { id, intent -> (UUID, UInt64, DesiredState)? in
             guard proposedSaves[id] == nil,
                   !intent.isScheduled,

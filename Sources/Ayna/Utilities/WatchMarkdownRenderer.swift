@@ -20,7 +20,13 @@
             return options
         }()
 
-        private static let linkRegex = try! NSRegularExpression(pattern: #"\[([^\]]+)\]\([^\)]+\)"#)
+        private static let linkRegex: NSRegularExpression = {
+            let pattern = #"\[([^\]]+)\]\([^\)]+\)"#
+            guard let expression = try? NSRegularExpression(pattern: pattern) else {
+                preconditionFailure("Invalid static watch markdown regular expression: \(pattern)")
+            }
+            return expression
+        }()
 
         /// Render markdown string to AttributedString for Watch display
         /// Uses system AttributedString markdown support for inline elements only

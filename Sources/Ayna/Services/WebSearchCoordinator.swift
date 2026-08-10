@@ -94,7 +94,6 @@ final class WebSearchCoordinator: ObservableObject {
         ]
     }
 
-    /// The tool name used in function calling
     // MARK: - Execution
 
     /// Executes a web search tool call and returns formatted results

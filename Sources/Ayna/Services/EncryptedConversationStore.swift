@@ -5,6 +5,9 @@
 //  Created on 11/14/25.
 //
 
+// This legacy store remains in one file while migration and transaction helpers are extracted incrementally.
+// swiftlint:disable file_length
+
 import CryptoKit
 import Foundation
 import os.log
@@ -120,6 +123,8 @@ private struct PrivacyCleanupMarkerState: Codable {
     }
 }
 
+// The store remains monolithic while migration and transaction helpers are extracted incrementally.
+// swiftlint:disable:next type_body_length
 final class EncryptedConversationStore: Sendable {
     nonisolated static let shared = EncryptedConversationStore()
 
@@ -222,6 +227,8 @@ final class EncryptedConversationStore: Sendable {
         static let maximumEntryCost = 4 * 1024 * 1024
         static let maximumTotalCost = 32 * 1024 * 1024
 
+        // Keeping the cache entry private to its owning cache avoids widening the file's API.
+        // swiftlint:disable:next nesting
         struct Entry: Sendable {
             let fileVersion: FileVersion
             let searchableFields: [String]
@@ -299,6 +306,8 @@ final class EncryptedConversationStore: Sendable {
     }
 
     private final class OperationGenerationRegistry: @unchecked Sendable {
+        // The generation token is meaningful only within its owning registry.
+        // swiftlint:disable:next nesting
         struct Generation: Equatable, Sendable {
             let global: UInt64
             let conversation: UInt64
@@ -1238,6 +1247,8 @@ final class EncryptedConversationStore: Sendable {
         }.value
     }
 
+    // Metadata loading also owns one-time legacy migration and sidecar repair.
+    // swiftlint:disable:next function_body_length
     func loadConversationMetadata() async throws -> [ConversationMetadata] {
         try ensureClearRecoveryResolved()
         let directoryURL = directoryURL
@@ -1619,6 +1630,8 @@ final class EncryptedConversationStore: Sendable {
         }
     }
 
+    // Search validation, index repair, and one retry are intentionally kept atomic.
+    // swiftlint:disable:next cyclomatic_complexity function_body_length function_parameter_count
     private nonisolated static func fullTextSearchMatches(
         query: String,
         conversationId: UUID,
@@ -2052,14 +2065,14 @@ final class EncryptedConversationStore: Sendable {
     }
 
     private nonisolated static func symbolicLinkPath(in urls: [URL]) -> String? {
-        for url in urls {
-            if (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil {
-                return url.path
-            }
+        for url in urls where (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil {
+            return url.path
         }
         return nil
     }
 
+    // Clear is a transactional sequence whose rollback steps must remain adjacent.
+    // swiftlint:disable:next function_body_length
     func clear(attachmentCleanupSnapshot: AttachmentCleanupSnapshot? = nil) throws {
         let parentDirectory = directoryURL.deletingLastPathComponent()
         let transactionId = UUID().uuidString
@@ -2235,6 +2248,8 @@ final class EncryptedConversationStore: Sendable {
         operationGenerations: OperationGenerationRegistry
     ) async throws -> [Conversation] {
         let fileURLsById = try conversationFileURLsById(in: directory)
+        // The tuple is local task-group state and is destructured immediately after loading.
+        // swiftlint:disable:next large_tuple
         let snapshots = fileURLsById.compactMap { id, url -> (
             UUID,
             URL,
@@ -2411,6 +2426,8 @@ final class EncryptedConversationStore: Sendable {
         return try operation(stagedWrite)
     }
 
+    // Migration keeps explicit path and generation dependencies to enforce atomic replacement.
+    // swiftlint:disable:next function_parameter_count
     private nonisolated static func migrateLegacyConversation(
         _ conversation: Conversation,
         keyData: Data,
@@ -2645,6 +2662,8 @@ final class EncryptedConversationStore: Sendable {
         return nil
     }
 
+    // Metadata commit keeps explicit paths and generation guards to prevent stale sidecars.
+    // swiftlint:disable:next function_parameter_count
     private nonisolated static func commitMetadataCandidate(
         _ metadata: ConversationMetadata,
         sourceVersion: FileVersion,

@@ -21,10 +21,13 @@ struct PathValidator {
     let protectedPaths: [String]
     let sensitiveFilenames: Set<String>
 
-    private static let environmentVariableRegex = try! NSRegularExpression(
-        pattern: #"\$([A-Za-z_][A-Za-z0-9_]*)"#,
-        options: []
-    )
+    private static let environmentVariableRegex: NSRegularExpression = {
+        let pattern = #"\$([A-Za-z_][A-Za-z0-9_]*)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            preconditionFailure("Invalid static environment-variable regular expression: \(pattern)")
+        }
+        return expression
+    }()
 
     // MARK: - Default Protected Paths
 

@@ -37,13 +37,21 @@ enum MarkdownRenderer {
     }()
 
     private static let horizontalRuleCharacters = CharacterSet(charactersIn: "-_* ")
+
+    private static func makeRegularExpression(pattern: String) -> NSRegularExpression {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            preconditionFailure("Invalid static markdown regular expression: \(pattern)")
+        }
+        return expression
+    }
+
     private static let unorderedListRegex =
-        try! NSRegularExpression(pattern: #"^\s*[-*+]\s+"#)
+        makeRegularExpression(pattern: #"^\s*[-*+]\s+"#)
     private static let orderedListRegex =
-        try! NSRegularExpression(pattern: #"^\s*(\d+)\.\s+"#)
+        makeRegularExpression(pattern: #"^\s*(\d+)\.\s+"#)
     #if !os(watchOS)
     private static let tableDividerRegex =
-        try! NSRegularExpression(pattern: #"^\s*:?-+:?\s*$"#)
+        makeRegularExpression(pattern: #"^\s*:?-+:?\s*$"#)
     #endif
 
     nonisolated static func parse(

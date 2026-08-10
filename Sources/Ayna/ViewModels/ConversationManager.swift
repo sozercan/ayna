@@ -5,6 +5,9 @@
 //  Created on 11/2/25.
 //
 
+// This legacy coordinator remains in one file while persistence responsibilities are extracted incrementally.
+// swiftlint:disable file_length
+
 import Combine
 #if !os(watchOS)
     import CoreSpotlight
@@ -44,6 +47,8 @@ private struct AttachmentCleanupFencePreparation: Sendable {
 }
 
 @MainActor
+// The manager remains monolithic while persistence responsibilities are extracted incrementally.
+// swiftlint:disable:next type_body_length
 final class ConversationManager: ObservableObject {
     private static let searchIndexWarmupLimit = 16
 
@@ -207,6 +212,8 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    // Dependency wiring remains centralized until the manager is split into smaller collaborators.
+    // swiftlint:disable:next function_body_length
     init(
         store: (any ConversationStoreAdapter)? = nil,
         saveDebounceDuration: Duration = .milliseconds(200),
@@ -1030,6 +1037,8 @@ final class ConversationManager: ObservableObject {
         registerManagerDeletionTask(task, for: conversationId, version: deletionVersion)
     }
 
+    // Loading reconciles legacy, metadata-only, and durable snapshots in one transaction.
+    // swiftlint:disable:next function_body_length
     private func loadConversations(
         allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil
     ) async {
@@ -1637,7 +1646,8 @@ final class ConversationManager: ObservableObject {
     }
 
     @discardableResult
-    func clearAllConversations() -> Task<Void, Never> {
+    // Clearing coordinates storage, attachments, summaries, and Spotlight rollback.
+    func clearAllConversations() -> Task<Void, Never> { // swiftlint:disable:this function_body_length
         persistenceErrorMessage = nil
         let previousClearTask = clearConversationsTask
         let clearWasAlreadyActive = previousClearTask != nil
