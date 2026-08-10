@@ -13,6 +13,80 @@ struct ToolCallRequestRoundCoordinatorTests {
     private typealias Coordinator = ToolCallRequestRoundCoordinator<ToolResult>
 
     @Test
+    func `ingress gate admits at most the hard limit under concurrent fan out`() async {
+        let gate = ToolCallRequestAdmissionGate()
+
+        let admittedCount = await withTaskGroup(of: Bool.self, returning: Int.self) { group in
+            for index in 0 ..< 100 {
+                group.addTask {
+                    gate.admit(providerID: "call-\(index)")
+                }
+            }
+
+            var count = 0
+            for await admitted in group where admitted {
+                count += 1
+            }
+            return count
+        }
+
+        #expect(admittedCount == ToolCallRequestRoundPolicy.maximumToolCallsPerRound)
+    }
+
+    @Test
+    func `ingress gate rejects duplicate provider callback IDs`() {
+        let gate = ToolCallRequestAdmissionGate()
+
+        #expect(gate.admit(providerID: "duplicate"))
+        #expect(!gate.admit(providerID: "duplicate"))
+    }
+
+    @Test
+    func `duplicate id less callbacks do not consume ingress capacity`() {
+        let gate = ToolCallRequestAdmissionGate()
+        let admittedTools = FlightTestBox<[String]>([])
+        let callback = gate.admittedCallback { _, toolName, _ in
+            admittedTools.update { $0.append(toolName) }
+        }
+
+        for _ in 0 ..< ToolCallRequestRoundPolicy.maximumToolCallsPerRound {
+            callback("", "duplicate", ["position": 1])
+        }
+        callback("   ", "distinct", ["position": 2])
+
+        #expect(admittedTools.value == ["duplicate", "distinct"])
+    }
+
+    @Test
+    func `request round rejects tool fan out beyond the hard limit`() throws {
+        let toolChainCoordinator = ToolChainCoordinator()
+        let coordinator = Coordinator()
+        let operationID = toolChainCoordinator.beginOperation(conversationID: UUID())
+        let roundID = try #require(
+            coordinator.beginRequestRound(
+                for: operationID,
+                coordinatedBy: toolChainCoordinator
+            )
+        )
+
+        for _ in 0 ..< ToolCallRequestRoundPolicy.maximumToolCallsPerRound {
+            #expect(
+                coordinator.registerTool(
+                    for: operationID,
+                    requestRoundID: roundID
+                ) != nil
+            )
+        }
+
+        #expect(
+            coordinator.registerTool(
+                for: operationID,
+                requestRoundID: roundID
+            ) == nil
+        )
+    }
+
+    @Test
     func `two parallel tools launch exactly one continuation after every completion`() throws {
         let toolChainCoordinator = ToolChainCoordinator()
         let coordinator = Coordinator()

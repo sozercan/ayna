@@ -44,11 +44,87 @@ private struct ManagedMCPTask: Sendable {
     let operationID: UUID
     let generation: UInt64
     let task: Task<Void, Never>
+    let completion: ManagedMCPTaskCompletion
 
-    init(operationID: UUID = UUID(), generation: UInt64, task: Task<Void, Never>) {
+    init(
+        operationID: UUID = UUID(),
+        generation: UInt64,
+        operation: @escaping @MainActor @Sendable () async -> Void
+    ) {
+        let completion = ManagedMCPTaskCompletion()
         self.operationID = operationID
         self.generation = generation
-        self.task = task
+        self.completion = completion
+        task = Task { @MainActor in
+            defer { completion.finish() }
+            await operation()
+        }
+    }
+}
+
+final class ManagedMCPTaskCompletion: Sendable {
+    private struct State {
+        var isFinished = false
+        var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+        var cancelledWaiterIDs: Set<UUID> = []
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var pendingWaiterCount: Int {
+        state.withLock { $0.waiters.count }
+    }
+
+    func wait() async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                register(waiterID: waiterID, continuation: continuation)
+            }
+        } onCancel: {
+            cancel(waiterID: waiterID)
+        }
+    }
+
+    func finish() {
+        let continuations = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+            guard !state.isFinished else { return [] }
+            state.isFinished = true
+            state.cancelledWaiterIDs.removeAll()
+            let continuations = Array(state.waiters.values)
+            state.waiters.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
+    }
+
+    private func register(
+        waiterID: UUID,
+        continuation: CheckedContinuation<Void, Never>
+    ) {
+        let shouldResume = state.withLock { state in
+            if state.isFinished || state.cancelledWaiterIDs.remove(waiterID) != nil {
+                return true
+            }
+            state.waiters[waiterID] = continuation
+            return false
+        }
+        if shouldResume {
+            continuation.resume()
+        }
+    }
+
+    private func cancel(waiterID: UUID) {
+        let continuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            if let continuation = state.waiters.removeValue(forKey: waiterID) {
+                return continuation
+            }
+            if !state.isFinished {
+                state.cancelledWaiterIDs.insert(waiterID)
+            }
+            return nil
+        }
+        continuation?.resume()
     }
 }
 
@@ -315,7 +391,7 @@ class MCPServerManager: ObservableObject {
             )
             setStatus(for: config, state: .connecting, clearExistingError: true)
 
-            let task = Task { @MainActor [weak self, service] in
+            let operation = ManagedMCPTask(generation: generation) { [weak self, service] in
                 guard let self else { return }
                 await self.runConnection(
                     config: config,
@@ -325,7 +401,6 @@ class MCPServerManager: ObservableObject {
                 )
                 self.clearConnectionTask(serverName: config.name, generation: generation)
             }
-            let operation = ManagedMCPTask(generation: generation, task: task)
             connectionTasks[config.name] = operation
             return operation
         }
@@ -536,7 +611,7 @@ class MCPServerManager: ObservableObject {
 
         setStatus(for: config, state: .reconnecting)
         let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
-            let task = Task { @MainActor [weak self] in
+            reconnectTasks[config.name] = ManagedMCPTask(generation: generation) { [weak self] in
             guard let self else { return }
                 do {
             if delaySeconds > 0 {
@@ -549,7 +624,6 @@ class MCPServerManager: ObservableObject {
                 }
                 self.performScheduledReconnect(serverName: config.name, generation: generation)
         }
-            reconnectTasks[config.name] = ManagedMCPTask(generation: generation, task: task)
     }
 
         private func performScheduledReconnect(serverName: String, generation: UInt64) {
@@ -613,7 +687,7 @@ class MCPServerManager: ObservableObject {
             let generation = discoveryBatchGeneration
             isDiscovering = true
 
-            let task = Task { @MainActor [weak self] in
+            let operation = ManagedMCPTask(generation: generation) { [weak self] in
                 guard let self else { return }
                 defer {
                     if self.discoveryBatchTask?.generation == generation {
@@ -638,10 +712,9 @@ class MCPServerManager: ObservableObject {
                       !Task.isCancelled
                 else {
                     return
-        }
+            }
             self.refreshAllStatusToolCounts()
         }
-            let operation = ManagedMCPTask(generation: generation, task: task)
             discoveryBatchTask = operation
             await awaitOperation(operation)
     }
@@ -687,7 +760,10 @@ class MCPServerManager: ObservableObject {
 
             committedDiscoveryGenerations.removeValue(forKey: serverName)
             let operationID = UUID()
-            let task = Task { @MainActor [weak self, service] in
+            let operation = ManagedMCPTask(
+                operationID: operationID,
+                generation: generation
+            ) { [weak self, service] in
                 guard let self else { return }
                 await self.runDiscovery(
                     serverName: serverName,
@@ -701,7 +777,6 @@ class MCPServerManager: ObservableObject {
                     operationID: operationID
                 )
             }
-            let operation = ManagedMCPTask(operationID: operationID, generation: generation, task: task)
             discoveryTasks[serverName] = operation
             return operation
         }
@@ -783,29 +858,20 @@ class MCPServerManager: ObservableObject {
     }
 
         private func awaitOperation(_ operation: ManagedMCPTask) async {
-            await withTaskCancellationHandler {
-                await operation.task.value
-            } onCancel: {
-                operation.task.cancel()
-            }
+            await operation.completion.wait()
         }
 
         private func awaitOperations(_ operations: [ManagedMCPTask]) async {
-            await withTaskCancellationHandler {
-                for operation in operations {
-                    await operation.task.value
-                }
-            } onCancel: {
-                for operation in operations {
-                    operation.task.cancel()
-                }
+            for operation in operations {
+                guard !Task.isCancelled else { return }
+                await awaitOperation(operation)
             }
         }
 
         private func awaitSharedOperations(_ operations: [ManagedMCPTask]) async {
             for operation in operations {
                 guard !Task.isCancelled else { return }
-                await operation.task.value
+                await awaitOperation(operation)
             }
         }
 

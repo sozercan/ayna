@@ -389,6 +389,82 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `Delayed escalation cannot signal a PID reused after cancellation reaps the child`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolPIDReuse-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let pidFile = directory.appendingPathComponent("command.pid")
+            let releaseFile = directory.appendingPathComponent("release-command")
+            let command = "echo $$ > '\(pidFile.path)'; trap '' TERM; "
+                + "while [ ! -f '\(releaseFile.path)' ]; do sleep 0.01; done"
+            let completionReached = FlightTestSignal()
+            let releaseCompletion = FlightTestSignal()
+            let releaseEscalation = FlightTestSignal()
+            let simulatePIDReuse = FlightTestBox(false)
+            let staleSignalAttempts = FlightTestBox<[Int32]>([])
+            let permissionService = PermissionService()
+            permissionService.recordSessionApproval(
+                tool: BuiltinToolService.ToolName.runCommand,
+                details: command
+            )
+            let service = BuiltinToolService(
+                permissionService: permissionService,
+                projectRoot: directory,
+                processCompletionGate: {
+                    simulatePIDReuse.value = true
+                    completionReached.signal()
+                    await releaseCompletion.wait()
+                },
+                processEscalationGate: {
+                    await releaseEscalation.wait()
+                },
+                subprocessSignal: { processIdentifier, signal in
+                    if simulatePIDReuse.value {
+                        staleSignalAttempts.update { $0.append(signal) }
+                        return 0
+                    }
+                    return Darwin.kill(processIdentifier, signal)
+                }
+            )
+
+            let commandTask = Task {
+                try await service.runCommand(
+                    command: command,
+                    workingDirectory: directory.path,
+                    conversationId: UUID()
+                )
+            }
+
+            let clock = ContinuousClock()
+            let startDeadline = clock.now.advanced(by: .seconds(2))
+            while !FileManager.default.fileExists(atPath: pidFile.path), clock.now < startDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            _ = try String(contentsOf: pidFile, encoding: .utf8)
+
+            commandTask.cancel()
+            try Data().write(to: releaseFile)
+            let childWasReaped = await completionReached.wait(timeout: .seconds(2))
+            #expect(childWasReaped)
+
+            releaseEscalation.signal()
+            try? await Task.sleep(for: .milliseconds(100))
+            #expect(staleSignalAttempts.value.isEmpty)
+
+            releaseCompletion.signal()
+            do {
+                _ = try await commandTask.value
+                Issue.record("Expected cancellation after child reap")
+            } catch is CancellationError {
+                // Expected.
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Background descendants cannot retain command pipes or survive completion`() async throws {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BuiltinToolDescendant-\(UUID().uuidString)")

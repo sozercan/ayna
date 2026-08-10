@@ -6,6 +6,29 @@ import Testing
 @MainActor
 struct WatchToolCallRoundRegistryTests {
     @Test
+    func `registry rejects tool fan out beyond the hard limit`() {
+        let registry = WatchToolCallRoundRegistry(roundID: UUID())
+
+        for index in 0 ..< ToolCallRequestRoundPolicy.maximumToolCallsPerRound {
+            #expect(
+                registry.register(
+                    providerID: "call-\(index)",
+                    toolName: "tool",
+                    arguments: [:]
+                ) != nil
+            )
+        }
+
+        #expect(
+            registry.register(
+                providerID: "call-over-limit",
+                toolName: "tool",
+                arguments: [:]
+            ) == nil
+        )
+    }
+
+    @Test
     func `provider I ds deduplicate only within one request round`() {
         let providerID = "reused-call"
         let firstRound = WatchToolCallRoundRegistry(roundID: UUID())

@@ -7,6 +7,82 @@
 
 import Foundation
 
+/// Hard safety bounds for one provider request round.
+enum ToolCallRequestRoundPolicy {
+    static let maximumToolCallsPerRound = 8
+
+    static func canonicalArguments(_ arguments: [String: AnyCodable]) -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(arguments)) ?? Data()
+    }
+}
+
+/// Rejects excess provider callbacks before they enter the main-actor callback queue.
+final class ToolCallRequestAdmissionGate: @unchecked Sendable {
+    private enum CallbackIdentity: Hashable {
+        case providerID(String)
+        case idLess(toolName: String, encodedArguments: Data)
+    }
+
+    private let lock = NSLock()
+    private var admittedCallbacks: Set<CallbackIdentity> = []
+    private var admittedCount = 0
+
+    func admit(providerID: String) -> Bool {
+        let normalizedProviderID = providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return admit(identity: .providerID(normalizedProviderID))
+    }
+
+    private func admit(
+        providerID: String,
+        toolName: String,
+        arguments: [String: Any]
+    ) -> Bool {
+        let normalizedProviderID = providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedProviderID.isEmpty {
+            return admit(identity: .providerID(normalizedProviderID))
+        }
+
+        let codableArguments = arguments.mapValues(AnyCodable.init)
+        return admit(
+            identity: .idLess(
+                toolName: toolName,
+                encodedArguments: ToolCallRequestRoundPolicy.canonicalArguments(codableArguments)
+            )
+        )
+    }
+
+    private func admit(identity: CallbackIdentity) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !admittedCallbacks.contains(identity) else { return false }
+        guard admittedCount < ToolCallRequestRoundPolicy.maximumToolCallsPerRound else {
+            return false
+        }
+
+        admittedCount += 1
+        admittedCallbacks.insert(identity)
+        return true
+    }
+
+    func admittedCallback(
+        _ callback: @escaping @Sendable (String, String, [String: Any]) -> Void
+    ) -> @Sendable (String, String, [String: Any]) -> Void {
+        { providerID, toolName, arguments in
+            guard self.admit(
+                providerID: providerID,
+                toolName: toolName,
+                arguments: arguments
+            ) else {
+                return
+            }
+            callback(providerID, toolName, arguments)
+        }
+    }
+}
+
 /// Joins provider completion with every tool completion for one request round.
 ///
 /// Start a distinct round for every provider request and capture its ID in that
@@ -146,7 +222,8 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
               var round = activeRound,
               round.operationID == operationID,
               round.id == requestRoundID,
-              !round.providerCompleted
+              !round.providerCompleted,
+              round.tools.count < ToolCallRequestRoundPolicy.maximumToolCallsPerRound
         else {
             return nil
         }

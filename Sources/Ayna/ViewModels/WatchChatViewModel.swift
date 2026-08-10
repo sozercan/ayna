@@ -32,6 +32,10 @@ final class WatchToolCallRoundRegistry {
         toolName: String,
         arguments: [String: AnyCodable]
     ) -> String? {
+        guard registeredIDs.count < ToolCallRequestRoundPolicy.maximumToolCallsPerRound else {
+            return nil
+        }
+
         if !providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard registeredIDs.insert(providerID).inserted else { return nil }
             return providerID
@@ -39,7 +43,7 @@ final class WatchToolCallRoundRegistry {
 
         let signature = IDLessCallSignature(
             toolName: toolName,
-            encodedArguments: Self.encode(arguments)
+            encodedArguments: ToolCallRequestRoundPolicy.canonicalArguments(arguments)
         )
         guard registeredIDLessCalls.insert(signature).inserted else { return nil }
         return makeSyntheticID()
@@ -55,11 +59,6 @@ final class WatchToolCallRoundRegistry {
         }
     }
 
-    private static func encode(_ arguments: [String: AnyCodable]) -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return (try? encoder.encode(arguments)) ?? Data()
-    }
 }
 
 #if os(watchOS)
@@ -344,6 +343,7 @@ final class WatchToolCallRoundRegistry {
             }
             activeAssistantMessageId = assistantMessageId
             let registeredToolCalls = WatchToolCallRoundRegistry(roundID: assistantMessageId)
+            let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
             requestObserver?(
                 RequestConfiguration(
                     messages: messages,
@@ -424,7 +424,7 @@ final class WatchToolCallRoundRegistry {
                     }
                 },
                 onToolCall: nil,
-                onToolCallRequested: { [weak self] toolCallID, toolName, arguments in
+                onToolCallRequested: toolCallAdmissionGate.admittedCallback { [weak self] toolCallID, toolName, arguments in
                     nonisolated(unsafe) let arguments = arguments
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self,

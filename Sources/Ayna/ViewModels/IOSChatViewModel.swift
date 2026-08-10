@@ -649,6 +649,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                 return
             }
             activeAssistantMessageId = assistantMessageId
+            let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
 
         DiagnosticsLogger.log(
             .chatView,
@@ -736,7 +737,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                         )
                     }
                 },
-                onToolCallRequested: { [weak self] toolCallId, toolName, arguments in
+                onToolCallRequested: toolCallAdmissionGate.admittedCallback { [weak self] toolCallId, toolName, arguments in
                     let argumentsWrapper = UncheckedSendable(arguments)
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                         guard let self,
@@ -1266,7 +1267,7 @@ extension IOSChatViewModel {
 
         sendMessageWithToolSupport(
             messages: messagesToSend,
-            model: updatedConversation.model,
+            model: retryModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
             tools: tools

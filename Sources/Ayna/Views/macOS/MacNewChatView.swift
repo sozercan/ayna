@@ -1127,6 +1127,7 @@ struct MacNewChatView: View {
             else {
                 return
             }
+            let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
 
             let request = aiService.sendMessage(
             messages: messages,
@@ -1194,7 +1195,7 @@ struct MacNewChatView: View {
                 }
                     }
             },
-            onToolCallRequested: { toolCallId, toolName, arguments in
+            onToolCallRequested: toolCallAdmissionGate.admittedCallback { toolCallId, toolName, arguments in
                 let argumentsWrapper = UncheckedSendableWrapper(arguments)
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                         guard activeAssistantMessageID == assistantMessageID,

@@ -7,21 +7,33 @@
     /// Group ownership lets cancellation and timeout terminate the shell and every descendant,
     /// including background jobs that would otherwise retain stdout/stderr pipes indefinitely.
     final class CommandSubprocess: @unchecked Sendable {
+        typealias SignalProcess = @Sendable (_ processIdentifier: pid_t, _ signal: Int32) -> Int32
+
         let processIdentifier: pid_t
         let standardOutput: FileHandle
         let standardError: FileHandle
 
+        private let signalLock = NSLock()
+        private let signalProcess: SignalProcess
+        private var ownsSignalTarget = true
+
         private init(
             processIdentifier: pid_t,
             standardOutput: FileHandle,
-            standardError: FileHandle
+            standardError: FileHandle,
+            signalProcess: @escaping SignalProcess
         ) {
             self.processIdentifier = processIdentifier
             self.standardOutput = standardOutput
             self.standardError = standardError
+            self.signalProcess = signalProcess
         }
 
-        static func start(command: String, workingDirectory: URL?) throws -> CommandSubprocess {
+        static func start(
+            command: String,
+            workingDirectory: URL?,
+            signalProcess: @escaping SignalProcess = { Darwin.kill($0, $1) }
+        ) throws -> CommandSubprocess {
             var stdoutDescriptors: [Int32] = [0, 0]
             var stderrDescriptors: [Int32] = [0, 0]
             guard pipe(&stdoutDescriptors) == 0 else {
@@ -94,15 +106,19 @@
             return CommandSubprocess(
                 processIdentifier: processIdentifier,
                 standardOutput: FileHandle(fileDescriptor: stdoutDescriptors[0], closeOnDealloc: true),
-                standardError: FileHandle(fileDescriptor: stderrDescriptors[0], closeOnDealloc: true)
+                standardError: FileHandle(fileDescriptor: stderrDescriptors[0], closeOnDealloc: true),
+                signalProcess: signalProcess
             )
         }
 
         var isRunning: Bool {
-            if kill(processIdentifier, 0) == 0 {
+            guard let probe = signalOwnedTarget(processIdentifier, 0) else {
+                return false
+            }
+            if probe.result == 0 {
                 return true
             }
-            return errno != ESRCH
+            return probe.errorCode != ESRCH
         }
 
         func terminate() {
@@ -115,10 +131,17 @@
 
         /// Waits for the shell leader, then tears down any background descendants in its group.
         func waitUntilExit() -> Int32 {
+            let exitObserved = waitForExitWithoutReaping()
+            if exitObserved {
+                // The zombie leader still reserves both its PID and process-group identifier,
+                // so descendant cleanup cannot target a reused process.
+                terminateRemainingProcessGroup()
+            }
+            revokeSignalAuthority()
+
             var status: Int32 = 0
             while waitpid(processIdentifier, &status, 0) == -1, errno == EINTR {}
 
-            terminateRemainingProcessGroup()
             return Self.exitCode(from: status)
         }
 
@@ -136,19 +159,54 @@
             try? standardError.close()
         }
 
+        private func waitForExitWithoutReaping() -> Bool {
+            var signalInformation = siginfo_t()
+            while waitid(
+                P_PID,
+                id_t(processIdentifier),
+                &signalInformation,
+                WEXITED | WNOWAIT
+            ) == -1 {
+                if errno == EINTR {
+                    continue
+                }
+                return false
+            }
+            return true
+        }
+
         private func terminateRemainingProcessGroup() {
-            guard kill(-processIdentifier, 0) == 0 else { return }
-            _ = kill(-processIdentifier, SIGTERM)
+            guard signalOwnedTarget(-processIdentifier, 0)?.result == 0 else { return }
+            _ = signalOwnedTarget(-processIdentifier, SIGTERM)
             usleep(50000)
-            if kill(-processIdentifier, 0) == 0 {
-                _ = kill(-processIdentifier, SIGKILL)
+            if signalOwnedTarget(-processIdentifier, 0)?.result == 0 {
+                _ = signalOwnedTarget(-processIdentifier, SIGKILL)
             }
         }
 
         private func signalProcessGroup(_ signal: Int32) {
-            if kill(-processIdentifier, signal) == -1, errno == ESRCH {
-                _ = kill(processIdentifier, signal)
+            guard let groupSignal = signalOwnedTarget(-processIdentifier, signal) else { return }
+            if groupSignal.result == -1, groupSignal.errorCode == ESRCH {
+                _ = signalOwnedTarget(processIdentifier, signal)
             }
+        }
+
+        private func signalOwnedTarget(
+            _ target: pid_t,
+            _ signal: Int32
+        ) -> (result: Int32, errorCode: Int32)? {
+            signalLock.lock()
+            defer { signalLock.unlock() }
+            guard ownsSignalTarget else { return nil }
+
+            let result = signalProcess(target, signal)
+            return (result, errno)
+        }
+
+        private func revokeSignalAuthority() {
+            signalLock.lock()
+            ownsSignalTarget = false
+            signalLock.unlock()
         }
 
         private static func readAvailableData(from handle: FileHandle) -> Data {

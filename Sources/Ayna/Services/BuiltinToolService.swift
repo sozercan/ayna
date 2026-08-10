@@ -77,7 +77,17 @@ import os.log
         }
 
         private let lock = NSLock()
+        private let processEscalationGate: @Sendable () async -> Void
+        private let subprocessSignal: CommandSubprocess.SignalProcess
         private var state = State()
+
+        init(
+            processEscalationGate: @escaping @Sendable () async -> Void,
+            subprocessSignal: @escaping CommandSubprocess.SignalProcess
+        ) {
+            self.processEscalationGate = processEscalationGate
+            self.subprocessSignal = subprocessSignal
+        }
 
         func start(command: String, workingDirectory: URL?) throws -> CommandSubprocess? {
             lock.lock()
@@ -89,7 +99,8 @@ import os.log
                 // Keep installation and startup atomic with cancellation.
                 let process = try CommandSubprocess.start(
                     command: command,
-                    workingDirectory: workingDirectory
+                    workingDirectory: workingDirectory,
+                    signalProcess: subprocessSignal
                 )
                 state.process = process
                 lock.unlock()
@@ -109,13 +120,21 @@ import os.log
             requestTermination(markCancelled: false)
         }
 
-        func finishIfNotCancelled() -> Bool {
+        func commitCompletion() -> Bool {
             lock.lock()
             defer { lock.unlock() }
-            guard !state.isCancelled, !state.completionCommitted else { return false }
+            guard !state.completionCommitted else { return false }
             state.completionCommitted = true
             state.process = nil
-            return true
+            return !state.isCancelled
+        }
+
+        func didReap(_ process: CommandSubprocess) {
+            lock.lock()
+            defer { lock.unlock() }
+            if state.process === process {
+                state.process = nil
+            }
         }
 
         private func requestTermination(markCancelled: Bool) {
@@ -141,8 +160,9 @@ import os.log
             // `Process.terminate()` only sends SIGTERM. Commands may trap or ignore it,
             // which would otherwise leave `waitUntilExit()` and the awaiting tool task
             // suspended forever. Escalate to SIGKILL after a short grace period.
+            let processEscalationGate = processEscalationGate
             Task.detached { [weak self] in
-                try? await Task.sleep(for: .milliseconds(250))
+                await processEscalationGate()
                 guard let self, self.shouldForceKill(process) else { return }
                 process.forceKill()
             }
@@ -169,6 +189,8 @@ import os.log
         private let pathValidator: PathValidator
         private let processStartGate: @Sendable () async -> Void
         private let processCompletionGate: @Sendable () async -> Void
+        private let processEscalationGate: @Sendable () async -> Void
+        private let subprocessSignal: CommandSubprocess.SignalProcess
         let projectRoot: URL?
 
         /// Whether the service is enabled
@@ -205,7 +227,11 @@ import os.log
             shellSandbox: ShellSandbox? = nil,
             projectRoot: URL? = nil,
             processStartGate: @escaping @Sendable () async -> Void = {},
-            processCompletionGate: @escaping @Sendable () async -> Void = {}
+            processCompletionGate: @escaping @Sendable () async -> Void = {},
+            processEscalationGate: @escaping @Sendable () async -> Void = {
+                try? await Task.sleep(for: .milliseconds(250))
+            },
+            subprocessSignal: @escaping CommandSubprocess.SignalProcess = { Darwin.kill($0, $1) }
         ) {
             self.permissionService = permissionService
             self.projectRoot = projectRoot
@@ -213,6 +239,8 @@ import os.log
             self.shellSandbox = shellSandbox ?? ShellSandbox(projectRoot: projectRoot)
             self.processStartGate = processStartGate
             self.processCompletionGate = processCompletionGate
+            self.processEscalationGate = processEscalationGate
+            self.subprocessSignal = subprocessSignal
         }
 
         // MARK: - File Operations
@@ -756,7 +784,10 @@ import os.log
             timeoutSeconds: Int,
             startTime: Date
         ) async throws -> CommandResult {
-            let processHolder = ProcessExecutionController()
+            let processHolder = ProcessExecutionController(
+                processEscalationGate: processEscalationGate,
+                subprocessSignal: subprocessSignal
+            )
             let processStartGate = processStartGate
             let processCompletionGate = processCompletionGate
 
@@ -772,16 +803,16 @@ import os.log
                             ) else {
                                 continuation.resume(throwing: CancellationError())
                                 return
-                        }
-
-                        let timeoutTask = Task {
-                            do {
-                                try await Task.sleep(for: .seconds(timeoutSeconds))
-                                    processHolder.timeout()
-                            } catch {
-                                // Cancelled - expected when process completes normally
                             }
-                        }
+
+                            let timeoutTask = Task {
+                                do {
+                                    try await Task.sleep(for: .seconds(timeoutSeconds))
+                                    processHolder.timeout()
+                                } catch {
+                                    // Cancelled - expected when process completes normally
+                                }
+                            }
 
                             // Read both pipes concurrently to avoid deadlock (Apple TN2050).
                             // Sequential reads can deadlock if one pipe fills its buffer
@@ -808,6 +839,7 @@ import os.log
                             }
 
                             let terminationStatus = process.waitUntilExit()
+                            processHolder.didReap(process)
                             timeoutTask.cancel()
 
                             // Drain only bytes already buffered. A descendant retaining a write end
@@ -836,7 +868,7 @@ import os.log
                             }
 
                             await processCompletionGate()
-                            guard processHolder.finishIfNotCancelled() else {
+                            guard processHolder.commitCompletion() else {
                                 continuation.resume(throwing: CancellationError())
                                 return
                             }
@@ -849,17 +881,17 @@ import os.log
 
                             continuation.resume(returning: commandResult)
                         } catch {
-                            if processHolder.finishIfNotCancelled() {
-                            continuation.resume(throwing: ToolExecutionError.commandFailed(
-                                command: command,
-                                exitCode: -1,
-                                stderr: error.localizedDescription
-                            ))
+                            if processHolder.commitCompletion() {
+                                continuation.resume(throwing: ToolExecutionError.commandFailed(
+                                    command: command,
+                                    exitCode: -1,
+                                    stderr: error.localizedDescription
+                                ))
                             } else {
                                 continuation.resume(throwing: CancellationError())
+                            }
                         }
                     }
-                }
                 }
             } onCancel: {
                 processHolder.cancel()

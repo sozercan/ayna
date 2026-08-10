@@ -170,8 +170,8 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(updatedConfig.name)?.state == .connected)
     }
 
-    @Test("Cancelling retry backoff prevents another connection attempt", .timeLimit(.minutes(1)))
-    func cancellingRetryBackoffPreventsAnotherAttempt() async {
+    @Test("Disconnecting during retry backoff prevents another connection attempt", .timeLimit(.minutes(1)))
+    func disconnectingDuringRetryBackoffPreventsAnotherAttempt() async {
         let config = MCPServerConfig(name: "backoff", command: "cmd", enabled: true)
         let service = StubMCPService(
             config: config,
@@ -194,7 +194,7 @@ struct MCPServerManagerTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(service.connectCallCount == 1)
-        task.cancel()
+        manager.disconnectServer(config.name)
         await task.value
 
         #expect(service.connectCallCount == 1)
@@ -234,8 +234,8 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(config.name)?.state == .idle)
     }
 
-    @Test("Cancelling tool discovery does not commit connected state", .timeLimit(.minutes(1)))
-    func cancellingToolDiscoveryDoesNotCommitConnectedState() async {
+    @Test("Disconnecting during tool discovery does not commit connected state", .timeLimit(.minutes(1)))
+    func disconnectingDuringToolDiscoveryDoesNotCommitConnectedState() async {
         let config = MCPServerConfig(name: "discovery", command: "cmd", enabled: true)
         let discoveryStarted = FlightTestSignal()
         let service = StubMCPService(config: config)
@@ -256,7 +256,7 @@ struct MCPServerManagerTests {
             await manager.connectToServer(config)
         }
         #expect(await discoveryStarted.wait(timeout: .seconds(1)))
-        task.cancel()
+        manager.disconnectServer(config.name)
         await task.value
 
         #expect(service.connectCallCount == 1)
@@ -574,8 +574,8 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(updated.name)?.state == .connected)
     }
 
-    @Test("Cancelling a connection does not retry or disable the server", .timeLimit(.minutes(1)))
-    func cancellingConnectionDoesNotRetryOrDisableServer() async {
+    @Test("Disconnecting a connection does not retry or disable the server", .timeLimit(.minutes(1)))
+    func disconnectingConnectionDoesNotRetryOrDisableServer() async {
         let config = MCPServerConfig(name: "cancelled", command: "cmd", enabled: true)
         let started = FlightTestSignal()
         let service = StubMCPService(config: config)
@@ -595,12 +595,92 @@ struct MCPServerManagerTests {
             await manager.connectToServer(config)
         }
         #expect(await started.wait(timeout: .seconds(1)))
-        task.cancel()
+        manager.disconnectServer(config.name)
         await task.value
 
         #expect(service.connectCallCount == 1)
         #expect(manager.serverConfigs.first?.enabled == true)
         #expect(manager.getServerStatus(config.name)?.state == .idle)
+    }
+
+    @Test("Cancelling one connection waiter preserves the shared connection", .timeLimit(.minutes(1)))
+    func cancellingOneConnectionWaiterPreservesSharedConnection() async {
+        let config = MCPServerConfig(name: "shared-waiter", command: "cmd", enabled: true)
+        let connectionStarted = FlightTestSignal()
+        let connectionCancelled = FlightTestSignal()
+        let releaseConnection = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.connectHandler = {
+            connectionStarted.signal()
+            try await withTaskCancellationHandler {
+                await releaseConnection.wait()
+                try Task.checkCancellation()
+            } onCancel: {
+                connectionCancelled.signal()
+                releaseConnection.signal()
+            }
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let activeWaiterFinished = FlightTestSignal()
+        let activeWaiter = Task { @MainActor in
+            await manager.connectToServer(config)
+            activeWaiterFinished.signal()
+        }
+        #expect(await connectionStarted.wait(timeout: .seconds(1)))
+
+        let releaseCancelledWaiter = FlightTestSignal()
+        let cancelledWaiterFinished = FlightTestSignal()
+        let cancelledWaiter = Task { @MainActor in
+            await releaseCancelledWaiter.wait()
+            await manager.connectToServer(config)
+            cancelledWaiterFinished.signal()
+        }
+        cancelledWaiter.cancel()
+        releaseCancelledWaiter.signal()
+
+        let didCancelledWaiterFinish = await cancelledWaiterFinished.wait(timeout: .seconds(1))
+        #expect(didCancelledWaiterFinish)
+        let wasConnectionCancelled = await connectionCancelled.wait(timeout: .milliseconds(100))
+        #expect(!wasConnectionCancelled)
+        #expect(!activeWaiterFinished.isSignaled)
+
+        releaseConnection.signal()
+        await activeWaiter.value
+        await cancelledWaiter.value
+
+        #expect(service.connectCallCount == 1)
+        #expect(service.disconnectCallCount == 0)
+        #expect(manager.isServerConnected(config.name))
+        #expect(manager.getServerStatus(config.name)?.state == .connected)
+    }
+
+    @Test("Cancelling registered operation waiters unregisters them immediately", .timeLimit(.minutes(1)))
+    func cancellingRegisteredOperationWaitersUnregistersImmediately() async {
+        let completion = ManagedMCPTaskCompletion()
+        let waiters = (0 ..< 32).map { _ in
+            Task {
+                await completion.wait()
+            }
+        }
+
+        let allWaitersRegistered = await waitUntil {
+            completion.pendingWaiterCount == waiters.count
+        }
+        #expect(allWaitersRegistered)
+
+        waiters.forEach { $0.cancel() }
+        for waiter in waiters {
+            await waiter.value
+        }
+
+        #expect(completion.pendingWaiterCount == 0)
     }
 
     private func waitUntil(
