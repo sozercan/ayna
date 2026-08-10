@@ -503,6 +503,7 @@ class AIService: ObservableObject {
         }
     #endif
 
+    // swiftlint:disable:next function_body_length
     init(
         urlSession: URLSession? = nil,
         anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {

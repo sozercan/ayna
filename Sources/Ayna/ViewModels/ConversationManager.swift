@@ -1285,13 +1285,12 @@ final class ConversationManager: ObservableObject {
         var repairedIds: [UUID] = []
 
         for index in repaired.indices {
-            if repairUnavailableModels(
+            guard repairUnavailableModels(
                 in: &repaired[index],
                 availableModels: availableModelSet,
                 defaultModel: defaultModel
-            ) {
-                repairedIds.append(repaired[index].id)
-            }
+            ) else { continue }
+            repairedIds.append(repaired[index].id)
         }
         repaired.sort { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {

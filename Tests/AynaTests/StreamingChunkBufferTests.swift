@@ -28,14 +28,18 @@ struct StreamingChunkBufferTests {
     @Test(.timeLimit(.minutes(1)))
     func `scheduled delivery flushes a small chunk`() async {
         var deliveries: [String] = []
+        let delivered = FlightTestSignal()
         let buffer = StreamingChunkBuffer(
             config: .init(minDeliveryInterval: 0.01, maxBufferSize: 1000, maxWaitTime: 60)
-        ) { deliveries.append($0) }
+        ) {
+            deliveries.append($0)
+            delivered.signal()
+        }
 
         buffer.append("delayed")
         #expect(deliveries.isEmpty)
 
-        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await delivered.wait(timeout: .seconds(1)))
         #expect(deliveries == ["delayed"])
     }
 
