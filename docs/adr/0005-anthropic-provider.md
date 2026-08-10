@@ -14,7 +14,7 @@ Anthropic's Claude models offer unique capabilities including:
 - Different authentication headers and API versioning
 
 We needed to integrate Anthropic while:
-1. Maintaining consistency with the existing multi-provider architecture (ADR-0001)
+1. Supporting request-scoped ownership within the provider routing architecture (ADR-0008)
 2. Supporting Anthropic-specific features (extended thinking, interleaved blocks)
 3. Ensuring cross-platform compatibility (macOS, iOS, watchOS)
 4. Providing resilience through retry logic and circuit breakers
@@ -137,6 +137,6 @@ The parser is marked `@MainActor` to enforce single-threaded access to mutable s
 
 ## References
 
-- [ADR-0001: Multi-Provider Architecture](./0001-multi-provider-architecture.md)
+- [ADR-0008: Provider Request Routing](./0008-provider-request-routing.md)
 - [Anthropic API Documentation](https://docs.anthropic.com/en/api)
 - [docs/architecture.md](../architecture.md) - Anthropic streaming event table

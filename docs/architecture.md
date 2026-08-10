@@ -45,7 +45,8 @@ The app supports multiple AI providers via the `AIProvider` enum.
 
 OpenAI-compatible providers are routed directly through `AIService` and its
 single-responsibility request components. `AIProviderProtocol` remains the
-request-scoped adapter boundary for Anthropic and test injection.
+request-scoped adapter boundary for Anthropic and test injection. See
+[ADR-0008](adr/0008-provider-request-routing.md) for the routing decision.
 
 | File | Responsibility |
 |------|----------------|

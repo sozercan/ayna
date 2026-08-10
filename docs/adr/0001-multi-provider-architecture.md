@@ -1,10 +1,14 @@
 # ADR-0001: Multi-Provider Architecture
 
 **Date**: 2024-12-01  
-**Status**: Accepted  
+**Status**: Superseded by [ADR-0008](0008-provider-request-routing.md)<br>
 **Context**: Supporting multiple AI providers (OpenAI, Azure, Anthropic, Apple Intelligence) with a unified interface
 
 ## Context
+
+> This decision describes the original universal provider-registry design. The
+> implemented architecture later evolved to request-path-specific routing; see
+> [ADR-0008](0008-provider-request-routing.md) for the current decision.
 
 Ayna needs to support multiple AI providers to give users flexibility in choosing their preferred service. Each provider has different:
 
