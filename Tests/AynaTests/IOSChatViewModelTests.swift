@@ -152,9 +152,8 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `failed auto-send hydration restores the durable prompt`() async {
-            var conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
-            conversation.pendingAutoSendPrompt = "Deep-link prompt"
+        func `failed auto-send hydration restores the durable prompt`() async throws {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
             let gate = IOSConversationLoadGate(result: nil)
             let manager = makeMetadataManager(conversation: conversation, gate: gate)
             await manager.loadingTask?.value
@@ -166,6 +165,10 @@
                 conversationManager: manager,
                 aiService: aiService
             )
+            let index = try #require(manager.conversations.firstIndex(where: {
+                $0.id == conversation.id
+            }))
+            manager.conversations[index].pendingAutoSendPrompt = "Deep-link prompt"
 
             viewModel.configure(with: manager, conversationId: conversation.id)
             await gate.waitUntilStarted()
@@ -179,14 +182,12 @@
 
         @Test(.timeLimit(.minutes(1)))
         func `newer auto-send prompt replaces a claim waiting for hydration`() async throws {
-            var metadataConversation = Conversation(
+            let metadataConversation = Conversation(
                 messages: [Message(role: .user, content: "Prior question")],
                 model: "model-a",
                 systemPromptMode: .disabled
             )
-            metadataConversation.pendingAutoSendPrompt = "First prompt"
-            var storedConversation = metadataConversation
-            storedConversation.pendingAutoSendPrompt = nil
+            let storedConversation = metadataConversation
             let gate = IOSConversationLoadGate(result: storedConversation)
             let manager = makeMetadataManager(conversation: metadataConversation, gate: gate)
             await manager.loadingTask?.value
@@ -198,13 +199,14 @@
                 conversationManager: manager,
                 aiService: aiService
             )
+            let index = try #require(manager.conversations.firstIndex(where: {
+                $0.id == metadataConversation.id
+            }))
+            manager.conversations[index].pendingAutoSendPrompt = "First prompt"
 
             viewModel.configure(with: manager, conversationId: metadataConversation.id)
             await gate.waitUntilStarted()
 
-            let index = try #require(manager.conversations.firstIndex(where: {
-                $0.id == metadataConversation.id
-            }))
             manager.conversations[index].pendingAutoSendPrompt = "Second prompt"
             viewModel.configure(with: manager, conversationId: metadataConversation.id)
 

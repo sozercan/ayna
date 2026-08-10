@@ -11,6 +11,49 @@ import AppKit
 import OSLog
 import SwiftUI
 
+struct MacPendingAutoSendClaim {
+    let conversationID: UUID
+    let prompt: String
+
+    @MainActor
+    func restore(in conversationManager: ConversationManager) {
+        guard let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }) else {
+            return
+        }
+
+        if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
+            conversationManager.conversations[index].pendingAutoSendPrompt = prompt
+            conversationManager.saveImmediately(conversationManager.conversations[index])
+        }
+    }
+
+    @MainActor
+    func consume(
+        committedPrompt: String,
+        conversationID committedConversationID: UUID,
+        in conversationManager: ConversationManager
+    ) {
+        guard committedConversationID == conversationID,
+              committedPrompt == prompt
+        else {
+            restore(in: conversationManager)
+            return
+        }
+        guard let index = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }),
+            conversationManager.conversations[index].pendingAutoSendPrompt == prompt
+        else {
+            return
+        }
+
+        conversationManager.conversations[index].pendingAutoSendPrompt = nil
+        conversationManager.saveImmediately(conversationManager.conversations[index])
+    }
+}
+
 // ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
 // tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
 // the larger body here until the view hierarchy is modularized.
@@ -71,11 +114,6 @@ enum MacChatMessagePresentation {
 
 // swiftlint:disable:next type_body_length
 struct MacChatView: View {
-    private struct PendingAutoSendClaim {
-        let conversationID: UUID
-        let prompt: String
-    }
-
     private struct SendPreparation {
         let promptText: String
         let files: [URL]
@@ -115,7 +153,7 @@ struct MacChatView: View {
     @State private var toolChainTimeoutTask: Task<Void, Never>?
         @State private var sendPreparationTask: Task<Void, Never>?
         @State private var sendPreparationID: UUID?
-        @State private var pendingAutoSendClaim: PendingAutoSendClaim?
+        @State private var pendingAutoSendClaim: MacPendingAutoSendClaim?
         @State var activeAssistantMessageID: UUID?
         @State var activeMultiModelResponseGroupID: UUID?
         @State var toolChainCoordinator = ToolChainCoordinator()
@@ -437,7 +475,7 @@ struct MacChatView: View {
         // restores it until the user message is actually committed.
         conversationManager.conversations[index].pendingAutoSendPrompt = nil
         conversationManager.saveImmediately(conversationManager.conversations[index])
-        pendingAutoSendClaim = PendingAutoSendClaim(
+        pendingAutoSendClaim = MacPendingAutoSendClaim(
             conversationID: conversationManager.conversations[index].id,
             prompt: prompt
         )
@@ -850,19 +888,26 @@ struct MacChatView: View {
 
         private func restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: Bool = true) {
             guard let claim = pendingAutoSendClaim else { return }
-            defer { pendingAutoSendClaim = nil }
-            guard let index = conversationManager.conversations.firstIndex(where: { $0.id == claim.conversationID })
-            else {
-                return
+            claim.restore(in: conversationManager)
+            if clearVisibleDraft {
+                pendingAutoSendClaim = nil
+                if messageText == claim.prompt {
+                    messageText = ""
+                }
             }
+        }
 
-            if conversationManager.conversations[index].pendingAutoSendPrompt == nil {
-                conversationManager.conversations[index].pendingAutoSendPrompt = claim.prompt
-                conversationManager.saveImmediately(conversationManager.conversations[index])
-            }
-            if clearVisibleDraft, messageText == claim.prompt {
-                messageText = ""
-            }
+        private func consumePendingAutoSendClaim(
+            afterCommitting prompt: String,
+            to conversationID: UUID
+        ) {
+            guard let claim = pendingAutoSendClaim else { return }
+            claim.consume(
+                committedPrompt: prompt,
+                conversationID: conversationID,
+                in: conversationManager
+            )
+            pendingAutoSendClaim = nil
         }
 
         private func isSameAppContent(_ lhs: AppContent?, _ rhs: AppContent?) -> Bool {
@@ -992,8 +1037,11 @@ struct MacChatView: View {
             level: .info,
             metadata: ["attachmentCount": "\(userMessage.attachments?.count ?? 0)"]
             )
-            pendingAutoSendClaim = nil
             conversationManager.addMessage(to: conversation, message: userMessage)
+            consumePendingAutoSendClaim(
+                afterCommitting: promptText,
+                to: conversation.id
+            )
 
         // Process memory commands (e.g., "remember that I prefer dark mode")
         if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {

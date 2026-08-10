@@ -90,6 +90,55 @@ struct ConversationSendPreflightTests {
         await saveHandle.releaseGate.open()
         _ = await pendingSave.value
     }
+
+    #if os(macOS)
+        @Test(.timeLimit(.minutes(1)))
+        // swiftlint:disable:next identifier_name
+        func `Restored macOS auto-send claim is consumed after a successful retry`() async throws {
+            let prompt = "Deep-link prompt"
+            let conversation = Conversation(
+                title: "Existing conversation",
+                model: "model-a",
+                systemPromptMode: .disabled
+            )
+            let store = ScriptedConversationStore()
+            let manager = ConversationManager(
+                store: store,
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+            let claim = MacPendingAutoSendClaim(
+                conversationID: conversation.id,
+                prompt: prompt
+            )
+
+            claim.restore(in: manager)
+            await manager.flushPendingSaves()
+            #expect(manager.conversation(byId: conversation.id)?.pendingAutoSendPrompt == prompt)
+
+            manager.addMessage(
+                to: conversation,
+                message: Message(role: .user, content: prompt)
+            )
+            claim.consume(
+                committedPrompt: prompt,
+                conversationID: conversation.id,
+                in: manager
+            )
+            await manager.flushPendingSaves()
+
+            #expect(manager.conversation(byId: conversation.id)?.pendingAutoSendPrompt == nil)
+            let persisted = try #require(await store.persistedConversations().first(where: {
+                $0.id == conversation.id
+            }))
+            #expect(persisted.pendingAutoSendPrompt == nil)
+            #expect(persisted.messages.contains { message in
+                message.role == .user && message.content == prompt
+            })
+        }
+    #endif
 }
 
 @MainActor
