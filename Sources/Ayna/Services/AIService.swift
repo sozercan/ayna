@@ -40,6 +40,11 @@ struct RequestFlightID: Hashable, Sendable {
     private let rawValue = UUID()
 }
 
+enum AITextRequestLane: Sendable {
+    case foreground
+    case background
+}
+
 struct RequestFlight<Handle> {
     private var id: RequestFlightID?
     private var handle: Handle?
@@ -270,6 +275,7 @@ private enum MultiModelBatchCallback: @unchecked Sendable {
         let temperature: Double?
         let stream: Bool
         let conversationID: UUID?
+        let requestLane: AITextRequestLane
         let isMultiModelRequest: Bool
         let onChunk: @Sendable (String) -> Void
         let onComplete: @Sendable () -> Void
@@ -333,25 +339,32 @@ class AIService: ObservableObject {
     // Track current task for cancellation
     private var currentTask = RequestFlight<URLSessionDataTask>()
     private var multiModelDataTasks: [String: RequestFlight<URLSessionDataTask>] = [:]
+    private var backgroundDataTasks: [RequestFlightID: URLSessionDataTask] = [:]
     private var currentRequestBuildTask = RequestFlight<Task<Void, Never>>()
     private var multiModelRequestBuildTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
+    private var backgroundRequestBuildTasks: [RequestFlightID: Task<Void, Never>] = [:]
     private var currentStreamTask = RequestFlight<Task<Void, Never>>()
+    private var backgroundStreamTasks: [RequestFlightID: Task<Void, Never>] = [:]
     private var currentNonStreamToolTask = RequestFlight<Task<Void, Never>>()
     private var multiModelNonStreamToolTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
+    private var backgroundNonStreamToolTasks: [RequestFlightID: Task<Void, Never>] = [:]
     private var currentSimulatedTextRequest = RequestFlight<SimulatedTextRequestHandle>()
     private var multiModelSimulatedTextRequests: [String: RequestFlight<SimulatedTextRequestHandle>] = [:]
+    private var backgroundSimulatedTextRequests: [RequestFlightID: SimulatedTextRequestHandle] = [:]
     private var multiModelTask = RequestFlight<Task<Void, Never>>()
     /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
     #if !os(watchOS)
         private var currentAppleIntelligenceTask = RequestFlight<AppleIntelligenceRequestHandle>()
         private var multiModelAppleIntelligenceTasks: [String: RequestFlight<AppleIntelligenceRequestHandle>] = [:]
+        private var backgroundAppleIntelligenceTasks: [RequestFlightID: AppleIntelligenceRequestHandle] = [:]
         private var imageRequests: [RequestFlightID: OpenAIImageService.RequestHandle] = [:]
     #endif
 
     /// Holds Anthropic providers during active requests to prevent deallocation.
     private var currentAnthropicProvider = RequestFlight<any AIProviderProtocol>()
     private var multiModelAnthropicProviders: [String: RequestFlight<any AIProviderProtocol>] = [:]
+    private var backgroundAnthropicProviders: [RequestFlightID: any AIProviderProtocol] = [:]
 
     @Published var provider: AIProvider {
         didSet {
@@ -980,11 +993,17 @@ class AIService: ObservableObject {
 
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {
         let dataTask = currentTask.take(ifOwnedBy: flightID)
+        let backgroundDataTask = backgroundDataTasks.removeValue(forKey: flightID)
         let requestBuildTask = currentRequestBuildTask.take(ifOwnedBy: flightID)
+        let backgroundRequestBuildTask = backgroundRequestBuildTasks.removeValue(forKey: flightID)
         let streamTask = currentStreamTask.take(ifOwnedBy: flightID)
+        let backgroundStreamTask = backgroundStreamTasks.removeValue(forKey: flightID)
         let nonStreamToolTask = currentNonStreamToolTask.take(ifOwnedBy: flightID)
+        let backgroundNonStreamToolTask = backgroundNonStreamToolTasks.removeValue(forKey: flightID)
         let simulatedRequest = currentSimulatedTextRequest.take(ifOwnedBy: flightID)
+        let backgroundSimulatedRequest = backgroundSimulatedTextRequests.removeValue(forKey: flightID)
         let anthropicProvider = currentAnthropicProvider.take(ifOwnedBy: flightID)
+        let backgroundAnthropicProvider = backgroundAnthropicProviders.removeValue(forKey: flightID)
 
         let multiDataTaskModels = multiModelDataTasks.compactMap { model, flight in
             flight.owns(flightID) ? model : nil
@@ -1031,6 +1050,7 @@ class AIService: ObservableObject {
 
         #if !os(watchOS)
             let appleTask = currentAppleIntelligenceTask.take(ifOwnedBy: flightID)
+            let backgroundAppleTask = backgroundAppleIntelligenceTasks.removeValue(forKey: flightID)
             let multiAppleTaskModels = multiModelAppleIntelligenceTasks.compactMap { model, flight in
                 flight.owns(flightID) ? model : nil
             }
@@ -1041,19 +1061,26 @@ class AIService: ObservableObject {
         #endif
 
         dataTask?.cancel()
+        backgroundDataTask?.cancel()
         multiDataTasks.forEach { $0.cancel() }
         requestBuildTask?.cancel()
+        backgroundRequestBuildTask?.cancel()
         multiRequestBuildTasks.forEach { $0.cancel() }
         streamTask?.cancel()
+        backgroundStreamTask?.cancel()
         multiStreamTasks.forEach { $0.cancel() }
         nonStreamToolTask?.cancel()
+        backgroundNonStreamToolTask?.cancel()
         multiNonStreamToolTasks.forEach { $0.cancel() }
         simulatedRequest?.cancel()
+        backgroundSimulatedRequest?.cancel()
         multiSimulatedRequests.forEach { $0.cancel() }
         anthropicProvider?.cancelRequest()
+        backgroundAnthropicProvider?.cancelRequest()
         multiAnthropicProviders.forEach { $0.cancelRequest() }
         #if !os(watchOS)
             appleTask?.cancel()
+            backgroundAppleTask?.cancel()
             multiAppleTasks.forEach { $0.cancel() }
         #endif
     }
@@ -1382,6 +1409,7 @@ class AIService: ObservableObject {
         stream: Bool = true,
         tools: [[String: Any]]? = nil,
         conversationId: UUID? = nil,
+        requestLane: AITextRequestLane = .foreground,
         isMultiModelRequest: Bool = false,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
@@ -1396,7 +1424,7 @@ class AIService: ObservableObject {
         let requestHandle = AITextRequest(service: self, flightID: flightID)
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if !isMultiModelRequest {
+        if requestLane == .foreground, !isMultiModelRequest {
             cancelForegroundNonStreamToolRequest()
         }
 
@@ -1416,6 +1444,7 @@ class AIService: ObservableObject {
         if let responseSimulator {
             let simulatedRequest = beginSimulatedTextRequest(
                 flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: requestModel
             )
@@ -1423,6 +1452,7 @@ class AIService: ObservableObject {
                 messages,
                 ownedSimulationCallbacks(
                     flightID: flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: requestModel,
                     requestHandle: simulatedRequest,
@@ -1440,6 +1470,7 @@ class AIService: ObservableObject {
                     messages: messages,
                     stream: stream,
                     flightID: flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: requestModel,
                     onChunk: onChunk,
@@ -1485,6 +1516,7 @@ class AIService: ObservableObject {
                         temperature: temperature,
                         stream: stream,
                         conversationID: conversationId,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         onChunk: onChunk,
                         onComplete: onComplete,
@@ -1498,6 +1530,7 @@ class AIService: ObservableObject {
                         temperature: temperature,
                         stream: stream,
                         conversationID: conversationId,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         onChunk: onChunk,
                         onComplete: onComplete,
@@ -1531,6 +1564,7 @@ class AIService: ObservableObject {
                 stream: stream,
                 tools: tools,
                 conversationId: conversationId,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 callbacks: anthropicCallbacks,
                 flightID: flightID
@@ -1572,6 +1606,7 @@ class AIService: ObservableObject {
                 onError: onError,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 initialFlightID: flightID
             )
@@ -1628,11 +1663,15 @@ class AIService: ObservableObject {
         // Claim the foreground/model transport slot before attachment loading so
         // a superseded response cannot retry while the replacement is building.
         takeDataTask(
+            flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: requestModel
         )?.cancel()
         if stream {
             takeStreamTask(
+                flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: requestModel
             )?.cancel()
@@ -1657,6 +1696,7 @@ class AIService: ObservableObject {
 
             guard self.clearRequestBuildFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: requestModel
             ) else {
@@ -1696,6 +1736,7 @@ class AIService: ObservableObject {
                 self.streamResponse(
                     request: request,
                     callbacks: callbacks,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: requestModel,
                     initialFlightID: flightID
@@ -1704,6 +1745,7 @@ class AIService: ObservableObject {
                 self.nonStreamResponse(
                     request: request,
                     modelName: requestModel,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     onChunk: onChunk,
                     onComplete: onComplete,
@@ -1717,6 +1759,7 @@ class AIService: ObservableObject {
         installRequestBuildTask(
             buildTask,
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: requestModel
         )?.cancel()
@@ -2032,9 +2075,13 @@ class AIService: ObservableObject {
 
     private func ownsSimulatedTextRequest(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundSimulatedTextRequests[flightID] != nil
+        }
         if isMultiModelRequest {
             return multiModelSimulatedTextRequests[modelName]?.owns(flightID) == true
         }
@@ -2043,12 +2090,15 @@ class AIService: ObservableObject {
 
     private func beginSimulatedTextRequest(
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> SimulatedTextRequestHandle {
         let requestHandle = SimulatedTextRequestHandle()
         let previousHandle: SimulatedTextRequestHandle?
-        if isMultiModelRequest {
+        if requestLane == .background {
+            previousHandle = backgroundSimulatedTextRequests.updateValue(requestHandle, forKey: flightID)
+        } else if isMultiModelRequest {
             var flight = multiModelSimulatedTextRequests[modelName] ?? RequestFlight()
             previousHandle = flight.install(requestHandle, id: flightID)
             multiModelSimulatedTextRequests[modelName] = flight
@@ -2062,12 +2112,15 @@ class AIService: ObservableObject {
     @discardableResult
     private func finishSimulatedTextRequest(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String,
         requestHandle: SimulatedTextRequestHandle
     ) -> Bool {
         let ownedHandle: SimulatedTextRequestHandle?
-        if isMultiModelRequest {
+        if requestLane == .background {
+            ownedHandle = backgroundSimulatedTextRequests.removeValue(forKey: flightID)
+        } else if isMultiModelRequest {
             guard var flight = multiModelSimulatedTextRequests[modelName],
                   let handle = flight.take(ifOwnedBy: flightID)
             else {
@@ -2088,6 +2141,7 @@ class AIService: ObservableObject {
 
     private func ownedSimulationCallbacks(
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String,
         requestHandle: SimulatedTextRequestHandle,
@@ -2099,6 +2153,7 @@ class AIService: ObservableObject {
                 guard let self else { return }
                 let ownsRequest = self.ownsSimulatedTextRequest(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: modelName
                 )
@@ -2112,6 +2167,7 @@ class AIService: ObservableObject {
                 guard let self else { return }
                 let finishedRequest = self.finishSimulatedTextRequest(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: modelName,
                     requestHandle: requestHandle
@@ -2125,10 +2181,12 @@ class AIService: ObservableObject {
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func simulateUITestResponse(
         messages: [Message],
         stream: Bool,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String,
         onChunk: @escaping @Sendable (String) -> Void,
@@ -2136,11 +2194,13 @@ class AIService: ObservableObject {
     ) {
         let requestHandle = beginSimulatedTextRequest(
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         )
         let callbacks = ownedSimulationCallbacks(
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName,
             requestHandle: requestHandle,
@@ -2187,9 +2247,13 @@ class AIService: ObservableObject {
     @discardableResult
     private func clearRequestBuildFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundRequestBuildTasks.removeValue(forKey: flightID) != nil
+        }
         if isMultiModelRequest {
             guard var flight = multiModelRequestBuildTasks[modelName],
                   flight.clear(ifOwnedBy: flightID)
@@ -2206,9 +2270,13 @@ class AIService: ObservableObject {
     private func installRequestBuildTask(
         _ task: Task<Void, Never>,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Task<Void, Never>? {
+        if requestLane == .background {
+            return backgroundRequestBuildTasks.updateValue(task, forKey: flightID)
+        }
         if isMultiModelRequest {
             var flight = multiModelRequestBuildTasks[modelName] ?? RequestFlight()
             let previousTask = flight.install(task, id: flightID)
@@ -2220,9 +2288,13 @@ class AIService: ObservableObject {
 
     private func ownsDataFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundDataTasks[flightID] != nil
+        }
         if isMultiModelRequest {
             return multiModelDataTasks[modelName]?.owns(flightID) == true
         }
@@ -2232,9 +2304,13 @@ class AIService: ObservableObject {
     @discardableResult
     private func clearDataFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundDataTasks.removeValue(forKey: flightID) != nil
+        }
         if isMultiModelRequest {
             guard var flight = multiModelDataTasks[modelName],
                   flight.clear(ifOwnedBy: flightID)
@@ -2248,9 +2324,14 @@ class AIService: ObservableObject {
     }
 
     private func takeDataTask(
+        flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> URLSessionDataTask? {
+        if requestLane == .background {
+            return backgroundDataTasks.removeValue(forKey: flightID)
+        }
         if isMultiModelRequest {
             var flight = multiModelDataTasks.removeValue(forKey: modelName)
             return flight?.take()
@@ -2262,10 +2343,16 @@ class AIService: ObservableObject {
     private func installDataTask(
         _ task: URLSessionDataTask,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String,
         requiresExistingOwner: Bool
     ) -> Bool {
+        if requestLane == .background {
+            guard !requiresExistingOwner || backgroundDataTasks[flightID] != nil else { return false }
+            backgroundDataTasks[flightID] = task
+            return true
+        }
         if isMultiModelRequest {
             var flight = multiModelDataTasks[modelName] ?? RequestFlight()
             guard !requiresExistingOwner || flight.owns(flightID) else { return false }
@@ -2291,6 +2378,7 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
+        requestLane: AITextRequestLane = .foreground,
         isMultiModelRequest: Bool = false,
         attempt: Int = 0,
         initialFlightID: RequestFlightID? = nil,
@@ -2299,6 +2387,7 @@ class AIService: ObservableObject {
         let flightID = existingFlightID ?? initialFlightID ?? RequestFlightID()
         guard existingFlightID == nil || ownsDataFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: model
         ) else {
@@ -2308,6 +2397,7 @@ class AIService: ObservableObject {
         func reportSetupError(_ error: Error) {
             if existingFlightID == nil || clearDataFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: model
             ) {
@@ -2367,6 +2457,8 @@ class AIService: ObservableObject {
 
         if existingFlightID == nil {
             takeDataTask(
+                flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: model
             )?.cancel()
@@ -2389,6 +2481,7 @@ class AIService: ObservableObject {
 
             guard self.clearRequestBuildFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: model
             ) else {
@@ -2402,6 +2495,8 @@ class AIService: ObservableObject {
 
             if existingFlightID == nil {
                 let previousTask = takeDataTask(
+                    flightID: flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: model
                 )
@@ -2409,6 +2504,7 @@ class AIService: ObservableObject {
             } else {
                 guard ownsDataFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: model
                 ) else {
@@ -2422,6 +2518,7 @@ class AIService: ObservableObject {
                     guard let self = selfRef else { return }
                     let ownsFlight = self.ownsDataFlight(
                         flightID,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         modelName: model
                     )
@@ -2433,6 +2530,7 @@ class AIService: ObservableObject {
                         if (error as NSError).code == NSURLErrorCancelled {
                             self.clearDataFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: model
                             )
@@ -2451,6 +2549,7 @@ class AIService: ObservableObject {
                                 await self.delay(for: attempt)
                                 let ownsFlight = self.ownsDataFlight(
                                     flightID,
+                                    requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     modelName: model
                                 )
@@ -2465,6 +2564,7 @@ class AIService: ObservableObject {
                                     onError: onError,
                                     onToolCallRequested: onToolCallRequested,
                                     onReasoning: onReasoning,
+                                    requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     attempt: attempt + 1,
                                     existingFlightID: flightID
@@ -2475,6 +2575,7 @@ class AIService: ObservableObject {
 
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: model
                         ) else {
@@ -2487,6 +2588,7 @@ class AIService: ObservableObject {
                     guard let data else {
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: model
                         ) else {
@@ -2504,6 +2606,7 @@ class AIService: ObservableObject {
                         {
                             guard self.clearDataFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: model
                             ) else {
@@ -2519,6 +2622,7 @@ class AIService: ObservableObject {
                                 onChunk: { chunk in
                                     guard self.ownsDataFlight(
                                         flightID,
+                                        requestLane: requestLane,
                                         isMultiModelRequest: isMultiModelRequest,
                                         modelName: model
                                     ) else {
@@ -2529,6 +2633,7 @@ class AIService: ObservableObject {
                                 onReasoning: { reasoning in
                                     guard self.ownsDataFlight(
                                         flightID,
+                                        requestLane: requestLane,
                                         isMultiModelRequest: isMultiModelRequest,
                                         modelName: model
                                     ) else {
@@ -2539,6 +2644,7 @@ class AIService: ObservableObject {
                                 onToolCallRequested: { toolID, toolName, arguments in
                                     guard self.ownsDataFlight(
                                         flightID,
+                                        requestLane: requestLane,
                                         isMultiModelRequest: isMultiModelRequest,
                                         modelName: model
                                     ) else {
@@ -2550,6 +2656,7 @@ class AIService: ObservableObject {
 
                             guard self.ownsDataFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: model
                             ) else {
@@ -2568,6 +2675,7 @@ class AIService: ObservableObject {
 
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: model
                         ) else {
@@ -2577,6 +2685,7 @@ class AIService: ObservableObject {
                     } catch {
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: model
                         ) else {
@@ -2590,6 +2699,7 @@ class AIService: ObservableObject {
             guard installDataTask(
                 task,
                 flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: model,
                 requiresExistingOwner: existingFlightID != nil
@@ -2602,6 +2712,7 @@ class AIService: ObservableObject {
         installRequestBuildTask(
             buildTask,
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: model
         )?.cancel()
@@ -2689,9 +2800,13 @@ class AIService: ObservableObject {
 
     private func ownsStreamFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String?
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundStreamTasks[flightID] != nil
+        }
         if isMultiModelRequest {
             guard let modelName else { return false }
             return multiModelStreamTasks[modelName]?.owns(flightID) == true
@@ -2702,9 +2817,13 @@ class AIService: ObservableObject {
     @discardableResult
     private func clearStreamFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String?
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundStreamTasks.removeValue(forKey: flightID) != nil
+        }
         if isMultiModelRequest {
             guard let modelName,
                   var flight = multiModelStreamTasks[modelName],
@@ -2719,9 +2838,14 @@ class AIService: ObservableObject {
     }
 
     private func takeStreamTask(
+        flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String?
     ) -> Task<Void, Never>? {
+        if requestLane == .background {
+            return backgroundStreamTasks.removeValue(forKey: flightID)
+        }
         if isMultiModelRequest {
             guard let modelName else { return nil }
             var flight = multiModelStreamTasks.removeValue(forKey: modelName)
@@ -2734,10 +2858,16 @@ class AIService: ObservableObject {
     private func installStreamTask(
         _ task: Task<Void, Never>,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String?,
         requiresExistingOwner: Bool
     ) -> Bool {
+        if requestLane == .background {
+            guard !requiresExistingOwner || backgroundStreamTasks[flightID] != nil else { return false }
+            backgroundStreamTasks[flightID] = task
+            return true
+        }
         if isMultiModelRequest {
             guard let modelName else { return false }
             var flight = multiModelStreamTasks[modelName] ?? RequestFlight()
@@ -2753,17 +2883,20 @@ class AIService: ObservableObject {
     }
 
     @discardableResult
+    // swiftlint:disable:next function_parameter_count
     private func deliverStreamBuffers(
         content: String,
         reasoning: String,
         callbacks: StreamCallbacks,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String?,
         terminal: Bool
     ) -> Bool {
         guard ownsStreamFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         ) else {
@@ -2774,6 +2907,7 @@ class AIService: ObservableObject {
             callbacks.onChunk(content)
             guard ownsStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             ) else {
@@ -2785,6 +2919,7 @@ class AIService: ObservableObject {
             callbacks.onReasoning?(reasoning)
             guard ownsStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             ) else {
@@ -2795,6 +2930,7 @@ class AIService: ObservableObject {
         if terminal {
             guard clearStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             ) else {
@@ -2810,6 +2946,7 @@ class AIService: ObservableObject {
         request: URLRequest,
         callbacks: StreamCallbacks,
         attempt: Int = 0,
+        requestLane: AITextRequestLane = .foreground,
         isMultiModelRequest: Bool = false,
         modelName: String? = nil,
         initialFlightID: RequestFlightID? = nil,
@@ -2821,6 +2958,7 @@ class AIService: ObservableObject {
         if existingFlightID != nil {
             guard ownsStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             ) else {
@@ -2828,6 +2966,8 @@ class AIService: ObservableObject {
             }
         } else {
             let previousTask = takeStreamTask(
+                flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             )
@@ -2955,6 +3095,7 @@ class AIService: ObservableObject {
                             let ownsFlight = await MainActor.run {
                                 self.ownsStreamFlight(
                                     flightID,
+                                    requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     modelName: modelName
                                 )
@@ -2965,6 +3106,7 @@ class AIService: ObservableObject {
                             let stillOwnsFlight = await MainActor.run {
                                 self.ownsStreamFlight(
                                     flightID,
+                                    requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     modelName: modelName
                                 )
@@ -2984,6 +3126,7 @@ class AIService: ObservableObject {
                                       !Task.isCancelled,
                                       self.ownsStreamFlight(
                                           flightID,
+                                          requestLane: requestLane,
                                           isMultiModelRequest: isMultiModelRequest,
                                           modelName: modelName
                                       )
@@ -3033,6 +3176,7 @@ class AIService: ObservableObject {
                                 let ownsFlight = await MainActor.run {
                                     self.ownsStreamFlight(
                                         flightID,
+                                        requestLane: requestLane,
                                         isMultiModelRequest: isMultiModelRequest,
                                         modelName: modelName
                                     )
@@ -3049,6 +3193,7 @@ class AIService: ObservableObject {
                                 let ownsAfterParser = await MainActor.run {
                                     self.ownsStreamFlight(
                                         flightID,
+                                        requestLane: requestLane,
                                         isMultiModelRequest: isMultiModelRequest,
                                         modelName: modelName
                                     )
@@ -3076,6 +3221,7 @@ class AIService: ObservableObject {
                                             reasoning: reasoningToSend,
                                             callbacks: callbacks,
                                             flightID: flightID,
+                                            requestLane: requestLane,
                                             isMultiModelRequest: isMultiModelRequest,
                                             modelName: modelName,
                                             terminal: true
@@ -3097,6 +3243,7 @@ class AIService: ObservableObject {
                                             reasoning: reasoningToSend,
                                             callbacks: callbacks,
                                             flightID: flightID,
+                                            requestLane: requestLane,
                                             isMultiModelRequest: isMultiModelRequest,
                                             modelName: modelName,
                                             terminal: false
@@ -3118,6 +3265,7 @@ class AIService: ObservableObject {
                         let ownsFlight = await MainActor.run {
                             self.ownsStreamFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: modelName
                             )
@@ -3149,6 +3297,7 @@ class AIService: ObservableObject {
                     await MainActor.run {
                         guard self.ownsStreamFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: modelName
                         ) else {
@@ -3182,6 +3331,7 @@ class AIService: ObservableObject {
                             reasoning: reasoningToSend,
                             callbacks: callbacks,
                             flightID: flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: modelName,
                             terminal: true
@@ -3201,6 +3351,7 @@ class AIService: ObservableObject {
                     hasReceivedData: hasReceivedData,
                     request: request,
                     callbacks: callbacks,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: modelName,
                     flightID: flightID
@@ -3210,6 +3361,7 @@ class AIService: ObservableObject {
         guard installStreamTask(
             task,
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName,
             requiresExistingOwner: existingFlightID != nil
@@ -3324,6 +3476,7 @@ class AIService: ObservableObject {
         hasReceivedData: Bool,
         request: URLRequest,
         callbacks: StreamCallbacks,
+        requestLane: AITextRequestLane = .foreground,
         isMultiModelRequest: Bool = false,
         modelName: String? = nil,
         flightID: RequestFlightID
@@ -3336,6 +3489,7 @@ class AIService: ObservableObject {
             )
             let cleared = clearStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             )
@@ -3345,6 +3499,7 @@ class AIService: ObservableObject {
 
         guard ownsStreamFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         ) else {
@@ -3375,6 +3530,7 @@ class AIService: ObservableObject {
             await delay(for: attempt, retryAfterDate: retryAfterDate)
             let ownsFlight = ownsStreamFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             )
@@ -3384,6 +3540,7 @@ class AIService: ObservableObject {
                 request: request,
                 callbacks: callbacks,
                 attempt: attempt + 1,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName,
                 existingFlightID: flightID
@@ -3393,6 +3550,7 @@ class AIService: ObservableObject {
 
         guard clearStreamFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         ) else {
@@ -3419,9 +3577,13 @@ class AIService: ObservableObject {
 
     private func ownsNonStreamToolFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundNonStreamToolTasks[flightID] != nil
+        }
         if isMultiModelRequest {
             return multiModelNonStreamToolTasks[modelName]?.owns(flightID) == true
         }
@@ -3430,15 +3592,18 @@ class AIService: ObservableObject {
 
     private func ownsNonStreamToolExecution(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
         ownsDataFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         ) && ownsNonStreamToolFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         )
@@ -3447,9 +3612,13 @@ class AIService: ObservableObject {
     @discardableResult
     private func clearNonStreamToolFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundNonStreamToolTasks.removeValue(forKey: flightID) != nil
+        }
         if isMultiModelRequest {
             guard var flight = multiModelNonStreamToolTasks[modelName],
                   flight.clear(ifOwnedBy: flightID)
@@ -3466,18 +3635,23 @@ class AIService: ObservableObject {
     private func installNonStreamToolTask(
         _ task: Task<Void, Never>,
         flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         modelName: String
     ) -> Bool {
         guard ownsDataFlight(
             flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName
         ) else {
             return false
         }
 
-        if isMultiModelRequest {
+        if requestLane == .background {
+            backgroundNonStreamToolTasks.updateValue(task, forKey: flightID)?.cancel()
+            return true
+        } else if isMultiModelRequest {
             var flight = multiModelNonStreamToolTasks[modelName] ?? RequestFlight()
             let previousTask = flight.install(task, id: flightID)
             multiModelNonStreamToolTasks[modelName] = flight
@@ -3493,6 +3667,7 @@ class AIService: ObservableObject {
     private func nonStreamResponse(
         request: URLRequest,
         modelName: String,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
@@ -3506,6 +3681,8 @@ class AIService: ObservableObject {
         let flightID = existingFlightID ?? initialFlightID ?? RequestFlightID()
         if existingFlightID == nil {
             let previousTask = takeDataTask(
+                flightID: flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             )
@@ -3513,6 +3690,7 @@ class AIService: ObservableObject {
         } else {
             guard ownsDataFlight(
                 flightID,
+                requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 modelName: modelName
             ) else {
@@ -3526,6 +3704,7 @@ class AIService: ObservableObject {
                 guard let self = selfRef else { return }
                 let ownsFlight = self.ownsDataFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     modelName: modelName
                 )
@@ -3545,6 +3724,7 @@ class AIService: ObservableObject {
                             await self.delay(for: attempt)
                             let ownsFlight = self.ownsDataFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: modelName
                             )
@@ -3553,6 +3733,7 @@ class AIService: ObservableObject {
                             self.nonStreamResponse(
                                 request: request,
                                 modelName: modelName,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 onChunk: onChunk,
                                 onComplete: onComplete,
@@ -3567,6 +3748,7 @@ class AIService: ObservableObject {
                     }
                     guard self.clearDataFlight(
                         flightID,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         modelName: modelName
                     ) else {
@@ -3579,6 +3761,7 @@ class AIService: ObservableObject {
                 guard let data else {
                     guard self.clearDataFlight(
                         flightID,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         modelName: modelName
                     ) else {
@@ -3596,6 +3779,7 @@ class AIService: ObservableObject {
                     {
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: modelName
                         ) else {
@@ -3628,6 +3812,7 @@ class AIService: ObservableObject {
                             onReasoning(reasoning)
                             guard self.ownsDataFlight(
                                 flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: modelName
                             ) else {
@@ -3646,6 +3831,7 @@ class AIService: ObservableObject {
                             for segment in textSegments where !segment.isEmpty {
                                 guard self.ownsDataFlight(
                                     flightID,
+                                    requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     modelName: modelName
                                 ) else {
@@ -3673,6 +3859,7 @@ class AIService: ObservableObject {
                                         guard !Task.isCancelled,
                                               self.ownsNonStreamToolExecution(
                                                   flightID,
+                                                  requestLane: requestLane,
                                                   isMultiModelRequest: isMultiModelRequest,
                                                   modelName: modelName
                                               )
@@ -3685,6 +3872,7 @@ class AIService: ObservableObject {
                                         guard !Task.isCancelled,
                                               self.ownsNonStreamToolExecution(
                                                   flightID,
+                                                  requestLane: requestLane,
                                                   isMultiModelRequest: isMultiModelRequest,
                                                   modelName: modelName
                                               )
@@ -3696,6 +3884,7 @@ class AIService: ObservableObject {
 
                                         guard self.ownsNonStreamToolExecution(
                                             flightID,
+                                            requestLane: requestLane,
                                             isMultiModelRequest: isMultiModelRequest,
                                             modelName: modelName
                                         ) else {
@@ -3707,16 +3896,19 @@ class AIService: ObservableObject {
                                 guard !Task.isCancelled,
                                       self.ownsNonStreamToolExecution(
                                           flightID,
+                                          requestLane: requestLane,
                                           isMultiModelRequest: isMultiModelRequest,
                                           modelName: modelName
                                       ),
                                       self.clearNonStreamToolFlight(
                                           flightID,
+                                          requestLane: requestLane,
                                           isMultiModelRequest: isMultiModelRequest,
                                           modelName: modelName
                                       ),
                                       self.clearDataFlight(
                                           flightID,
+                                          requestLane: requestLane,
                                           isMultiModelRequest: isMultiModelRequest,
                                           modelName: modelName
                                       )
@@ -3730,6 +3922,7 @@ class AIService: ObservableObject {
                             guard self.installNonStreamToolTask(
                                 toolTask,
                                 flightID: flightID,
+                                requestLane: requestLane,
                                 isMultiModelRequest: isMultiModelRequest,
                                 modelName: modelName
                             ) else {
@@ -3741,6 +3934,7 @@ class AIService: ObservableObject {
 
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: modelName
                         ) else {
@@ -3750,6 +3944,7 @@ class AIService: ObservableObject {
                     } else {
                         guard self.clearDataFlight(
                             flightID,
+                            requestLane: requestLane,
                             isMultiModelRequest: isMultiModelRequest,
                             modelName: modelName
                         ) else {
@@ -3760,6 +3955,7 @@ class AIService: ObservableObject {
                 } catch {
                     guard self.clearDataFlight(
                         flightID,
+                        requestLane: requestLane,
                         isMultiModelRequest: isMultiModelRequest,
                         modelName: modelName
                     ) else {
@@ -3773,6 +3969,7 @@ class AIService: ObservableObject {
         guard installDataTask(
             task,
             flightID: flightID,
+            requestLane: requestLane,
             isMultiModelRequest: isMultiModelRequest,
             modelName: modelName,
             requiresExistingOwner: existingFlightID != nil
@@ -3786,9 +3983,13 @@ class AIService: ObservableObject {
     #if !os(watchOS)
         private func ownsAppleIntelligenceFlight(
             _ flightID: RequestFlightID,
+            requestLane: AITextRequestLane,
             isMultiModelRequest: Bool,
             modelName: String
         ) -> Bool {
+            if requestLane == .background {
+                return backgroundAppleIntelligenceTasks[flightID] != nil
+            }
             if isMultiModelRequest {
                 return multiModelAppleIntelligenceTasks[modelName]?.owns(flightID) == true
             }
@@ -3798,9 +3999,13 @@ class AIService: ObservableObject {
         @discardableResult
         private func clearAppleIntelligenceFlight(
             _ flightID: RequestFlightID,
+            requestLane: AITextRequestLane,
             isMultiModelRequest: Bool,
             modelName: String
         ) -> Bool {
+            if requestLane == .background {
+                return backgroundAppleIntelligenceTasks.removeValue(forKey: flightID) != nil
+            }
             if isMultiModelRequest {
                 guard var flight = multiModelAppleIntelligenceTasks[modelName],
                       flight.clear(ifOwnedBy: flightID)
@@ -3821,6 +4026,7 @@ class AIService: ObservableObject {
         ) -> Bool {
             guard clearAppleIntelligenceFlight(
                 flightID,
+                requestLane: request.requestLane,
                 isMultiModelRequest: request.isMultiModelRequest,
                 modelName: request.modelName
             ) else {
@@ -3833,9 +4039,13 @@ class AIService: ObservableObject {
         private func installAppleIntelligenceHandle(
             _ handle: AppleIntelligenceRequestHandle,
             flightID: RequestFlightID,
+            requestLane: AITextRequestLane,
             isMultiModelRequest: Bool,
             modelName: String
         ) -> AppleIntelligenceRequestHandle? {
+            if requestLane == .background {
+                return backgroundAppleIntelligenceTasks.updateValue(handle, forKey: flightID)
+            }
             if isMultiModelRequest {
                 var flight = multiModelAppleIntelligenceTasks[modelName] ?? RequestFlight()
                 let previous = flight.install(handle, id: flightID)
@@ -3848,6 +4058,9 @@ class AIService: ObservableObject {
         private func appleSessionID(for request: AppleIntelligenceRequestContext) -> String {
             let conversationScope = request.conversationID?.uuidString ?? "default"
             let requestScope = UUID().uuidString
+            if request.requestLane == .background {
+                return "background:\(conversationScope):\(request.modelName):\(requestScope)"
+            }
             return request.isMultiModelRequest
                 ? "multi:\(conversationScope):\(request.modelName):\(requestScope)"
                 : "\(conversationScope):\(requestScope)"
@@ -4179,6 +4392,7 @@ class AIService: ObservableObject {
             }
             guard ownsAppleIntelligenceFlight(
                 flightID,
+                requestLane: request.requestLane,
                 isMultiModelRequest: request.isMultiModelRequest,
                 modelName: request.modelName
             ) else {
@@ -4210,6 +4424,7 @@ class AIService: ObservableObject {
                 guard let self,
                       self.ownsAppleIntelligenceFlight(
                           flightID,
+                          requestLane: request.requestLane,
                           isMultiModelRequest: request.isMultiModelRequest,
                           modelName: request.modelName
                       )
@@ -4234,6 +4449,7 @@ class AIService: ObservableObject {
                             guard let self,
                                   self.ownsAppleIntelligenceFlight(
                                       flightID,
+                                      requestLane: request.requestLane,
                                       isMultiModelRequest: request.isMultiModelRequest,
                                       modelName: request.modelName
                                   )
@@ -4274,6 +4490,7 @@ class AIService: ObservableObject {
                             guard let self,
                                   self.ownsAppleIntelligenceFlight(
                                       flightID,
+                                      requestLane: request.requestLane,
                                       isMultiModelRequest: request.isMultiModelRequest,
                                       modelName: request.modelName
                                   )
@@ -4324,6 +4541,7 @@ class AIService: ObservableObject {
             installAppleIntelligenceHandle(
                 handle,
                 flightID: flightID,
+                requestLane: request.requestLane,
                 isMultiModelRequest: request.isMultiModelRequest,
                 modelName: request.modelName
             )?.cancel()
@@ -4334,9 +4552,13 @@ class AIService: ObservableObject {
 
     private func ownsAnthropicFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         model: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundAnthropicProviders[flightID] != nil
+        }
         if isMultiModelRequest {
             return multiModelAnthropicProviders[model]?.owns(flightID) == true
         }
@@ -4346,9 +4568,13 @@ class AIService: ObservableObject {
     @discardableResult
     private func clearAnthropicFlight(
         _ flightID: RequestFlightID,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         model: String
     ) -> Bool {
+        if requestLane == .background {
+            return backgroundAnthropicProviders.removeValue(forKey: flightID) != nil
+        }
         if isMultiModelRequest {
             guard var flight = multiModelAnthropicProviders[model],
                   flight.clear(ifOwnedBy: flightID)
@@ -4361,12 +4587,14 @@ class AIService: ObservableObject {
         return currentAnthropicProvider.clear(ifOwnedBy: flightID)
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func handleAnthropicRequest(
         messages: [Message],
         model: String,
         stream: Bool,
         tools: [[String: Any]]?,
         conversationId: UUID?,
+        requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         callbacks: AIProviderStreamCallbacks,
         flightID: RequestFlightID = RequestFlightID()
@@ -4404,7 +4632,9 @@ class AIService: ObservableObject {
 
         // Install ownership before sending because a provider may fail synchronously.
         let provider = anthropicProviderFactory(urlSession)
-        if isMultiModelRequest {
+        if requestLane == .background {
+            backgroundAnthropicProviders.updateValue(provider, forKey: flightID)?.cancelRequest()
+        } else if isMultiModelRequest {
             var previousFlight = multiModelAnthropicProviders.removeValue(forKey: model)
             let previousProvider = previousFlight?.take()
             previousProvider?.cancelRequest()
@@ -4424,6 +4654,7 @@ class AIService: ObservableObject {
             case let .chunk(chunk):
                 guard self.ownsAnthropicFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     model: model
                 ) else {
@@ -4434,6 +4665,7 @@ class AIService: ObservableObject {
             case .complete:
                 let ownsFlight = self.ownsAnthropicFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     model: model
                 )
@@ -4441,6 +4673,7 @@ class AIService: ObservableObject {
                 guard ownsFlight,
                       self.clearAnthropicFlight(
                           flightID,
+                          requestLane: requestLane,
                           isMultiModelRequest: isMultiModelRequest,
                           model: model
                       )
@@ -4452,6 +4685,7 @@ class AIService: ObservableObject {
             case let .error(error):
                 let ownsFlight = self.ownsAnthropicFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     model: model
                 )
@@ -4459,6 +4693,7 @@ class AIService: ObservableObject {
                 guard ownsFlight,
                       self.clearAnthropicFlight(
                           flightID,
+                          requestLane: requestLane,
                           isMultiModelRequest: isMultiModelRequest,
                           model: model
                       )
@@ -4470,6 +4705,7 @@ class AIService: ObservableObject {
             case let .toolRequest(toolID, toolName, arguments):
                 guard self.ownsAnthropicFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     model: model
                 ) else {
@@ -4480,6 +4716,7 @@ class AIService: ObservableObject {
             case let .reasoning(reasoning):
                 guard self.ownsAnthropicFlight(
                     flightID,
+                    requestLane: requestLane,
                     isMultiModelRequest: isMultiModelRequest,
                     model: model
                 ) else {

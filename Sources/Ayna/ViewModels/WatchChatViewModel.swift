@@ -1267,6 +1267,7 @@ final class WatchToolCallRoundRegistry {
                 messages: [titleMessage],
                 model: conversation.model,
                 stream: false,
+                requestLane: .background,
                 onChunk: { [weak self] chunk in
                     Task { @MainActor [weak self] in
                         guard let self, self.canApplyTitleUpdate(requestID) else { return }

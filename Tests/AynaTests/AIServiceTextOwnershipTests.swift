@@ -216,6 +216,145 @@ extension AIServiceTests {
         #expect(await !(staleCallbacks.wait(timeout: .milliseconds(100))))
     }
 
+    @Test("A foreground stream does not cancel an active background title request", .timeLimit(.minutes(1)))
+    func foregroundStreamDoesNotCancelActiveBackgroundTitleRequest() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "background-title-data"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let titleChunks = FlightTestBox("")
+        let titleComplete = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Generate a very short title")],
+            model: model,
+            stream: false,
+            requestLane: .background,
+            onChunk: { titleChunks.value += $0 },
+            onComplete: { titleComplete.signal() },
+            onError: { error in Issue.record("Unexpected title error: \(error)") }
+        )
+        let titleExchange = await server.exchange(at: 0)
+        titleExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+
+        let chatChunks = FlightTestBox("")
+        let chatComplete = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground chat")],
+            model: model,
+            stream: true,
+            onChunk: { chatChunks.value += $0 },
+            onComplete: { chatComplete.signal() },
+            onError: { error in Issue.record("Unexpected chat error: \(error)") }
+        )
+        let chatExchange = await server.exchange(at: 1)
+
+        #expect(!titleExchange.isStopped)
+
+        chatExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
+        chatExchange.send(Data("data: {\"choices\":[{\"delta\":{\"content\":\"Chat Response\"}}]}\n\n".utf8))
+        chatExchange.send(Data("data: [DONE]\n\n".utf8))
+        chatExchange.finish()
+
+        titleExchange.send(Data(#"{"choices":[{"message":{"content":"Generated Title"}}]}"#.utf8))
+        titleExchange.finish()
+
+        #expect(await chatComplete.wait(timeout: .seconds(1)))
+        #expect(await titleComplete.wait(timeout: .seconds(1)))
+        #expect(chatChunks.value == "Chat Response")
+        #expect(titleChunks.value == "Generated Title")
+    }
+
+    @Test("Back-to-back background and foreground requests own independent build flights", .timeLimit(.minutes(1)))
+    func backToBackBackgroundAndForegroundRequestsOwnIndependentBuildFlights() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "background-title-build"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let titleRequest = service.sendMessage(
+            messages: [Message(role: .user, content: "Generate a very short title")],
+            model: model,
+            stream: false,
+            requestLane: .background,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let chatRequest = service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground chat")],
+            model: model,
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+
+        let bothStarted = await server.waitForRequestCount(2, timeout: .seconds(2))
+        #expect(bothStarted)
+
+        titleRequest.cancel()
+        chatRequest.cancel()
+        if bothStarted {
+            let firstExchange = await server.exchange(at: 0)
+            let secondExchange = await server.exchange(at: 1)
+            #expect(await firstExchange.waitUntilStopped(timeout: .seconds(1)))
+            #expect(await secondExchange.waitUntilStopped(timeout: .seconds(1)))
+        }
+    }
+
+    @Test("Background Anthropic requests are isolated from foreground cancellation")
+    func backgroundAnthropicRequestsAreIsolatedFromForegroundCancellation() throws {
+        let factory = FlightTestAnthropicProviderFactory()
+        let service = AIService(anthropicProviderFactory: { _ in factory.makeProvider() })
+        let model = "background-anthropic-title"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .anthropic
+        service.modelAPIKeys[model] = "sk-ant-unit-test"
+
+        let titleRequest = service.sendMessage(
+            messages: [Message(role: .user, content: "Generate a very short title")],
+            model: model,
+            stream: false,
+            requestLane: .background,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let titleProvider = try #require(factory.providers.first)
+
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Foreground chat")],
+            model: model,
+            stream: true,
+            onChunk: { _ in },
+            onComplete: {},
+            onError: { _ in }
+        )
+        let foregroundProvider = try #require(factory.providers.last)
+
+        #expect(!titleProvider.isCancelled)
+        service.cancelCurrentRequest()
+        #expect(foregroundProvider.isCancelled)
+        #expect(!titleProvider.isCancelled)
+
+        titleRequest.cancel()
+        #expect(titleProvider.isCancelled)
+    }
+
     @Test("Synchronous simulator replacement fences stale and late callbacks")
     func synchronousSimulatorReplacementFencesStaleAndLateCallbacks() throws {
         let replacementCallbacks = FlightTestBox<AIServiceResponseSimulationCallbacks?>(nil)

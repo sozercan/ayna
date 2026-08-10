@@ -2885,6 +2885,7 @@ final class ConversationManager: ObservableObject {
             messages: [titleMessage],
             model: conversation.model,
             stream: false,
+            requestLane: .background,
             onChunk: { chunk in
                 Task { await accumulator.append(chunk) }
             },
