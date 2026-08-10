@@ -5,7 +5,7 @@ import Testing
 @Suite("ChatTranscriptPlan Tests", .tags(.fast))
 struct ChatTranscriptPlanTests {
     @Test
-    func `Plan hides system, web-search, and empty tool messages`() {
+    func `plan hides system, web-search, and empty tool messages`() {
         let system = Message(role: .system, content: "Hidden")
         let emptyTool = Message(role: .tool, content: "  \n")
         var webSearch = Message(role: .tool, content: "Search result")
@@ -20,7 +20,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan hides empty assistant tool-call placeholders`() {
+    func `plan hides empty assistant tool-call placeholders`() {
         #if !os(watchOS)
             var placeholder = Message(role: .assistant, content: "")
             placeholder.toolCalls = [MCPToolCall(toolName: "web_search", arguments: [:])]
@@ -34,7 +34,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan shows reasoning-only assistant messages`() {
+    func `plan shows reasoning-only assistant messages`() {
         let message = Message(role: .assistant, content: "", reasoning: "Thinking through this")
         let conversation = Conversation(messages: [message])
 
@@ -46,7 +46,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan shows citations-only assistant messages`() {
+    func `plan shows citations-only assistant messages`() {
         let message = Message(
             role: .assistant,
             content: "",
@@ -62,7 +62,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan keeps empty response-group placeholders visible and grouped`() {
+    func `plan keeps empty response-group placeholders visible and grouped`() {
         let groupId = UUID()
         let first = Message(role: .assistant, content: "", model: "gpt-a", responseGroupId: groupId)
         let second = Message(role: .assistant, content: "", model: "gpt-b", responseGroupId: groupId)
@@ -91,7 +91,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan shows active image placeholders and completed images`() {
+    func `plan shows active image placeholders and completed images`() {
         let placeholder = Message(role: .assistant, content: "", mediaType: .image)
         let imagePath = Message(role: .assistant, content: "", imagePath: "images/generated.png")
         let imageData = Message(role: .assistant, content: "", imageData: Data([1, 2, 3]))
@@ -106,7 +106,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan keeps non-empty standalone image messages visible`() {
+    func `plan keeps non-empty standalone image messages visible`() {
         let failedAssistant = Message(role: .assistant, content: "Image generation failed", mediaType: .image)
         let userImage = Message(role: .user, content: "Uploaded image context", mediaType: .image)
         let oldPlaceholder = Message(role: .assistant, content: "", mediaType: .image)
@@ -121,7 +121,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan shows only the last empty assistant while generating`() {
+    func `plan shows only the last empty assistant while generating`() {
         let hidden = Message(role: .assistant, content: "")
         let visible = Message(role: .assistant, content: "")
         let conversation = Conversation(messages: [hidden, visible])
@@ -133,7 +133,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Plan preserves response-group first occurrence order`() {
+    func `plan preserves response-group first occurrence order`() {
         let groupId = UUID()
         let user = Message(role: .user, content: "Question")
         let groupedFirst = Message(role: .assistant, content: "A", model: "gpt-a", responseGroupId: groupId)
@@ -159,7 +159,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Default candidate prefers completed conversation model`() {
+    func `default candidate prefers completed conversation model`() {
         let failed = Message(role: .assistant, content: "A", model: "gpt-a")
         let streaming = Message(role: .assistant, content: "B", model: "gpt-b")
         let completed = Message(role: .assistant, content: "C", model: "gpt-c")
@@ -181,7 +181,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Default candidate falls back to original ordering when every response is unavailable`() {
+    func `default candidate falls back to original ordering when every response is unavailable`() {
         let failed = Message(role: .assistant, content: "A", model: "gpt-a")
         let streaming = Message(role: .assistant, content: "B", model: "gpt-b")
         let group = ResponseGroup(
@@ -200,7 +200,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Response-group item includes selected and default metadata`() {
+    func `response-group item includes selected and default metadata`() {
         let groupId = UUID()
         let user = Message(role: .user, content: "Compare")
         let first = Message(role: .assistant, content: "A", model: "gpt-a", responseGroupId: groupId)
@@ -226,7 +226,7 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
-    func `Auto-selection uses the last unselected response group`() {
+    func `auto-selection uses the last unselected response group`() {
         let groupId = UUID()
         let user = Message(role: .user, content: "Compare")
         let first = Message(role: .assistant, content: "A", model: "gpt-a", responseGroupId: groupId)
