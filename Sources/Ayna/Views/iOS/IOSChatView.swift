@@ -340,26 +340,6 @@ struct IOSChatView: View {
         }
     }
 
-    private func autoSelectResponseIfNeeded() {
-        guard let conversation,
-              let candidate = ChatTranscriptPlan.autoSelectionCandidate(in: conversation)
-        else {
-            return
-        }
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🤖 Auto-selecting response before sending new message",
-            metadata: ["messageId": candidate.messageId.uuidString]
-        )
-        conversationManager.selectResponse(
-            in: conversation,
-            groupId: candidate.groupId,
-            messageId: candidate.messageId
-        )
-    }
-
     private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
         if let lastId = conversation.messages.last?.id {
             withAnimation {

@@ -155,8 +155,9 @@ struct IOSMessageView: View {
         return String(content.prefix(100)) + (content.count > 100 ? "..." : "")
     }
 
-
     private var shouldShowTypingIndicator: Bool {
+        guard !hasReasoning else { return false }
+
         if let displayKind {
             return displayKind == .typingPlaceholder
         }
@@ -165,6 +166,11 @@ struct IOSMessageView: View {
             && message.content.isEmpty
             && message.mediaType != .image
             && (message.toolCalls == nil || message.toolCalls?.isEmpty == true)
+    }
+
+    private var hasReasoning: Bool {
+        guard message.role == .assistant, let reasoning = message.reasoning else { return false }
+        return !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - Regular Message View
@@ -176,6 +182,7 @@ struct IOSMessageView: View {
         message.role == .assistant &&
             message.content.isEmpty &&
             message.mediaType != .image &&
+            !hasReasoning &&
             message.toolCalls != nil &&
             !(message.toolCalls?.isEmpty ?? true)
     }
@@ -250,6 +257,13 @@ struct IOSMessageView: View {
                                 loadDecodedImage()
                             }
                     }
+                }
+
+                if hasReasoning, let reasoning = message.reasoning {
+                    IOSReasoningView(
+                        reasoning: reasoning,
+                        initiallyExpanded: message.content.isEmpty
+                    )
                 }
 
                 // Show typing indicator for empty assistant messages (waiting for response)
@@ -503,6 +517,80 @@ struct IOSMessageView: View {
                     break
                 }
             }
+        }
+    }
+}
+
+/// Collapsible reasoning content shared by single- and multi-model iOS responses.
+struct IOSReasoningView: View {
+    let reasoning: String
+
+    @State private var isExpanded: Bool
+    @State private var contentBlocks: [ContentBlock]
+    @State private var lastReasoningHash: Int
+    @State private var parseTask: Task<Void, Never>?
+
+    init(reasoning: String, initiallyExpanded: Bool) {
+        self.reasoning = reasoning
+        _isExpanded = State(initialValue: initiallyExpanded)
+        _contentBlocks = State(initialValue: MarkdownRenderer.parse(reasoning))
+        _lastReasoningHash = State(initialValue: reasoning.hashValue)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Button {
+                withAnimation(Motion.easeStandard) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(Typography.caption)
+                    Text("Reasoning")
+                        .font(Typography.captionBold)
+                    Spacer(minLength: 0)
+                    Text("\(reasoning.count) chars")
+                        .font(Typography.micro)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Hide reasoning" : "Show reasoning")
+            .accessibilityValue("\(reasoning.count) characters")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    if contentBlocks.isEmpty {
+                        Text(verbatim: reasoning)
+                    } else {
+                        ForEach(contentBlocks) { block in
+                            IOSContentBlockView(block: block)
+                        }
+                    }
+                }
+                .padding(Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.textSecondary.opacity(0.08), in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
+            }
+        }
+        .onChange(of: reasoning) { _, newReasoning in
+            let newHash = newReasoning.hashValue
+            guard newHash != lastReasoningHash else { return }
+            lastReasoningHash = newHash
+
+            parseTask?.cancel()
+            parseTask = Task.detached(priority: .userInitiated) {
+                let blocks = MarkdownRenderer.parse(newReasoning)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    contentBlocks = blocks
+                }
+            }
+        }
+        .onDisappear {
+            parseTask?.cancel()
         }
     }
 }

@@ -413,7 +413,16 @@ extension MacChatView {
                     )
                 }
             },
-            onReasoning: nil
+            onReasoning: { model, reasoning in
+                Task { @MainActor in
+                    guard let messageId = messageIdsByModel[model] else { return }
+                    appendReasoning(
+                        reasoning,
+                        to: messageId,
+                        conversationId: conversationId
+                    )
+                }
+            }
         )
     }
 }

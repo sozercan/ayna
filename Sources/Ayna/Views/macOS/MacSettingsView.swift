@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 #if os(macOS)
 //
 //  MacSettingsView.swift
@@ -7,9 +8,6 @@
 //
 
 import SwiftUI
-
-// swiftlint:disable:next superfluous_disable_command
-// swiftlint:disable file_length type_body_length
 
 struct MacSettingsView: View {
     @ObservedObject private var aiService = AIService.shared
@@ -2581,5 +2579,5 @@ struct AnthropicConfigurationView: View {
     MacSettingsView()
 }
 
-// swiftlint:enable file_length type_body_length
 #endif
+// swiftlint:enable file_length

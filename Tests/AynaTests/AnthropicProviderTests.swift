@@ -17,10 +17,15 @@ struct AnthropicProviderTests {
         CircuitBreakerRegistry.shared.resetAll()
     }
 
-    private func makeProvider() -> AnthropicProvider {
+    private func makeProvider(
+        retryDelay: (@Sendable (Int) async throws -> Void)? = nil
+    ) -> AnthropicProvider {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AnthropicMockURLProtocol.self]
         let session = URLSession(configuration: config)
+        if let retryDelay {
+            return AnthropicProvider(urlSession: session, retryDelay: retryDelay)
+        }
         return AnthropicProvider(urlSession: session)
     }
 
@@ -545,8 +550,8 @@ struct AnthropicProviderTests {
 
     // MARK: - Cancellation Tests
 
-    @Test("Cancel request stops current task")
-    func cancelRequestStopsCurrentTask() async {
+    @Test("Cancelling a non-stream request reports one terminal cancellation", .timeLimit(.minutes(1)))
+    func cancellingNonStreamRequestReportsOneTerminalCancellation() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
@@ -564,30 +569,180 @@ struct AnthropicProviderTests {
             return (response, Data("{}".utf8))
         }
 
-        nonisolated(unsafe) var errorCalled = false
+        let recorder = AnthropicTerminalRecorder()
 
-        provider.sendMessage(
-            messages: messages,
-            config: config,
-            stream: false,
-            tools: nil,
-            callbacks: AIProviderStreamCallbacks(
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in errorCalled = true }
+        await confirmation("Cancellation reported") { cancelled in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: {
+                        recorder.recordCompletion()
+                    },
+                    onError: { error in
+                        recorder.record(error: error)
+                        if error is CancellationError {
+                            cancelled()
+                        }
+                    }
+                )
             )
-        )
 
-        // Cancel immediately
-        provider.cancelRequest()
+            provider.cancelRequest()
+            try? await Task.sleep(for: .milliseconds(200))
+        }
 
-        // Wait a bit to ensure no error callback for cancellation
-        try? await Task.sleep(for: .milliseconds(200))
-
-        // Note: We don't expect onError for cancellation
-        // The test passes if it completes without hanging
+        #expect(recorder.errorCount == 1)
+        #expect(recorder.completionCount == 0)
+        #expect(recorder.lastErrorIsCancellation)
     }
 
+    @Test("Cancelling a stream request reports one terminal cancellation", .timeLimit(.minutes(1)))
+    func cancellingStreamRequestReportsOneTerminalCancellation() async {
+        let provider = makeProvider()
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Hello")]
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            Thread.sleep(forTimeInterval: 0.05)
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            let body = Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8)
+            return (response, body)
+        }
+
+        let recorder = AnthropicTerminalRecorder()
+
+        await confirmation("Cancellation reported") { cancelled in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: {
+                        recorder.recordCompletion()
+                    },
+                    onError: { error in
+                        recorder.record(error: error)
+                        if error is CancellationError {
+                            cancelled()
+                        }
+                    }
+                )
+            )
+
+            provider.cancelRequest()
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+
+        #expect(recorder.errorCount == 1)
+        #expect(recorder.completionCount == 0)
+        #expect(recorder.lastErrorIsCancellation)
+    }
+
+    @Test("Cancelling non-stream retry backoff prevents another request", .timeLimit(.minutes(1)))
+    func cancellingNonStreamRetryBackoffPreventsAnotherRequest() async {
+        let retryGate = AnthropicRetryDelayGate()
+        let provider = makeProvider { attempt in
+            try await retryGate.wait(for: attempt)
+        }
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Hello")]
+        let requestCounter = AnthropicRequestCounter()
+        let recorder = AnthropicTerminalRecorder()
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            requestCounter.increment()
+            throw URLError(.timedOut)
+        }
+
+        await confirmation("Cancellation reported once") { cancelled in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { recorder.recordCompletion() },
+                    onError: { error in
+                        recorder.record(error: error)
+                        if error is CancellationError {
+                            cancelled()
+                        }
+                    }
+                )
+            )
+
+            await retryGate.waitUntilStarted()
+            provider.cancelRequest()
+            await retryGate.waitUntilCancelled()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+
+        #expect(requestCounter.count == 1)
+        #expect(recorder.errorCount == 1)
+        #expect(recorder.completionCount == 0)
+        #expect(recorder.lastErrorIsCancellation)
+    }
+
+    @Test("Cancelling stream retry backoff prevents another request", .timeLimit(.minutes(1)))
+    func cancellingStreamRetryBackoffPreventsAnotherRequest() async {
+        let retryGate = AnthropicRetryDelayGate()
+        let provider = makeProvider { attempt in
+            try await retryGate.wait(for: attempt)
+        }
+        let config = makeConfig()
+        let messages = [Message(role: .user, content: "Hello")]
+        let requestCounter = AnthropicRequestCounter()
+        let recorder = AnthropicTerminalRecorder()
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            requestCounter.increment()
+            throw URLError(.timedOut)
+        }
+
+        await confirmation("Cancellation reported once") { cancelled in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: true,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { recorder.recordCompletion() },
+                    onError: { error in
+                        recorder.record(error: error)
+                        if error is CancellationError {
+                            cancelled()
+                        }
+                    }
+                )
+            )
+
+            await retryGate.waitUntilStarted()
+            provider.cancelRequest()
+            await retryGate.waitUntilCancelled()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+
+        #expect(requestCounter.count == 1)
+        #expect(recorder.errorCount == 1)
+        #expect(recorder.completionCount == 0)
+        #expect(recorder.lastErrorIsCancellation)
+    }
+}
+
+extension AnthropicProviderTests {
     // MARK: - Request Building Tests
 
     @Test("Request includes correct headers", .timeLimit(.minutes(1)))
@@ -1034,5 +1189,100 @@ private final class CallbackOrderCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return recordedEvents
+    }
+}
+
+private final class AnthropicTerminalRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var errors: [Error] = []
+    private var completions = 0
+
+    var errorCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return errors.count
+    }
+
+    var completionCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return completions
+    }
+
+    var lastErrorIsCancellation: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return errors.last is CancellationError
+    }
+
+    func record(error: Error) {
+        lock.lock()
+        errors.append(error)
+        lock.unlock()
+    }
+
+    func recordCompletion() {
+        lock.lock()
+        completions += 1
+        lock.unlock()
+    }
+}
+
+private final class AnthropicRequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
+    }
+
+    func increment() {
+        lock.lock()
+        requests += 1
+        lock.unlock()
+    }
+}
+
+private actor AnthropicRetryDelayGate {
+    private var started = false
+    private var cancelled = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait(for _: Int) async throws {
+        started = true
+        let pendingStartWaiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in pendingStartWaiters {
+            waiter.resume()
+        }
+
+        do {
+            try await Task.sleep(for: .seconds(30))
+        } catch is CancellationError {
+            cancelled = true
+            let pendingCancellationWaiters = cancellationWaiters
+            cancellationWaiters.removeAll()
+            for waiter in pendingCancellationWaiters {
+                waiter.resume()
+            }
+            throw CancellationError()
+        }
+    }
+
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilCancelled() async {
+        if cancelled { return }
+        await withCheckedContinuation { continuation in
+            cancellationWaiters.append(continuation)
+        }
     }
 }

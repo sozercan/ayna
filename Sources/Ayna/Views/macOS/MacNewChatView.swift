@@ -530,8 +530,8 @@ struct MacNewChatView: View {
             metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        let messagesToSend = ChatTurnRequestPlan.messages(
-            from: updatedConversation.messages,
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
             systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
         )
 
@@ -785,6 +785,18 @@ struct MacNewChatView: View {
                         shouldOfferOpenSettings = ErrorPresenter.suggestedAction(for: error) == .openSettings
                     }
                 }
+            },
+            onPendingToolCall: nil,
+            onReasoning: { model, reasoning in
+                Task { @MainActor in
+                    guard let messageId = messageIdsByModel[model] else { return }
+                    conversationManager.updateMessage(
+                        conversationId: conversationId,
+                        messageId: messageId
+                    ) { message in
+                        message.reasoning = (message.reasoning ?? "") + reasoning
+                    }
+                }
             }
         )
     }
@@ -968,7 +980,7 @@ struct MacNewChatView: View {
                                 }
 
                                 let continuationPlan = ToolContinuationPlan(
-                                    existingMessages: updatedConversation.messages,
+                                    conversation: updatedConversation,
                                     toolCallId: toolCallId,
                                     toolName: toolName,
                                     arguments: argumentsWrapper.value,

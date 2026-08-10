@@ -17,6 +17,7 @@ import SwiftUI
 #endif
 
 @MainActor
+// swiftlint:disable type_body_length
 final class ConversationManager: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedConversationId: UUID?
@@ -225,11 +226,11 @@ final class ConversationManager: ObservableObject {
             // - Disk is the authoritative snapshot for non-dirty conversations
             // - In-memory wins for conversations that have pending saves queued
             let dirtyIds = await persistenceCoordinator.pendingConversationIds()
-            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+            let memoryById = Dictionary(conversations.map { ($0.id, $0) }, uniquingKeysWith: { _, new in
                 DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID in memory", metadata: ["id": "\(new.id)"])
                 return new
             })
-            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { existing, new in
+            let diskById = Dictionary(decodedFromDisk.map { ($0.id, $0) }, uniquingKeysWith: { _, new in
                 DiagnosticsLogger.log(.conversationManager, level: .default, message: "Duplicate conversation ID on disk", metadata: ["id": "\(new.id)"])
                 return new
             })
@@ -1094,6 +1095,7 @@ final class ConversationManager: ObservableObject {
         }
     }
 }
+// swiftlint:enable type_body_length
 
 /// Helper actor for thread-safe title generation
 private actor TitleAccumulator {

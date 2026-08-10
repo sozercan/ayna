@@ -155,7 +155,6 @@ struct WatchChatViewModelIntegrationTests {
         #expect(result.contains("Sources"))
     }
 
-
     @Test("WatchOS model filtering")
     func watchOSModelFiltering() {
         // On watchOS, Apple Intelligence models should be filtered out
@@ -227,7 +226,6 @@ struct WatchChatViewModelIntegrationTests {
         #expect(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
         #expect(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
     }
-
 
     @Test("Watch conversation sync merge logic")
     func watchConversationSyncMergeLogic() {

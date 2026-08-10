@@ -10,9 +10,10 @@ import Testing
             let user = Message(role: .user, content: "Search")
             let assistantWithToolCall = Message(role: .assistant, content: "")
             let citation = CitationReference(number: 1, title: "Result", url: "https://example.com")
+            let conversation = Conversation(messages: [user, assistantWithToolCall])
 
             let plan = ToolContinuationPlan(
-                existingMessages: [user, assistantWithToolCall],
+                conversation: conversation,
                 toolCallId: "call-1",
                 toolName: "web_search",
                 arguments: ["query": "swift"],
@@ -38,9 +39,10 @@ import Testing
         func nonWebToolCreatesVisibleToolMessageWithoutSyntheticDuplicate() throws {
             let user = Message(role: .user, content: "Use tool")
             let assistantWithToolCall = Message(role: .assistant, content: "")
+            let conversation = Conversation(messages: [user, assistantWithToolCall])
 
             let plan = ToolContinuationPlan(
-                existingMessages: [user, assistantWithToolCall],
+                conversation: conversation,
                 toolCallId: "call-2",
                 toolName: "custom_tool",
                 arguments: ["path": "/tmp/file"],
@@ -56,6 +58,55 @@ import Testing
             #expect(visibleToolMessage.toolCalls?.first?.toolName == "custom_tool")
             #expect(plan.continuationAssistantMessage.citations == nil)
             #expect(plan.requestMessages == [user, assistantWithToolCall, visibleToolMessage])
+        }
+
+        @Test("Tool continuation includes only the selected multi-model response")
+        func toolContinuationUsesEffectiveHistory() {
+            let groupId = UUID()
+            let user = Message(role: .user, content: "Compare")
+            let unselected = Message(
+                role: .assistant,
+                content: "Unselected response",
+                model: "model-a",
+                responseGroupId: groupId
+            )
+            let selected = Message(
+                role: .assistant,
+                content: "Selected response",
+                model: "model-b",
+                responseGroupId: groupId
+            )
+            let followUp = Message(role: .user, content: "Search for more")
+            let assistantWithToolCall = Message(role: .assistant, content: "")
+            let responseGroup = ResponseGroup(
+                id: groupId,
+                userMessageId: user.id,
+                responses: [
+                    .init(id: unselected.id, modelName: "model-a", status: .completed),
+                    .init(id: selected.id, modelName: "model-b", status: .selected)
+                ],
+                selectedResponseId: selected.id
+            )
+            let conversation = Conversation(
+                messages: [user, unselected, selected, followUp, assistantWithToolCall],
+                responseGroups: [responseGroup]
+            )
+
+            let plan = ToolContinuationPlan(
+                conversation: conversation,
+                toolCallId: "call-3",
+                toolName: "web_search",
+                arguments: ["query": "swift"],
+                result: "Search result",
+                model: "gpt-test",
+                citations: nil,
+                systemPrompt: nil
+            )
+
+            #expect(plan.requestMessages.contains(selected))
+            #expect(!plan.requestMessages.contains(unselected))
+            #expect(plan.requestMessages.contains(followUp))
+            #expect(plan.requestMessages.contains(assistantWithToolCall))
         }
     }
 #endif

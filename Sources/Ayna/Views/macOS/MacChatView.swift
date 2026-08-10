@@ -353,8 +353,8 @@ struct MacChatView: View {
         isGenerating = true
 
         // Build messages for API using the shared chat-turn planner
-        let messagesToSend = ChatTurnRequestPlan.messages(
-            from: currentConversation.messages,
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: currentConversation,
             systemPrompt: buildFullSystemPrompt(for: currentConversation)
         )
 
@@ -576,8 +576,15 @@ struct MacChatView: View {
         errorMessage = nil
         errorRecoverySuggestion = nil
 
-        if let messageId {
-            _ = conversationManager.removeMessage(conversationId: currentConversation.id, messageId: messageId)
+        if let messageId,
+           let messagesBeforeFailedTurn = ChatTurnFailurePlan.messagesBeforeFailedTurn(
+               in: currentConversation.messages,
+               failedUserMessageId: messageId
+           )
+        {
+            var updatedConversation = currentConversation
+            updatedConversation.messages = messagesBeforeFailedTurn
+            conversationManager.updateConversation(updatedConversation)
         }
 
         // Set message text and send
@@ -744,10 +751,8 @@ struct MacChatView: View {
             return
         }
 
-        let currentMessages = updatedConversation.messages
-
-        let messagesToSend = ChatTurnRequestPlan.messages(
-            from: currentMessages,
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
             systemPrompt: buildFullSystemPrompt(for: updatedConversation)
         )
 
@@ -847,7 +852,7 @@ struct MacChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length function_parameter_count
     func sendMessageWithToolSupport(
         messages: [Message],
         model: String,
@@ -1150,7 +1155,7 @@ struct MacChatView: View {
                                 }
 
                                 let continuationPlan = ToolContinuationPlan(
-                                    existingMessages: updatedConv.messages,
+                                    conversation: updatedConv,
                                     toolCallId: toolCallId,
                                     toolName: toolName,
                                     arguments: argumentsWrapper.value,
@@ -1185,9 +1190,9 @@ struct MacChatView: View {
                                     temperature: temperature,
                                     tools: toolsWrapper.value,
                                     isInitialRequest: false,
-                                    failedUserMessageId: nil,
+                                    failedUserMessageId: failedUserMessageId,
                                     assistantPlaceholderId: continuationAssistantMessage.id,
-                                    failedUserMessagePolicy: .preserve
+                                    failedUserMessagePolicy: failedUserMessagePolicy
                                 )
                             }
                         } catch {
@@ -1207,8 +1212,39 @@ struct MacChatView: View {
                         }
                     }
                 }
+            },
+            onReasoning: { reasoning in
+                Task { @MainActor in
+                    guard let assistantPlaceholderId else { return }
+                    appendReasoning(
+                        reasoning,
+                        to: assistantPlaceholderId,
+                        conversationId: conversationId
+                    )
+                }
             }
         )
+    }
+
+    func appendReasoning(_ reasoning: String, to messageId: UUID, conversationId: UUID) {
+        guard let conversationIndex = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationId
+        }),
+            let messageIndex = conversationManager.conversations[conversationIndex].messages.firstIndex(where: {
+                $0.id == messageId
+            })
+        else {
+            logChat(
+                "❌ Failed to append reasoning - conversation or message not found",
+                level: .error,
+                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
+            )
+            return
+        }
+
+        let currentReasoning = conversationManager.conversations[conversationIndex].messages[messageIndex].reasoning ?? ""
+        conversationManager.conversations[conversationIndex].messages[messageIndex].reasoning = currentReasoning + reasoning
+        conversationManager.save(conversationManager.conversations[conversationIndex])
     }
 
 }

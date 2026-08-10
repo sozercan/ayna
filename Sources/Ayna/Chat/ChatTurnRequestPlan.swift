@@ -28,7 +28,7 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
 
     init(conversation: Conversation, systemPrompt: String?, excludingAssistantPlaceholderId placeholderId: UUID?) {
         self.init(
-            history: conversation.messages,
+            history: conversation.getEffectiveHistory(),
             systemPrompt: systemPrompt,
             excludingAssistantPlaceholderId: placeholderId
         )
@@ -41,7 +41,6 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
         }
         return messages
     }
-
 
     static func messages(
         from history: [Message],
@@ -84,20 +83,6 @@ struct ChatTurnRequestPlan: Equatable, Sendable {
             let arguments: [String: AnyCodable]
             let result: String
             let shouldSynthesizeToolMessage: Bool
-
-            init(
-                toolCallId: String,
-                toolName: String,
-                arguments: [String: AnyCodable],
-                result: String,
-                shouldSynthesizeToolMessage: Bool
-            ) {
-                self.toolCallId = toolCallId
-                self.toolName = toolName
-                self.arguments = arguments
-                self.result = result
-                self.shouldSynthesizeToolMessage = shouldSynthesizeToolMessage
-            }
         }
 
         static func toolContinuationMessages(

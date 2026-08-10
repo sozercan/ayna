@@ -1047,25 +1047,7 @@ class AIService: ObservableObject {
         onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String, String) -> Void)? = nil
     ) {
-        // Validate we have models to query
-        guard !models.isEmpty else {
-            onError("", AIError.missingModel)
-            return
-        }
-
-        DiagnosticsLogger.log(
-            .aiService,
-            level: .info,
-            message: "🔀 Starting multi-model request",
-            metadata: ["models": models.joined(separator: ", ")]
-        )
-
-        // Cancel any existing multi-model task and individual stream tasks
-        multiModelTask?.cancel()
-        for (_, task) in multiModelStreamTasks {
-            task.cancel()
-        }
-        multiModelStreamTasks.removeAll()
+        guard prepareForMultiModelRequest(models: models, onError: onError) else { return }
 
         // Use a TaskGroup to send requests in parallel
         let task = Task {
@@ -1085,98 +1067,111 @@ class AIService: ObservableObject {
                             return
                         }
 
-                        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                            Task { @MainActor in
-                                // Check for cancellation again on MainActor
-                                if Task.isCancelled {
-                                    continuation.resume()
-                                    return
-                                }
+                        let terminal = ProviderRequestTerminal()
+                        await withTaskCancellationHandler {
+                            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                                terminal.install(continuation)
+                                guard !terminal.isFinished else { return }
 
-                                // Concurrency gate for GitHub Models in multi-model mode.
-                                // GitHub Models rate limits are scoped per token/user, so we serialize per-token.
-                                let effectiveProvider = self.modelProviders[model] ?? self.provider
-                                let accessTokenForGate = (effectiveProvider == .githubModels)
-                                    ? self.getAPIKey(for: model)
-                                    : ""
+                                let dispatchTask = Task { @MainActor in
+                                    guard !terminal.isFinished else { return }
 
-                                @MainActor
-                                func sendWithGate(_ gateRelease: OneShot?) {
-                                    self.sendMessage(
-                                        messages: messages,
-                                        model: model,
-                                        temperature: temperature,
-                                        stream: true,
-                                        tools: nil, // Tools disabled in multi-model mode - deferred
-                                        conversationId: nil,
-                                        isMultiModelRequest: true,
-                                        onChunk: { chunk in
-                                            onChunk(model, chunk)
-                                        },
-                                        onComplete: { [gateRelease] in
-                                            DiagnosticsLogger.log(
-                                                .aiService,
-                                                level: .info,
-                                                message: "✅ Model completed in multi-model request",
-                                                metadata: ["model": model]
-                                            )
-                                            gateRelease?.run()
-                                            onModelComplete(model)
-                                            continuation.resume()
-                                        },
-                                        onError: { [gateRelease] error in
-                                            DiagnosticsLogger.log(
-                                                .aiService,
-                                                level: .error,
-                                                message: "❌ Model failed in multi-model request",
-                                                metadata: ["model": model, "error": error.localizedDescription]
-                                            )
-                                            gateRelease?.run()
-                                            onError(model, error)
-                                            continuation.resume()
-                                        },
-                                        onToolCall: nil, // Deferred - not executed during multi-model
-                                        onToolCallRequested: { toolId, toolName, arguments in
-                                            // Report the tool call as pending (will execute after selection)
-                                            onPendingToolCall?(model, toolId, toolName, arguments)
-                                        },
-                                        onReasoning: { reasoning in
-                                            onReasoning?(model, reasoning)
+                                    // Concurrency gate for GitHub Models in multi-model mode.
+                                    // GitHub Models rate limits are scoped per token/user, so we serialize per-token.
+                                    let effectiveProvider = self.modelProviders[model] ?? self.provider
+                                    let accessTokenForGate = (effectiveProvider == .githubModels)
+                                        ? self.getAPIKey(for: model)
+                                        : ""
+
+                                    @MainActor
+                                    func sendWithGate(_ gateRelease: OneShot?) {
+                                        guard !terminal.isFinished else { return }
+                                        self.sendMessage(
+                                            messages: messages,
+                                            model: model,
+                                            temperature: temperature,
+                                            stream: true,
+                                            tools: nil, // Tools disabled in multi-model mode - deferred
+                                            conversationId: nil,
+                                            isMultiModelRequest: true,
+                                            onChunk: { chunk in
+                                                guard !terminal.isFinished else { return }
+                                                onChunk(model, chunk)
+                                            },
+                                            onComplete: { [gateRelease] in
+                                                terminal.complete {
+                                                    DiagnosticsLogger.log(
+                                                        .aiService,
+                                                        level: .info,
+                                                        message: "✅ Model completed in multi-model request",
+                                                        metadata: ["model": model]
+                                                    )
+                                                    gateRelease?.run()
+                                                    onModelComplete(model)
+                                                }
+                                            },
+                                            onError: { [gateRelease] error in
+                                                terminal.complete {
+                                                    DiagnosticsLogger.log(
+                                                        .aiService,
+                                                        level: .error,
+                                                        message: "❌ Model failed in multi-model request",
+                                                        metadata: ["model": model, "error": error.localizedDescription]
+                                                    )
+                                                    gateRelease?.run()
+                                                    onError(model, error)
+                                                }
+                                            },
+                                            onToolCall: nil, // Deferred - not executed during multi-model
+                                            onToolCallRequested: { toolId, toolName, arguments in
+                                                guard !terminal.isFinished else { return }
+                                                // Report the tool call as pending (will execute after selection)
+                                                onPendingToolCall?(model, toolId, toolName, arguments)
+                                            },
+                                            onReasoning: { reasoning in
+                                                guard !terminal.isFinished else { return }
+                                                onReasoning?(model, reasoning)
+                                            }
+                                        )
+                                    }
+
+                                    if effectiveProvider == .githubModels, !accessTokenForGate.isEmpty {
+                                        let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: accessTokenForGate)
+                                        do {
+                                            try await GitHubModelsRequestGate.shared.acquire(key: gateKey)
+                                        } catch {
+                                            terminal.complete {}
+                                            return
                                         }
-                                    )
+
+                                        let gateRelease = OneShot {
+                                            Task { await GitHubModelsRequestGate.shared.release(key: gateKey) }
+                                        }
+                                        terminal.setCancellationAction {
+                                            gateRelease.run()
+                                        }
+
+                                        guard !terminal.isFinished else { return }
+
+                                        if let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: accessTokenForGate) {
+                                            terminal.complete {
+                                                gateRelease.run()
+                                                onError(model, AIError.apiError(rateLimitError))
+                                            }
+                                            return
+                                        }
+
+                                        sendWithGate(gateRelease)
+                                    } else {
+                                        sendWithGate(nil)
+                                    }
                                 }
-
-                                if effectiveProvider == .githubModels, !accessTokenForGate.isEmpty {
-                                    let gateKey = GitHubOAuthService.rateLimitKey(forAccessToken: accessTokenForGate)
-                                    do {
-                                        try await GitHubModelsRequestGate.shared.acquire(key: gateKey)
-                                    } catch {
-                                        continuation.resume()
-                                        return
-                                    }
-
-                                    let gateRelease = OneShot {
-                                        Task { await GitHubModelsRequestGate.shared.release(key: gateKey) }
-                                    }
-
-                                    if Task.isCancelled {
-                                        gateRelease.run()
-                                        continuation.resume()
-                                        return
-                                    }
-
-                                    if let rateLimitError = self.checkGitHubModelsRateLimit(accessToken: accessTokenForGate) {
-                                        gateRelease.run()
-                                        onError(model, AIError.apiError(rateLimitError))
-                                        continuation.resume()
-                                        return
-                                    }
-
-                                    sendWithGate(gateRelease)
-                                } else {
-                                    sendWithGate(nil)
+                                terminal.setCancellationAction {
+                                    dispatchTask.cancel()
                                 }
                             }
+                        } onCancel: {
+                            terminal.cancel()
                         }
                     }
                 }
@@ -1205,6 +1200,30 @@ class AIService: ObservableObject {
             }
         }
         multiModelTask = task
+    }
+
+    private func prepareForMultiModelRequest(
+        models: [String],
+        onError: @Sendable (String, Error) -> Void
+    ) -> Bool {
+        guard !models.isEmpty else {
+            onError("", AIError.missingModel)
+            return false
+        }
+
+        DiagnosticsLogger.log(
+            .aiService,
+            level: .info,
+            message: "🔀 Starting multi-model request",
+            metadata: ["models": models.joined(separator: ", ")]
+        )
+
+        multiModelTask?.cancel()
+        for task in multiModelStreamTasks.values {
+            task.cancel()
+        }
+        multiModelStreamTasks.removeAll()
+        return true
     }
 
     private func simulateUITestResponse(
@@ -2215,22 +2234,32 @@ class AIService: ObservableObject {
         // Provider adapters own their current stream task, so each concurrent request needs
         // independent ownership instead of a shared singleton.
         let provider = AnthropicProvider(urlSession: urlSession)
-        let lease = inFlightProviderRequests.retain(provider)
+        let terminal = ProviderRequestTerminal()
+        terminal.setCancellationAction {
+            callbacks.onError(CancellationError())
+        }
+        let lease = inFlightProviderRequests.retain(provider, onCancel: {
+            terminal.cancel()
+        })
 
         // Wrap callbacks to release provider ownership exactly once on terminal callbacks.
         let wrappedCallbacks = AIProviderStreamCallbacks(
             onChunk: callbacks.onChunk,
             onComplete: {
-                Task { @MainActor in
-                    lease.release()
+                terminal.complete {
+                    Task { @MainActor in
+                        lease.release()
+                    }
+                    callbacks.onComplete()
                 }
-                callbacks.onComplete()
             },
             onError: { error in
-                Task { @MainActor in
-                    lease.release()
+                terminal.complete {
+                    Task { @MainActor in
+                        lease.release()
+                    }
+                    callbacks.onError(error)
                 }
-                callbacks.onError(error)
             },
             onToolCallRequested: callbacks.onToolCallRequested,
             onReasoning: callbacks.onReasoning
@@ -2517,10 +2546,16 @@ extension AIService {
     }
 
     /// Returns all available tools for function calling, including built-in tools and MCP tools.
-    /// Tool calls are disabled on watchOS because watch messages cannot represent tool-call ids/results.
+    /// watchOS exposes only synced web search; unsupported local tools remain disabled.
     func getAllAvailableTools() -> [[String: Any]]? {
         #if os(watchOS)
-            return nil
+            guard webSearchEnabled else { return nil }
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .info,
+                message: "🔧 Added web_search tool (watchOS)"
+            )
+            return [WebSearchCoordinator.shared.toolDefinition()]
         #else
             var tools: [[String: Any]] = []
 

@@ -240,6 +240,15 @@ struct IOSMultiModelResponseCard: View {
         responseStatus == .failed
     }
 
+    private var reasoningContent: String? {
+        guard let reasoning = message.reasoning,
+              !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+        return reasoning
+    }
+
     /// Whether this message is an image generation response
     private var isImageGeneration: Bool {
         message.mediaType == .image
@@ -316,14 +325,27 @@ struct IOSMultiModelResponseCard: View {
     private var contentBody: some View {
         if isImageGeneration {
             imageGenerationContent
-        } else if message.content.isEmpty, isStreaming {
-            IOSTypingIndicatorView()
-                .padding(.vertical, Spacing.lg)
         } else if hasFailed {
             failedStateView
         } else {
-            ForEach(contentBlocks) { block in
-                IOSContentBlockView(block: block)
+            if let reasoningContent {
+                IOSReasoningView(
+                    reasoning: reasoningContent,
+                    initiallyExpanded: message.content.isEmpty
+                )
+            }
+
+            if message.content.isEmpty {
+                if reasoningContent == nil, isStreaming {
+                    IOSTypingIndicatorView()
+                        .padding(.vertical, Spacing.lg)
+                }
+            } else if contentBlocks.isEmpty {
+                Text(verbatim: message.content)
+            } else {
+                ForEach(contentBlocks) { block in
+                    IOSContentBlockView(block: block)
+                }
             }
         }
     }

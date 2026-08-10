@@ -117,10 +117,8 @@ extension MacChatView {
             return
         }
 
-        let currentMessages = updatedConversation.messages
-
-        let messagesToSend = ChatTurnRequestPlan.messages(
-            from: currentMessages,
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
             systemPrompt: buildFullSystemPrompt(for: updatedConversation)
         )
 
@@ -169,10 +167,8 @@ extension MacChatView {
             return
         }
 
-        let currentMessages = updatedConversation.messages
-
-        let messagesToSend = ChatTurnRequestPlan.messages(
-            from: currentMessages,
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
             systemPrompt: buildFullSystemPrompt(for: updatedConversation)
         )
 

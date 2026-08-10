@@ -30,7 +30,7 @@ struct InFlightProviderRequestsTests {
         lease.release()
         lease.release()
 
-        #expect(owner.count == 0)
+        #expect(owner.count == Int.zero)
         #expect(provider.cancelCount == 0)
     }
 
@@ -45,9 +45,79 @@ struct InFlightProviderRequestsTests {
         owner.cancelAll()
         firstLease.release()
 
-        #expect(owner.count == 0)
+        #expect(owner.count == Int.zero)
         #expect(first.cancelCount == 1)
         #expect(second.cancelCount == 1)
+    }
+
+    @Test("Cancel all invokes each cancellation terminal once")
+    func cancelAllInvokesEachCancellationTerminalOnce() {
+        let owner = InFlightProviderRequests()
+        let provider = FakeProvider()
+        var cancellationCount = 0
+        _ = owner.retain(provider, onCancel: {
+            cancellationCount += 1
+        })
+
+        owner.cancelAll()
+        owner.cancelAll()
+
+        #expect(cancellationCount == 1)
+        #expect(provider.cancelCount == 1)
+    }
+
+    @Test("Cancellation terminal wins before provider cancellation callbacks")
+    func cancellationTerminalWinsBeforeProviderCancellationCallbacks() {
+        let owner = InFlightProviderRequests()
+        let provider = FakeProvider()
+        let terminal = ProviderRequestTerminal()
+        let cancellationCount = LockedCounter()
+        let completionCount = LockedCounter()
+
+        terminal.setCancellationAction {
+            cancellationCount.increment()
+        }
+        provider.onCancel = {
+            terminal.complete {
+                completionCount.increment()
+            }
+        }
+        _ = owner.retain(provider, onCancel: {
+            terminal.cancel()
+        })
+
+        owner.cancelAll()
+
+        #expect(cancellationCount.value == 1)
+        #expect(completionCount.value == 0)
+        #expect(provider.cancelCount == 1)
+    }
+
+    @Test("Provider terminal resumes once when cancelled before continuation installation")
+    func providerTerminalResumesOnceWhenCancelledBeforeContinuationInstallation() async {
+        let terminal = ProviderRequestTerminal()
+        let cancellationCount = LockedCounter()
+        let resumeCount = LockedCounter()
+        let completionCount = LockedCounter()
+
+        terminal.setCancellationAction {
+            cancellationCount.increment()
+        }
+        terminal.cancel()
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            terminal.install(continuation)
+        }
+        resumeCount.increment()
+
+        terminal.cancel()
+        terminal.complete {
+            completionCount.increment()
+        }
+
+        #expect(cancellationCount.value == 1)
+        #expect(resumeCount.value == 1)
+        #expect(completionCount.value == 0)
     }
 }
 
@@ -56,6 +126,7 @@ private final class FakeProvider: AIProviderProtocol, @unchecked Sendable {
     let providerType: AIProvider = .openai
     let requiresAPIKey = true
     var cancelCount = 0
+    var onCancel: (@MainActor () -> Void)?
 
     func sendMessage(
         messages _: [Message],
@@ -67,5 +138,23 @@ private final class FakeProvider: AIProviderProtocol, @unchecked Sendable {
 
     func cancelRequest() {
         cancelCount += 1
+        onCancel?()
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func increment() {
+        lock.lock()
+        storage += 1
+        lock.unlock()
     }
 }

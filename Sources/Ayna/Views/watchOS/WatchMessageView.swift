@@ -24,7 +24,8 @@
         init(message: WatchMessage, showTimestamp: Bool = false) {
             self.message = message
             self.showTimestamp = showTimestamp
-            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(message.content))
+            let visibleContent = message.content.isEmpty ? (message.reasoning ?? "") : message.content
+            _renderedContent = State(initialValue: WatchMarkdownRenderer.render(visibleContent))
         }
 
         private static let timeFormatter: DateFormatter = {
@@ -67,7 +68,12 @@
                 }
             }
             .onChange(of: message.content) { _, newContent in
-                renderedContent = WatchMarkdownRenderer.render(newContent)
+                let visibleContent = newContent.isEmpty ? (message.reasoning ?? "") : newContent
+                renderedContent = WatchMarkdownRenderer.render(visibleContent)
+            }
+            .onChange(of: message.reasoning) { _, newReasoning in
+                let visibleContent = message.content.isEmpty ? (newReasoning ?? "") : message.content
+                renderedContent = WatchMarkdownRenderer.render(visibleContent)
             }
         }
 

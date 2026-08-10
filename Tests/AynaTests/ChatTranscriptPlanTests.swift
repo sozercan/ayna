@@ -58,7 +58,6 @@ struct ChatTranscriptPlanTests {
         #expect(plan.items == [.message(ChatTranscriptMessage(message: message, displayKind: .citationsOnly))])
     }
 
-
     @Test("Plan treats last empty cited assistant as typing while generating")
     func treatsLastEmptyCitedAssistantAsTypingWhileGenerating() {
         let message = Message(
@@ -226,7 +225,6 @@ struct ChatTranscriptPlanTests {
             responseGroup: group
         ) == completed.id)
     }
-
 
     @Test("Default candidate falls back to original ordering when every response is unselectable")
     func defaultCandidateFallsBackToOriginalOrderingWhenEveryResponseIsUnselectable() {

@@ -288,8 +288,6 @@ struct ConversationManagerTests {
         let reloadedGroup = try #require(reloadedConversation.getResponseGroup(responseGroup.id))
         #expect(reloadedGroup.responses.first?.status == .completed)
     }
-
-
     @Test("Terminal response-group status persists accumulated streamed chunks")
     @MainActor
     func terminalResponseGroupStatusPersistsAccumulatedStreamedChunks() async throws {

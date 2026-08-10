@@ -26,7 +26,9 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
 /// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
 /// A shared ViewModel that encapsulates common chat logic for iOS views.
 /// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
-@MainActor final class IOSChatViewModel: ObservableObject {
+@MainActor
+// swiftlint:disable:next type_body_length
+final class IOSChatViewModel: ObservableObject {
     // MARK: - Published State
 
     @Published var messageText = ""
@@ -228,8 +230,16 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
         errorMessage = nil
         errorRecoverySuggestion = nil
 
-        if let messageId, let conversation {
-            _ = conversationManager.removeMessage(conversationId: conversation.id, messageId: messageId)
+        if let messageId,
+           let conversation,
+           let messagesBeforeFailedTurn = ChatTurnFailurePlan.messagesBeforeFailedTurn(
+               in: conversation.messages,
+               failedUserMessageId: messageId
+           )
+        {
+            var updatedConversation = conversation
+            updatedConversation.messages = messagesBeforeFailedTurn
+            conversationManager.updateConversation(updatedConversation)
         }
 
         // Set message text and send
@@ -375,6 +385,8 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             )
             return
         }
+
+        autoSelectResponseIfNeeded()
 
         // Check for multi-model mode
         if selectedModels.count >= 2 {
@@ -829,7 +841,7 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                             }
 
                             let continuationPlan = ToolContinuationPlan(
-                                existingMessages: updatedConv.messages,
+                                conversation: updatedConv,
                                 toolCallId: toolCallId,
                                 toolName: toolName,
                                 arguments: argumentsWrapper.value,
@@ -862,11 +874,22 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
                                 conversationId: conversationId,
                                 assistantMessageId: continuationAssistantMessage.id,
                                 tools: toolsWrapper.value,
-                                failedUserMessageId: nil,
-                                failedUserMessagePolicy: .preserve
+                                failedUserMessageId: failedUserMessageId,
+                                failedUserMessagePolicy: failedUserMessagePolicy
                             )
                         }
                     }
+                }
+            },
+            onReasoning: { [weak self] reasoning in
+                let selfRef = self
+                Task { @MainActor in
+                    guard let self = selfRef else { return }
+                    self.appendReasoning(
+                        reasoning,
+                        to: assistantMessageId,
+                        conversationId: conversationId
+                    )
                 }
             }
         )
@@ -1064,11 +1087,53 @@ private struct UncheckedSendable<T>: @unchecked Sendable {
             )
         }
     }
+
+    private func autoSelectResponseIfNeeded() {
+        guard let conversation,
+              let candidate = ChatTranscriptPlan.autoSelectionCandidate(in: conversation)
+        else {
+            return
+        }
+
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🤖 Auto-selecting response before sending new message",
+            metadata: ["messageId": candidate.messageId.uuidString]
+        )
+        conversationManager.selectResponse(
+            in: conversation,
+            groupId: candidate.groupId,
+            messageId: candidate.messageId
+        )
+    }
+
 }
 
 // MARK: - File Handling Helpers
 
 private extension IOSChatViewModel {
+    func appendReasoning(_ reasoning: String, to messageId: UUID, conversationId: UUID) {
+        guard let conversationIndex = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationId
+        }),
+            let messageIndex = conversationManager.conversations[conversationIndex].messages.firstIndex(where: {
+                $0.id == messageId
+            })
+        else {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "❌ Failed to append reasoning - conversation or message not found",
+                metadata: ["conversationId": conversationId.uuidString, "messageId": messageId.uuidString]
+            )
+            return
+        }
+
+        let currentReasoning = conversationManager.conversations[conversationIndex].messages[messageIndex].reasoning ?? ""
+        conversationManager.conversations[conversationIndex].messages[messageIndex].reasoning = currentReasoning + reasoning
+    }
+
     /// Copies a security-scoped file to a temporary location.
     func copyToTemporaryDirectory(url: URL) throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory
@@ -1205,7 +1270,19 @@ extension IOSChatViewModel {
                 }
             },
             onPendingToolCall: nil,
-            onReasoning: nil
+            onReasoning: { [weak self] model, reasoning in
+                let selfRef = self
+                Task { @MainActor in
+                    guard let self = selfRef,
+                          let messageId = messageIds[model]
+                    else { return }
+                    self.appendReasoning(
+                        reasoning,
+                        to: messageId,
+                        conversationId: conversationId
+                    )
+                }
+            }
         )
     }
 

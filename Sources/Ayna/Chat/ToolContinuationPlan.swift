@@ -20,7 +20,7 @@ import Foundation
         let requestMessages: [Message]
 
         init(
-            existingMessages: [Message],
+            conversation: Conversation,
             toolCallId: String,
             toolName: String,
             arguments: [String: Any],
@@ -50,17 +50,17 @@ import Foundation
                 continuationAssistantMessage.citations = citations
             }
 
-            var plannedTranscriptMessages = existingMessages
+            var plannedRequestMessages = conversation.getEffectiveHistory()
             if let visibleToolMessage {
-                plannedTranscriptMessages.append(visibleToolMessage)
+                plannedRequestMessages.append(visibleToolMessage)
             }
-            plannedTranscriptMessages.append(continuationAssistantMessage)
+            plannedRequestMessages.append(continuationAssistantMessage)
 
             self.toolCall = toolCall
             self.visibleToolMessage = visibleToolMessage
             self.continuationAssistantMessage = continuationAssistantMessage
             requestMessages = ChatTurnRequestPlan.toolContinuationMessages(
-                conversationMessages: plannedTranscriptMessages,
+                conversationMessages: plannedRequestMessages,
                 excludingAssistantPlaceholderId: continuationAssistantMessage.id,
                 toolResult: ChatTurnRequestPlan.ToolResult(
                     toolCallId: toolCallId,
@@ -78,4 +78,3 @@ import Foundation
         }
     }
 #endif
-

@@ -25,6 +25,8 @@ enum MarkdownRenderer {
     }()
 
     private static let horizontalRuleCharacters = CharacterSet(charactersIn: "-_* ")
+    // These fixed patterns are programmer-authored constants and cannot fail at runtime.
+    // swiftlint:disable force_try
     private static let unorderedListRegex =
         try! NSRegularExpression(pattern: #"^\s*[-*+]\s+"#)
     private static let orderedListRegex =
@@ -33,6 +35,7 @@ enum MarkdownRenderer {
     private static let tableDividerRegex =
         try! NSRegularExpression(pattern: #"^\s*:?-+:?\s*$"#)
     #endif
+    // swiftlint:enable force_try
 
     nonisolated static func parse(_ content: String) -> [ContentBlock] {
         var blocks: [ContentBlock] = []

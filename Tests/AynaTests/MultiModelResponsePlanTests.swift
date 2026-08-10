@@ -5,7 +5,7 @@ import Testing
 @Suite("MultiModelResponsePlan Tests", .tags(.fast))
 struct MultiModelResponsePlanTests {
     @Test
-    func `Text plan creates streaming placeholders sharing one response group`() throws {
+    func `text plan creates streaming placeholders sharing one response group`() throws {
         let userMessageId = UUID()
         let responseGroupId = UUID()
         let models = ["gpt-5", "claude-sonnet"]
@@ -34,7 +34,7 @@ struct MultiModelResponsePlanTests {
     }
 
     @Test
-    func `Image plan marks placeholders as image responses`() {
+    func `image plan marks placeholders as image responses`() {
         let plan = MultiModelResponsePlan(
             models: ["dall-e", "gpt-image"],
             userMessageId: UUID(),
@@ -44,5 +44,33 @@ struct MultiModelResponsePlanTests {
         #expect(plan.placeholderMessages.allSatisfy { $0.mediaType == .image })
         #expect(plan.placeholderMessages.allSatisfy { $0.imageData == nil && $0.imagePath == nil })
         #expect(Set(plan.messageIDsByModel.keys) == Set(["dall-e", "gpt-image"]))
+    }
+
+    @Test
+    func `reasoning-only response renders reasoning instead of a typing indicator`() {
+        let message = Message(
+            role: .assistant,
+            content: "",
+            reasoning: "Compare the constraints first."
+        )
+
+        let plan = MultiModelResponseContentPlan(
+            message: message,
+            responseStatus: .streaming
+        )
+
+        #expect(plan.reasoning == message.reasoning)
+        #expect(!plan.showsTypingIndicator)
+    }
+
+    @Test
+    func `empty streaming response renders a typing indicator`() {
+        let plan = MultiModelResponseContentPlan(
+            message: Message(role: .assistant, content: ""),
+            responseStatus: .streaming
+        )
+
+        #expect(plan.reasoning == nil)
+        #expect(plan.showsTypingIndicator)
     }
 }

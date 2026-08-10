@@ -58,6 +58,14 @@ let package = Package(
                 .swiftLanguageMode(.v6),
             ]
         ),
+        .testTarget(
+            name: "AynaWatchTests",
+            dependencies: ["Ayna"],
+            path: "Tests/AynaWatchTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

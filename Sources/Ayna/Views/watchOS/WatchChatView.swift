@@ -1,4 +1,3 @@
-#if os(watchOS)
 //
 //  WatchChatView.swift
 //  Ayna Watch App
@@ -29,7 +28,10 @@
                         if let conversation = conversationStore.conversation(for: conversationId) {
                             ForEach(conversation.messages) { message in
                                 // Don't show empty assistant messages (placeholder during streaming)
-                                if !message.content.isEmpty || message.role.lowercased() == "user" {
+                                if !message.content.isEmpty
+                                    || !(message.reasoning?.isEmpty ?? true)
+                                    || message.role.lowercased() == "user"
+                                {
                                     WatchMessageView(message: message)
                                         .id(message.id)
                                         .accessibilityIdentifier(TestIdentifiers.Watch.chatMessageRow(for: message.id))
@@ -38,8 +40,13 @@
 
                             // Typing indicator only when waiting for response (not during streaming)
                             if viewModel.isLoading, !viewModel.isStreaming {
-                                typingIndicator
-                                    .id("typing")
+                                if let toolName = viewModel.currentToolName {
+                                    toolIndicator(toolName)
+                                        .id("tool")
+                                } else {
+                                    typingIndicator
+                                        .id("typing")
+                                }
                             }
 
                             // Error message with retry if any
@@ -63,8 +70,11 @@
                     // Scroll to bottom when new message arrives
                     withAnimation {
                         if viewModel.isLoading, !viewModel.isStreaming {
-                            // Waiting for response - scroll to typing indicator
-                            proxy.scrollTo("typing", anchor: .bottom)
+                            // Waiting for response - scroll to the active status indicator
+                            proxy.scrollTo(
+                                viewModel.currentToolName == nil ? "typing" : "tool",
+                                anchor: .bottom
+                            )
                         } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
                             // Streaming or idle - scroll to last message
                             proxy.scrollTo(lastId, anchor: .bottom)
@@ -167,6 +177,22 @@
             .accessibilityIdentifier(TestIdentifiers.Watch.chatTypingIndicator)
         }
 
+        private func toolIndicator(_ toolName: String) -> some View {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue)
+                Text(toolName == WebSearchCoordinator.toolName ? "Searching..." : "Using tool...")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.blue.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
         private func errorView(_ message: String) -> some View {
             ErrorBannerView(
                 message: message,
@@ -192,5 +218,4 @@
         }
     #endif
 
-#endif
 #endif

@@ -224,11 +224,28 @@
             }
         }
 
+        /// Update the last message reasoning (for reasoning-only streaming responses).
+        func updateLastMessage(in conversationId: UUID, reasoning: String) {
+            if let convIndex = conversations.firstIndex(where: { $0.id == conversationId }),
+               !conversations[convIndex].messages.isEmpty
+            {
+                let lastIndex = conversations[convIndex].messages.count - 1
+                guard conversations[convIndex].messages[lastIndex].reasoning != reasoning else {
+                    return
+                }
+                conversations[convIndex].messages[lastIndex].reasoning = reasoning
+                saveToDisk()
+            }
+        }
+
         /// Get the preview text for a conversation
         func previewText(for conversation: WatchConversation) -> String {
             if let lastMessage = conversation.messages.last {
-                let preview = lastMessage.content.prefix(50)
-                return preview.count < lastMessage.content.count ? "\(preview)..." : String(preview)
+                let visibleText = lastMessage.content.isEmpty
+                    ? (lastMessage.reasoning ?? "")
+                    : lastMessage.content
+                let preview = visibleText.prefix(50)
+                return preview.count < visibleText.count ? "\(preview)..." : String(preview)
             }
             return "No messages"
         }

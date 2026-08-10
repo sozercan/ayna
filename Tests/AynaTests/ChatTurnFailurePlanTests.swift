@@ -37,6 +37,34 @@ struct ChatTurnFailurePlanTests {
         #expect(plan.retryPrompt == "Retry me")
     }
 
+    @Test("Post-tool continuation failure keeps retry and truncates the whole failed turn")
+    func postToolContinuationFailureKeepsRetryAndTruncatesFailedTurn() {
+        let earlierAssistant = Message(role: .assistant, content: "Earlier response")
+        let user = Message(role: .user, content: "Search for this")
+        var toolRequest = Message(role: .assistant, content: "")
+        let toolResult = Message(role: .tool, content: "Search result")
+        let continuation = Message(role: .assistant, content: "")
+
+        #if !os(watchOS)
+            toolRequest.toolCalls = [MCPToolCall(toolName: "web_search", arguments: [:])]
+        #endif
+
+        let plan = ChatTurnFailurePlan(
+            messages: [earlierAssistant, user, toolRequest, toolResult, continuation],
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: continuation.id,
+            failedUserMessagePolicy: .removeForRetry
+        )
+        let messagesBeforeRetry = ChatTurnFailurePlan.messagesBeforeFailedTurn(
+            in: plan.messagesAfterFailure,
+            failedUserMessageId: user.id
+        )
+
+        #expect(plan.messagesAfterFailure == [earlierAssistant, user, toolRequest, toolResult])
+        #expect(plan.retryPrompt == user.content)
+        #expect(messagesBeforeRetry == [earlierAssistant])
+    }
+
     @Test("Preserve policy does not remove non-empty assistant responses with matching id")
     func preservePolicyDoesNotRemoveNonEmptyAssistantResponsesWithMatchingId() {
         let user = Message(role: .user, content: "Hello")
@@ -163,11 +191,19 @@ struct ChatTurnFailurePlanTests {
             assistantPlaceholderId: citedAssistant.id,
             failedUserMessagePolicy: .preserve
         )
+        let citationRetryPlan = ChatTurnFailurePlan(
+            messages: [user, citedAssistant],
+            failedUserMessageId: user.id,
+            assistantPlaceholderId: citedAssistant.id,
+            failedUserMessagePolicy: .removeForRetry
+        )
 
         #expect(reasoningPlan.messagesAfterFailure == [user, reasoningAssistant])
         #expect(reasoningPlan.retryPrompt == nil)
         #expect(citationPlan.messagesAfterFailure == [user, citedAssistant])
         #expect(citationPlan.retryPrompt == nil)
+        #expect(citationRetryPlan.messagesAfterFailure == [user, citedAssistant])
+        #expect(citationRetryPlan.retryPrompt == user.content)
     }
 
     @Test("Plan preserves empty assistant messages with tool metadata")

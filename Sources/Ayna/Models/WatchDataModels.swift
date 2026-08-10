@@ -45,6 +45,7 @@ struct WatchMessage: Codable, Identifiable {
     let id: UUID
     var role: String
     var content: String
+    var reasoning: String?
     var timestamp: Date
     var model: String?
 
@@ -52,14 +53,15 @@ struct WatchMessage: Codable, Identifiable {
         id = message.id
         role = message.role.rawValue
         content = message.content
+        reasoning = message.reasoning
         timestamp = message.timestamp
         model = message.model
     }
 
     func toMessage() -> Message {
         let messageRole: Message.Role
-        if let r = Message.Role(rawValue: role) {
-            messageRole = r
+        if let parsedRole = Message.Role(rawValue: role) {
+            messageRole = parsedRole
         } else {
             DiagnosticsLogger.log(.watchConnectivity, level: .default, message: "Invalid message role", metadata: ["role": role])
             messageRole = .assistant
@@ -70,7 +72,8 @@ struct WatchMessage: Codable, Identifiable {
             role: messageRole,
             content: content,
             timestamp: timestamp,
-            model: model
+            model: model,
+            reasoning: reasoning
         )
     }
 }

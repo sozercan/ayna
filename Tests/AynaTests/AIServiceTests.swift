@@ -32,6 +32,24 @@ struct AIServiceTests {
         return service
     }
 
+    #if os(watchOS)
+        @Test("watchOS exposes only synced web search")
+        func watchOSExposesOnlySyncedWebSearch() throws {
+            let service = makeService()
+
+            service.webSearchEnabled = false
+            #expect(service.getAllAvailableTools() == nil)
+
+            service.webSearchEnabled = true
+            let tools = try #require(service.getAllAvailableTools())
+            let tool = try #require(tools.first)
+            let function = try #require(tool["function"] as? [String: Any])
+
+            #expect(tools.count == 1)
+            #expect(function["name"] as? String == WebSearchCoordinator.toolName)
+        }
+    #endif
+
     @Test("Send message without API key throws error", .timeLimit(.minutes(1)))
     func sendMessageWithoutAPIKeyThrowsError() async {
         let service = makeService()
@@ -688,7 +706,6 @@ struct AIServiceTests {
         let body = try #require(bodyData)
         return try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     }
-
 
 }
 

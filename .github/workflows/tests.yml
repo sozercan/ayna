@@ -46,6 +46,54 @@ jobs:
     - name: Run unit tests
       run: swift test -q
 
+  watchos_unit_tests:
+    name: watchOS Unit Tests
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+    - name: Show Swift version
+      run: swift --version
+
+    - name: Clear SPM artifacts cache
+      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+
+    - name: Run native Watch unit tests
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        package_view="$(mktemp -d)"
+        ln -s "$GITHUB_WORKSPACE/Package.swift" "$package_view/Package.swift"
+        ln -s "$GITHUB_WORKSPACE/Package.resolved" "$package_view/Package.resolved"
+        ln -s "$GITHUB_WORKSPACE/Sources" "$package_view/Sources"
+        mkdir -p "$package_view/Tests/AynaTests"
+        touch "$package_view/Tests/AynaTests/WatchCIPlaceholder.swift"
+        ln -s "$GITHUB_WORKSPACE/Tests/AynaWatchTests" "$package_view/Tests/AynaWatchTests"
+        cd "$package_view"
+
+        watch_id="$(
+          xcodebuild -scheme Ayna -showdestinations 2>&1 |
+            sed -nE '/platform:watchOS Simulator, arch:/{s/.*id:([^,]+).*/\1/p;q;}'
+        )"
+        test -n "$watch_id"
+
+        xcodebuild \
+          -scheme Ayna \
+          -destination "platform=watchOS Simulator,id=$watch_id" \
+          -destination-timeout 120 \
+          -only-testing:AynaWatchTests/WatchChatViewModelNativeTests \
+          -parallel-testing-enabled NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          test
+
   ios_build_check:
     name: iOS Build Check
     runs-on: macos-26

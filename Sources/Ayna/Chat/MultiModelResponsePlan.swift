@@ -62,3 +62,23 @@ struct MultiModelResponsePlan: Equatable, Sendable {
         messageIDsByModel[model]
     }
 }
+
+/// Pure text-display state shared by multi-model response cards.
+struct MultiModelResponseContentPlan: Equatable, Sendable {
+    let reasoning: String?
+    let showsTypingIndicator: Bool
+
+    init(message: Message, responseStatus: ResponseGroupStatus?) {
+        if let reasoning = message.reasoning,
+           !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            self.reasoning = reasoning
+        } else {
+            self.reasoning = nil
+        }
+
+        showsTypingIndicator = responseStatus == .streaming
+            && message.content.isEmpty
+            && reasoning == nil
+    }
+}

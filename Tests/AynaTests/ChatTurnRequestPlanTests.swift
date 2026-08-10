@@ -58,9 +58,48 @@ struct ChatTurnRequestPlanTests {
         #expect(messages[1] == user)
     }
 
+    @Test("Conversation plan includes only the selected response from a response group")
+    func conversationPlanIncludesOnlySelectedResponse() {
+        let groupId = UUID()
+        let user = Message(role: .user, content: "Compare")
+        let unselected = Message(
+            role: .assistant,
+            content: "First response",
+            model: "model-a",
+            responseGroupId: groupId
+        )
+        let selected = Message(
+            role: .assistant,
+            content: "Selected response",
+            model: "model-b",
+            responseGroupId: groupId
+        )
+        let followUp = Message(role: .user, content: "Continue")
+        let placeholder = Message(role: .assistant, content: "")
+        let responseGroup = ResponseGroup(
+            id: groupId,
+            userMessageId: user.id,
+            responses: [
+                .init(id: unselected.id, modelName: "model-a", status: .completed),
+                .init(id: selected.id, modelName: "model-b", status: .selected)
+            ],
+            selectedResponseId: selected.id
+        )
+        let conversation = Conversation(
+            messages: [user, unselected, selected, followUp, placeholder],
+            responseGroups: [responseGroup]
+        )
+
+        let plan = ChatTurnRequestPlan(
+            conversation: conversation,
+            systemPrompt: nil,
+            excludingAssistantPlaceholderId: placeholder.id
+        )
+
+        #expect(plan.messages == [user, selected, followUp])
+    }
+
     #if !os(watchOS)
-
-
     @Test("Plan excludes only the assistant placeholder with the matching identity")
     func excludesOnlyMatchingAssistantPlaceholderIdentity() {
         let user = Message(role: .user, content: "Hello")
@@ -97,8 +136,6 @@ struct ChatTurnRequestPlanTests {
         #expect(noPlaceholderPlan.messages == [assistant, user])
         #expect(userIdPlan.messages == [assistant, user])
     }
-
-
     @Test("Tool continuation drops UI placeholder and appends synthetic tool result for web search")
         func toolContinuationDropsPlaceholderAndAppendsSyntheticToolResult() throws {
             let user = Message(role: .user, content: "Search")
