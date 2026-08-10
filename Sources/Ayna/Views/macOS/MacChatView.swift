@@ -76,6 +76,15 @@ struct MacChatView: View {
         let prompt: String
     }
 
+    private struct SendPreparation {
+        let promptText: String
+        let files: [URL]
+        let appContent: AppContent?
+        let selectedModel: String
+        let selectedModels: Set<String>
+        let activeModel: String?
+    }
+
     let conversation: Conversation
 
     init(conversation: Conversation) {
@@ -520,8 +529,8 @@ struct MacChatView: View {
 
     // MARK: - Model Selection Helpers
 
-    private func resolveModelForSending() -> String? {
-        let trimmedSelection = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func resolveModelForSending(selection: String) -> String? {
+        let trimmedSelection = selection.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedSelection.isEmpty {
             return trimmedSelection
         }
@@ -537,7 +546,11 @@ struct MacChatView: View {
         return trimmedGlobal.isEmpty ? nil : trimmedGlobal
     }
 
-    private func ensureConversationModelMatchesSelection(_ model: String) {
+    private func ensureConversationModelMatchesSelection(
+        _ model: String,
+        expectedSelection: String
+    ) {
+        guard selectedModel == expectedSelection else { return }
         if currentConversation.model != model {
             conversationManager.updateModel(for: conversation, model: model)
         }
@@ -806,6 +819,14 @@ struct MacChatView: View {
             return
         }
 
+            let preparation = SendPreparation(
+                promptText: messageText,
+                files: attachedFiles,
+                appContent: attachedAppContent,
+                selectedModel: selectedModel,
+                selectedModels: selectedModels,
+                activeModel: resolveModelForSending(selection: selectedModel)
+            )
             let preparationID = UUID()
             sendPreparationID = preparationID
             isGenerating = true
@@ -814,7 +835,7 @@ struct MacChatView: View {
                     try? await Task.sleep(for: delay)
                 }
                 guard !Task.isCancelled, sendPreparationID == preparationID else { return }
-                await sendMessage(preparationID: preparationID)
+                await sendMessage(preparationID: preparationID, preparation: preparation)
             }
             sendPreparationTask = task
         }
@@ -827,11 +848,10 @@ struct MacChatView: View {
             }
         }
 
-        private func restorePendingAutoSendClaimIfNeeded() {
+        private func restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: Bool = true) {
             guard let claim = pendingAutoSendClaim else { return }
             defer { pendingAutoSendClaim = nil }
-            guard messageText == claim.prompt,
-                  let index = conversationManager.conversations.firstIndex(where: { $0.id == claim.conversationID })
+            guard let index = conversationManager.conversations.firstIndex(where: { $0.id == claim.conversationID })
             else {
                 return
             }
@@ -840,7 +860,9 @@ struct MacChatView: View {
                 conversationManager.conversations[index].pendingAutoSendPrompt = claim.prompt
                 conversationManager.saveImmediately(conversationManager.conversations[index])
             }
-            messageText = ""
+            if clearVisibleDraft, messageText == claim.prompt {
+                messageText = ""
+            }
         }
 
         private func isSameAppContent(_ lhs: AppContent?, _ rhs: AppContent?) -> Bool {
@@ -864,7 +886,10 @@ struct MacChatView: View {
         // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
         // we defer that refactor and explicitly allow the longer body.
         // swiftlint:disable:next function_body_length
-        private func sendMessage(preparationID: UUID) async {
+        private func sendMessage(
+            preparationID: UUID,
+            preparation: SendPreparation
+        ) async {
             var handedOff = false
             defer {
                 if sendPreparationID == preparationID {
@@ -878,20 +903,40 @@ struct MacChatView: View {
 
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
 
+            guard await ConversationSendPreflight.loadConversationHistory(
+                conversationId: conversation.id,
+                manager: conversationManager
+            ) != nil else {
+                guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+                logChat(
+                    "❌ Failed to load conversation before sending",
+                    level: .error,
+                    metadata: ["conversationId": conversation.id.uuidString]
+                )
+                errorMessage = "Unable to load this conversation's history. Try again."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+            guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+
         // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
-        guard let activeModel = resolveModelForSending() else {
+        guard let activeModel = preparation.activeModel else {
             logChat("❌ Cannot send message: no model selected", level: .error)
             errorMessage = "Select a model in Settings → Model."
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
             return
         }
 
-        ensureConversationModelMatchesSelection(activeModel)
-            let promptText = messageText
-            let filesToSend = attachedFiles
-            let appContentToSend = attachedAppContent
-            let selectedModelsToSend = selectedModels
+        ensureConversationModelMatchesSelection(
+            activeModel,
+            expectedSelection: preparation.selectedModel
+        )
+            let promptText = preparation.promptText
+            let filesToSend = preparation.files
+            let appContentToSend = preparation.appContent
+            let selectedModelsToSend = preparation.selectedModels
         logChat(
             "🎯 Sending message with model \(activeModel)",
             level: .info,
@@ -905,6 +950,26 @@ struct MacChatView: View {
                 fileURLs: filesToSend,
             saveToStorage: true
         )
+            guard sendPreparationID == preparationID, !Task.isCancelled else {
+                discardStoredAttachments(in: userMessage)
+                return
+            }
+
+            guard await ConversationSendPreflight.loadConversationHistory(
+                conversationId: conversation.id,
+                manager: conversationManager
+            ) != nil else {
+                discardStoredAttachments(in: userMessage)
+                guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+                logChat(
+                    "❌ Conversation changed while preparing attachments",
+                    level: .error,
+                    metadata: ["conversationId": conversation.id.uuidString]
+                )
+                errorMessage = "Unable to load this conversation's history. Try again."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
             guard sendPreparationID == preparationID, !Task.isCancelled else {
                 discardStoredAttachments(in: userMessage)
                 return
