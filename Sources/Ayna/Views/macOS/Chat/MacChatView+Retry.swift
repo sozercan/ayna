@@ -117,14 +117,10 @@ extension MacChatView {
             return
         }
 
-        let currentMessages = updatedConversation.messages
-
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
@@ -142,7 +138,9 @@ extension MacChatView {
             temperature: updatedConversation.temperature,
             tools: tools,
             isInitialRequest: true,
-            assistantMessageID: assistantMessage.id
+            assistantMessageID: assistantMessage.id,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -169,14 +167,10 @@ extension MacChatView {
             return
         }
 
-        let currentMessages = updatedConversation.messages
-
-        // Prepend system prompt if configured
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: buildFullSystemPrompt(for: updatedConversation)
+        )
 
         // Add empty assistant message with the specified model
         let assistantMessage = Message(role: .assistant, content: "", model: model)
@@ -194,7 +188,9 @@ extension MacChatView {
             temperature: updatedConversation.temperature,
             tools: tools,
             isInitialRequest: true,
-            assistantMessageID: assistantMessage.id
+            assistantMessageID: assistantMessage.id,
+            failedUserMessageId: nil,
+            failedUserMessagePolicy: .preserve
         )
     }
 

@@ -151,6 +151,18 @@
             // Should not crash and state should remain unchanged
             #expect(!viewModel.isLoading)
         }
+
+        @Test
+        func `Whitespace-only assistant output is not substantive`() {
+            let message = WatchMessage(
+                id: UUID(),
+                role: Message.Role.assistant.rawValue,
+                content: " \n\t ",
+                timestamp: Date()
+            )
+
+            #expect(!WatchChatViewModel.hasSubstantiveAssistantState(message))
+        }
     }
 
     // swiftlint:enable identifier_name

@@ -585,11 +585,16 @@ struct MacNewChatView: View {
             metadata: ["conversationId": conversation.id.uuidString]
         )
 
-        let currentMessages = updatedConversation.messages
-
         // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
+
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
+        let failedUserMessageId = updatedConversation.messages.last(where: { $0.role == .user })?.id
 
         // Get available tools (Tavily + MCP)
         let tools = aiService.getAllAvailableTools()
@@ -597,11 +602,13 @@ struct MacNewChatView: View {
 
         sendMessageWithToolSupport(
             conversation: conversation,
-            messages: currentMessages,
+            messages: messagesToSend,
             model: activeModel,
             temperature: updatedConversation.temperature,
                 tools: tools,
-                assistantMessageID: assistantMessage.id
+            assistantMessageID: assistantMessage.id,
+            failedUserMessageId: failedUserMessageId,
+            failedUserMessagePolicy: .preserve
         )
     }
 
@@ -891,12 +898,10 @@ struct MacNewChatView: View {
 
         let messageIdsByModel = responsePlan.messageIDsByModel
 
-        // Prepare messages for API
-        var messagesToSend = updatedConversation.getEffectiveHistory()
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation)
+        )
 
             // Send to all models in parallel under this view's owner-specific operation.
             let coordinator = toolChainCoordinator
@@ -1017,7 +1022,7 @@ struct MacNewChatView: View {
             }
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length function_parameter_count
     private func sendMessageWithToolSupport(
         conversation: Conversation,
         messages: [Message],
@@ -1025,7 +1030,9 @@ struct MacNewChatView: View {
         temperature: Double,
         tools: [[String: Any]]?,
         assistantMessageID requestedAssistantMessageID: UUID? = nil,
-        operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
+        operationID existingOperationID: ToolChainCoordinator.OperationID? = nil,
+        failedUserMessageId: UUID?,
+        failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
     ) {
         let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         let conversationId = conversation.id
@@ -1104,7 +1111,9 @@ struct MacNewChatView: View {
                             conversationID: conversationId,
                             model: model,
                             temperature: temperature,
-                            tools: toolsWrapper.value
+                            tools: toolsWrapper.value,
+                            failedUserMessageId: failedUserMessageId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
                         )
                 }
             },
@@ -1121,9 +1130,21 @@ struct MacNewChatView: View {
                             "error": error.localizedDescription
                         ]
                     )
-                        if !(error is CancellationError) {
-                    presentError(error)
-                }
+                        guard !(error is CancellationError) else { return }
+
+                        if let current = conversationManager.conversation(byId: conversationId) {
+                            let plan = ChatTurnFailurePlan(
+                                messages: current.messages,
+                                failedUserMessageId: failedUserMessageId,
+                                assistantPlaceholderId: assistantMessageID,
+                                failedUserMessagePolicy: failedUserMessagePolicy
+                            )
+                            var updatedConversation = current
+                            updatedConversation.messages = plan.messagesAfterFailure
+                            updatedConversation.updatedAt = Date()
+                            conversationManager.updateConversation(updatedConversation)
+                        }
+                        presentError(error)
                     }
             },
             onToolCallRequested: toolCallAdmissionGate.admittedCallback { toolCallId, toolName, arguments in
@@ -1242,7 +1263,9 @@ struct MacNewChatView: View {
                                 conversationID: conversationId,
                                     model: model,
                                     temperature: temperature,
-                                    tools: toolsWrapper.value
+                                tools: toolsWrapper.value,
+                                failedUserMessageId: failedUserMessageId,
+                                failedUserMessagePolicy: failedUserMessagePolicy
                                 )
                             }
                     }
@@ -1269,7 +1292,9 @@ struct MacNewChatView: View {
             conversationID: UUID,
             model: String,
             temperature: Double,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            failedUserMessageId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             switch resolution {
             case .pending, .ignored:
@@ -1294,7 +1319,9 @@ struct MacNewChatView: View {
                     conversationID: conversationID,
                     model: model,
                     temperature: temperature,
-                    tools: tools
+                    tools: tools,
+                    failedUserMessageId: failedUserMessageId,
+                    failedUserMessagePolicy: failedUserMessagePolicy
                 )
             }
         }
@@ -1306,7 +1333,9 @@ struct MacNewChatView: View {
             conversationID: UUID,
             model: String,
             temperature: Double,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            failedUserMessageId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             guard toolChainCoordinator.owns(operationID, conversationID: conversationID),
                   continuation.operationID == operationID,
@@ -1334,12 +1363,11 @@ struct MacNewChatView: View {
                 return
             }
 
-            var history = conversationWithAssistant
-            history.messages.removeAll { $0.id == continuationMessage.id }
-            var continuationMessages = history.getEffectiveHistory()
-            if let systemPrompt = conversationManager.effectiveSystemPrompt(for: conversationWithAssistant) {
-                continuationMessages.insert(Message(role: .system, content: systemPrompt), at: 0)
-            }
+            let continuationMessages = ChatTurnRequestPlan(
+                conversation: conversationWithAssistant,
+                systemPrompt: conversationManager.effectiveSystemPrompt(for: conversationWithAssistant),
+                excludingAssistantPlaceholderId: continuationMessage.id
+            ).messages
             currentToolName = nil
             sendMessageWithToolSupport(
                 conversation: conversationWithAssistant,
@@ -1348,9 +1376,11 @@ struct MacNewChatView: View {
                 temperature: temperature,
                 tools: tools,
                 assistantMessageID: continuationMessage.id,
-                operationID: operationID
-        )
-    }
+                operationID: operationID,
+                failedUserMessageId: failedUserMessageId,
+                failedUserMessagePolicy: failedUserMessagePolicy
+            )
+        }
 
     func presentError(_ error: Error) {
         errorMessage = ErrorPresenter.userMessage(for: error)

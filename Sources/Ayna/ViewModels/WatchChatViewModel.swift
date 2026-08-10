@@ -1104,9 +1104,7 @@ final class WatchToolCallRoundRegistry {
                 finalContent: message.content
             )
 
-            let hasAssistantState = !message.content.isEmpty ||
-                !(message.citations?.isEmpty ?? true) ||
-                !(message.toolCalls?.isEmpty ?? true)
+            let hasAssistantState = Self.hasSubstantiveAssistantState(message)
             let turnStartIndex = conversation.messages[...messageIndex].lastIndex {
                 $0.role == Message.Role.user.rawValue
             } ?? messageIndex
@@ -1134,6 +1132,12 @@ final class WatchToolCallRoundRegistry {
                 conversationStore.discardDraft(conversationID: conversationId)
                 return .discarded
             }
+        }
+
+        static func hasSubstantiveAssistantState(_ message: WatchMessage) -> Bool {
+            ChatTurnFailurePlan.hasSubstantiveText(message.content) ||
+                !(message.citations?.isEmpty ?? true) ||
+                !(message.toolCalls?.isEmpty ?? true)
         }
 
         private func makePendingResponsePromotion(

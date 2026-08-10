@@ -46,6 +46,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
     /// The last failed message content, stored for retry functionality
     @Published var failedMessage: String?
+    private var failedMessageId: UUID?
 
     /// Recovery suggestion for the current error (if available)
     @Published var errorRecoverySuggestion: String?
@@ -257,6 +258,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
         selectedModel = aiService.selectedModel
@@ -399,10 +401,26 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             metadata: ["messageLength": "\(message.count)"]
         )
 
+        let messageId = failedMessageId
+
         // Clear error state
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+
+        if let messageId,
+           let conversation,
+           let messagesBeforeFailedTurn = ChatTurnFailurePlan.messagesBeforeFailedTurn(
+               in: conversation.messages,
+               failedUserMessageId: messageId
+           )
+        {
+            var updatedConversation = conversation
+            updatedConversation.messages = messagesBeforeFailedTurn
+            updatedConversation.updatedAt = Date()
+            conversationManager.updateConversation(updatedConversation)
+        }
 
         // Set message text and send
         messageText = message
@@ -412,6 +430,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     /// Dismiss the current error without retrying
     func dismissError() {
         failedMessage = nil
+        failedMessageId = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
@@ -739,6 +758,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = nil
+        failedMessageId = nil
 
         // Play message sent sound
         SoundEngine.messageSent()
@@ -789,15 +809,11 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
-            // Linearize multi-model history and omit failed/empty placeholders. The newly added
-            // empty assistant is also excluded by effective-history filtering.
-            var messagesToSend = updatedConversation.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools (Tavily web search on iOS)
         let tools = aiService.getAllAvailableTools()
@@ -838,6 +854,10 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         let toolsWrapper = UncheckedSendable(tools)
         let coordinator = toolChainCoordinator
         let roundCoordinator = toolCallRequestRoundCoordinator
+        let failedUserMessageId = messages.last(where: { $0.role == .user })?.id
+        let failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy = isNewChatMode
+            ? .preserve
+            : .removeForRetry
         let operationID = existingOperationID ?? coordinator.beginOperation(conversationID: conversationId)
         if existingOperationID == nil {
             activeMultiModelResponseGroupId = nil
@@ -942,7 +962,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             error,
                             operationID: operationID,
                             assistantMessageId: assistantMessageId,
-                            conversationId: conversationId
+                            conversationId: conversationId,
+                            failedUserMessageId: failedUserMessageId,
+                            failedUserMessagePolicy: failedUserMessagePolicy
                         )
                     }
                 },
@@ -1203,12 +1225,11 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                                 return
                             }
 
-            var history = conversationWithAssistant
-            history.messages.removeAll { $0.id == continuationAssistantMessage.id }
-            var continuationMessages = history.getEffectiveHistory()
-            if let systemPrompt = conversationManager.effectiveSystemPrompt(for: conversationWithAssistant) {
-                continuationMessages.insert(Message(role: .system, content: systemPrompt), at: 0)
-            }
+            let continuationMessages = ChatTurnRequestPlan(
+                conversation: conversationWithAssistant,
+                systemPrompt: conversationManager.effectiveSystemPrompt(for: conversationWithAssistant),
+                excludingAssistantPlaceholderId: continuationAssistantMessage.id
+            ).messages
 
             currentToolName = nil
             sendMessageWithToolSupport(
@@ -1238,6 +1259,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             currentToolName = nil
             toolCallDepth = 0
             pendingUserMessage = nil
+            failedMessage = nil
+            failedMessageId = nil
             SoundEngine.messageReceived()
 
             if let finalConversation = conversationManager.conversation(byId: conversationId) {
@@ -1260,7 +1283,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             _ error: Error,
             operationID: ToolChainCoordinator.OperationID,
             assistantMessageId: UUID,
-            conversationId: UUID
+            conversationId: UUID,
+            failedUserMessageId: UUID?,
+            failedUserMessagePolicy: ChatTurnFailurePlan.FailedUserMessagePolicy
         ) {
             guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
                   activeAssistantMessageId == assistantMessageId
@@ -1305,20 +1330,23 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             toolCallDepth = 0
             errorMessage = ErrorPresenter.userMessage(for: error)
             errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
-            failedMessage = pendingUserMessage
             pendingUserMessage = nil
-            let assistantHasToolCalls = conversationManager
-                .conversation(byId: conversationId)?
-                .messages.first(where: { $0.id == assistantMessageId })?
-                .toolCalls?.isEmpty == false
-            if !assistantHasToolCalls {
-                conversationManager.removeMessage(
-                    conversationId: conversationId,
-                    messageId: assistantMessageId
+            if let current = conversationManager.conversation(byId: conversationId) {
+                let plan = ChatTurnFailurePlan(
+                    messages: current.messages,
+                    failedUserMessageId: failedUserMessageId,
+                    assistantPlaceholderId: assistantMessageId,
+                    failedUserMessagePolicy: failedUserMessagePolicy
                 )
-            }
-            if let updatedConversation = conversationManager.conversation(byId: conversationId) {
-                conversationManager.save(updatedConversation)
+                var updatedConversation = current
+                updatedConversation.messages = plan.messagesAfterFailure
+                updatedConversation.updatedAt = Date()
+                conversationManager.updateConversation(updatedConversation)
+                failedMessage = plan.retryPrompt
+                failedMessageId = plan.retryPrompt == nil ? nil : failedUserMessageId
+            } else {
+                failedMessage = nil
+                failedMessageId = nil
                         }
 
             if isNewChatMode {
@@ -1633,13 +1661,11 @@ extension IOSChatViewModel {
             )
             return
         }
-            var messagesToSend = updatedConversation.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -1692,13 +1718,11 @@ extension IOSChatViewModel {
             )
             return
         }
-            var messagesToSend = refreshed.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: refreshed,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: refreshed),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
@@ -1771,13 +1795,11 @@ extension IOSChatViewModel {
             )
             return
         }
-            var messagesToSend = updatedConversation.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan(
+            conversation: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingAssistantPlaceholderId: assistantMessage.id
+        ).messages
 
         // Get available tools and use helper method
         let tools = aiService.getAllAvailableTools()
@@ -1862,10 +1884,11 @@ extension IOSChatViewModel {
             isGenerating = false
             return
         }
-        var messagesToSend = updatedConversation.getEffectiveHistory().filter { $0.responseGroupId != responseGroupId }
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
-        }
+        let messagesToSend = ChatTurnRequestPlan.effectiveMessages(
+            from: updatedConversation,
+            systemPrompt: conversationManager.effectiveSystemPrompt(for: updatedConversation),
+            excludingResponseGroupId: responseGroupId
+        )
 
             // Send to all models under this view model's owner-specific operation.
             let coordinator = toolChainCoordinator
