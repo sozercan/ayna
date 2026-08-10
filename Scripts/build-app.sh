@@ -34,28 +34,6 @@ echo "🔨 Building $APP_NAME ($CONF) for ${ARCH_LIST[*]}..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# Build path helpers. SwiftPM has used both triple-specific paths
-# (`.build/arm64-apple-macosx/release`) and Xcode-style paths
-# (`.build/out/Products/Release`) across toolchain versions.
-configuration_dir_name() {
-  case "$CONF" in
-    debug) echo "Debug" ;;
-    release) echo "Release" ;;
-    *) echo "$CONF" ;;
-  esac
-}
-
-build_product_dirs() {
-  local arch="$1"
-  local config_dir
-  config_dir="$(configuration_dir_name)"
-  case "$arch" in
-    arm64|x86_64) echo ".build/${arch}-apple-macosx/$CONF" ;;
-  esac
-  echo ".build/$CONF"
-  echo ".build/out/Products/${config_dir}"
-}
-
 # Verify binary architectures
 verify_binary_arches() {
   local binary="$1"; shift
@@ -110,8 +88,14 @@ stage_binary() {
 # builds finish can make every entry point at the final architecture built.
 for ARCH in "${ARCH_LIST[@]}"; do
   echo "  → Building for $ARCH..."
-  swift build -c "$CONF" --arch "$ARCH"
-  ARCH_BUILD_DIR=$(swift build -c "$CONF" --arch "$ARCH" --show-bin-path)
+  SWIFT_BUILD_ARGS=(-c "$CONF" --arch "$ARCH")
+  if [[ ${#ARCH_LIST[@]} -gt 1 ]]; then
+    # Keep universal-build slices isolated so one architecture cannot overwrite
+    # another before the binaries are staged and combined with lipo.
+    SWIFT_BUILD_ARGS+=(--scratch-path "$ROOT/.build/architectures/$ARCH")
+  fi
+  swift build "${SWIFT_BUILD_ARGS[@]}"
+  ARCH_BUILD_DIR=$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)
   stage_binary "$APP_NAME" "$ARCH" "$ARCH_BUILD_DIR"
 done
 
@@ -307,13 +291,12 @@ for arch in "${ARCH_LIST[@]}"; do
     SPARKLE_FRAMEWORK="$CANDIDATE_DIR/Sparkle.framework"
     break
   fi
-  while IFS= read -r CANDIDATE_DIR; do
-    if [[ -d "$CANDIDATE_DIR/Sparkle.framework" ]]; then
-      SPARKLE_FRAMEWORK="$CANDIDATE_DIR/Sparkle.framework"
-      break 2
-    fi
-  done < <(build_product_dirs "$arch")
 done
+
+# Also check the default build path used by older SwiftPM layouts.
+if [[ -z "$SPARKLE_FRAMEWORK" ]] && [[ -d ".build/$CONF/Sparkle.framework" ]]; then
+  SPARKLE_FRAMEWORK=".build/$CONF/Sparkle.framework"
+fi
 
 if [[ -n "$SPARKLE_FRAMEWORK" ]]; then
   echo "✨ Embedding Sparkle.framework..."
