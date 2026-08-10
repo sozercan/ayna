@@ -111,8 +111,13 @@ jobs:
 
         destination_id="$(
           xcrun simctl list devices available | \
-            sed -nE '/^[[:space:]]+Apple Watch /{s/.*\(([[:xdigit:]-]{36})\).*/\1/p;}' | \
-            sed -n '1p'
+            awk '
+              /^-- watchOS 26\./ { compatible_runtime = 1; next }
+              /^-- / { compatible_runtime = 0 }
+              compatible_runtime && /^[[:space:]]+Apple Watch / { print }
+            ' | \
+            sed -nE 's/.*\(([[:xdigit:]-]{36})\).*/\1/p' | \
+            tail -n 1
         )"
         test -n "$destination_id"
         echo "id=$destination_id" >> "$GITHUB_OUTPUT"
