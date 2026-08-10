@@ -186,9 +186,7 @@ extension MacChatView {
         }
 
         // Add response group to conversation
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
-        }
+        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         registerImageBatchCancellation(
             coordinator: coordinator,
@@ -378,16 +376,12 @@ extension MacChatView {
         messageId: UUID,
         status: ResponseGroup.ResponseStatus
     ) {
-        guard let conversationIndex = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }),
-              let groupIndex = conversationManager.conversations[conversationIndex].responseGroups.firstIndex(where: {
-                  $0.id == responseGroupId
-              }),
-              let entryIndex = conversationManager.conversations[conversationIndex].responseGroups[groupIndex]
-              .responses.firstIndex(where: { $0.id == messageId })
-        else {
-            return
-        }
-        conversationManager.conversations[conversationIndex].responseGroups[groupIndex].responses[entryIndex].status = status
+        conversationManager.updateResponseGroupStatus(
+            conversationId: conversation.id,
+            responseGroupId: responseGroupId,
+            messageId: messageId,
+            status: status
+        )
     }
 
     private func loadImageData(at path: String?) async -> Data? {
@@ -492,14 +486,12 @@ extension MacChatView {
                     multiModelReasoningBuffer.finish(for: messageId)
 
                     // Update response group status
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .completed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .completed
+                    )
 
                     logChat(
                         "✅ Model completed in multi-model",
@@ -531,14 +523,12 @@ extension MacChatView {
                     multiModelReasoningBuffer.finish(for: messageId)
 
                     // Update response group status to failed
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
-                    {
-                        group.updateStatus(for: messageId, status: .failed)
-                        conversationManager.conversations[convIndex].updateResponseGroup(group)
-                    }
+                    conversationManager.updateResponseGroupStatus(
+                        conversationId: conversationId,
+                        responseGroupId: responseGroupId,
+                        messageId: messageId,
+                        status: .failed
+                    )
 
                     logChat(
                         "❌ Model failed in multi-model",

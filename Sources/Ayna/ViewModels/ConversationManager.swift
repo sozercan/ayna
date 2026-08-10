@@ -2499,17 +2499,11 @@ final class ConversationManager: ObservableObject {
         messageId: UUID,
         update: (inout Message) -> Void
     ) -> Bool {
-        guard let convIndex = getConversationIndex(for: conversation.id),
-              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageId })
-        else {
-            return false
-        }
-        var message = conversations[convIndex].messages[msgIndex]
-        update(&message)
-        conversations[convIndex].messages[msgIndex] = message
-        conversations[convIndex].updatedAt = Date()
-        save(conversations[convIndex])
-        return true
+        updateMessageAndPersist(
+            conversationId: conversation.id,
+            messageId: messageId,
+            update: update
+        )
     }
 
     // MARK: - Safe ID-Based Access
@@ -2526,11 +2520,46 @@ final class ConversationManager: ObservableObject {
         return nil
     }
 
-    /// Safely update a message by IDs. Returns true if update succeeded.
+    /// Safely updates a message in memory without scheduling persistence.
+    ///
+    /// Use this for streaming chunks such as reasoning deltas, then call an
+    /// explicit terminal persistence API when the response finishes.
     @discardableResult
     func updateMessage(
         conversationId: UUID,
         messageId: UUID,
+        update: (inout Message) -> Void
+    ) -> Bool {
+        mutateMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            shouldPersist: false,
+            update: update
+        )
+    }
+
+    /// Safely applies a completed message mutation and persists the conversation.
+    ///
+    /// The saved snapshot also includes any chunks or reasoning accumulated by
+    /// prior non-persisting streaming updates.
+    @discardableResult
+    func updateMessageAndPersist(
+        conversationId: UUID,
+        messageId: UUID,
+        update: (inout Message) -> Void
+    ) -> Bool {
+        mutateMessage(
+            conversationId: conversationId,
+            messageId: messageId,
+            shouldPersist: true,
+            update: update
+        )
+    }
+
+    private func mutateMessage(
+        conversationId: UUID,
+        messageId: UUID,
+        shouldPersist: Bool,
         update: (inout Message) -> Void
     ) -> Bool {
         guard let convIndex = getConversationIndex(for: conversationId),
@@ -2541,8 +2570,19 @@ final class ConversationManager: ObservableObject {
         var message = conversations[convIndex].messages[msgIndex]
         update(&message)
         conversations[convIndex].messages[msgIndex] = message
-        conversations[convIndex].updatedAt = Date()
+        if shouldPersist {
+            persistTerminalMutation(at: convIndex)
+        } else {
+            conversations[convIndex].updatedAt = Date()
+        }
         return true
+    }
+
+    /// Persists a completed conversation mutation that should survive reloads.
+    /// Streaming writes bypass this path so callers can choose one save point.
+    private func persistTerminalMutation(at conversationIndex: Int) {
+        conversations[conversationIndex].updatedAt = Date()
+        save(conversations[conversationIndex])
     }
 
     /// Safely append content to a message. Returns true if update succeeded.
@@ -2574,7 +2614,7 @@ final class ConversationManager: ObservableObject {
             return false
         }
         conversations[convIndex].messages.remove(at: msgIndex)
-        conversations[convIndex].updatedAt = Date()
+        persistTerminalMutation(at: convIndex)
         return true
     }
 
@@ -2587,12 +2627,19 @@ final class ConversationManager: ObservableObject {
         status: ResponseGroupStatus
     ) -> Bool {
         guard let convIndex = getConversationIndex(for: conversationId),
-              var group = conversations[convIndex].getResponseGroup(responseGroupId)
+              var group = conversations[convIndex].getResponseGroup(responseGroupId),
+              group.responses.contains(where: { $0.id == messageId })
         else {
             return false
         }
         group.updateStatus(for: messageId, status: status)
         conversations[convIndex].updateResponseGroup(group)
+        switch status {
+        case .streaming:
+            break
+        case .completed, .failed, .selected:
+            persistTerminalMutation(at: convIndex)
+        }
         return true
     }
 
