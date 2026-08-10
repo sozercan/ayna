@@ -57,7 +57,7 @@
         }
 
         @Test
-        func `Reasoning-only response streams promotes and survives reload`() async throws {
+        func `Reasoning-only response streams, promotes, and survives reload`() async throws {
             let expectedReasoning = "Compare the constraints first."
             let fixture = makeViewModelFixture(title: "Existing")
             let aiService = configuredCapturingAIService(model: fixture.conversation.model)
