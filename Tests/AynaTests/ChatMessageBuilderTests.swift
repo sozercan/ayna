@@ -7,6 +7,69 @@ import Testing
     @MainActor
     struct ChatMessageBuilderTests {
         @Test
+        func `user message keeps pasted image bytes inline`() async throws {
+            let firstImageData = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])
+            let secondImageData = Data([0x89, 0x50, 0x4E, 0x47, 0x01, 0x02])
+            let firstPastedImage = PastedImage(
+                data: firstImageData,
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            let secondPastedImage = PastedImage(
+                data: secondImageData,
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+
+            let message = await ChatMessageBuilder.createUserMessage(
+                text: "",
+                appContent: nil,
+                fileURLs: [],
+                pastedImages: [firstPastedImage, secondPastedImage]
+            )
+            let attachments = try #require(message.attachments)
+
+            #expect(message.content.isEmpty)
+            #expect(attachments.count == 2)
+            #expect(Set(attachments.map(\.fileName)).count == 2)
+            #expect(attachments.allSatisfy { $0.fileName.hasSuffix(".png") })
+            #expect(attachments.allSatisfy { $0.mimeType == "image/png" })
+            #expect(attachments.map(\.data) == [firstImageData, secondImageData])
+            #expect(attachments.allSatisfy { $0.localPath == nil })
+        }
+
+        @Test
+        func `pasted image is saved to attachment storage when requested`() async throws {
+            let directory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: directory,
+                dataCache: AttachmentDataCache()
+            )
+            let imageData = Data([0xFF, 0xD8, 0xFF, 0xE0])
+            let pastedImage = PastedImage(
+                data: imageData,
+                mimeType: "image/jpeg",
+                fileExtension: "jpg"
+            )
+
+            let attachments = await ChatMessageBuilder.buildAttachments(
+                from: [],
+                pastedImages: [pastedImage],
+                saveToStorage: true,
+                attachmentStorage: storage
+            )
+            let attachment = try #require(attachments.first)
+            let localPath = try #require(attachment.localPath)
+
+            #expect(attachments.count == 1)
+            #expect(attachment.fileName.hasSuffix(".jpg"))
+            #expect(attachment.mimeType == "image/jpeg")
+            #expect(attachment.data == nil)
+            #expect(localPath.hasSuffix(".jpg"))
+            #expect(storage.load(path: localPath) == imageData)
+        }
+
+        @Test
         func `fenced attachment storage falls back to inline bytes`() async throws {
             let directory = try TestHelpers.makeTemporaryDirectory()
             let storage = AttachmentStorage(

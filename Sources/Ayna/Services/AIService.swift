@@ -897,6 +897,24 @@ class AIService: ObservableObject {
         return .chat
     }
 
+    /// Returns a user-facing reason when a selected model cannot consume attachments.
+    func attachmentSupportError(for models: [String]) -> String? {
+        for model in models {
+            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedModel.isEmpty else { continue }
+
+            if getModelCapability(normalizedModel) == .imageGeneration {
+                return "Image generation models do not accept attachments. Remove the attachment or choose a chat model."
+            }
+
+            let modelProvider = modelProviders[normalizedModel] ?? provider
+            if modelProvider == .appleIntelligence {
+                return "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
+            }
+        }
+        return nil
+    }
+
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {
         let dataTask = currentTask.take(ifOwnedBy: flightID)
         let backgroundDataTask = backgroundDataTasks.removeValue(forKey: flightID)
@@ -1402,6 +1420,22 @@ class AIService: ObservableObject {
                 "isAzure": "\(usesAzureEndpoint)"
             ]
         )
+
+        if effectiveProvider == .appleIntelligence,
+           messages.contains(where: { $0.attachments?.isEmpty == false })
+        {
+            let error = AIError.apiError(
+                "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
+            )
+            DiagnosticsLogger.log(
+                .aiService,
+                level: .error,
+                message: "Apple Intelligence request rejected because it contains attachments",
+                metadata: ["model": requestModel]
+            )
+            onError(error)
+            return requestHandle
+        }
 
         // Handle Apple Intelligence separately
         #if !os(watchOS)

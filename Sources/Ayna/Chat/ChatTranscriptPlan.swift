@@ -162,6 +162,10 @@ struct ChatTranscriptPlan: Equatable, Sendable {
             return .image
         }
 
+        if message.role == .user, message.attachments?.isEmpty == false {
+            return .text
+        }
+
         if message.mediaType == .image {
             if message.responseGroupId != nil {
                 return .image

@@ -11,12 +11,22 @@ import SwiftUI
 
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
+    private struct SendPreparation {
+        let text: String
+        let files: [URL]
+        let pastedImages: [PastedImage]
+        let appContent: AppContent?
+        let selectedModels: Set<String>
+        let activeModel: String?
+    }
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
     @State private var messageText = ""
     @State private var isComposerFocused = true
     @State private var attachedFiles: [URL] = []
+    @State private var pastedImages: [PastedImage] = []
+    @State private var pasteImportSessionID = UUID()
     @State var isGenerating = false
     @State var currentConversationId: UUID?
     @State private var selectedModel = AIService.shared.selectedModel
@@ -248,6 +258,8 @@ struct MacNewChatView: View {
             messageText: $messageText,
             isComposerFocused: $isComposerFocused,
             attachedFiles: $attachedFiles,
+            pastedImages: $pastedImages,
+            pasteImportSessionID: $pasteImportSessionID,
             attachedAppContent: $attachedAppContent,
             selectedModels: $selectedModels,
             selectedModel: $selectedModel,
@@ -411,17 +423,26 @@ struct MacNewChatView: View {
             return
         }
 
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !attachedFiles.isEmpty || !pastedImages.isEmpty else {
             isComposerFocused = true
             return
         }
-
+            let preparation = SendPreparation(
+                text: messageText,
+                files: attachedFiles,
+                pastedImages: pastedImages,
+                appContent: attachedAppContent,
+                selectedModels: selectedModels,
+                activeModel: resolveModelForSending()
+            )
+            pasteImportSessionID = UUID()
             let preparationID = UUID()
             sendPreparationID = preparationID
             isGenerating = true
             let task = Task { @MainActor in
                 guard !Task.isCancelled, sendPreparationID == preparationID else { return }
-                await sendMessage(preparationID: preparationID)
+                await sendMessage(preparationID: preparationID, preparation: preparation)
             }
             sendPreparationTask = task
         }
@@ -432,7 +453,7 @@ struct MacNewChatView: View {
             sendPreparationID = nil
         }
 
-        private func sendMessage(preparationID: UUID) async {
+        private func sendMessage(preparationID: UUID, preparation: SendPreparation) async {
             var handedOff = false
             defer {
                 if sendPreparationID == preparationID {
@@ -447,20 +468,27 @@ struct MacNewChatView: View {
             dismissError()
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
 
-        guard let activeModel = resolveModelForSending() else {
+        guard let activeModel = preparation.activeModel else {
             logNewChat("⚠️ Cannot send message: no model selected", level: .error)
             errorMessage = "Select a model in Settings → Models"
             errorRecoverySuggestion = "Add or select a model before sending your first message"
             shouldOfferOpenSettings = true
             return
         }
-
+        let textToSend = preparation.text
+        let filesToSend = preparation.files
+            let pastedImagesToSend = preparation.pastedImages
+            let appContentToSend = preparation.appContent
+            let selectedModelsToSend = preparation.selectedModels
+            if !filesToSend.isEmpty || !pastedImagesToSend.isEmpty {
+                let attachmentModels = selectedModelsToSend.isEmpty ? [activeModel] : Array(selectedModelsToSend)
+                if let supportError = aiService.attachmentSupportError(for: attachmentModels) {
+                    errorMessage = supportError
+                    return
+                }
+            }
         aiService.selectedModel = activeModel
         ensureConversationModelMatchesSelection(activeModel)
-
-        let textToSend = messageText
-        let filesToSend = attachedFiles
-            let appContentToSend = attachedAppContent
 
             // Attachment construction is the only suspension in send preparation. Do it before
             // mutating conversation state, then recheck lifecycle ownership before committing.
@@ -468,6 +496,7 @@ struct MacNewChatView: View {
                 text: textToSend,
                 appContent: appContentToSend,
                 fileURLs: filesToSend,
+                pastedImages: pastedImagesToSend,
                 saveToStorage: false
             )
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
@@ -504,8 +533,8 @@ struct MacNewChatView: View {
 
         // Update conversation with multi-model settings
         var updatedConversation = conversation
-        updatedConversation.activeModels = Array(selectedModels)
-        updatedConversation.multiModelEnabled = selectedModels.count > 1
+        updatedConversation.activeModels = Array(selectedModelsToSend)
+        updatedConversation.multiModelEnabled = selectedModelsToSend.count > 1
         conversationManager.updateConversation(updatedConversation)
 
             if appContentToSend != nil {
@@ -528,9 +557,13 @@ struct MacNewChatView: View {
         }
 
         // Clear input first
-        messageText = ""
+        if messageText == textToSend {
+            messageText = ""
+        }
         isComposerFocused = true
-        attachedFiles.removeAll()
+        attachedFiles.removeAll { filesToSend.contains($0) }
+        let pastedImageIDs = Set(pastedImagesToSend.map(\.id))
+        pastedImages.removeAll { pastedImageIDs.contains($0.id) }
         attachedAppContent = nil // Clear app content after sending
 
         // DON'T switch views yet - stay in NewChatView so the stop button remains visible
@@ -541,8 +574,8 @@ struct MacNewChatView: View {
         if modelCapability == .imageGeneration {
                 handedOff = true
             // Image generation flow - handle multi-model image gen
-            if selectedModels.count > 1 {
-                generateMultiModelImages(prompt: textToSend, models: Array(selectedModels), conversation: conversation)
+            if selectedModelsToSend.count > 1 {
+                generateMultiModelImages(prompt: textToSend, models: Array(selectedModelsToSend), conversation: conversation)
             } else {
                 generateImage(prompt: textToSend, model: activeModel, conversation: conversation)
             }
@@ -550,11 +583,11 @@ struct MacNewChatView: View {
         }
 
         // Send the message immediately (no delay needed)
-        if selectedModels.count > 1 {
+        if selectedModelsToSend.count > 1 {
                 handedOff = true
             sendMultiModelMessage(
                 userMessageId: userMessage.id,
-                models: Array(selectedModels),
+                models: Array(selectedModelsToSend),
                 temperature: conversation.temperature
             )
         } else {

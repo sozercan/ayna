@@ -117,6 +117,7 @@ struct MacChatView: View {
     private struct SendPreparation {
         let promptText: String
         let files: [URL]
+        let pastedImages: [PastedImage]
         let appContent: AppContent?
         let selectedModel: String
         let selectedModels: Set<String>
@@ -147,6 +148,8 @@ struct MacChatView: View {
     @State private var failedMessage: String?
     @State private var selectedModel: String
     @State private var attachedFiles: [URL] = []
+    @State private var pastedImages: [PastedImage] = []
+    @State private var pasteImportSessionID = UUID()
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
@@ -334,6 +337,8 @@ struct MacChatView: View {
                     messageText: $messageText,
                     isComposerFocused: $isComposerFocused,
                     attachedFiles: $attachedFiles,
+                    pastedImages: $pastedImages,
+                    pasteImportSessionID: $pasteImportSessionID,
                     attachedAppContent: $attachedAppContent,
                     selectedModels: $selectedModels,
                     selectedModel: $selectedModel,
@@ -813,7 +818,10 @@ struct MacChatView: View {
             return
         }
 
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedFiles.isEmpty
+            || !pastedImages.isEmpty
+        else {
             isComposerFocused = true
             return
         }
@@ -821,11 +829,13 @@ struct MacChatView: View {
             let preparation = SendPreparation(
                 promptText: messageText,
                 files: attachedFiles,
+                pastedImages: pastedImages,
                 appContent: attachedAppContent,
                 selectedModel: selectedModel,
                 selectedModels: selectedModels,
                 activeModel: resolveModelForSending(selection: selectedModel)
             )
+            pasteImportSessionID = UUID()
             let preparationID = UUID()
             sendPreparationID = preparationID
             isGenerating = true
@@ -888,6 +898,17 @@ struct MacChatView: View {
             }
         }
 
+        private func attachmentSupportError(
+            files: [URL],
+            pastedImages: [PastedImage],
+            selectedModels: Set<String>,
+            activeModel: String
+        ) -> String? {
+            guard !files.isEmpty || !pastedImages.isEmpty else { return nil }
+            let models = selectedModels.isEmpty ? [activeModel] : Array(selectedModels)
+            return aiService.attachmentSupportError(for: models)
+        }
+
         // This method coordinates attachment handling, MCP tool availability, streaming setup, and state
         // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
         // we defer that refactor and explicitly allow the longer body.
@@ -935,14 +956,26 @@ struct MacChatView: View {
             return
         }
 
+            let promptText = preparation.promptText
+            let filesToSend = preparation.files
+            let pastedImagesToSend = preparation.pastedImages
+            let appContentToSend = preparation.appContent
+            let selectedModelsToSend = preparation.selectedModels
+
+            if let supportError = attachmentSupportError(
+                files: filesToSend,
+                pastedImages: pastedImagesToSend,
+                selectedModels: selectedModelsToSend,
+                activeModel: activeModel
+            ) {
+                errorMessage = supportError
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
         ensureConversationModelMatchesSelection(
             activeModel,
             expectedSelection: preparation.selectedModel
         )
-            let promptText = preparation.promptText
-            let filesToSend = preparation.files
-            let appContentToSend = preparation.appContent
-            let selectedModelsToSend = preparation.selectedModels
         logChat(
             "🎯 Sending message with model \(activeModel)",
             level: .info,
@@ -954,7 +987,8 @@ struct MacChatView: View {
                 text: promptText,
                 appContent: appContentToSend,
                 fileURLs: filesToSend,
-            saveToStorage: true
+                pastedImages: pastedImagesToSend,
+                saveToStorage: true
         )
             guard sendPreparationID == preparationID, !Task.isCancelled else {
                 discardStoredAttachments(in: userMessage)
@@ -1014,6 +1048,8 @@ struct MacChatView: View {
             }
         isComposerFocused = true
             attachedFiles.removeAll { filesToSend.contains($0) }
+            let pastedImageIDs = Set(pastedImagesToSend.map(\.id))
+            pastedImages.removeAll { pastedImageIDs.contains($0.id) }
             if isSameAppContent(attachedAppContent, appContentToSend) {
                 attachedAppContent = nil
             }

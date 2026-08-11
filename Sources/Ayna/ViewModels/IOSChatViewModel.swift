@@ -39,6 +39,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
     @Published var attachedImages: [UIImage] = []
+    @Published var pastedImages: [PastedImage] = []
+    @Published var pasteImportSessionID = UUID()
     @Published private(set) var messageContentRevision = 0
 
     /// The name of the tool currently being executed (for UI indicator)
@@ -115,6 +117,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         let text: String
         let attachedFiles: [URL]
         let attachedImages: [UIImage]
+        let pastedImages: [PastedImage]
         let selectedModel: String
         let selectedModels: Set<String>
         let requestModel: String
@@ -259,6 +262,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         failedMessage = nil
         cleanupAttachedFiles()
         attachedImages.removeAll()
+        pastedImages.removeAll()
+        pasteImportSessionID = UUID()
         selectedModel = aiService.selectedModel
         selectedModels = [aiService.selectedModel]
 
@@ -529,6 +534,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             text: messageText.trimmingCharacters(in: .whitespacesAndNewlines),
             attachedFiles: attachedFiles,
             attachedImages: attachedImages,
+            pastedImages: pastedImages,
             selectedModel: selectedModel,
             selectedModels: selectedModels,
             requestModel: currentConversation?.model ?? selectedModel
@@ -549,6 +555,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         guard !preparation.text.isEmpty
             || !preparation.attachedFiles.isEmpty
             || !preparation.attachedImages.isEmpty
+            || !preparation.pastedImages.isEmpty
         else {
             DiagnosticsLogger.log(
                 .chatView,
@@ -556,6 +563,20 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 message: "⚠️ Empty message, ignoring"
             )
             return
+        }
+
+        if !preparation.attachedFiles.isEmpty
+            || !preparation.attachedImages.isEmpty
+            || !preparation.pastedImages.isEmpty
+        {
+            let attachmentModels = preparation.selectedModels.count >= 2
+                ? Array(preparation.selectedModels)
+                : [preparation.requestModel]
+            if let supportError = aiService.attachmentSupportError(for: attachmentModels) {
+                errorMessage = supportError
+                errorRecoverySuggestion = nil
+                return
+            }
         }
 
         // Prevent sending while already generating
@@ -567,6 +588,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             )
             return
         }
+
+        pasteImportSessionID = UUID()
 
             // A manual send during the short deep-link delay takes over the same durable claim.
             // Keep ownership until the user message is committed so failed hydration can restore it.
@@ -640,7 +663,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         return wasPending
     }
 
-    // swiftlint:disable:next function_body_length
     private func sendPreparedMessage(_ preparation: SendPreparation) {
         // Check for multi-model mode
         if preparation.selectedModels.count >= 2 {
@@ -691,31 +713,12 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 "textLength": "\(preparation.text.count)",
                 "attachmentCount": "\(preparation.attachedFiles.count)",
                 "imageCount": "\(preparation.attachedImages.count)",
+                "pastedImageCount": "\(preparation.pastedImages.count)",
             ]
         )
 
-        var userMessage = Message(role: .user, content: preparation.text)
-
-        // Process file attachments with proper resource cleanup
-        if !preparation.attachedFiles.isEmpty {
-            let result = IOSFileAttachmentUtils.processAttachments(from: preparation.attachedFiles)
-            userMessage.attachments = result.attachments
-            if !result.errors.isEmpty {
-                errorMessage = result.errors.joined(separator: "\n")
-            }
-            cleanupAttachedFiles(preparation.attachedFiles)
-        }
-
-        // Process image attachments from photo library
-        if !preparation.attachedImages.isEmpty {
-            let imageAttachments = IOSFileAttachmentUtils.processImageAttachments(from: preparation.attachedImages)
-            if userMessage.attachments == nil {
-                userMessage.attachments = imageAttachments
-            } else {
-                userMessage.attachments?.append(contentsOf: imageAttachments)
-            }
-            removeAttachedImages(preparation.attachedImages)
-        }
+        let messageBuild = makeUserMessage(from: preparation)
+        let userMessage = messageBuild.message
 
         conversationManager.addMessage(to: targetConversation, message: userMessage)
         consumePendingAutoSendClaim(afterCommittingTo: targetConversationId)
@@ -736,7 +739,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             messageText = ""
         }
         isGenerating = true
-        errorMessage = nil
+        errorMessage = messageBuild.errors.isEmpty
+            ? nil
+            : messageBuild.errors.joined(separator: "\n")
         errorRecoverySuggestion = nil
         failedMessage = nil
 
@@ -1572,6 +1577,52 @@ private extension IOSChatViewModel {
             }
         }
     }
+
+    func removePastedImages(_ images: [PastedImage]) {
+        let imageIDs = Set(images.map(\.id))
+        pastedImages.removeAll { imageIDs.contains($0.id) }
+    }
+
+    private func makeUserMessage(
+        from preparation: SendPreparation
+    ) -> (message: Message, errors: [String]) {
+        var attachments: [Message.FileAttachment] = []
+        var errors: [String] = []
+
+        if !preparation.attachedFiles.isEmpty {
+            let result = IOSFileAttachmentUtils.processAttachments(from: preparation.attachedFiles)
+            attachments.append(contentsOf: result.attachments)
+            errors.append(contentsOf: result.errors)
+            cleanupAttachedFiles(preparation.attachedFiles)
+        }
+
+        if !preparation.attachedImages.isEmpty {
+            attachments.append(contentsOf: IOSFileAttachmentUtils.processImageAttachments(
+                from: preparation.attachedImages
+            ))
+            removeAttachedImages(preparation.attachedImages)
+        }
+
+        if !preparation.pastedImages.isEmpty {
+            attachments.append(contentsOf: preparation.pastedImages.map { pastedImage in
+                Message.FileAttachment(
+                    fileName: pastedImage.fileName,
+                    mimeType: pastedImage.mimeType,
+                    data: pastedImage.data
+                )
+            })
+            removePastedImages(preparation.pastedImages)
+        }
+
+        return (
+            Message(
+                role: .user,
+                content: preparation.text,
+                attachments: attachments.isEmpty ? nil : attachments
+            ),
+            errors
+        )
+    }
 }
 
 // MARK: - Message Retry and Editing
@@ -1801,10 +1852,6 @@ extension IOSChatViewModel {
     private func sendToMultipleModels(_ preparation: SendPreparation) {
         guard !isGenerating else { return }
         let text = preparation.text
-        guard !text.isEmpty else {
-            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-            return
-        }
 
         guard let targetConversation = getOrCreateConversationForMultiModel(
             selectedModels: preparation.selectedModels
@@ -1831,7 +1878,8 @@ extension IOSChatViewModel {
         DiagnosticsLogger.log(.chatView, level: .info, message: "🔀 Starting iOS multi-model request",
                               metadata: ["models": models.joined(separator: ", ")])
 
-        let userMessage = Message(role: .user, content: text)
+        let messageBuild = makeUserMessage(from: preparation)
+        let userMessage = messageBuild.message
         conversationManager.addMessage(to: targetConversation, message: userMessage)
         consumePendingAutoSendClaim(afterCommittingTo: conversationId)
 
@@ -1844,7 +1892,9 @@ extension IOSChatViewModel {
             messageText = ""
         }
         isGenerating = true
-        errorMessage = nil
+        errorMessage = messageBuild.errors.isEmpty
+            ? nil
+            : messageBuild.errors.joined(separator: "\n")
 
         let responsePlan = createResponsePlanForMultiModel(
             models: models,

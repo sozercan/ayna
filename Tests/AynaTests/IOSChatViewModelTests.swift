@@ -49,6 +49,34 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `accepted send rotates the paste import session before lazy history finishes`() async {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
+            let gate = IOSConversationLoadGate(result: conversation)
+            let manager = makeMetadataManager(conversation: conversation, gate: gate)
+            await manager.loadingTask?.value
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            viewModel.messageText = "Send while paste import is pending"
+            let initialSessionID = viewModel.pasteImportSessionID
+
+            viewModel.sendMessage()
+
+            #expect(viewModel.pasteImportSessionID != initialSessionID)
+            await gate.waitUntilStarted()
+            #expect(aiService.singleModelRequests.isEmpty)
+
+            await gate.release()
+            #expect(await waitUntil { aiService.singleModelRequests.count == 1 })
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `multi-model send waits for lazy history and includes it in the request`() async throws {
             let priorUser = Message(role: .user, content: "Prior question")
             let priorAssistant = Message(role: .assistant, content: "Prior answer")
@@ -91,6 +119,61 @@
             #expect(request.map(\.content) == ["Prior question", "Prior answer", "New comparison"])
             #expect(!request.contains { $0.role == .assistant && $0.content.isEmpty })
             #expect(viewModel.messageText == "Later comparison draft")
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `attachment-only multi-model send preserves the captured paste`() async throws {
+            let models = ["model-a", "model-b"]
+            let conversation = Conversation(
+                messages: [Message(role: .user, content: "Prior question")],
+                model: models[0],
+                systemPromptMode: .disabled,
+                multiModelEnabled: true,
+                activeModels: models
+            )
+            let gate = IOSConversationLoadGate(result: conversation)
+            let manager = makeMetadataManager(conversation: conversation, gate: gate)
+            await manager.loadingTask?.value
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: models)
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let capturedPaste = PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            let laterPaste = PastedImage(
+                data: Data([0xFF, 0xD8, 0xFF, 0xE0]),
+                mimeType: "image/jpeg",
+                fileExtension: "jpg"
+            )
+            viewModel.selectedModels = Set(models)
+            viewModel.pastedImages = [capturedPaste]
+
+            viewModel.sendMessage()
+            await gate.waitUntilStarted()
+
+            #expect(aiService.multiModelRequests.isEmpty)
+            viewModel.pastedImages.append(laterPaste)
+
+            await gate.release()
+            #expect(await waitUntil { aiService.multiModelRequests.count == 1 })
+
+            let request = try #require(aiService.multiModelRequests.first)
+            let sentMessage = try #require(request.last(where: { $0.role == .user }))
+            let attachment = try #require(sentMessage.attachments?.first)
+            #expect(sentMessage.content.isEmpty)
+            #expect(sentMessage.attachments?.count == 1)
+            #expect(attachment.fileName == capturedPaste.fileName)
+            #expect(attachment.mimeType == capturedPaste.mimeType)
+            #expect(attachment.data == capturedPaste.data)
+            #expect(viewModel.pastedImages == [laterPaste])
             viewModel.cancelOwnedOperations()
         }
 
@@ -182,6 +265,36 @@
 
             let request = try #require(aiService.singleModelRequests.first)
             #expect(request.map(\.content) == ["Send now"])
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test
+        func `reset for new chat clears pasted images and rotates the paste import session`() {
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: ["model-a"])
+            let viewModel = IOSChatViewModel(
+                conversationManager: manager,
+                aiService: aiService
+            )
+            viewModel.pastedImages = [
+                PastedImage(
+                    data: Data([0x89, 0x50, 0x4E, 0x47]),
+                    mimeType: "image/png",
+                    fileExtension: "png"
+                )
+            ]
+            let initialSessionID = viewModel.pasteImportSessionID
+
+            viewModel.resetForNewChat()
+
+            #expect(viewModel.pastedImages.isEmpty)
+            #expect(viewModel.pasteImportSessionID != initialSessionID)
             viewModel.cancelOwnedOperations()
         }
 

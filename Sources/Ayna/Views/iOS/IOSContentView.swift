@@ -286,6 +286,8 @@ struct IOSNewChatView: View {
                 errorMessage: $viewModel.errorMessage,
                 attachedFiles: $viewModel.attachedFiles,
                 attachedImages: $viewModel.attachedImages,
+                pastedImages: $viewModel.pastedImages,
+                pasteImportSessionID: $viewModel.pasteImportSessionID,
                 errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
                 onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                 showAttachmentButton: true,

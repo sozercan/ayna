@@ -237,17 +237,8 @@ struct IOSMessageView: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if let attachments = message.attachments, !attachments.isEmpty {
-                    ForEach(attachments, id: \.fileName) { attachment in
-                        HStack {
-                            Image(systemName: "doc.fill")
-                                .foregroundStyle(Theme.textSecondary)
-                            Text(attachment.fileName)
-                                .font(Typography.caption)
-                                .lineLimit(1)
-                        }
-                        .padding(Spacing.xs)
-                        .background(Color.black.opacity(0.1))
-                        .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+                    ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
+                        IOSMessageAttachmentView(attachment: attachment)
                     }
                 }
 
@@ -762,6 +753,69 @@ private struct MessageBubbleShape: Shape {
                 path.closeSubpath()
             }
         }
+    }
+}
+
+private struct IOSMessageAttachmentView: View {
+    let attachment: Message.FileAttachment
+
+    @State private var decodedImage: UIImage?
+    @State private var didFinishLoading = false
+
+    var body: some View {
+        if attachment.mimeType.starts(with: "image/") {
+            imageAttachment
+        } else {
+            fileAttachment
+        }
+    }
+
+    @ViewBuilder
+    private var imageAttachment: some View {
+        if let decodedImage {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Image(uiImage: decodedImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: Spacing.Component.bubbleMaxWidth - 20, maxHeight: 320)
+                    .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
+                    .accessibilityLabel("Image attachment \(attachment.fileName)")
+
+                Text(verbatim: attachment.fileName)
+                    .font(Typography.caption)
+                    .lineLimit(1)
+            }
+        } else if didFinishLoading {
+            fileAttachment
+        } else {
+            ProgressView()
+                .frame(width: 100, height: 100)
+                .task {
+                    await loadImage()
+                }
+        }
+    }
+
+    private var fileAttachment: some View {
+        HStack {
+            Image(systemName: "doc.fill")
+                .foregroundStyle(Theme.textSecondary)
+            Text(verbatim: attachment.fileName)
+                .font(Typography.caption)
+                .lineLimit(1)
+        }
+        .padding(Spacing.xs)
+        .background(Color.black.opacity(0.1))
+        .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
+    }
+
+    @MainActor
+    private func loadImage() async {
+        guard !didFinishLoading else { return }
+        let data = await attachment.loadContent()
+        guard !Task.isCancelled else { return }
+        decodedImage = data.flatMap(UIImage.init(data:))
+        didFinishLoading = true
     }
 }
 

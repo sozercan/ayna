@@ -8,24 +8,46 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Dynamic Text Editor with auto-sizing and keyboard shortcuts
 struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFirstResponder: Bool
+    @Binding var pasteImportSessionID: UUID
     let onSubmit: () -> Void
+    let onPasteImages: ([PastedImage]) -> Void
     let accessibilityIdentifier: String?
 
     typealias Coordinator = DynamicTextEditorCoordinator
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
 
+        let contentSize = scrollView.contentSize
+        let textView = PasteAwareTextView(frame: NSRect(origin: .zero, size: contentSize))
+        scrollView.documentView = textView
+
+        context.coordinator.onSubmit = onSubmit
         textView.delegate = context.coordinator
+        configurePasteHandling(for: textView)
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.allowsUndo = true
         textView.isRichText = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textView.font = .systemFont(ofSize: 15)
         textView.textColor = .labelColor
         textView.backgroundColor = .clear
@@ -37,20 +59,17 @@ struct DynamicTextEditor: NSViewRepresentable {
         // Remove default scroll view padding
         textView.textContainerInset = NSSize(width: 0, height: 2)
         textView.textContainer?.lineFragmentPadding = 0
-
-        // Configure scroll view
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(
+            width: contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        )
 
         if let identifier = accessibilityIdentifier {
             textView.setAccessibilityIdentifier(identifier)
             scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
         }
 
-        context.coordinator.onSubmit = onSubmit
         syncFirstResponderState(for: textView)
 
         return scrollView
@@ -66,6 +85,9 @@ struct DynamicTextEditor: NSViewRepresentable {
         }
 
         context.coordinator.onSubmit = onSubmit
+        if let pasteAwareTextView = textView as? PasteAwareTextView {
+            configurePasteHandling(for: pasteAwareTextView)
+        }
         if let identifier = accessibilityIdentifier {
             textView.setAccessibilityIdentifier(identifier)
             scrollView.setAccessibilityIdentifier("\(identifier).scrollView")
@@ -76,6 +98,15 @@ struct DynamicTextEditor: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         DynamicTextEditorCoordinator(self)
+    }
+
+    private func configurePasteHandling(for textView: PasteAwareTextView) {
+        let expectedSessionID = pasteImportSessionID
+        textView.updatePasteImportSession(expectedSessionID)
+        textView.onPasteImages = { images in
+            guard pasteImportSessionID == expectedSessionID else { return }
+            onPasteImages(images)
+        }
     }
 
     private func syncFirstResponderState(for textView: NSTextView, retryCount: Int = 8) {
@@ -131,6 +162,120 @@ final class DynamicTextEditorCoordinator: NSObject, NSTextViewDelegate {
             }
         }
         return false
+    }
+}
+
+@MainActor
+private final class PasteAwareTextView: NSTextView {
+    private struct Candidate: Sendable {
+        let data: Data
+        let contentTypeIdentifier: String
+    }
+
+    var onPasteImages: (([PastedImage]) -> Void)?
+    private var pasteImportTask: Task<Void, Never>?
+    private var pasteImportSessionID: UUID?
+
+    override func paste(_ sender: Any?) {
+        let candidates = Self.imageCandidates(from: .general)
+        guard !candidates.isEmpty else {
+            super.paste(sender)
+            return
+        }
+
+        let previousTask = pasteImportTask
+        let expectedSessionID = pasteImportSessionID
+        pasteImportTask = Task { @MainActor [weak self] in
+            await previousTask?.value
+            guard let self,
+                  !Task.isCancelled,
+                  pasteImportSessionID == expectedSessionID
+            else {
+                return
+            }
+
+            let images: [PastedImage] = await Task.detached(priority: .userInitiated) {
+                candidates.compactMap { candidate -> PastedImage? in
+                    guard let contentType = UTType(candidate.contentTypeIdentifier) else {
+                        return nil
+                    }
+                    return try? PastedImage.importing(
+                        data: candidate.data,
+                        contentType: contentType
+                    )
+                }
+            }.value
+
+            guard !Task.isCancelled,
+                  pasteImportSessionID == expectedSessionID
+            else {
+                return
+            }
+            guard !images.isEmpty else {
+                NSSound.beep()
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .error,
+                    message: "Failed to import pasted clipboard image"
+                )
+                return
+            }
+            onPasteImages?(images)
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil {
+            invalidatePasteImports()
+        }
+    }
+
+    func updatePasteImportSession(_ sessionID: UUID) {
+        guard pasteImportSessionID != sessionID else { return }
+        invalidatePasteImports()
+        pasteImportSessionID = sessionID
+    }
+
+    private static func imageCandidates(from pasteboard: NSPasteboard) -> [Candidate] {
+        let supportedTypes: [(pasteboardType: NSPasteboard.PasteboardType, contentType: UTType)] = [
+            (.init(UTType.png.identifier), .png),
+            (.init(UTType.jpeg.identifier), .jpeg),
+            (.init(UTType.gif.identifier), .gif),
+            (.init(UTType.webP.identifier), .webP),
+            (.init(UTType.tiff.identifier), .tiff),
+            (.init(UTType.heic.identifier), .heic),
+        ]
+
+        if let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty {
+            return pasteboardItems.compactMap { item in
+                for supportedType in supportedTypes {
+                    if let data = item.data(forType: supportedType.pasteboardType) {
+                        return Candidate(
+                            data: data,
+                            contentTypeIdentifier: supportedType.contentType.identifier
+                        )
+                    }
+                }
+                return nil
+            }
+        }
+
+        for supportedType in supportedTypes {
+            if let data = pasteboard.data(forType: supportedType.pasteboardType) {
+                return [Candidate(
+                    data: data,
+                    contentTypeIdentifier: supportedType.contentType.identifier
+                )]
+            }
+        }
+        return []
+    }
+
+    private func invalidatePasteImports() {
+        pasteImportTask?.cancel()
+        pasteImportTask = nil
+        pasteImportSessionID = nil
     }
 }
 #endif

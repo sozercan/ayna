@@ -229,6 +229,43 @@ import Testing
             second.complete()
         }
 
+        @Test("Apple requests reject attachments anywhere in message history")
+        func appleRequestsRejectAttachmentsAnywhereInMessageHistory() async {
+            let appleService = FlightTestAppleIntelligenceService()
+            let service = AIService(appleIntelligenceService: appleService)
+            let model = "apple-attachments"
+            configureAppleModels([model], on: service)
+            var attachedHistoryMessage = Message(role: .user, content: "Earlier image")
+            attachedHistoryMessage.attachments = [
+                Message.FileAttachment(
+                    fileName: "pasted-image.png",
+                    mimeType: "image/png",
+                    data: Data([0x89]),
+                    localPath: nil
+                ),
+            ]
+
+            await confirmation("Error callback invoked") { errorReceived in
+                _ = service.sendMessage(
+                    messages: [
+                        attachedHistoryMessage,
+                        Message(role: .assistant, content: "Earlier response"),
+                        Message(role: .user, content: "Latest question"),
+                    ],
+                    model: model,
+                    onChunk: { chunk in Issue.record("Unexpected chunk: \(chunk)") },
+                    onComplete: { Issue.record("Unexpected completion") },
+                    onError: { error in
+                        #expect(error.localizedDescription ==
+                            "Apple Intelligence does not support attachments. Choose a vision-capable cloud model.")
+                        errorReceived()
+                    }
+                )
+            }
+
+            #expect(appleService.requests.isEmpty)
+        }
+
         @Test("Apple tool continuation preserves matched calls and drops orphaned calls", .timeLimit(.minutes(1)))
         func appleToolContinuationPreservesMatchedCallsAndDropsOrphans() async throws {
             let appleService = FlightTestAppleIntelligenceService()

@@ -15,6 +15,8 @@ struct ChatInputArea: View {
     @Binding var messageText: String
     @Binding var isComposerFocused: Bool
     @Binding var attachedFiles: [URL]
+    @Binding var pastedImages: [PastedImage]
+    @Binding var pasteImportSessionID: UUID
     @Binding var attachedAppContent: AppContent?
     @Binding var selectedModels: Set<String>
     @Binding var selectedModel: String
@@ -42,7 +44,7 @@ struct ChatInputArea: View {
             MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
             // Attached files preview
-            if !attachedFiles.isEmpty {
+            if !attachedFiles.isEmpty || !pastedImages.isEmpty {
                 attachedFilesView
             }
 
@@ -79,6 +81,11 @@ struct ChatInputArea: View {
                 ForEach(attachedFiles, id: \.self) { fileURL in
                     AttachedFileRow(fileURL: fileURL) {
                         onRemoveFile(fileURL)
+                    }
+                }
+                ForEach(pastedImages) { pastedImage in
+                    PastedImageRow(pastedImage: pastedImage) {
+                        pastedImages.removeAll { $0.id == pastedImage.id }
                     }
                 }
             }
@@ -154,7 +161,11 @@ struct ChatInputArea: View {
             DynamicTextEditor(
                 text: $messageText,
                 isFirstResponder: $isComposerFocused,
+                pasteImportSessionID: $pasteImportSessionID,
                 onSubmit: onSendMessage,
+                onPasteImages: { images in
+                    pastedImages.append(contentsOf: images)
+                },
                 accessibilityIdentifier: textEditorIdentifier
             )
             .frame(height: textHeight)
@@ -252,12 +263,12 @@ struct ChatInputArea: View {
                 } else {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: Typography.IconSize.xl))
-                        .foregroundStyle(messageText.isEmpty ? Theme.textSecondary.opacity(0.5) : Theme.accent)
+                        .foregroundStyle(hasSendableContent ? Theme.accent : Theme.textSecondary.opacity(0.5))
                 }
             }
         }
         .buttonStyle(.plain)
-        .allowsHitTesting(isGenerating || !messageText.isEmpty)
+        .allowsHitTesting(isGenerating || hasSendableContent)
         .accessibilityIdentifier(sendButtonIdentifier)
         .padding(.horizontal, Spacing.md)
         .frame(height: textHeight + Spacing.xxl)
@@ -285,6 +296,12 @@ struct ChatInputArea: View {
 
         let calculatedHeight = ceil(boundingRect.height) + 4
         return min(max(calculatedHeight, baseHeight), maxHeight)
+    }
+
+    private var hasSendableContent: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedFiles.isEmpty
+            || !pastedImages.isEmpty
     }
 }
 
@@ -387,6 +404,41 @@ struct AttachedFileRow: View {
 
         AttachmentThumbnailCache.insert(image, for: fileURL)
         thumbnail = image
+    }
+}
+
+private struct PastedImageRow: View {
+    let pastedImage: PastedImage
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            if let image = NSImage(data: pastedImage.data) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: Typography.IconSize.lg))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 48, height: 48)
+            }
+
+            Text("Pasted image")
+                .font(Typography.caption)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: Typography.IconSize.md))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove pasted image")
+        }
+        .padding(Spacing.sm)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
     }
 }
 

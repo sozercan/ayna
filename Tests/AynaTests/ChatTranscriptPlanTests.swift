@@ -20,6 +20,29 @@ struct ChatTranscriptPlanTests {
     }
 
     @Test
+    func `plan shows attachment-only user messages`() {
+        let message = Message(
+            role: .user,
+            content: "",
+            attachments: [
+                Message.FileAttachment(
+                    fileName: "pasted-image.png",
+                    mimeType: "image/png",
+                    data: Data([0x89, 0x50, 0x4E, 0x47]),
+                    localPath: nil
+                )
+            ]
+        )
+        let conversation = Conversation(messages: [message])
+
+        let plan = ChatTranscriptPlan(conversation: conversation, isGenerating: false)
+
+        let expected = ChatTranscriptMessage(message: message, displayKind: .text)
+        #expect(plan.visibleMessages == [expected])
+        #expect(plan.items == [.message(expected)])
+    }
+
+    @Test
     func `plan hides empty assistant tool-call placeholders`() {
         #if !os(watchOS)
             var placeholder = Message(role: .assistant, content: "")
