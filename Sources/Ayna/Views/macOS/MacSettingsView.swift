@@ -849,6 +849,7 @@ struct APISettingsView: View {
     @State private var tempModelName = ""
     @State private var selectedModelName: String?
     @State private var tempEndpointType: APIEndpointType = .chatCompletions
+    @State private var tempReasoningConfiguration = ModelReasoningConfiguration.automatic
     @State private var isValidating = false
     @State private var validationStatus: ValidationStatus = .notChecked
 
@@ -1191,28 +1192,33 @@ struct APISettingsView: View {
                                             let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
                                             if !modelName.isEmpty {
-                                                // Remove old model data if name changed
+                                                // Rename before applying edited settings so a collision cannot
+                                                // delete the source model or overwrite the destination model.
                                                 if selectedName != modelName {
-                                                    aiService.customModels.removeAll { $0 == selectedName }
-                                                    aiService.modelProviders.removeValue(forKey: selectedName)
-                                                    aiService.modelAPIKeys.removeValue(forKey: selectedName)
-                                                    aiService.modelEndpoints.removeValue(forKey: selectedName)
-                                                    aiService.modelEndpointTypes.removeValue(forKey: selectedName)
-
-                                                    // Add new model name if not already present
-                                                    if !aiService.customModels.contains(modelName) {
-                                                        aiService.customModels.append(modelName)
-                                                    }
-
-                                                    // Update selected model if it was the renamed one
-                                                    if aiService.selectedModel == selectedName {
-                                                        aiService.selectedModel = modelName
+                                                    switch aiService.renameConfiguredModel(
+                                                        from: selectedName,
+                                                        to: modelName
+                                                    ) {
+                                                    case .renamed, .unchanged:
+                                                        break
+                                                    case .destinationExists:
+                                                        validationStatus = .invalid(
+                                                            "A model named \(modelName) already exists"
+                                                        )
+                                                        return
+                                                    case .sourceMissing:
+                                                        validationStatus = .invalid(
+                                                            "The model being edited no longer exists"
+                                                        )
+                                                        return
                                                     }
                                                 }
 
                                                 // Update provider and endpoint type
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
+                                                aiService.modelReasoningConfigurations[modelName] =
+                                                    tempReasoningConfiguration
 
                                                 // Update per-model API key
                                                 if !apiKey.isEmpty {
@@ -1255,6 +1261,8 @@ struct APISettingsView: View {
                                                 aiService.customModels.append(modelName)
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
+                                                aiService.modelReasoningConfigurations[modelName] =
+                                                    tempReasoningConfiguration
 
                                                 // Save per-model API key if provided
                                                 if !apiKey.isEmpty {
@@ -1380,6 +1388,8 @@ struct APISettingsView: View {
                                             if !aiService.customModels.contains(finalModelName) {
                                                 aiService.customModels.append(finalModelName)
                                                 aiService.modelProviders[finalModelName] = .appleIntelligence
+                                                aiService.modelReasoningConfigurations[finalModelName] =
+                                                    tempReasoningConfiguration
                                                 if aiService.customModels.count == 1 {
                                                     aiService.selectedModel = finalModelName
                                                 }
@@ -1405,12 +1415,33 @@ struct APISettingsView: View {
                                 tempModelName: $tempModelName,
                                 tempAPIKey: $tempAPIKey,
                                 tempEndpoint: $tempEndpoint,
+                                tempReasoningConfiguration: $tempReasoningConfiguration,
                                 showAPIKey: $showAPIKey,
                                 selectedModelName: $selectedModelName,
                                 validationStatus: $validationStatus
                             )
                             .padding(.horizontal)
                         }
+
+                        VStack(alignment: .leading, spacing: Spacing.lg) {
+                            Text("Reasoning")
+                                .font(Typography.headline)
+                                .foregroundStyle(.primary)
+
+                            VStack(alignment: .leading, spacing: Spacing.md) {
+                                ModelReasoningSettingsControls(
+                                    configuration: $tempReasoningConfiguration,
+                                    model: tempModelName,
+                                    provider: aiService.provider,
+                                    endpointType: tempEndpointType,
+                                    endpoint: tempEndpoint
+                                )
+                            }
+                            .padding(Spacing.lg)
+                            .background(Theme.backgroundSecondary)
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
+                        }
+                        .padding(.horizontal)
 
                         // Status Section
                         if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
@@ -1503,7 +1534,10 @@ struct APISettingsView: View {
         }
         .onChange(of: aiService.provider) { _, newProvider in
             // Reset to a new-model state when switching to Anthropic.
-            if newProvider == .anthropic {
+            let isLoadingSelectedModel = selectedModelName.flatMap {
+                aiService.modelProviders[$0]
+            } == newProvider
+            if newProvider == .anthropic, !isLoadingSelectedModel {
                 createNewModel()
             }
         }
@@ -1518,6 +1552,7 @@ struct APISettingsView: View {
         // For others, use OpenAI endpoint
         tempEndpoint = aiService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
+        tempReasoningConfiguration = .automatic
         validationStatus = .notChecked
     }
 
@@ -1637,6 +1672,7 @@ struct APISettingsView: View {
         // Load per-model API key if available
         tempAPIKey = aiService.modelAPIKeys[model] ?? ""
         tempEndpointType = aiService.modelEndpointTypes[model] ?? .chatCompletions
+        tempReasoningConfiguration = aiService.reasoningConfiguration(for: model)
 
         // Load endpoint based on provider
         switch aiService.provider {
@@ -1651,21 +1687,7 @@ struct APISettingsView: View {
     }
 
     private func removeModel(_ model: String) {
-        aiService.customModels.removeAll { $0 == model }
-        // Also remove from provider mapping and per-model settings
-        aiService.modelProviders.removeValue(forKey: model)
-        aiService.modelEndpoints.removeValue(forKey: model)
-        aiService.modelAPIKeys.removeValue(forKey: model)
-        aiService.modelEndpointTypes.removeValue(forKey: model)
-
-        // If we removed the selected default model, pick the next available one or clear it
-        if aiService.selectedModel == model {
-            if let nextModel = aiService.customModels.first {
-                aiService.selectedModel = nextModel
-            } else {
-                aiService.selectedModel = ""
-            }
-        }
+        aiService.removeConfiguredModel(model)
 
         if selectedModelName == model {
             selectedModelName = nil
@@ -1705,6 +1727,9 @@ struct APISettingsView: View {
         }
         // Always copy endpoint type, defaulting to chatCompletions if not set
         aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
+        if let reasoningConfiguration = aiService.modelReasoningConfigurations[model] {
+            aiService.modelReasoningConfigurations[newName] = reasoningConfiguration
+        }
 
         // Select the new model for editing
         selectedModelName = newName
@@ -1771,6 +1796,7 @@ struct AnthropicConfigurationView: View {
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
     @Binding var tempEndpoint: String
+    @Binding var tempReasoningConfiguration: ModelReasoningConfiguration
     @Binding var showAPIKey: Bool
     @Binding var selectedModelName: String?
     @Binding var validationStatus: APISettingsView.ValidationStatus
@@ -2092,13 +2118,22 @@ struct AnthropicConfigurationView: View {
 
         guard !modelName.isEmpty, !apiKey.isEmpty else { return }
 
-        // Remove old model if updating
+        // Rename before applying edited settings so a collision cannot delete
+        // the source model or overwrite the destination model.
         if let oldName = selectedModelName, oldName != modelName {
-            aiService.customModels.removeAll { $0 == oldName }
-            aiService.modelProviders.removeValue(forKey: oldName)
-            aiService.modelAPIKeys.removeValue(forKey: oldName)
-            aiService.modelEndpoints.removeValue(forKey: oldName)
-            aiService.modelEndpointTypes.removeValue(forKey: oldName)
+            switch aiService.renameConfiguredModel(from: oldName, to: modelName) {
+            case .renamed, .unchanged:
+                break
+            case .destinationExists:
+                validationStatus = .invalid("A model named \(modelName) already exists")
+                return
+            case .sourceMissing:
+                validationStatus = .invalid("The model being edited no longer exists")
+                return
+            }
+        } else if selectedModelName == nil, aiService.customModels.contains(modelName) {
+            validationStatus = .invalid("A model named \(modelName) already exists")
+            return
         }
 
         // Add or update model
@@ -2108,6 +2143,8 @@ struct AnthropicConfigurationView: View {
 
         aiService.modelProviders[modelName] = .anthropic
         aiService.modelAPIKeys[modelName] = apiKey
+        aiService.modelEndpointTypes.removeValue(forKey: modelName)
+        aiService.modelReasoningConfigurations[modelName] = tempReasoningConfiguration
 
         if !endpoint.isEmpty {
             aiService.modelEndpoints[modelName] = endpoint

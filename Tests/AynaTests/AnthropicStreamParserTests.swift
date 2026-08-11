@@ -9,6 +9,8 @@
 import Foundation
 import Testing
 
+// swiftformat:disable swiftTestingTestCaseNames
+
 @Suite("AnthropicStreamParser Tests")
 struct AnthropicStreamParserTests {
     // MARK: - Basic Parsing Tests
@@ -148,6 +150,67 @@ struct AnthropicStreamParserTests {
         """)
 
         #expect(result.reasoning == nil)
+    }
+
+    @Test("Thinking signatures and redacted blocks are preserved for tool replay")
+    func thinkingStatePreservedForToolReplay() throws {
+        let parser = AnthropicStreamParser()
+
+        _ = parser.processLine("""
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"First "}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"thought"}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed-value"}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_stop","index":0}
+        """)
+
+        _ = parser.processLine("""
+        data: {"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque-redaction"}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_stop","index":1}
+        """)
+
+        _ = parser.processLine("""
+        data: {"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"Calling tool"}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_stop","index":2}
+        """)
+
+        _ = parser.processLine("""
+        data: {"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup","input":{}}}
+        """)
+        _ = parser.processLine("""
+        data: {"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{\\"query\\":\\"weather\\"}"}}
+        """)
+        let result = parser.processLine("""
+        data: {"type":"content_block_stop","index":3}
+        """)
+
+        let continuation = try #require(result.reasoningContinuation)
+        #expect(continuation.format == .anthropicMessages)
+        let blocks = continuation.items.compactMap { $0.value as? [String: Any] }
+        #expect(blocks.count == 4)
+        #expect(blocks[0]["type"] as? String == "thinking")
+        #expect(blocks[0]["thinking"] as? String == "First thought")
+        #expect(blocks[0]["signature"] as? String == "signed-value")
+        #expect(blocks[1]["type"] as? String == "redacted_thinking")
+        #expect(blocks[1]["data"] as? String == "opaque-redaction")
+        #expect(blocks[2]["text"] as? String == "Calling tool")
+        let toolInput = try #require(blocks[3]["input"] as? [String: Any])
+        #expect(toolInput["query"] as? String == "weather")
     }
 
     // MARK: - Tool Use Tests

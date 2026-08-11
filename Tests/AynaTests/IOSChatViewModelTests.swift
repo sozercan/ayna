@@ -158,6 +158,63 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `single-model reasoning streams into the active assistant and rejects stale callbacks`() async throws {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SingleModelReasoningCapturingAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            viewModel.messageText = "First question"
+
+            viewModel.sendMessage()
+
+            #expect(aiService.reasoningCallbackCount == 1)
+            let firstAssistantID = try #require(
+                manager.conversation(byId: conversation.id)?.messages.last(where: { $0.role == .assistant })?.id
+            )
+            aiService.emitReasoning(requestIndex: 0, reasoning: "first ")
+            aiService.emitReasoning(requestIndex: 0, reasoning: "reasoning")
+            #expect(await waitUntil {
+                manager.conversation(byId: conversation.id)?.messages.first(where: {
+                    $0.id == firstAssistantID
+                })?.reasoning == "first reasoning"
+            })
+
+            viewModel.cancelGeneration()
+            viewModel.messageText = "Replacement question"
+            viewModel.sendMessage()
+
+            #expect(aiService.reasoningCallbackCount == 2)
+            let secondAssistantID = try #require(
+                manager.conversation(byId: conversation.id)?.messages.last(where: { $0.role == .assistant })?.id
+            )
+            #expect(secondAssistantID != firstAssistantID)
+
+            aiService.emitReasoning(requestIndex: 0, reasoning: "-stale")
+            aiService.emitReasoning(requestIndex: 1, reasoning: "replacement reasoning")
+            #expect(await waitUntil {
+                manager.conversation(byId: conversation.id)?.messages.first(where: {
+                    $0.id == secondAssistantID
+                })?.reasoning == "replacement reasoning"
+            })
+
+            let messages = try #require(manager.conversation(byId: conversation.id)?.messages)
+            #expect(messages.first(where: { $0.id == firstAssistantID })?.reasoning == "first reasoning")
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test
         func `hydrated conversation send remains synchronous`() throws {
             let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
@@ -650,13 +707,13 @@
 
         override func sendToMultipleModels(
             messages: [Message],
-            models: [String],
+            models _: [String],
             temperature: Double?,
-            onChunk: @escaping @Sendable (String, String) -> Void,
-            onModelComplete: @escaping @Sendable (String) -> Void,
-            onAllComplete: @escaping @Sendable () -> Void,
-            onError: @escaping @Sendable (String, Error) -> Void,
-            onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
+            onChunk _: @escaping @Sendable (String, String) -> Void,
+            onModelComplete _: @escaping @Sendable (String) -> Void,
+            onAllComplete _: @escaping @Sendable () -> Void,
+            onError _: @escaping @Sendable (String, Error) -> Void,
+            onPendingToolCall _: (@Sendable (String, String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String, String) -> Void)?
         ) -> AITextBatchRequest {
             reasoningCallbacks.append(onReasoning)
@@ -676,6 +733,63 @@
         func emitReasoning(requestIndex: Int, model: String, reasoning: String) {
             guard reasoningCallbacks.indices.contains(requestIndex) else { return }
             reasoningCallbacks[requestIndex]?(model, reasoning)
+        }
+    }
+
+    @MainActor
+    private final class SingleModelReasoningCapturingAIService: AIService {
+        private typealias ReasoningCallback = @Sendable (String) -> Void
+
+        private var reasoningCallbacks: [ReasoningCallback?] = []
+
+        var reasoningCallbackCount: Int {
+            reasoningCallbacks.count
+        }
+
+        init() {
+            super.init(responseSimulator: { _, _ in })
+        }
+
+        override func sendMessage(
+            messages: [Message],
+            model: String?,
+            temperature: Double?,
+            stream: Bool,
+            tools: [[String: Any]]?,
+            conversationId: UUID?,
+            requestLane: AITextRequestLane,
+            isMultiModelRequest: Bool,
+            onChunk _: @escaping @Sendable (String) -> Void,
+            onComplete _: @escaping @Sendable () -> Void,
+            onError _: @escaping @Sendable (Error) -> Void,
+            onToolCall _: (@Sendable (String, String, [String: Any]) async -> String)?,
+            onToolCallRequested _: (@Sendable (String, String, [String: Any]) -> Void)?,
+            onReasoning: (@Sendable (String) -> Void)?,
+            requestFlightID: RequestFlightID?
+        ) -> AITextRequest {
+            reasoningCallbacks.append(onReasoning)
+            return super.sendMessage(
+                messages: messages,
+                model: model,
+                temperature: temperature,
+                stream: stream,
+                tools: tools,
+                conversationId: conversationId,
+                requestLane: requestLane,
+                isMultiModelRequest: isMultiModelRequest,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil,
+                requestFlightID: requestFlightID
+            )
+        }
+
+        func emitReasoning(requestIndex: Int, reasoning: String) {
+            guard reasoningCallbacks.indices.contains(requestIndex) else { return }
+            reasoningCallbacks[requestIndex]?(reasoning)
         }
     }
 

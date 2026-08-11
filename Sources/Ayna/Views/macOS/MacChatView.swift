@@ -1144,7 +1144,7 @@ struct MacChatView: View {
     }
 
     // Helper function to send messages with automatic tool call handling
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     func sendMessageWithToolSupport(
         messages: [Message],
         model: String,
@@ -1416,6 +1416,40 @@ struct MacChatView: View {
                             )
                         }
                     }
+            },
+            onReasoning: { reasoning in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
+                    guard coordinator.owns(operationID, conversationID: conversationId),
+                          activeAssistantMessageID == assistantMessageID
+                    else {
+                        return
+                    }
+                    conversationManager.updateMessage(
+                        conversationId: conversationId,
+                        messageId: assistantMessageID
+                    ) { message in
+                        message.appendReasoning(reasoning)
+                    }
+                }
+            },
+            onReasoningContinuation: { state in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
+                    guard coordinator.owns(operationID, conversationID: conversationId),
+                          activeAssistantMessageID == assistantMessageID,
+                          conversationManager.updateMessage(
+                              conversationId: conversationId,
+                              messageId: assistantMessageID,
+                              update: { message in
+                                  message.reasoningContinuation = state
+                              }
+                          )
+                    else {
+                        return
+                    }
+                    if let conversation = conversationManager.conversation(byId: conversationId) {
+                        conversationManager.save(conversation)
+                    }
+                }
                 }
             )
             coordinator.track(request, for: operationID)

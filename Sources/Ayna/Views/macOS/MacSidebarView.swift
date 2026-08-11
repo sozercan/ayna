@@ -266,7 +266,7 @@
         }()
 
         private var lastMessagePreview: String {
-            conversation.metadataPreview ?? conversation.messages.last?.content ?? "No messages"
+            conversation.metadataPreview ?? conversation.messages.last?.previewText ?? "No messages"
         }
 
         private var timeString: String {

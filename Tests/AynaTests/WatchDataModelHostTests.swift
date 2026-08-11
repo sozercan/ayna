@@ -42,7 +42,7 @@ struct WatchDataModelHostTests {
     }
 
     @Test
-    func `Watch message exposes reasoning when final content is empty`() {
+    func `Watch message presents reasoning alongside final content`() {
         let reasoningOnly = WatchMessage(
             id: UUID(),
             role: Message.Role.assistant.rawValue,
@@ -58,7 +58,7 @@ struct WatchDataModelHostTests {
         whitespaceReasoning.reasoning = " \n"
 
         #expect(reasoningOnly.visibleContent == "Compare the constraints.")
-        #expect(completed.visibleContent == "Use the smaller option.")
+        #expect(completed.visibleContent == "Compare the constraints.\n\nUse the smaller option.")
         #expect(whitespaceContent.visibleContent == "Compare the constraints.")
         #expect(whitespaceReasoning.visibleContent.isEmpty)
     }

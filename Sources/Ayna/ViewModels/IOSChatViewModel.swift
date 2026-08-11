@@ -1033,6 +1033,44 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             tools: toolsWrapper
                         )
                     }
+                },
+                onReasoning: { [weak self] reasoning in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId
+                        else {
+                            return
+                        }
+                        self.conversationManager.updateMessage(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId
+                        ) { message in
+                            message.appendReasoning(reasoning)
+                        }
+                    }
+                },
+                onReasoningContinuation: { [weak self] state in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId
+                        else {
+                            return
+                        }
+                        guard self.conversationManager.updateMessage(
+                            conversationId: conversationId,
+                            messageId: assistantMessageId,
+                            update: { message in
+                                message.reasoningContinuation = state
+                            }
+                        ) else {
+                            return
+                        }
+                        if let conversation = self.conversationManager.conversation(byId: conversationId) {
+                            self.conversationManager.save(conversation)
+                        }
+                    }
                 }
             )
             coordinator.onCancel(for: operationID) {
@@ -1798,7 +1836,7 @@ extension IOSChatViewModel {
 
 extension IOSChatViewModel {
     /// Sends a message to multiple models in parallel for comparison
-    private func sendToMultipleModels(_ preparation: SendPreparation) {
+    private func sendToMultipleModels(_ preparation: SendPreparation) { // swiftlint:disable:this function_body_length
         guard !isGenerating else { return }
         let text = preparation.text
         guard !text.isEmpty else {
@@ -1943,6 +1981,26 @@ extension IOSChatViewModel {
                         messageIds: messageIdsByModel,
                         conversationId: conversationId
                     )
+                }
+            },
+            onReasoningContinuation: { [weak self] model, state in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                    guard let self,
+                          coordinator.owns(operationID, conversationID: conversationId),
+                          let messageId = messageIdsByModel[model],
+                          self.conversationManager.updateMessage(
+                              conversationId: conversationId,
+                              messageId: messageId,
+                              update: { message in
+                                  message.reasoningContinuation = state
+                              }
+                          )
+                    else {
+                        return
+                    }
+                    if let conversation = self.conversationManager.conversation(byId: conversationId) {
+                        self.conversationManager.save(conversation)
+                    }
                 }
             }
         )

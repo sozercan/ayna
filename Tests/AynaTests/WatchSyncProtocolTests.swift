@@ -2815,6 +2815,45 @@ struct WatchSyncProtocolTests {
     }
 
     @Test
+    func `Payload builder drops oversized opaque reasoning state without removing the message`() throws {
+        let continuation = ReasoningContinuationState(
+            format: .openAIResponses,
+            items: [AnyCodable([
+                "type": "reasoning",
+                "encrypted_content": String(repeating: "opaque", count: 400)
+            ])]
+        )
+        let conversation = Conversation(
+            id: UUID(),
+            title: "Opaque reasoning",
+            messages: [
+                Message(
+                    role: .assistant,
+                    content: "Keep the visible answer",
+                    reasoningContinuation: continuation
+                ),
+            ],
+            model: "gpt-5.6"
+        )
+        var configuration = WatchSyncPayloadConfiguration(
+            byteBudget: 100_000,
+            maximumConversations: 1,
+            maximumMessagesPerConversation: 1
+        )
+        configuration.maximumReasoningContinuationBytes = 256
+
+        let result = try WatchSyncPayloadBuilder.build(
+            conversations: [conversation],
+            snapshotRevision: 1,
+            configuration: configuration
+        )
+        let message = try #require(result.snapshot.conversations.first?.messages.first)
+
+        #expect(message.content == "Keep the visible answer")
+        #expect(message.reasoningContinuation == nil)
+    }
+
+    @Test
     func `Large durable acknowledgement and tombstone history still produces a bounded snapshot`() throws {
         let conversations = (0 ..< 20).map { index in
             Conversation(

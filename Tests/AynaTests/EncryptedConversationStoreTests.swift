@@ -528,6 +528,21 @@ struct EncryptedConversationStoreTests {
     }
 
     @Test
+    func `metadata preview falls back to reasoning for a reasoning-only latest message`() {
+        var conversation = Conversation(title: "Reasoning Preview")
+        conversation.addMessage(Message(role: .assistant, content: "Older assistant reply"))
+        conversation.addMessage(Message(
+            role: .assistant,
+            content: " \n",
+            reasoning: "Compare the constraints first."
+        ))
+
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.lastMessagePreview == "Compare the constraints first.")
+    }
+
+    @Test
     func `metadata searchable text includes older messages up to cap`() {
         var conversation = Conversation(title: "Searchable")
         for index in 0 ..< 25 {
@@ -539,6 +554,21 @@ struct EncryptedConversationStoreTests {
 
         #expect(metadata.searchableText.contains("needle-in-first-message"))
         #expect(metadata.messageCount == 25)
+    }
+
+    @Test
+    func `metadata searchable text includes assistant reasoning`() {
+        var conversation = Conversation(title: "Reasoning Search")
+        conversation.addMessage(Message(
+            role: .assistant,
+            content: "Final answer",
+            reasoning: "reasoning-only-search-needle"
+        ))
+
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        #expect(metadata.searchableText.contains("Final answer"))
+        #expect(metadata.searchableText.contains("reasoning-only-search-needle"))
     }
 
     @Test

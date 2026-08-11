@@ -582,6 +582,21 @@ enum WatchLiveModelPolicy {
                             )
                         }
                     }
+                },
+                onReasoningContinuation: { [weak self] state in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
+                        guard let self,
+                              coordinator.owns(operationID, conversationID: conversationId),
+                              self.activeAssistantMessageId == assistantMessageId
+                        else {
+                            return
+                        }
+                        self.updateAssistantMessage(
+                            assistantMessageId,
+                            in: conversationId,
+                            reasoningContinuation: state
+                        )
+                    }
                 }
             )
             coordinator.onCancel(for: operationID) {
@@ -1108,9 +1123,10 @@ enum WatchLiveModelPolicy {
             _ messageId: UUID,
             in conversationId: UUID,
             content: String? = nil,
-            reasoning: String? = nil
+            reasoning: String? = nil,
+            reasoningContinuation: ReasoningContinuationState? = nil
         ) -> Bool {
-            guard content != nil || reasoning != nil else { return true }
+            guard content != nil || reasoning != nil || reasoningContinuation != nil else { return true }
             guard var conversation = conversationStore.conversation(for: conversationId),
                   let messageIndex = conversation.messages.firstIndex(where: { $0.id == messageId })
             else {
@@ -1121,6 +1137,9 @@ enum WatchLiveModelPolicy {
             }
             if let reasoning {
                 conversation.messages[messageIndex].reasoning = reasoning
+            }
+            if let reasoningContinuation {
+                conversation.messages[messageIndex].reasoningContinuation = reasoningContinuation
             }
             return conversationStore.replaceConversation(conversation)
         }

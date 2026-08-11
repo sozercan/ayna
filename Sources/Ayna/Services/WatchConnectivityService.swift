@@ -356,17 +356,24 @@
                 let apiKeys = AIService.shared.modelAPIKeys.filter {
                     configured.contains($0.key) && !$0.value.isEmpty
                 }
+                let reasoningConfigurations = WatchModelReasoningConfigurationCodec.encode(
+                    AIService.shared.modelReasoningConfigurations.filter {
+                        configured.contains($0.key)
+                    }
+                )
                 return WatchModelMetadataInventory(
                     modelIDs: modelIDs,
                     providerModelIDs: providers.keys.sorted(),
                     endpointModelIDs: endpoints.keys.sorted(),
                     endpointTypeModelIDs: endpointTypes.keys.sorted(),
                     apiKeyModelIDs: apiKeys.keys.sorted(),
+                    reasoningConfigurationModelIDs: reasoningConfigurations.keys.sorted(),
                     valueDigests: WatchModelMetadataValueDigests.hashing(
                         providers: providers,
                         endpoints: endpoints,
                         endpointTypes: endpointTypes,
-                        apiKeys: apiKeys
+                        apiKeys: apiKeys,
+                        reasoningConfigurations: reasoningConfigurations
                     )
                 )
             }
@@ -424,11 +431,19 @@
                     WatchContextKeys.modelAPIKeys: modelPublication.metadataValues(
                         from: AIService.shared.modelAPIKeys
                     ),
+                    WatchContextKeys.modelReasoningConfigurations:
+                        WatchModelReasoningConfigurationCodec.encode(
+                            modelPublication.metadataValues(
+                                from: AIService.shared.modelReasoningConfigurations
+                            )
+                        ),
                     WatchContextKeys.removedModelDigests: options.modelRemovalPublication.removedModelDigests,
                     WatchContextKeys.removedModelProviderDigests: options.modelRemovalPublication.removedProviderDigests,
                     WatchContextKeys.removedModelEndpointDigests: options.modelRemovalPublication.removedEndpointDigests,
                     WatchContextKeys.removedModelEndpointTypeDigests: options.modelRemovalPublication.removedEndpointTypeDigests,
                     WatchContextKeys.removedModelAPIKeyDigests: options.modelRemovalPublication.removedAPIKeyDigests,
+                    WatchContextKeys.removedModelReasoningConfigurationDigests:
+                        options.modelRemovalPublication.removedReasoningConfigurationDigests,
                     WatchContextKeys.modelMetadataEpoch: options.modelMetadataEpoch.uuidString,
                     WatchContextKeys.modelMetadataComplete: modelMetadataComplete,
                     WatchContextKeys.tavilyAPIKey: TavilyService.shared.apiKey,
@@ -2099,7 +2114,8 @@
                     modelProviders: AIService.shared.modelProviders.mapValues(\.rawValue),
                     modelEndpoints: AIService.shared.modelEndpoints,
                     modelEndpointTypes: AIService.shared.modelEndpointTypes.mapValues(\.rawValue),
-                    modelAPIKeys: AIService.shared.modelAPIKeys
+                    modelAPIKeys: AIService.shared.modelAPIKeys,
+                    modelReasoningConfigurations: AIService.shared.modelReasoningConfigurations
                 )
             }
 
@@ -2123,6 +2139,7 @@
                     }
                 }
                 AIService.shared.modelAPIKeys = state.modelAPIKeys
+                AIService.shared.modelReasoningConfigurations = state.modelReasoningConfigurations
             }
 
             private func processTavilySettingsFromContext(

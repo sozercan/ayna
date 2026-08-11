@@ -118,8 +118,8 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
 
     private static func previewText(from conversation: Conversation) -> String {
         let previewSource = conversation.messages.last
-        guard let content = previewSource?.content, !content.isEmpty else { return "" }
-        return String(content.prefix(240))
+        guard let previewText = previewSource?.previewText else { return "" }
+        return String(previewText.prefix(240))
     }
 
     private static func searchText(from conversation: Conversation) -> String {
@@ -174,6 +174,12 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         for message in conversation.messages {
             append("\n")
             append(message.content)
+            if let reasoning = message.reasoning,
+               !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                append("\n")
+                append(reasoning)
+            }
         }
 
         return exceededLimit ? "\(head)\n…\n\(tail)" : completeText

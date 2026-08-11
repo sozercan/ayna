@@ -79,24 +79,13 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        // Determine beta headers based on model
-        var betaHeaders: [String] = []
-        if let thinkingBudget = config.thinkingBudget, thinkingBudget >= 1024 {
-            // Enable interleaved thinking for Claude 4+ models
-            let model = config.model.lowercased()
-            if model.contains("claude-4") || model.contains("claude-opus-4") || model.contains("claude-sonnet-4") {
-                betaHeaders.append("interleaved-thinking-2025-05-14")
-            }
-        }
-
         // Build request configuration
         let requestConfig = AnthropicRequestConfig(
             model: config.model,
             apiKey: config.apiKey,
             customEndpoint: config.customEndpoint,
             maxTokens: config.maxTokens ?? 4096,
-            budgetTokens: config.thinkingBudget,
-            betaHeaders: betaHeaders
+            reasoning: config.anthropicReasoning
         )
 
         currentRequestBuildTask?.cancel()
@@ -338,6 +327,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         if let reasoning = result.reasoning {
             reasoningBuffer += reasoning
         }
+        if let continuation = result.reasoningContinuation {
+            await MainActor.run {
+                callbacks.onReasoningContinuation?(continuation)
+            }
+        }
         if let toolCall = result.toolCall {
             let anyInput = toolCall.input.mapValues { $0.value }
             await MainActor.run {
@@ -474,6 +468,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             }
 
             if let content = json?["content"] as? [[String: Any]] {
+                emitReasoningContinuation(from: content, callbacks: callbacks)
                 parseContentBlocks(content, callbacks: callbacks)
             }
 
@@ -507,6 +502,24 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                 break
             }
         }
+    }
+
+    private func emitReasoningContinuation(
+        from content: [[String: Any]],
+        callbacks: AIProviderStreamCallbacks
+    ) {
+        let containsReasoning = content.contains { block in
+            guard let type = block["type"] as? String else { return false }
+            return type == "thinking" || type == "redacted_thinking"
+        }
+        guard containsReasoning else { return }
+
+        callbacks.onReasoningContinuation?(
+            ReasoningContinuationState(
+                format: .anthropicMessages,
+                items: content.map(AnyCodable.init)
+            )
+        )
     }
 
     // MARK: - Circuit Breaker

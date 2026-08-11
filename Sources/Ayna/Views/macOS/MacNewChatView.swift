@@ -9,6 +9,8 @@ import Combine
 import OSLog
 import SwiftUI
 
+// swiftlint:disable file_length
+
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
     @EnvironmentObject var conversationManager: ConversationManager
@@ -859,6 +861,7 @@ struct MacNewChatView: View {
         selectedConversationId = conversationID
     }
 
+    // swiftlint:disable:next function_body_length
     private func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],
@@ -1005,6 +1008,25 @@ struct MacNewChatView: View {
                             conversationManager.save(conversation)
                         }
                     }.append(reasoning)
+                }
+            },
+            onReasoningContinuation: { model, state in
+                coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
+                    guard coordinator.owns(operationID, conversationID: conversationId),
+                          let messageId = messageIdsByModel[model],
+                          conversationManager.updateMessage(
+                              conversationId: conversationId,
+                              messageId: messageId,
+                              update: { message in
+                                  message.reasoningContinuation = state
+                              }
+                          )
+                    else {
+                        return
+                    }
+                    if let conversation = conversationManager.conversation(byId: conversationId) {
+                        conversationManager.save(conversation)
+                    }
                 }
             }
         )
@@ -1254,7 +1276,25 @@ struct MacNewChatView: View {
                             conversationId: conversationId,
                             messageId: assistantMessageID
                         ) { message in
-                            message.reasoning = (message.reasoning ?? "") + reasoning
+                            message.appendReasoning(reasoning)
+                        }
+                    }
+                },
+                onReasoningContinuation: { state in
+                    coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
+                        guard activeAssistantMessageID == assistantMessageID,
+                              conversationManager.updateMessage(
+                                  conversationId: conversationId,
+                                  messageId: assistantMessageID,
+                                  update: { message in
+                                      message.reasoningContinuation = state
+                                  }
+                              )
+                        else {
+                            return
+                        }
+                        if let conversation = conversationManager.conversation(byId: conversationId) {
+                            conversationManager.save(conversation)
                         }
                     }
                 }

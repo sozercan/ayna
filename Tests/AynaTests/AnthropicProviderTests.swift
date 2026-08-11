@@ -11,6 +11,7 @@ import Testing
 
 @Suite("AnthropicProvider Tests", .serialized)
 @MainActor
+// swiftlint:disable:next type_body_length
 struct AnthropicProviderTests {
     init() {
         AnthropicMockURLProtocol.reset()
@@ -29,14 +30,16 @@ struct AnthropicProviderTests {
         apiKey: String = "test-api-key",
         customEndpoint: String? = nil,
         maxTokens: Int? = nil,
-        thinkingBudget: Int? = nil
+        thinkingBudget: Int? = nil,
+        anthropicReasoning: AnthropicReasoningConfiguration? = nil
     ) -> AIProviderRequestConfig {
         AIProviderRequestConfig(
             model: model,
             apiKey: apiKey,
             customEndpoint: customEndpoint,
             maxTokens: maxTokens,
-            thinkingBudget: thinkingBudget
+            thinkingBudget: thinkingBudget,
+            anthropicReasoning: anthropicReasoning
         )
     }
 
@@ -894,9 +897,9 @@ struct AnthropicProviderTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func `thinking budget adds beta header for Claude 4 models`() async {
+    func `legacy thinking budget does not infer beta header from model name`() async throws {
         let provider = makeProvider()
-        let config = makeConfig(model: "claude-4-opus-20250514", thinkingBudget: 2048)
+        let config = makeConfig(model: "claude-4-opus-20250514", thinkingBudget: 4096)
         let messages = [Message(role: .user, content: "Hello")]
 
         let responseBody = """
@@ -904,9 +907,11 @@ struct AnthropicProviderTests {
         """
 
         var capturedRequest: URLRequest?
+        var capturedBodyData: Data?
 
         AnthropicMockURLProtocol.requestHandler = { request in
             capturedRequest = request
+            capturedBodyData = requestBodyData(request)
             let response = HTTPURLResponse(
                 url: URL(string: "https://api.anthropic.com/v1/messages")!,
                 statusCode: 200,
@@ -937,7 +942,118 @@ struct AnthropicProviderTests {
         let request = capturedRequest
         #expect(request != nil)
         let betaHeader = request?.value(forHTTPHeaderField: "anthropic-beta")
-        #expect(betaHeader?.contains("interleaved-thinking") == true)
+        #expect(betaHeader == nil)
+        let bodyData = try #require(capturedBodyData)
+        let body = try #require(
+            try JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+        )
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["budget_tokens"] as? Int == 4096)
+        #expect((body["max_tokens"] as? Int ?? 0) > 4096)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `explicit interleaved reasoning adds beta header for custom model alias`() async {
+        let provider = makeProvider()
+        let config = makeConfig(
+            model: "custom-deployment-alias",
+            anthropicReasoning: .enabled(budgetTokens: 2048, interleaved: true)
+        )
+        let messages = [Message(role: .user, content: "Hello")]
+
+        let responseBody = """
+        {"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn"}
+        """
+        var capturedRequest: URLRequest?
+        AnthropicMockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)") }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        #expect(
+            capturedRequest?.value(forHTTPHeaderField: "anthropic-beta") ==
+                AnthropicRequestConfig.interleavedThinkingBeta
+        )
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming response emits exact continuation before tool callback`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(anthropicReasoning: .adaptive())
+        let callbackOrder = CallbackOrderCollector()
+        let continuationCollector = ContinuationCollector()
+        let responseBody = """
+        {
+          "id":"msg_123",
+          "type":"message",
+          "role":"assistant",
+          "content":[
+            {"type":"thinking","thinking":"Use lookup","signature":"signed-value"},
+            {"type":"redacted_thinking","data":"opaque-redaction"},
+            {"type":"tool_use","id":"toolu_123","name":"lookup","input":{"query":"weather"}}
+          ],
+          "stop_reason":"tool_use"
+        }
+        """
+        AnthropicMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: [Message(role: .user, content: "Use the tool")],
+                config: config,
+                stream: false,
+                tools: nil,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)") },
+                    onToolCallRequested: { _, _, _ in callbackOrder.append("tool") },
+                    onReasoningContinuation: { continuation in
+                        continuationCollector.store(continuation)
+                        callbackOrder.append("continuation")
+                    }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        #expect(callbackOrder.events == ["continuation", "tool"])
+        let continuation = try #require(continuationCollector.value)
+        let blocks = continuation.items.compactMap { $0.value as? [String: Any] }
+        #expect(blocks.count == 3)
+        #expect(blocks[0]["signature"] as? String == "signed-value")
+        #expect(blocks[1]["data"] as? String == "opaque-redaction")
     }
 }
 
@@ -987,6 +1103,28 @@ private final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+private func requestBodyData(_ request: URLRequest) -> Data? {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else { return nil }
+
+    stream.open()
+    defer { stream.close() }
+
+    var data = Data()
+    let bufferSize = 4096
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+    defer { buffer.deallocate() }
+
+    while stream.hasBytesAvailable {
+        let count = stream.read(buffer, maxLength: bufferSize)
+        guard count > 0 else { break }
+        data.append(buffer, count: count)
+    }
+    return data
+}
+
 private final class ChunkCollector: @unchecked Sendable {
     private var chunks: [String] = []
     private let lock = NSLock()
@@ -1018,5 +1156,22 @@ private final class CallbackOrderCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return recordedEvents
+    }
+}
+
+private final class ContinuationCollector: @unchecked Sendable {
+    private var storedValue: ReasoningContinuationState?
+    private let lock = NSLock()
+
+    func store(_ value: ReasoningContinuationState) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedValue = value
+    }
+
+    var value: ReasoningContinuationState? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValue
     }
 }

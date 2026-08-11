@@ -3237,6 +3237,7 @@ final class ConversationManager: ObservableObject {
             || (metadataSearchTextById[conversation.id]?.localizedCaseInsensitiveContains(query) ?? false)
             || conversation.messages.contains { message in
                 message.content.localizedCaseInsensitiveContains(query)
+                    || (message.reasoning?.localizedCaseInsensitiveContains(query) ?? false)
             }
     }
 

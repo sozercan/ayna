@@ -863,11 +863,14 @@ enum WatchContextKeys {
     static let modelEndpoints = "modelEndpoints"
     static let modelEndpointTypes = "modelEndpointTypes"
     static let modelAPIKeys = "modelAPIKeys"
+    static let modelReasoningConfigurations = "modelReasoningConfigurations"
     static let removedModelDigests = "removedModelDigests"
     static let removedModelProviderDigests = "removedModelProviderDigests"
     static let removedModelEndpointDigests = "removedModelEndpointDigests"
     static let removedModelEndpointTypeDigests = "removedModelEndpointTypeDigests"
     static let removedModelAPIKeyDigests = "removedModelAPIKeyDigests"
+    static let removedModelReasoningConfigurationDigests =
+        "removedModelReasoningConfigurationDigests"
     static let modelMetadataEpoch = "modelMetadataEpoch"
     static let modelMetadataComplete = "modelMetadataComplete"
     static let tavilyAPIKey = "tavilyAPIKey"
@@ -1321,6 +1324,8 @@ final class WatchRecentAcknowledgementTracker {
 enum WatchConversationSyncObserver {
     static func observe(
         conversationManager: ConversationManager,
+        aiService: AIService = .shared,
+        serviceChangeDebounce: RunLoop.SchedulerTimeType.Stride = .seconds(1),
         onSync: @escaping @MainActor ([Conversation]) -> Void
     ) -> Set<AnyCancellable> {
         var cancellables = Set<AnyCancellable>()
@@ -1364,9 +1369,9 @@ enum WatchConversationSyncObserver {
             }
             .store(in: &cancellables)
 
-        AIService.shared.objectWillChange
+        aiService.objectWillChange
             .merge(with: TavilyService.shared.objectWillChange)
-            .debounce(for: .seconds(1), scheduler: RunLoop.main)
+            .debounce(for: serviceChangeDebounce, scheduler: RunLoop.main)
             .sink { [weak conversationManager] _ in
                 guard let conversationManager else { return }
                 onSync(conversationManager.durableConversationsForSync())
@@ -1558,24 +1563,103 @@ enum WatchModelIdentity {
     }
 }
 
+enum WatchModelReasoningConfigurationCodec {
+    static func encode(
+        _ configurations: [String: ModelReasoningConfiguration]
+    ) -> [String: String] {
+        configurations.reduce(into: [:]) { encoded, entry in
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            guard let data = try? encoder.encode(entry.value) else { return }
+            encoded[entry.key] = data.base64EncodedString()
+        }
+    }
+
+    static func decode(
+        _ configurations: [String: String]?
+    ) -> [String: ModelReasoningConfiguration]? {
+        guard let configurations else { return nil }
+        return configurations.reduce(into: [:]) { decoded, entry in
+            guard let data = Data(base64Encoded: entry.value),
+                  let configuration = try? JSONDecoder().decode(
+                      ModelReasoningConfiguration.self,
+                      from: data
+                  )
+            else {
+                return
+            }
+            decoded[entry.key] = configuration
+        }
+    }
+}
+
 struct WatchModelMetadataValueDigests: Codable, Equatable, Sendable {
     var providers: [String: String] = [:]
     var endpoints: [String: String] = [:]
     var endpointTypes: [String: String] = [:]
     var apiKeys: [String: String] = [:]
+    var reasoningConfigurations: [String: String] = [:]
 
     static func hashing(
         providers: [String: String],
         endpoints: [String: String],
         endpointTypes: [String: String],
-        apiKeys: [String: String]
+        apiKeys: [String: String],
+        reasoningConfigurations: [String: String] = [:]
     ) -> Self {
         Self(
             providers: digestValues(providers, value: { $0 }),
             endpoints: digestValues(endpoints, value: { $0 }),
             endpointTypes: digestValues(endpointTypes, value: { $0 }),
-            apiKeys: digestValues(apiKeys, value: { $0 })
+            apiKeys: digestValues(apiKeys, value: { $0 }),
+            reasoningConfigurations: digestValues(reasoningConfigurations, value: { $0 })
         )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case providers
+        case endpoints
+        case endpointTypes
+        case apiKeys
+        case reasoningConfigurations
+    }
+
+    init(
+        providers: [String: String] = [:],
+        endpoints: [String: String] = [:],
+        endpointTypes: [String: String] = [:],
+        apiKeys: [String: String] = [:],
+        reasoningConfigurations: [String: String] = [:]
+    ) {
+        self.providers = providers
+        self.endpoints = endpoints
+        self.endpointTypes = endpointTypes
+        self.apiKeys = apiKeys
+        self.reasoningConfigurations = reasoningConfigurations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        providers = try container.decodeIfPresent([String: String].self, forKey: .providers) ?? [:]
+        endpoints = try container.decodeIfPresent([String: String].self, forKey: .endpoints) ?? [:]
+        endpointTypes = try container.decodeIfPresent(
+            [String: String].self,
+            forKey: .endpointTypes
+        ) ?? [:]
+        apiKeys = try container.decodeIfPresent([String: String].self, forKey: .apiKeys) ?? [:]
+        reasoningConfigurations = try container.decodeIfPresent(
+            [String: String].self,
+            forKey: .reasoningConfigurations
+        ) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(providers, forKey: .providers)
+        try container.encode(endpoints, forKey: .endpoints)
+        try container.encode(endpointTypes, forKey: .endpointTypes)
+        try container.encode(apiKeys, forKey: .apiKeys)
+        try container.encode(reasoningConfigurations, forKey: .reasoningConfigurations)
     }
 
     private static func digestValues<Value>(
@@ -1594,6 +1678,7 @@ struct WatchModelMetadataInventory: Equatable, Sendable {
     var endpointModelIDs: [String]
     var endpointTypeModelIDs: [String]
     var apiKeyModelIDs: [String]
+    var reasoningConfigurationModelIDs: [String] = []
     var valueDigests = WatchModelMetadataValueDigests()
 }
 
@@ -1603,6 +1688,7 @@ struct WatchModelRemovalPublication: Equatable, Sendable {
     let removedEndpointDigests: [String]
     let removedEndpointTypeDigests: [String]
     let removedAPIKeyDigests: [String]
+    let removedReasoningConfigurationDigests: [String]
 
     var isEmpty: Bool {
         removedModelDigests.isEmpty
@@ -1610,6 +1696,7 @@ struct WatchModelRemovalPublication: Equatable, Sendable {
             && removedEndpointDigests.isEmpty
             && removedEndpointTypeDigests.isEmpty
             && removedAPIKeyDigests.isEmpty
+            && removedReasoningConfigurationDigests.isEmpty
     }
 }
 
@@ -1621,6 +1708,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         let endpoints: Set<String>
         let endpointTypes: Set<String>
         let apiKeys: Set<String>
+        let reasoningConfigurations: Set<String>
     }
 
     private(set) var epoch: UUID
@@ -1634,6 +1722,8 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
     private(set) var retiredEndpointTypeDigests: Set<String>
     private(set) var publishedAPIKeyDigests: Set<String>
     private(set) var retiredAPIKeyDigests: Set<String>
+    private(set) var publishedReasoningConfigurationDigests: Set<String>
+    private(set) var retiredReasoningConfigurationDigests: Set<String>
     private(set) var publishedValueDigests: WatchModelMetadataValueDigests?
 
     init(epoch: UUID = UUID()) {
@@ -1648,7 +1738,110 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointTypeDigests = []
         publishedAPIKeyDigests = []
         retiredAPIKeyDigests = []
+        publishedReasoningConfigurationDigests = []
+        retiredReasoningConfigurationDigests = []
         publishedValueDigests = WatchModelMetadataValueDigests()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case epoch
+        case publishedDigests
+        case retiredDigests
+        case publishedProviderDigests
+        case retiredProviderDigests
+        case publishedEndpointDigests
+        case retiredEndpointDigests
+        case publishedEndpointTypeDigests
+        case retiredEndpointTypeDigests
+        case publishedAPIKeyDigests
+        case retiredAPIKeyDigests
+        case publishedReasoningConfigurationDigests
+        case retiredReasoningConfigurationDigests
+        case publishedValueDigests
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        epoch = try container.decodeIfPresent(UUID.self, forKey: .epoch) ?? UUID()
+        publishedDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedDigests
+        ) ?? []
+        retiredDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredDigests
+        ) ?? []
+        publishedProviderDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedProviderDigests
+        ) ?? []
+        retiredProviderDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredProviderDigests
+        ) ?? []
+        publishedEndpointDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedEndpointDigests
+        ) ?? []
+        retiredEndpointDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredEndpointDigests
+        ) ?? []
+        publishedEndpointTypeDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedEndpointTypeDigests
+        ) ?? []
+        retiredEndpointTypeDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredEndpointTypeDigests
+        ) ?? []
+        publishedAPIKeyDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedAPIKeyDigests
+        ) ?? []
+        retiredAPIKeyDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredAPIKeyDigests
+        ) ?? []
+        publishedReasoningConfigurationDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .publishedReasoningConfigurationDigests
+        ) ?? []
+        retiredReasoningConfigurationDigests = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .retiredReasoningConfigurationDigests
+        ) ?? []
+        publishedValueDigests = try container.decodeIfPresent(
+            WatchModelMetadataValueDigests.self,
+            forKey: .publishedValueDigests
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(epoch, forKey: .epoch)
+        try container.encode(publishedDigests, forKey: .publishedDigests)
+        try container.encode(retiredDigests, forKey: .retiredDigests)
+        try container.encode(publishedProviderDigests, forKey: .publishedProviderDigests)
+        try container.encode(retiredProviderDigests, forKey: .retiredProviderDigests)
+        try container.encode(publishedEndpointDigests, forKey: .publishedEndpointDigests)
+        try container.encode(retiredEndpointDigests, forKey: .retiredEndpointDigests)
+        try container.encode(
+            publishedEndpointTypeDigests,
+            forKey: .publishedEndpointTypeDigests
+        )
+        try container.encode(retiredEndpointTypeDigests, forKey: .retiredEndpointTypeDigests)
+        try container.encode(publishedAPIKeyDigests, forKey: .publishedAPIKeyDigests)
+        try container.encode(retiredAPIKeyDigests, forKey: .retiredAPIKeyDigests)
+        try container.encode(
+            publishedReasoningConfigurationDigests,
+            forKey: .publishedReasoningConfigurationDigests
+        )
+        try container.encode(
+            retiredReasoningConfigurationDigests,
+            forKey: .retiredReasoningConfigurationDigests
+        )
+        try container.encodeIfPresent(publishedValueDigests, forKey: .publishedValueDigests)
     }
 
     mutating func publication(
@@ -1708,6 +1901,16 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         publishedAPIKeyDigests = apiKeys.published
         retiredAPIKeyDigests = apiKeys.retired
 
+        let reasoningConfigurations = Self.advance(
+            currentModelIDs: inventory.reasoningConfigurationModelIDs,
+            published: publishedReasoningConfigurationDigests,
+            retired: retiredReasoningConfigurationDigests,
+            invalidated: valueChanges.reasoningConfigurations,
+            retainsCurrentTombstones: true
+        )
+        publishedReasoningConfigurationDigests = reasoningConfigurations.published
+        retiredReasoningConfigurationDigests = reasoningConfigurations.retired
+
         if retiredDigestCount > Self.maximumRetiredDigestCount {
             rotateEpoch(seeding: inventory)
             return WatchModelRemovalPublication(
@@ -1715,7 +1918,8 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 removedProviderDigests: [],
                 removedEndpointDigests: [],
                 removedEndpointTypeDigests: [],
-                removedAPIKeyDigests: []
+                removedAPIKeyDigests: [],
+                removedReasoningConfigurationDigests: []
             )
         }
 
@@ -1724,7 +1928,8 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             removedProviderDigests: providers.retired.sorted(),
             removedEndpointDigests: endpoints.retired.sorted(),
             removedEndpointTypeDigests: endpointTypes.retired.sorted(),
-            removedAPIKeyDigests: apiKeys.retired.sorted()
+            removedAPIKeyDigests: apiKeys.retired.sorted(),
+            removedReasoningConfigurationDigests: reasoningConfigurations.retired.sorted()
         )
     }
 
@@ -1734,6 +1939,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             + retiredEndpointDigests.count
             + retiredEndpointTypeDigests.count
             + retiredAPIKeyDigests.count
+            + retiredReasoningConfigurationDigests.count
     }
 
     private mutating func rotateEpoch(seeding inventory: WatchModelMetadataInventory) {
@@ -1748,6 +1954,10 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointTypeDigests = []
         publishedAPIKeyDigests = Self.digests(inventory.apiKeyModelIDs)
         retiredAPIKeyDigests = []
+        publishedReasoningConfigurationDigests = Self.digests(
+            inventory.reasoningConfigurationModelIDs
+        )
+        retiredReasoningConfigurationDigests = []
         publishedValueDigests = inventory.valueDigests
     }
 
@@ -1781,14 +1991,19 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 providers: [],
                 endpoints: [],
                 endpointTypes: [],
-                apiKeys: []
+                apiKeys: [],
+                reasoningConfigurations: []
             )
         }
         return ChangedValueDigests(
             providers: changedModelDigests(from: previous.providers, to: current.providers),
             endpoints: changedModelDigests(from: previous.endpoints, to: current.endpoints),
             endpointTypes: changedModelDigests(from: previous.endpointTypes, to: current.endpointTypes),
-            apiKeys: changedModelDigests(from: previous.apiKeys, to: current.apiKeys)
+            apiKeys: changedModelDigests(from: previous.apiKeys, to: current.apiKeys),
+            reasoningConfigurations: changedModelDigests(
+                from: previous.reasoningConfigurations,
+                to: current.reasoningConfigurations
+            )
         )
     }
 
@@ -1816,6 +2031,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
     var modelEndpoints: [String: String]
     var modelEndpointTypes: [String: String]
     var modelAPIKeys: [String: String]
+    var modelReasoningConfigurations: [String: ModelReasoningConfiguration] = [:]
 
     mutating func merge(_ page: WatchModelMetadataPage) {
         applyRemovals(from: page)
@@ -1835,6 +2051,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         mergeValues(page.modelEndpoints, into: &modelEndpoints)
         mergeValues(page.modelEndpointTypes, into: &modelEndpointTypes)
         mergeValues(page.modelAPIKeys, into: &modelAPIKeys)
+        mergeValues(page.modelReasoningConfigurations, into: &modelReasoningConfigurations)
     }
 
     mutating func replace(with page: WatchModelMetadataPage) {
@@ -1851,6 +2068,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelEndpoints = page.modelEndpoints ?? [:]
         modelEndpointTypes = page.modelEndpointTypes ?? [:]
         modelAPIKeys = page.modelAPIKeys ?? [:]
+        modelReasoningConfigurations = page.modelReasoningConfigurations ?? [:]
     }
 
     mutating func resetModelSpecificState() {
@@ -1861,6 +2079,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelEndpoints = [:]
         modelEndpointTypes = [:]
         modelAPIKeys = [:]
+        modelReasoningConfigurations = [:]
     }
 
     private mutating func applyRemovals(from page: WatchModelMetadataPage) {
@@ -1869,6 +2088,10 @@ struct WatchModelMetadataState: Equatable, Sendable {
         removeEntries(withDigests: page.removedModelEndpointDigests, from: &modelEndpoints)
         removeEntries(withDigests: page.removedModelEndpointTypeDigests, from: &modelEndpointTypes)
         removeEntries(withDigests: page.removedModelAPIKeyDigests, from: &modelAPIKeys)
+        removeEntries(
+            withDigests: page.removedModelReasoningConfigurationDigests,
+            from: &modelReasoningConfigurations
+        )
     }
 
     private func removeEntries(
@@ -1893,6 +2116,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelEndpoints = modelEndpoints.filter { isRetained($0.key) }
         modelEndpointTypes = modelEndpointTypes.filter { isRetained($0.key) }
         modelAPIKeys = modelAPIKeys.filter { isRetained($0.key) }
+        modelReasoningConfigurations = modelReasoningConfigurations.filter { isRetained($0.key) }
     }
 }
 
@@ -1905,11 +2129,13 @@ struct WatchModelMetadataPage: Equatable, Sendable {
     var modelEndpoints: [String: String]?
     var modelEndpointTypes: [String: String]?
     var modelAPIKeys: [String: String]?
+    var modelReasoningConfigurations: [String: ModelReasoningConfiguration]?
     var removedModelDigests: [String]?
     var removedModelProviderDigests: [String]?
     var removedModelEndpointDigests: [String]?
     var removedModelEndpointTypeDigests: [String]?
     var removedModelAPIKeyDigests: [String]?
+    var removedModelReasoningConfigurationDigests: [String]?
 
     init(
         selectedModel: String? = nil,
@@ -1920,11 +2146,13 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         modelEndpoints: [String: String]? = nil,
         modelEndpointTypes: [String: String]? = nil,
         modelAPIKeys: [String: String]? = nil,
+        modelReasoningConfigurations: [String: ModelReasoningConfiguration]? = nil,
         removedModelDigests: [String]? = nil,
         removedModelProviderDigests: [String]? = nil,
         removedModelEndpointDigests: [String]? = nil,
         removedModelEndpointTypeDigests: [String]? = nil,
-        removedModelAPIKeyDigests: [String]? = nil
+        removedModelAPIKeyDigests: [String]? = nil,
+        removedModelReasoningConfigurationDigests: [String]? = nil
     ) {
         self.selectedModel = selectedModel
         self.availableModels = availableModels
@@ -1934,11 +2162,14 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         self.modelEndpoints = modelEndpoints
         self.modelEndpointTypes = modelEndpointTypes
         self.modelAPIKeys = modelAPIKeys
+        self.modelReasoningConfigurations = modelReasoningConfigurations
         self.removedModelDigests = removedModelDigests
         self.removedModelProviderDigests = removedModelProviderDigests
         self.removedModelEndpointDigests = removedModelEndpointDigests
         self.removedModelEndpointTypeDigests = removedModelEndpointTypeDigests
         self.removedModelAPIKeyDigests = removedModelAPIKeyDigests
+        self.removedModelReasoningConfigurationDigests =
+            removedModelReasoningConfigurationDigests
     }
 
     init(context: [String: Any]) {
@@ -1951,11 +2182,17 @@ struct WatchModelMetadataPage: Equatable, Sendable {
             modelEndpoints: context[WatchContextKeys.modelEndpoints] as? [String: String],
             modelEndpointTypes: context[WatchContextKeys.modelEndpointTypes] as? [String: String],
             modelAPIKeys: context[WatchContextKeys.modelAPIKeys] as? [String: String],
+            modelReasoningConfigurations: WatchModelReasoningConfigurationCodec.decode(
+                context[WatchContextKeys.modelReasoningConfigurations] as? [String: String]
+            ),
             removedModelDigests: context[WatchContextKeys.removedModelDigests] as? [String],
             removedModelProviderDigests: context[WatchContextKeys.removedModelProviderDigests] as? [String],
             removedModelEndpointDigests: context[WatchContextKeys.removedModelEndpointDigests] as? [String],
             removedModelEndpointTypeDigests: context[WatchContextKeys.removedModelEndpointTypeDigests] as? [String],
-            removedModelAPIKeyDigests: context[WatchContextKeys.removedModelAPIKeyDigests] as? [String]
+            removedModelAPIKeyDigests: context[WatchContextKeys.removedModelAPIKeyDigests] as? [String],
+            removedModelReasoningConfigurationDigests: context[
+                WatchContextKeys.removedModelReasoningConfigurationDigests
+            ] as? [String]
         )
     }
 
@@ -1976,6 +2213,10 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         mergeOptionalValues(page.modelEndpoints, into: &modelEndpoints)
         mergeOptionalValues(page.modelEndpointTypes, into: &modelEndpointTypes)
         mergeOptionalValues(page.modelAPIKeys, into: &modelAPIKeys)
+        mergeOptionalValues(
+            page.modelReasoningConfigurations,
+            into: &modelReasoningConfigurations
+        )
         if let removedModelDigests = page.removedModelDigests {
             self.removedModelDigests = mergingUnique(self.removedModelDigests ?? [], removedModelDigests)
         }
@@ -1990,6 +2231,12 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         }
         if let removed = page.removedModelAPIKeyDigests {
             removedModelAPIKeyDigests = mergingUnique(removedModelAPIKeyDigests ?? [], removed)
+        }
+        if let removed = page.removedModelReasoningConfigurationDigests {
+            removedModelReasoningConfigurationDigests = mergingUnique(
+                removedModelReasoningConfigurationDigests ?? [],
+                removed
+            )
         }
     }
 }

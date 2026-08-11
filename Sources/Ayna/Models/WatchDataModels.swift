@@ -422,6 +422,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
     var role: String
     var content: String
     var reasoning: String?
+    var reasoningContinuation: ReasoningContinuationState?
     var timestamp: Date
     var model: String?
     var toolCalls: [MCPToolCall]?
@@ -432,6 +433,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         role: String,
         content: String,
         reasoning: String? = nil,
+        reasoningContinuation: ReasoningContinuationState? = nil,
         timestamp: Date,
         model: String? = nil,
         toolCalls: [MCPToolCall]? = nil,
@@ -441,6 +443,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         self.role = role
         self.content = content
         self.reasoning = reasoning
+        self.reasoningContinuation = reasoningContinuation
         self.timestamp = timestamp
         self.model = model
         self.toolCalls = toolCalls
@@ -452,6 +455,7 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         role = message.role.rawValue
         content = message.content
         reasoning = message.reasoning
+        reasoningContinuation = message.reasoningContinuation
         timestamp = message.timestamp
         model = message.model
         toolCalls = message.toolCalls
@@ -480,21 +484,28 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
             toolCalls: toolCalls,
             model: model,
             reasoning: reasoning,
+            reasoningContinuation: reasoningContinuation,
             citations: citations
         )
     }
 
-    /// Text shown when a reasoning-only response has no final answer content.
+    /// Text shown in the Watch transcript, including reasoning when the response also has a final answer.
     var visibleContent: String {
-        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return content
+        let visibleAnswer = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : content
+        let visibleReasoning = reasoning.flatMap { reasoning in
+            reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : reasoning
         }
-        guard let reasoning,
-              !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
+
+        switch (visibleReasoning, visibleAnswer) {
+        case let (reasoning?, answer?):
+            return "\(reasoning)\n\n\(answer)"
+        case let (reasoning?, nil):
+            return reasoning
+        case let (nil, answer?):
+            return answer
+        case (nil, nil):
             return ""
         }
-        return reasoning
     }
 }
 

@@ -39,6 +39,22 @@ struct RequestFlightID: Hashable, Sendable {
     private let rawValue = UUID()
 }
 
+struct AIReasoningRequestSnapshot: Sendable {
+    let configuration: ResolvedReasoningConfiguration?
+}
+
+private struct ToolContinuationReasoningSnapshot: Equatable, Sendable {
+    let model: String
+    let provider: AIProvider
+    let endpointType: APIEndpointType
+    let configuration: ResolvedReasoningConfiguration?
+}
+
+private struct ToolContinuationRound {
+    let assistant: Message
+    let completedToolCallIDs: [String]
+}
+
 enum AITextRequestLane: Sendable {
     case foreground
     case background
@@ -242,6 +258,7 @@ private enum AnthropicFlightCallback: @unchecked Sendable {
     case error(Error)
     case toolRequest(id: String, name: String, arguments: [String: Any])
     case reasoning(String)
+    case reasoningContinuation(ReasoningContinuationState)
 }
 
 private enum MultiModelBatchCallback: @unchecked Sendable {
@@ -250,6 +267,45 @@ private enum MultiModelBatchCallback: @unchecked Sendable {
     case error(Error)
     case toolRequest(id: String, name: String, arguments: [String: Any])
     case reasoning(String)
+    case reasoningContinuation(ReasoningContinuationState)
+}
+
+private struct PersistedModelReasoningConfigurations: Decodable {
+    private struct ModelKey: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue _: Int) {
+            nil
+        }
+    }
+
+    let values: [String: ModelReasoningConfiguration]
+    let invalidModelIDs: [String]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: ModelKey.self)
+        var decodedValues: [String: ModelReasoningConfiguration] = [:]
+        var invalidModelIDs: [String] = []
+
+        for key in container.allKeys {
+            do {
+                decodedValues[key.stringValue] = try container.decode(
+                    ModelReasoningConfiguration.self,
+                    forKey: key
+                )
+            } catch {
+                invalidModelIDs.append(key.stringValue)
+            }
+        }
+
+        values = decodedValues
+        self.invalidModelIDs = invalidModelIDs.sorted()
+    }
 }
 
 #if !os(watchOS)
@@ -376,6 +432,9 @@ class AIService: ObservableObject {
     private var unrecognizedProviderValues: [String: String] = [:]
     private var unrecognizedDefaultProviderValue: String?
     private var modelsInheritingUnrecognizedDefaultProvider: Set<String> = []
+    private var toolContinuationReasoningSnapshots: [String: ToolContinuationReasoningSnapshot] = [:]
+    private var toolContinuationReasoningSnapshotOrder: [String] = []
+    private static let maximumToolContinuationReasoningSnapshots = 256
     #if !os(watchOS)
         private let injectedAppleIntelligenceService: (any AppleIntelligenceServing)?
     #endif
@@ -442,6 +501,24 @@ class AIService: ObservableObject {
                 // iCloud sync disabled for free developer account
                 // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
                 // NSUbiquitousKeyValueStore.default.synchronize()
+            #endif
+        }
+    }
+
+    @Published var modelReasoningConfigurations: [String: ModelReasoningConfiguration] {
+        didSet {
+            #if !os(watchOS)
+                do {
+                    let data = try JSONEncoder().encode(modelReasoningConfigurations)
+                    AppPreferences.storage.set(data, forKey: "modelReasoningConfigurations")
+                } catch {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "Failed to persist model reasoning configurations",
+                        metadata: ["error": error.localizedDescription]
+                    )
+                }
             #endif
         }
     }
@@ -551,6 +628,7 @@ class AIService: ObservableObject {
         let savedCustomModels = AppPreferences.storage.array(forKey: "customModels") as? [String] ?? []
         let savedEndpointTypeValues = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes") as? [String: String]
         let savedEndpointValues = AppPreferences.storage.dictionary(forKey: "modelEndpoints") as? [String: String]
+        let savedReasoningData = AppPreferences.storage.data(forKey: "modelReasoningConfigurations")
 
         unrecognizedProviderValues = savedProviderValues?.filter {
             AIProvider(rawValue: $0.value) == nil
@@ -634,6 +712,36 @@ class AIService: ObservableObject {
         // Load custom endpoints mapping
         let loadedEndpoints = savedEndpointValues ?? [:]
         modelEndpoints = loadedEndpoints
+
+        if let savedReasoningData {
+            do {
+                let persistedConfigurations = try JSONDecoder().decode(
+                    PersistedModelReasoningConfigurations.self,
+                    from: savedReasoningData
+                )
+                modelReasoningConfigurations = persistedConfigurations.values
+                if !persistedConfigurations.invalidModelIDs.isEmpty {
+                    DiagnosticsLogger.log(
+                        .aiService,
+                        level: .error,
+                        message: "Ignored invalid per-model reasoning configurations during load",
+                        metadata: [
+                            "models": persistedConfigurations.invalidModelIDs.joined(separator: ", ")
+                        ]
+                    )
+                }
+            } catch {
+                modelReasoningConfigurations = [:]
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "Ignored invalid model reasoning configurations during load",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
+        } else {
+            modelReasoningConfigurations = [:]
+        }
 
         // Load per-model API keys
         let (loadedAPIKeys, loadSuccess) = AIService.loadModelAPIKeys()
@@ -821,6 +929,206 @@ class AIService: ObservableObject {
         }
 
         return (endpoint, normalizedName)
+    }
+
+    func reasoningConfiguration(for model: String) -> ModelReasoningConfiguration {
+        modelReasoningConfigurations[model] ?? .automatic
+    }
+
+    private func resolvedReasoningConfiguration(
+        for model: String,
+        provider: AIProvider,
+        endpointType: APIEndpointType,
+        endpoint: String?,
+        messages: [Message]
+    ) throws -> ResolvedReasoningConfiguration? {
+        if let continuationRound = toolContinuationRound(in: messages) {
+            if let continuationSnapshot = try opaqueToolContinuationReasoningSnapshot(
+                in: continuationRound,
+                model: model,
+                provider: provider,
+                endpointType: endpointType
+            ) {
+                return continuationSnapshot.configuration
+            }
+
+            if let continuationSnapshot = try cachedToolContinuationReasoningSnapshot(
+                in: continuationRound,
+                model: model,
+                provider: provider,
+                endpointType: endpointType
+            ) {
+                return continuationSnapshot.configuration
+            }
+        }
+
+        return ReasoningCapabilityResolver.resolve(
+            model: model,
+            provider: provider,
+            endpointType: endpointType,
+            endpoint: endpoint,
+            configuration: reasoningConfiguration(for: model)
+        )
+    }
+
+    private func toolContinuationRound(in messages: [Message]) -> ToolContinuationRound? {
+        var index = messages.count - 1
+        while index >= 0, messages[index].role == .system {
+            index -= 1
+        }
+        guard index >= 0, messages[index].role == .tool else { return nil }
+
+        let trailingToolEnd = index
+        while index >= 0, messages[index].role == .tool {
+            index -= 1
+        }
+        guard index >= 0 else { return nil }
+
+        let assistant = messages[index]
+        guard assistant.role == .assistant,
+              let assistantToolCalls = assistant.toolCalls,
+              !assistantToolCalls.isEmpty
+        else {
+            return nil
+        }
+
+        let assistantToolCallIDs = Set(assistantToolCalls.map(\.id))
+        let completedToolCallIDs = messages[(index + 1) ... trailingToolEnd]
+            .flatMap { $0.toolCalls ?? [] }
+            .map(\.id)
+            .filter { assistantToolCallIDs.contains($0) }
+
+        return ToolContinuationRound(
+            assistant: assistant,
+            completedToolCallIDs: Array(Set(completedToolCallIDs)).sorted()
+        )
+    }
+
+    private func opaqueToolContinuationReasoningSnapshot(
+        in continuationRound: ToolContinuationRound,
+        model: String,
+        provider: AIProvider,
+        endpointType: APIEndpointType
+    ) throws -> AIReasoningRequestSnapshot? {
+        let assistant = continuationRound.assistant
+        guard assistant.model == nil || assistant.model == model,
+              let state = assistant.reasoningContinuation,
+              state.model == model
+        else {
+            return nil
+        }
+
+        switch state.format {
+        case .openAIResponses:
+            try validateToolContinuationIdentity(
+                originatingProvider: .openai,
+                originatingEndpointType: .responses,
+                currentProvider: provider,
+                currentEndpointType: endpointType
+            )
+        case .anthropicMessages:
+            try validateToolContinuationIdentity(
+                originatingProvider: .anthropic,
+                originatingEndpointType: .chatCompletions,
+                currentProvider: provider,
+                currentEndpointType: endpointType
+            )
+        }
+
+        guard state.hasRequestConfigurationSnapshot else { return nil }
+        let configuration = state.requestConfiguration
+
+        switch state.format {
+        case .openAIResponses:
+            if let configuration, configuration.dialect != .openAIResponses {
+                return nil
+            }
+        case .anthropicMessages:
+            if let configuration,
+               configuration.dialect != .anthropicDisabled,
+               configuration.dialect != .anthropicAdaptive,
+               configuration.dialect != .anthropicExtended
+            {
+                return nil
+            }
+        }
+        return AIReasoningRequestSnapshot(configuration: configuration)
+    }
+
+    private func cachedToolContinuationReasoningSnapshot(
+        in continuationRound: ToolContinuationRound,
+        model: String,
+        provider: AIProvider,
+        endpointType: APIEndpointType
+    ) throws -> AIReasoningRequestSnapshot? {
+        guard continuationRound.assistant.model == nil || continuationRound.assistant.model == model else {
+            return nil
+        }
+
+        let snapshots = continuationRound.completedToolCallIDs.compactMap {
+            toolContinuationReasoningSnapshots[$0]
+        }.filter { $0.model == model }
+        guard let snapshot = snapshots.first else { return nil }
+
+        if snapshots.contains(where: { $0 != snapshot }) {
+            throw AIError.apiError(
+                "Tool results originated from different model configurations. Please retry the tool request."
+            )
+        }
+
+        try validateToolContinuationIdentity(
+            originatingProvider: snapshot.provider,
+            originatingEndpointType: snapshot.endpointType,
+            currentProvider: provider,
+            currentEndpointType: endpointType
+        )
+        return AIReasoningRequestSnapshot(configuration: snapshot.configuration)
+    }
+
+    private func validateToolContinuationIdentity(
+        originatingProvider: AIProvider,
+        originatingEndpointType: APIEndpointType,
+        currentProvider: AIProvider,
+        currentEndpointType: APIEndpointType
+    ) throws {
+        guard originatingProvider == currentProvider,
+              originatingEndpointType == currentEndpointType
+        else {
+            throw AIError.apiError(
+                "The model provider or endpoint type changed during a tool request. Please retry."
+            )
+        }
+    }
+
+    private func toolCallRequestedCallback(
+        for snapshot: ToolContinuationReasoningSnapshot,
+        forwarding callback: (@Sendable (String, String, [String: Any]) -> Void)?
+    ) -> (@Sendable (String, String, [String: Any]) -> Void)? {
+        guard let callback else { return nil }
+        return { [weak self] toolCallID, toolName, arguments in
+            let arguments = UncheckedSendableWrapper(arguments)
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.rememberToolContinuationReasoningSnapshot(snapshot, for: toolCallID)
+                callback(toolCallID, toolName, arguments.value)
+            }
+        }
+    }
+
+    private func rememberToolContinuationReasoningSnapshot(
+        _ snapshot: ToolContinuationReasoningSnapshot,
+        for toolCallID: String
+    ) {
+        guard !toolCallID.isEmpty else { return }
+
+        toolContinuationReasoningSnapshots[toolCallID] = snapshot
+        toolContinuationReasoningSnapshotOrder.removeAll { $0 == toolCallID }
+        toolContinuationReasoningSnapshotOrder.append(toolCallID)
+
+        while toolContinuationReasoningSnapshotOrder.count > Self.maximumToolContinuationReasoningSnapshots {
+            let expiredToolCallID = toolContinuationReasoningSnapshotOrder.removeFirst()
+            toolContinuationReasoningSnapshots.removeValue(forKey: expiredToolCallID)
+        }
     }
 
     private func isAzureEndpoint(_ endpoint: String?) -> Bool {
@@ -1310,7 +1618,9 @@ class AIService: ObservableObject {
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
-        requestFlightID: RequestFlightID? = nil
+        onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)? = nil,
+        requestFlightID: RequestFlightID? = nil,
+        reasoningSnapshot: AIReasoningRequestSnapshot? = nil
     ) -> AITextRequest {
         let flightID = requestFlightID ?? RequestFlightID()
         let requestHandle = AITextRequest(service: self, flightID: flightID)
@@ -1390,6 +1700,35 @@ class AIService: ObservableObject {
         }
         let endpointInfo = customEndpoint(for: requestModel)
         let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
+        let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
+        let requestReasoningSnapshot: AIReasoningRequestSnapshot
+        do {
+            if let reasoningSnapshot {
+                requestReasoningSnapshot = reasoningSnapshot
+            } else {
+                requestReasoningSnapshot = try AIReasoningRequestSnapshot(
+                    configuration: resolvedReasoningConfiguration(
+                        for: requestModel,
+                        provider: effectiveProvider,
+                        endpointType: endpointType,
+                        endpoint: endpointInfo?.endpoint,
+                        messages: messages
+                    )
+                )
+            }
+        } catch {
+            onError(error)
+            return requestHandle
+        }
+        let trackedToolCallRequested = toolCallRequestedCallback(
+            for: ToolContinuationReasoningSnapshot(
+                model: requestModel,
+                provider: effectiveProvider,
+                endpointType: endpointType,
+                configuration: requestReasoningSnapshot.configuration
+            ),
+            forwarding: onToolCallRequested
+        )
 
         DiagnosticsLogger.log(
             .aiService,
@@ -1453,8 +1792,16 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
-                onToolCallRequested: onToolCallRequested,
-                onReasoning: onReasoning
+                onToolCallRequested: trackedToolCallRequested,
+                onReasoning: onReasoning,
+                onReasoningContinuation: { state in
+                    onReasoningContinuation?(
+                        state.attaching(
+                            model: requestModel,
+                            requestConfiguration: requestReasoningSnapshot.configuration
+                        )
+                    )
+                }
             )
             handleAnthropicRequest(
                 messages: messages,
@@ -1465,6 +1812,7 @@ class AIService: ObservableObject {
                 requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 callbacks: anthropicCallbacks,
+                reasoningConfiguration: requestReasoningSnapshot.configuration,
                 flightID: flightID
             )
             return requestHandle
@@ -1481,7 +1829,6 @@ class AIService: ObservableObject {
         let modelAPIKey = getAPIKey(for: requestModel)
 
         // Check if this model should use the Responses API.
-        let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
         if endpointType == .responses {
             responsesAPIRequest(
                 messages: messages,
@@ -1490,8 +1837,10 @@ class AIService: ObservableObject {
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
-                onToolCallRequested: onToolCallRequested,
+                onToolCallRequested: trackedToolCallRequested,
                 onReasoning: onReasoning,
+                onReasoningContinuation: onReasoningContinuation,
+                reasoningConfiguration: requestReasoningSnapshot.configuration,
                 requestLane: requestLane,
                 isMultiModelRequest: isMultiModelRequest,
                 initialFlightID: flightID
@@ -1574,7 +1923,8 @@ class AIService: ObservableObject {
                 tools: toolDefinitions,
                 apiKey: needsAuth ? modelAPIKey : "",
                 isAzure: usesAzureEndpoint,
-                supportsParallelToolCalls: supportsParallelToolCalls
+                supportsParallelToolCalls: supportsParallelToolCalls,
+                reasoning: requestReasoningSnapshot.configuration
             )
 
             guard self.clearRequestBuildFlight(
@@ -1613,7 +1963,7 @@ class AIService: ObservableObject {
                     onComplete: onComplete,
                     onError: onError,
                     onToolCall: onToolCall,
-                    onToolCallRequested: onToolCallRequested,
+                    onToolCallRequested: trackedToolCallRequested,
                     onReasoning: onReasoning
                 )
                 self.streamResponse(
@@ -1675,7 +2025,8 @@ class AIService: ObservableObject {
         onAllComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (String, Error) -> Void,
         onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: (@Sendable (String, String) -> Void)? = nil
+        onReasoning: (@Sendable (String, String) -> Void)? = nil,
+        onReasoningContinuation: (@Sendable (String, ReasoningContinuationState) -> Void)? = nil
     ) -> AITextBatchRequest {
         let flightID = RequestFlightID()
         let requestHandle = AITextBatchRequest(service: self, flightID: flightID)
@@ -1713,6 +2064,26 @@ class AIService: ObservableObject {
             rejectBatch(error)
             return requestHandle
         }
+
+        var requestReasoningSnapshots: [String: AIReasoningRequestSnapshot] = [:]
+        do {
+            for model in requestModels {
+                guard let effectiveProvider = requestProviders[model] else { continue }
+                requestReasoningSnapshots[model] = try AIReasoningRequestSnapshot(
+                    configuration: resolvedReasoningConfiguration(
+                        for: model,
+                        provider: effectiveProvider,
+                        endpointType: modelEndpointTypes[model] ?? .chatCompletions,
+                        endpoint: customEndpoint(for: model)?.endpoint,
+                        messages: messages
+                    )
+                )
+            }
+        } catch {
+            rejectBatch(error)
+            return requestHandle
+        }
+        let frozenReasoningSnapshots = requestReasoningSnapshots
 
         DiagnosticsLogger.log(
             .aiService,
@@ -1847,6 +2218,10 @@ class AIService: ObservableObject {
                                 case let .reasoning(reasoning):
                                     guard !completion.isFinished else { return }
                                     onReasoning?(callbackModel, reasoning)
+
+                                case let .reasoningContinuation(state):
+                                    guard !completion.isFinished else { return }
+                                    onReasoningContinuation?(callbackModel, state)
                                 }
                             }
 
@@ -1893,7 +2268,11 @@ class AIService: ObservableObject {
                                 onReasoning: { reasoning in
                                     callbackForwarder.enqueue(.reasoning(reasoning))
                                 },
-                                requestFlightID: flightID
+                                onReasoningContinuation: { state in
+                                    callbackForwarder.enqueue(.reasoningContinuation(state))
+                                },
+                                requestFlightID: flightID,
+                                reasoningSnapshot: frozenReasoningSnapshots[model]
                             )
                         }
                     }
@@ -2230,6 +2609,8 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
+        onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)? = nil,
+        reasoningConfiguration: ResolvedReasoningConfiguration? = nil,
         requestLane: AITextRequestLane = .foreground,
         isMultiModelRequest: Bool = false,
         attempt: Int = 0,
@@ -2334,7 +2715,8 @@ class AIService: ObservableObject {
                 tools: toolDefinitions,
                 apiKey: modelAPIKey,
                 isAzure: usesAzureEndpoint,
-                supportsParallelToolCalls: supportsParallelToolCalls
+                supportsParallelToolCalls: supportsParallelToolCalls,
+                reasoning: reasoningConfiguration
             )
 
             guard self.clearRequestBuildFlight(
@@ -2422,6 +2804,8 @@ class AIService: ObservableObject {
                                     onError: onError,
                                     onToolCallRequested: onToolCallRequested,
                                     onReasoning: onReasoning,
+                                    onReasoningContinuation: onReasoningContinuation,
+                                    reasoningConfiguration: reasoningConfiguration,
                                     requestLane: requestLane,
                                     isMultiModelRequest: isMultiModelRequest,
                                     attempt: attempt + 1,
@@ -2498,6 +2882,22 @@ class AIService: ObservableObject {
                                         return
                                     }
                                     onReasoning?(reasoning)
+                                },
+                                onReasoningContinuation: { state in
+                                    guard self.ownsDataFlight(
+                                        flightID,
+                                        requestLane: requestLane,
+                                        isMultiModelRequest: isMultiModelRequest,
+                                        modelName: model
+                                    ) else {
+                                        return
+                                    }
+                                    onReasoningContinuation?(
+                                        state.attaching(
+                                            model: model,
+                                            requestConfiguration: reasoningConfiguration
+                                        )
+                                    )
                                 },
                                 onToolCallRequested: { toolID, toolName, arguments in
                                     guard self.ownsDataFlight(
@@ -3603,12 +4003,6 @@ class AIService: ObservableObject {
                             foundReasoning = reasoning
                         } else if let reasoning = message["reasoning_content"] as? String {
                             foundReasoning = reasoning
-                        } else if let usage = json?["usage"] as? [String: Any],
-                                  let details = usage["completion_tokens_details"] as? [String: Any],
-                                  let reasoningTokens = details["reasoning_tokens"] as? Int, reasoningTokens > 0
-                        {
-                            // Show reasoning token count
-                            foundReasoning = "💭 Reasoning tokens used: \(reasoningTokens)"
                         }
 
                         // Handle reasoning content if found
@@ -4391,7 +4785,7 @@ class AIService: ObservableObject {
         return currentAnthropicProvider.clear(ifOwnedBy: flightID)
     }
 
-    // swiftlint:disable:next function_parameter_count
+    // swiftlint:disable:next function_parameter_count function_body_length
     private func handleAnthropicRequest(
         messages: [Message],
         model: String,
@@ -4401,6 +4795,7 @@ class AIService: ObservableObject {
         requestLane: AITextRequestLane,
         isMultiModelRequest: Bool,
         callbacks: AIProviderStreamCallbacks,
+        reasoningConfiguration: ResolvedReasoningConfiguration?,
         flightID: RequestFlightID = RequestFlightID()
     ) {
         let modelAPIKey = getAPIKey(for: model)
@@ -4412,14 +4807,21 @@ class AIService: ObservableObject {
             return
         }
 
+        let anthropicReasoning = anthropicReasoningConfiguration(from: reasoningConfiguration)
+        let maximumTokens: Int? = if case let .enabled(budgetTokens, _, _, _) = anthropicReasoning {
+            max(4096, budgetTokens + 1024)
+        } else {
+            nil
+        }
+
         // Build provider config
         let config = AIProviderRequestConfig(
             model: model,
             apiKey: modelAPIKey,
             customEndpoint: endpointInfo?.endpoint,
-            maxTokens: nil, // Use provider default
+            maxTokens: maximumTokens,
             temperature: nil, // Use provider default
-            thinkingBudget: nil // TODO: Add UI for thinking budget
+            anthropicReasoning: anthropicReasoning
         )
 
         // Inject memory context into messages
@@ -4527,6 +4929,17 @@ class AIService: ObservableObject {
                     return
                 }
                 callbacks.onReasoning?(reasoning)
+
+            case let .reasoningContinuation(state):
+                guard self.ownsAnthropicFlight(
+                    flightID,
+                    requestLane: requestLane,
+                    isMultiModelRequest: isMultiModelRequest,
+                    model: model
+                ) else {
+                    return
+                }
+                callbacks.onReasoningContinuation?(state)
             }
         }
 
@@ -4537,7 +4950,8 @@ class AIService: ObservableObject {
             onToolCallRequested: { toolID, toolName, arguments in
                 forwarder.enqueue(.toolRequest(id: toolID, name: toolName, arguments: arguments))
             },
-            onReasoning: { forwarder.enqueue(.reasoning($0)) }
+            onReasoning: { forwarder.enqueue(.reasoning($0)) },
+            onReasoningContinuation: { forwarder.enqueue(.reasoningContinuation($0)) }
         )
 
         provider.sendMessage(
@@ -4547,6 +4961,33 @@ class AIService: ObservableObject {
             tools: tools,
             callbacks: wrappedCallbacks
         )
+    }
+
+    private func anthropicReasoningConfiguration(
+        from reasoning: ResolvedReasoningConfiguration?
+    ) -> AnthropicReasoningConfiguration? {
+        guard let reasoning else { return nil }
+        let effort = reasoning.effort.flatMap {
+            AnthropicReasoningConfiguration.Effort(rawValue: $0.rawValue)
+        }
+        let display = reasoning.anthropicDisplay.wireValue.flatMap(
+            AnthropicReasoningConfiguration.Display.init(rawValue:)
+        )
+
+        switch reasoning.dialect {
+        case .anthropicDisabled:
+            return .disabled(effort: effort)
+        case .anthropicAdaptive:
+            return .adaptive(effort: effort, display: display)
+        case .anthropicExtended:
+            return .enabled(
+                budgetTokens: reasoning.legacyBudgetTokens,
+                effort: effort,
+                display: display
+            )
+        case .openAIChat, .openAIResponses:
+            return nil
+        }
     }
 
     /// Retry logic delegated to AIRetryPolicy

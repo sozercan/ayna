@@ -7,12 +7,14 @@
     struct MacChatMessagePresentationTests {
         @Test
         func `reasoning-only assistant output remains visible and persistent`() {
-            let message = Message(
+            var message = Message(
                 role: .assistant,
-                content: "",
-                reasoning: "Partial reasoning"
+                content: ""
             )
+            message.appendReasoning("Partial ")
+            message.appendReasoning("reasoning")
 
+            #expect(message.reasoning == "Partial reasoning")
             #expect(MacChatMessagePresentation.isVisible(
                 message,
                 lastMessageID: nil,
