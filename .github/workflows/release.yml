@@ -180,6 +180,36 @@ jobs:
     - name: Rename DMG
       run: mv ayna.dmg "${{ steps.artifact.outputs.filename }}"
 
+    - name: Reuse existing immutable release asset
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        FILE="${{ steps.artifact.outputs.filename }}"
+
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "Release $TAG already exists; reusing its immutable asset"
+          gh release download "$TAG" --pattern "$FILE" --clobber
+        fi
+
+    - name: Determine artifact build number
+      id: artifact_build
+      run: |
+        FILE="${{ steps.artifact.outputs.filename }}"
+        MOUNT_DIR=$(mktemp -d)
+        trap 'diskutil eject "$MOUNT_DIR" >/dev/null 2>&1 || true; rmdir "$MOUNT_DIR"' EXIT
+
+        diskutil image attach --nobrowse --readOnly --mountPoint "$MOUNT_DIR" "$FILE"
+        BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$MOUNT_DIR/Ayna.app/Contents/Info.plist")
+
+        if [ -z "$BUILD_NUMBER" ]; then
+          echo "Error: Could not determine CFBundleVersion from $FILE"
+          exit 1
+        fi
+
+        echo "number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+        echo "Artifact build number: $BUILD_NUMBER"
+
     - name: Upload artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
       with:
@@ -308,8 +338,7 @@ jobs:
         fi
 
         if gh release view "$TAG" >/dev/null 2>&1; then
-          echo "Release $TAG already exists, uploading asset instead"
-          gh release upload "$TAG" "$FILE" --clobber
+          echo "Release $TAG already exists; keeping its immutable asset"
           gh release edit "$TAG" --notes-file release_notes.md
         else
           gh release create "$TAG" "$FILE" \
@@ -357,7 +386,7 @@ jobs:
                     <pubDate>${PUB_DATE}</pubDate>
                     <enclosure
                         url="${DOWNLOAD_URL}"
-                        sparkle:version="${{ github.run_number }}"
+                        sparkle:version="${{ steps.artifact_build.outputs.number }}"
                         sparkle:shortVersionString="${VERSION}"
                         length="${LENGTH}"
                         type="application/octet-stream"
