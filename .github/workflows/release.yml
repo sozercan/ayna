@@ -42,7 +42,7 @@ jobs:
       run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Run unit tests
-      run: swift test -q
+      run: swift test -q --no-parallel
 
     - name: Build app for UI tests
       env:
@@ -180,6 +180,36 @@ jobs:
     - name: Rename DMG
       run: mv ayna.dmg "${{ steps.artifact.outputs.filename }}"
 
+    - name: Reuse existing immutable release asset
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        FILE="${{ steps.artifact.outputs.filename }}"
+
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "Release $TAG already exists; reusing its immutable asset"
+          gh release download "$TAG" --pattern "$FILE" --clobber
+        fi
+
+    - name: Determine artifact build number
+      id: artifact_build
+      run: |
+        FILE="${{ steps.artifact.outputs.filename }}"
+        MOUNT_DIR=$(mktemp -d)
+        trap 'diskutil eject "$MOUNT_DIR" >/dev/null 2>&1 || true; rmdir "$MOUNT_DIR"' EXIT
+
+        diskutil image attach --nobrowse --readOnly --mountPoint "$MOUNT_DIR" "$FILE"
+        BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$MOUNT_DIR/Ayna.app/Contents/Info.plist")
+
+        if [ -z "$BUILD_NUMBER" ]; then
+          echo "Error: Could not determine CFBundleVersion from $FILE"
+          exit 1
+        fi
+
+        echo "number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+        echo "Artifact build number: $BUILD_NUMBER"
+
     - name: Upload artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
       with:
@@ -206,7 +236,7 @@ jobs:
         fi
 
         # Find Sparkle's sign_update binary
-        SIGN_UPDATE=$(find ./build -name "sign_update" -type f 2>/dev/null | head -1)
+        SIGN_UPDATE=$(find .build -path '*/Sparkle/bin/sign_update' -type f 2>/dev/null | head -1)
         if [ -z "$SIGN_UPDATE" ]; then
           echo "Warning: sign_update not found, skipping Sparkle signing"
           echo "signature=" >> "$GITHUB_OUTPUT"
@@ -234,8 +264,6 @@ jobs:
     - name: Generate release notes
       id: release_notes
       run: |
-        TAG="${{ steps.artifact.outputs.tag }}"
-        VERSION="${{ steps.version.outputs.version }}"
         SHA256="${{ steps.sha256.outputs.sha256 }}"
 
         # Get previous tag for changelog
@@ -310,8 +338,8 @@ jobs:
         fi
 
         if gh release view "$TAG" >/dev/null 2>&1; then
-          echo "Release $TAG already exists, uploading asset instead"
-          gh release upload "$TAG" "$FILE" --clobber
+          echo "Release $TAG already exists; keeping its immutable asset"
+          gh release edit "$TAG" --notes-file release_notes.md
         else
           gh release create "$TAG" "$FILE" \
             --title "$TITLE" \
@@ -319,64 +347,10 @@ jobs:
             $PRERELEASE_FLAG
         fi
 
-    - name: Checkout Homebrew tap repo
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
-      with:
-        repository: sozercan/homebrew-repo
-        token: ${{ secrets.HOMEBREW_REPO_TOKEN }}
-        path: homebrew-repo
-        fetch-depth: 0
-
-    - name: Update Homebrew Cask
-      run: |
-        TAG="${{ steps.artifact.outputs.tag }}"
-        VERSION="${TAG#v}"
-
-        cd homebrew-repo
-
-        # Configure git
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Update the cask file
-        mkdir -p Casks
-        cat > Casks/ayna.rb << EOF
-        cask "ayna" do
-          version "$VERSION"
-          sha256 "${{ steps.sha256.outputs.sha256 }}"
-
-          url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
-          name "Ayna"
-          desc "A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI"
-          homepage "https://github.com/sozercan/ayna"
-
-          auto_updates true
-          depends_on macos: :sonoma
-
-          app "Ayna.app"
-
-          postflight do
-            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
-          end
-
-          zap trash: [
-            "~/Library/Application Support/Ayna",
-            "~/Library/Caches/com.sertacozercan.ayna",
-            "~/Library/Preferences/com.sertacozercan.ayna.plist",
-            "~/Library/Saved Application State/com.sertacozercan.ayna.savedState",
-          ]
-        end
-        EOF
-
-        # Remove heredoc indentation
-        sed -i '' 's/^        //' Casks/ayna.rb
-
-        git add Casks/ayna.rb
-        git diff --cached --quiet || git commit -m "Update ayna to ${TAG}"
-        git push origin main
-
     - name: Update Appcast
       if: success()
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         # Fetch and checkout the default branch
         git fetch origin ${{ github.event.repository.default_branch }}
@@ -414,7 +388,7 @@ jobs:
                     <pubDate>${PUB_DATE}</pubDate>
                     <enclosure
                         url="${DOWNLOAD_URL}"
-                        sparkle:version="${{ github.run_number }}"
+                        sparkle:version="${{ steps.artifact_build.outputs.number }}"
                         sparkle:shortVersionString="${VERSION}"
                         length="${LENGTH}"
                         type="application/octet-stream"
@@ -430,6 +404,93 @@ jobs:
           sed -i '' 's/^        //' appcast.xml
 
           git add appcast.xml
-          git diff --cached --quiet || git commit -m "Update appcast to ${{ steps.artifact.outputs.tag }}"
-          git push origin ${{ github.event.repository.default_branch }}
+          if git diff --cached --quiet; then
+            echo "Appcast is already up to date"
+          else
+            APPCAST_BRANCH="automation/appcast-${TAG}-${{ github.run_id }}"
+            git switch -c "$APPCAST_BRANCH"
+            git commit -s -m "chore: update appcast to ${{ steps.artifact.outputs.tag }}"
+            git push origin "$APPCAST_BRANCH"
+
+            PR_URL=$(gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --head "$APPCAST_BRANCH" \
+              --title "chore: update appcast to ${{ steps.artifact.outputs.tag }}" \
+              --body "Publish the signed Sparkle appcast for ${{ steps.artifact.outputs.tag }}.")
+
+            for attempt in 1 2 3; do
+              if gh pr merge "$PR_URL" \
+                --squash \
+                --delete-branch \
+                --subject "chore: update appcast to ${{ steps.artifact.outputs.tag }}" \
+                --body "Publish the signed Sparkle appcast for ${{ steps.artifact.outputs.tag }}.
+
+        Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"; then
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "Error: Could not merge appcast pull request"
+                exit 1
+              fi
+
+              sleep 5
+            done
+          fi
         fi
+
+    - name: Checkout Homebrew tap repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      with:
+        repository: sozercan/homebrew-repo
+        token: ${{ secrets.HOMEBREW_REPO_TOKEN }}
+        path: homebrew-repo
+        fetch-depth: 0
+
+    - name: Update Homebrew Cask
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        VERSION="${TAG#v}"
+
+        cd homebrew-repo
+
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Update the cask file
+        mkdir -p Casks
+        cat > Casks/ayna.rb << EOF
+        cask "ayna" do
+          version "$VERSION"
+          sha256 "${{ steps.sha256.outputs.sha256 }}"
+
+          url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
+          name "Ayna"
+          desc "Native agentic AI client built with SwiftUI"
+          homepage "https://github.com/sozercan/ayna"
+
+          auto_updates true
+          depends_on macos: :sonoma
+
+          app "Ayna.app"
+
+          postflight do
+            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
+          end
+
+          zap trash: [
+            "~/Library/Application Support/Ayna",
+            "~/Library/Caches/com.sertacozercan.ayna",
+            "~/Library/Preferences/com.sertacozercan.ayna.plist",
+            "~/Library/Saved Application State/com.sertacozercan.ayna.savedState",
+          ]
+        end
+        EOF
+
+        # Remove heredoc indentation
+        sed -i '' 's/^        //' Casks/ayna.rb
+
+        git add Casks/ayna.rb
+        git diff --cached --quiet || git commit -s -m "chore: update ayna to ${TAG}"
+        git push origin main

@@ -335,8 +335,8 @@ final class PermissionService {
         // timeout, and task cancellation all race through the same exact ID.
         let approved = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-            approvalContinuations[approval.id] = continuation
-            pendingApprovals.append(approval)
+                approvalContinuations[approval.id] = continuation
+                pendingApprovals.append(approval)
 
                 // Cancellation can win before the continuation is installed.
                 // Recheck after insertion so this request is never orphaned.
@@ -345,21 +345,21 @@ final class PermissionService {
                     return
                 }
 
-            log(.info, "Approval requested", metadata: [
-                "tool": toolName,
-                "id": approval.id.uuidString
-            ])
+                log(.info, "Approval requested", metadata: [
+                    "tool": toolName,
+                    "id": approval.id.uuidString
+                ])
 
-            NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
-                "conversationId": conversationId,
-                "count": pendingApprovals.count
-            ])
-            showSystemNotification(for: approval)
-            startTimeoutTask(for: approval.id)
-        }
+                NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
+                    "conversationId": conversationId,
+                    "count": pendingApprovals.count
+                ])
+                showSystemNotification(for: approval)
+                startTimeoutTask(for: approval.id)
+            }
         } onCancel: { [weak self] in
             self?.cancelledApprovals.mark(approval.id)
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handleCancelledApproval(approval)
             }
         }

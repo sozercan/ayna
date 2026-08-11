@@ -6,7 +6,19 @@
         <description>Most recent updates for Ayna, a native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.</description>
         <language>en</language>
 
-        <!-- New releases will be added here by CI -->
+        <item>
+            <title>Version 0.4.0</title>
+            <sparkle:releaseNotesLink>https://github.com/sozercan/ayna/releases/tag/v0.4.0</sparkle:releaseNotesLink>
+            <pubDate>Tue, 11 Aug 2026 07:09:40 +0000</pubDate>
+            <enclosure
+                url="https://github.com/sozercan/ayna/releases/download/v0.4.0/ayna-v0.4.0.dmg"
+                sparkle:version="40"
+                sparkle:shortVersionString="0.4.0"
+                length="12386028"
+                type="application/octet-stream"
+                sparkle:edSignature="GhD11CKHvm7igjYnfuhhpzD3X5IaqyGweYuSj0pPAkwCdAdGRhNAsp9cWzhV3gps3L3RJa9Q3vtw5WzZFfFaBQ=="/>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
 
     </channel>
 </rss>
