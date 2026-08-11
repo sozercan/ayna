@@ -42,7 +42,7 @@ jobs:
       run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
     - name: Run unit tests
-      run: swift test -q
+      run: swift test -q --no-parallel
 
     - name: Build app for UI tests
       env:
