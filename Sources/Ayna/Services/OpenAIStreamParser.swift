@@ -324,7 +324,9 @@ enum OpenAIStreamParser {
                 ids[index] = newId
             }
             if let function = toolCall["function"] as? [String: Any] {
-                if let name = function["name"] as? String {
+                if let name = function["name"] as? String,
+                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
                     buffer[ToolCallBufferKey.name] = name
                 }
                 if let argsChunk = function["arguments"] as? String {
@@ -364,6 +366,7 @@ enum OpenAIStreamParser {
         for index in toolCallBuffers.keys.sorted() {
             guard let toolCallBuffer = toolCallBuffers[index],
                   let toolName = toolCallBuffer[ToolCallBufferKey.name] as? String,
+                  !toolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   let argsData = toolArgumentsData(from: toolCallBuffer),
                   let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
             else {

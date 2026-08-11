@@ -52,6 +52,17 @@ struct ToolTranscriptSanitizerTests {
         #expect(ToolTranscriptSanitizer.sanitize([assistant]).isEmpty)
     }
 
+    @Test("Drops paired tool calls with empty names")
+    func dropsPairedToolCallsWithEmptyNames() {
+        let call = MCPToolCall(id: "call", toolName: "", arguments: [:])
+        var assistant = Message(role: .assistant, content: "")
+        assistant.toolCalls = [call]
+        var result = Message(role: .tool, content: "failed")
+        result.toolCalls = [MCPToolCall(id: call.id, toolName: call.toolName, arguments: [:], result: "failed")]
+
+        #expect(ToolTranscriptSanitizer.sanitize([assistant, result]).isEmpty)
+    }
+
     @Test("Preserves non-tool assistant content when orphan calls are stripped")
     func preservesMeaningfulAssistantContent() throws {
         let orphanCall = MCPToolCall(id: "orphan", toolName: "lookup", arguments: [:])

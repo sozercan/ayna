@@ -39,6 +39,9 @@ final class ToolCallRequestAdmissionGate: @unchecked Sendable {
         toolName: String,
         arguments: [String: Any]
     ) -> Bool {
+        let normalizedToolName = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedToolName.isEmpty else { return false }
+
         let normalizedProviderID = providerID.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalizedProviderID.isEmpty {
             return admit(identity: .providerID(normalizedProviderID))
@@ -47,7 +50,7 @@ final class ToolCallRequestAdmissionGate: @unchecked Sendable {
         let codableArguments = arguments.mapValues(AnyCodable.init)
         return admit(
             identity: .idLess(
-                toolName: toolName,
+                toolName: normalizedToolName,
                 encodedArguments: ToolCallRequestRoundPolicy.canonicalArguments(codableArguments)
             )
         )

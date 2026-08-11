@@ -51,6 +51,52 @@ struct OpenAIStreamParserTests {
         #expect(call?.query == "test")
     }
 
+    @Test("Empty streamed function names preserve the valid tool name")
+    func emptyStreamedFunctionNamePreservesValidToolName() async {
+        let recorder = ToolCallRecorder()
+        var buffers: [Int: [String: Any]] = [:]
+        var ids: [Int: String] = [:]
+
+        let firstChunk = #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_vekil","function":{"name":"run_command","arguments":""}}]}}]}"#
+        let argumentsChunk = #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"","arguments":"{\"command\":\"printf probe\"}"}}]}}]}"#
+        let completionChunk = #"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#
+
+        var result = await OpenAIStreamParser.processStreamLine(
+            firstChunk,
+            toolCallBuffers: buffers,
+            toolCallIds: ids,
+            onToolCall: nil,
+            onToolCallRequested: nil
+        )
+        buffers = result.toolCallBuffers
+        ids = result.toolCallIds
+
+        result = await OpenAIStreamParser.processStreamLine(
+            argumentsChunk,
+            toolCallBuffers: buffers,
+            toolCallIds: ids,
+            onToolCall: nil,
+            onToolCallRequested: nil
+        )
+        buffers = result.toolCallBuffers
+        ids = result.toolCallIds
+
+        _ = await OpenAIStreamParser.processStreamLine(
+            completionChunk,
+            toolCallBuffers: buffers,
+            toolCallIds: ids,
+            onToolCall: nil,
+            onToolCallRequested: { id, name, arguments in
+                recorder.record(id: id, name: name, query: arguments["command"] as? String)
+            }
+        )
+
+        let call = recorder.firstCall()
+        #expect(call?.id == "call_vekil")
+        #expect(call?.name == "run_command")
+        #expect(call?.query == "printf probe")
+    }
+
     @Test("[DONE] marker completes the stream")
     func doneMarkerCompletesStream() async {
         let result = await OpenAIStreamParser.processStreamLine(

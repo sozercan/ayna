@@ -42,7 +42,12 @@ enum ToolTranscriptSanitizer {
 
             var seenCallIDs: Set<String> = []
             let validCalls = toolCalls.filter { call in
-                resultByCallID[call.id] != nil && seenCallIDs.insert(call.id).inserted
+                let id = call.id.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = call.toolName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return !id.isEmpty &&
+                    !name.isEmpty &&
+                    resultByCallID[call.id] != nil &&
+                    seenCallIDs.insert(call.id).inserted
             }
 
             var sanitizedAssistant = message

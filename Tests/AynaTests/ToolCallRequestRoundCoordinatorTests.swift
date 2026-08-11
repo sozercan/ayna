@@ -58,6 +58,20 @@ struct ToolCallRequestRoundCoordinatorTests {
     }
 
     @Test
+    func `ingress gate rejects callbacks with empty tool names`() {
+        let gate = ToolCallRequestAdmissionGate()
+        let admittedTools = FlightTestBox<[String]>([])
+        let callback = gate.admittedCallback { _, toolName, _ in
+            admittedTools.update { $0.append(toolName) }
+        }
+
+        callback("call-empty", "", [:])
+        callback("call-whitespace", "   ", [:])
+
+        #expect(admittedTools.value.isEmpty)
+    }
+
+    @Test
     func `request round rejects tool fan out beyond the hard limit`() throws {
         let toolChainCoordinator = ToolChainCoordinator()
         let coordinator = Coordinator()

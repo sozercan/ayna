@@ -3243,7 +3243,9 @@ class AIService: ObservableObject {
                                 currentToolCallBuffer = [:]
                             }
                             if let function = toolCall["function"] as? [String: Any] {
-                                if let name = function["name"] as? String {
+                                if let name = function["name"] as? String,
+                                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                {
                                     currentToolCallBuffer["name"] = name
                                 }
                                 if let args = function["arguments"] as? String {
@@ -3259,6 +3261,7 @@ class AIService: ObservableObject {
                 if let finishReason = firstChoice["finish_reason"] as? String {
                     if finishReason == "tool_calls",
                        let name = currentToolCallBuffer["name"] as? String,
+                       !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                        let argsString = currentToolCallBuffer["arguments"] as? String
                     {
                         if let argsData = argsString.data(using: .utf8),
