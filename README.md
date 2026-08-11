@@ -2,6 +2,16 @@
 
 A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.
 
+## Screenshots
+
+![Compare responses from multiple AI models side by side](docs/images/ayna-multi-model.jpg)
+
+| Multi-provider models | Built-in and MCP tools |
+| :---: | :---: |
+| ![Configure OpenAI, Anthropic, and Apple Intelligence models](docs/images/ayna-models.jpg) | ![Manage web search, agentic tools, and MCP servers](docs/images/ayna-tools.jpg) |
+| Agent permissions | Memory |
+| ![Control permissions for filesystem and command tools](docs/images/ayna-agentic-tools.jpg) | ![Manage remembered facts and conversation context](docs/images/ayna-memory.jpg) |
+
 ## Features
 
 - 💬 **Fast & Native**: Streaming chat interface tailored for Apple platforms.
