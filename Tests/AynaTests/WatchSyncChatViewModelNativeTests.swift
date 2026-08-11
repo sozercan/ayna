@@ -1720,7 +1720,9 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            requestFlightID: RequestFlightID?
+            onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)?,
+            requestFlightID: RequestFlightID?,
+            reasoningSnapshot: AIReasoningRequestSnapshot?
         ) -> AITextRequest {
             capturedRequests.update {
                 $0.append(
@@ -1749,7 +1751,9 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                requestFlightID: requestFlightID
+                onReasoningContinuation: onReasoningContinuation,
+                requestFlightID: requestFlightID,
+                reasoningSnapshot: reasoningSnapshot
             )
         }
     }
