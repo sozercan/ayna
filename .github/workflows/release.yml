@@ -206,7 +206,7 @@ jobs:
         fi
 
         # Find Sparkle's sign_update binary
-        SIGN_UPDATE=$(find ./build -name "sign_update" -type f 2>/dev/null | head -1)
+        SIGN_UPDATE=$(find .build -path '*/Sparkle/bin/sign_update' -type f 2>/dev/null | head -1)
         if [ -z "$SIGN_UPDATE" ]; then
           echo "Warning: sign_update not found, skipping Sparkle signing"
           echo "signature=" >> "$GITHUB_OUTPUT"
@@ -234,8 +234,6 @@ jobs:
     - name: Generate release notes
       id: release_notes
       run: |
-        TAG="${{ steps.artifact.outputs.tag }}"
-        VERSION="${{ steps.version.outputs.version }}"
         SHA256="${{ steps.sha256.outputs.sha256 }}"
 
         # Get previous tag for changelog
@@ -312,68 +310,13 @@ jobs:
         if gh release view "$TAG" >/dev/null 2>&1; then
           echo "Release $TAG already exists, uploading asset instead"
           gh release upload "$TAG" "$FILE" --clobber
+          gh release edit "$TAG" --notes-file release_notes.md
         else
           gh release create "$TAG" "$FILE" \
             --title "$TITLE" \
             --notes-file release_notes.md \
             $PRERELEASE_FLAG
         fi
-
-    - name: Checkout Homebrew tap repo
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
-      with:
-        repository: sozercan/homebrew-repo
-        token: ${{ secrets.HOMEBREW_REPO_TOKEN }}
-        path: homebrew-repo
-        fetch-depth: 0
-
-    - name: Update Homebrew Cask
-      run: |
-        TAG="${{ steps.artifact.outputs.tag }}"
-        VERSION="${TAG#v}"
-
-        cd homebrew-repo
-
-        # Configure git
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Update the cask file
-        mkdir -p Casks
-        cat > Casks/ayna.rb << EOF
-        cask "ayna" do
-          version "$VERSION"
-          sha256 "${{ steps.sha256.outputs.sha256 }}"
-
-          url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
-          name "Ayna"
-          desc "A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI"
-          homepage "https://github.com/sozercan/ayna"
-
-          auto_updates true
-          depends_on macos: :sonoma
-
-          app "Ayna.app"
-
-          postflight do
-            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
-          end
-
-          zap trash: [
-            "~/Library/Application Support/Ayna",
-            "~/Library/Caches/com.sertacozercan.ayna",
-            "~/Library/Preferences/com.sertacozercan.ayna.plist",
-            "~/Library/Saved Application State/com.sertacozercan.ayna.savedState",
-          ]
-        end
-        EOF
-
-        # Remove heredoc indentation
-        sed -i '' 's/^        //' Casks/ayna.rb
-
-        git add Casks/ayna.rb
-        git diff --cached --quiet || git commit -m "Update ayna to ${TAG}"
-        git push origin main
 
     - name: Update Appcast
       if: success()
@@ -430,6 +373,62 @@ jobs:
           sed -i '' 's/^        //' appcast.xml
 
           git add appcast.xml
-          git diff --cached --quiet || git commit -m "Update appcast to ${{ steps.artifact.outputs.tag }}"
+          git diff --cached --quiet || git commit -s -m "chore: update appcast to ${{ steps.artifact.outputs.tag }}"
           git push origin ${{ github.event.repository.default_branch }}
         fi
+
+    - name: Checkout Homebrew tap repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      with:
+        repository: sozercan/homebrew-repo
+        token: ${{ secrets.HOMEBREW_REPO_TOKEN }}
+        path: homebrew-repo
+        fetch-depth: 0
+
+    - name: Update Homebrew Cask
+      run: |
+        TAG="${{ steps.artifact.outputs.tag }}"
+        VERSION="${TAG#v}"
+
+        cd homebrew-repo
+
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Update the cask file
+        mkdir -p Casks
+        cat > Casks/ayna.rb << EOF
+        cask "ayna" do
+          version "$VERSION"
+          sha256 "${{ steps.sha256.outputs.sha256 }}"
+
+          url "https://github.com/sozercan/ayna/releases/download/v#{version}/ayna-v#{version}.dmg"
+          name "Ayna"
+          desc "Native agentic AI client built with SwiftUI"
+          homepage "https://github.com/sozercan/ayna"
+
+          auto_updates true
+          depends_on macos: :sonoma
+
+          app "Ayna.app"
+
+          postflight do
+            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
+          end
+
+          zap trash: [
+            "~/Library/Application Support/Ayna",
+            "~/Library/Caches/com.sertacozercan.ayna",
+            "~/Library/Preferences/com.sertacozercan.ayna.plist",
+            "~/Library/Saved Application State/com.sertacozercan.ayna.savedState",
+          ]
+        end
+        EOF
+
+        # Remove heredoc indentation
+        sed -i '' 's/^        //' Casks/ayna.rb
+
+        git add Casks/ayna.rb
+        git diff --cached --quiet || git commit -s -m "chore: update ayna to ${TAG}"
+        git push origin main
