@@ -482,10 +482,15 @@ private final class PasteAwareTextView: UITextView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func paste(_ sender: Any?) {
-        let providers = UIPasteboard.general.itemProviders.filter { provider in
-            provider.registeredContentTypes.contains { $0.conforms(to: .image) }
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), UIPasteboard.general.hasImages {
+            return true
         }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        let providers = Self.imageProviders(from: .general)
         guard !providers.isEmpty else {
             super.paste(sender)
             return
@@ -525,6 +530,12 @@ private final class PasteAwareTextView: UITextView {
                 return
             }
             onPasteImages?(images)
+        }
+    }
+
+    private static func imageProviders(from pasteboard: UIPasteboard) -> [NSItemProvider] {
+        pasteboard.itemProviders.filter { provider in
+            provider.registeredContentTypes.contains { $0.conforms(to: .image) }
         }
     }
 

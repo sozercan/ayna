@@ -172,9 +172,28 @@ private final class PasteAwareTextView: NSTextView {
         let contentTypeIdentifier: String
     }
 
+    private static let supportedImageTypes: [(
+        pasteboardType: NSPasteboard.PasteboardType,
+        contentType: UTType
+    )] = [
+        (.init(UTType.png.identifier), .png),
+        (.init(UTType.jpeg.identifier), .jpeg),
+        (.init(UTType.gif.identifier), .gif),
+        (.init(UTType.webP.identifier), .webP),
+        (.init(UTType.tiff.identifier), .tiff),
+        (.init(UTType.heic.identifier), .heic),
+    ]
+
     var onPasteImages: (([PastedImage]) -> Void)?
     private var pasteImportTask: Task<Void, Never>?
     private var pasteImportSessionID: UUID?
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), Self.hasImageCandidates(in: .general) {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
 
     override func paste(_ sender: Any?) {
         let candidates = Self.imageCandidates(from: .general)
@@ -238,18 +257,9 @@ private final class PasteAwareTextView: NSTextView {
     }
 
     private static func imageCandidates(from pasteboard: NSPasteboard) -> [Candidate] {
-        let supportedTypes: [(pasteboardType: NSPasteboard.PasteboardType, contentType: UTType)] = [
-            (.init(UTType.png.identifier), .png),
-            (.init(UTType.jpeg.identifier), .jpeg),
-            (.init(UTType.gif.identifier), .gif),
-            (.init(UTType.webP.identifier), .webP),
-            (.init(UTType.tiff.identifier), .tiff),
-            (.init(UTType.heic.identifier), .heic),
-        ]
-
         if let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty {
             return pasteboardItems.compactMap { item in
-                for supportedType in supportedTypes {
+                for supportedType in supportedImageTypes {
                     if let data = item.data(forType: supportedType.pasteboardType) {
                         return Candidate(
                             data: data,
@@ -261,7 +271,7 @@ private final class PasteAwareTextView: NSTextView {
             }
         }
 
-        for supportedType in supportedTypes {
+        for supportedType in supportedImageTypes {
             if let data = pasteboard.data(forType: supportedType.pasteboardType) {
                 return [Candidate(
                     data: data,
@@ -270,6 +280,18 @@ private final class PasteAwareTextView: NSTextView {
             }
         }
         return []
+    }
+
+    private static func hasImageCandidates(in pasteboard: NSPasteboard) -> Bool {
+        let supportedTypes = Set(supportedImageTypes.map(\.pasteboardType))
+
+        if let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty {
+            return pasteboardItems.contains { item in
+                !supportedTypes.isDisjoint(with: item.types)
+            }
+        }
+
+        return pasteboard.availableType(from: Array(supportedTypes)) != nil
     }
 
     private func invalidatePasteImports() {
