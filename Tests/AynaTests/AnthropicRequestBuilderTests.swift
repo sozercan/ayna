@@ -9,6 +9,8 @@
 import Foundation
 import Testing
 
+// swiftformat:disable swiftTestingTestCaseNames
+
 @Suite("AnthropicRequestBuilder Tests")
 @MainActor
 struct AnthropicRequestBuilderTests {
@@ -59,6 +61,34 @@ struct AnthropicRequestBuilderTests {
         AnthropicRequestBuilder.configureHeaders(&request, config: config)
 
         #expect(request.value(forHTTPHeaderField: "anthropic-beta") == nil)
+    }
+
+    @Test("Interleaved thinking beta requires explicit legacy opt-in")
+    func interleavedThinkingBetaRequiresExplicitOptIn() throws {
+        var explicitRequest = try URLRequest(url: #require(URL(string: "https://api.anthropic.com/v1/messages")))
+        let explicitConfig = AnthropicRequestConfig(
+            model: "deployment-alias",
+            apiKey: "test-api-key",
+            reasoning: .enabled(budgetTokens: 2048, interleaved: true)
+        )
+
+        AnthropicRequestBuilder.configureHeaders(&explicitRequest, config: explicitConfig)
+
+        #expect(
+            explicitRequest.value(forHTTPHeaderField: "anthropic-beta") ==
+                AnthropicRequestConfig.interleavedThinkingBeta
+        )
+
+        var inferredRequest = try URLRequest(url: #require(URL(string: "https://api.anthropic.com/v1/messages")))
+        let legacyConfig = AnthropicRequestConfig(
+            model: "claude-opus-4-20250514",
+            apiKey: "test-api-key",
+            budgetTokens: 2048
+        )
+
+        AnthropicRequestBuilder.configureHeaders(&inferredRequest, config: legacyConfig)
+
+        #expect(inferredRequest.value(forHTTPHeaderField: "anthropic-beta") == nil)
     }
 
     // MARK: - System Prompt Extraction Tests
@@ -251,6 +281,207 @@ struct AnthropicRequestBuilderTests {
         )
 
         #expect(body["thinking"] == nil)
+    }
+
+    @Test("Adaptive thinking encodes effort and display")
+    func adaptiveThinkingEncodesEffortAndDisplay() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-opus-4-8",
+            apiKey: "test-key",
+            reasoning: .adaptive(effort: .xhigh, display: .summarized)
+        )
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Hello!")],
+            config: config,
+            stream: false,
+            tools: nil
+        )
+
+        let thinking = body["thinking"] as? [String: Any]
+        let outputConfig = body["output_config"] as? [String: Any]
+        #expect(thinking?["type"] as? String == "adaptive")
+        #expect(thinking?["display"] as? String == "summarized")
+        #expect(thinking?["budget_tokens"] == nil)
+        #expect(outputConfig?["effort"] as? String == "xhigh")
+    }
+
+    @Test("Explicitly disabled thinking encodes a disabled directive")
+    func explicitlyDisabledThinkingEncodesDisabledDirective() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-5",
+            apiKey: "test-key",
+            reasoning: .disabled()
+        )
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Hello!")],
+            config: config,
+            stream: false,
+            tools: nil
+        )
+
+        let thinking = body["thinking"] as? [String: Any]
+        #expect(thinking?["type"] as? String == "disabled")
+        #expect(thinking?["display"] == nil)
+        #expect(body["output_config"] == nil)
+    }
+
+    @Test("Disabled thinking preserves a safe effort ceiling")
+    func disabledThinkingEncodesEffort() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-opus-5",
+            apiKey: "test-key",
+            reasoning: .disabled(effort: .high)
+        )
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Hello!")],
+            config: config,
+            stream: false,
+            tools: nil
+        )
+
+        let thinking = body["thinking"] as? [String: Any]
+        let outputConfig = body["output_config"] as? [String: Any]
+        #expect(thinking?["type"] as? String == "disabled")
+        #expect(outputConfig?["effort"] as? String == "high")
+    }
+
+    @Test("Typed legacy thinking encodes budget effort and display")
+    func typedLegacyThinkingEncodesBudgetEffortAndDisplay() throws {
+        let config = AnthropicRequestConfig(
+            model: "custom-model-alias",
+            apiKey: "test-key",
+            reasoning: .enabled(
+                budgetTokens: 4096,
+                effort: .medium,
+                display: .omitted
+            )
+        )
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Hello!")],
+            config: config,
+            stream: false,
+            tools: nil
+        )
+
+        let thinking = body["thinking"] as? [String: Any]
+        let outputConfig = body["output_config"] as? [String: Any]
+        #expect(thinking?["type"] as? String == "enabled")
+        #expect(thinking?["budget_tokens"] as? Int == 4096)
+        #expect(thinking?["display"] as? String == "omitted")
+        #expect(outputConfig?["effort"] as? String == "medium")
+        #expect((body["max_tokens"] as? Int ?? 0) > 4096)
+    }
+
+    @Test("Anthropic continuation blocks replay unchanged")
+    func anthropicContinuationBlocksReplayUnchanged() throws {
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "lookup",
+            arguments: ["query": AnyCodable("weather")]
+        )
+        let originalBlocks: [[String: Any]] = [
+            [
+                "type": "thinking",
+                "thinking": "Check the tool.",
+                "signature": "signed-thinking"
+            ],
+            [
+                "type": "redacted_thinking",
+                "data": "encrypted-redaction"
+            ],
+            [
+                "type": "text",
+                "text": "I will look that up."
+            ],
+            [
+                "type": "tool_use",
+                "id": toolCall.id,
+                "name": toolCall.toolName,
+                "input": ["query": "weather"]
+            ]
+        ]
+        let continuation = ReasoningContinuationState(
+            format: .anthropicMessages,
+            items: originalBlocks.map(AnyCodable.init)
+        )
+        let assistant = Message(
+            role: .assistant,
+            content: "Reconstructed text must not replace the wire blocks.",
+            toolCalls: [toolCall],
+            reasoningContinuation: continuation
+        )
+        let toolResult = Message(
+            role: .tool,
+            content: "sunny",
+            toolCalls: [MCPToolCall(
+                id: toolCall.id,
+                toolName: toolCall.toolName,
+                arguments: [:],
+                result: "sunny"
+            )]
+        )
+
+        let converted = try AnthropicRequestBuilder.extractSystemAndConvertMessages([assistant, toolResult]).messages
+        let replayedBlocks = try #require(converted.first?["content"] as? [[String: Any]])
+        let replayedData = try JSONSerialization.data(withJSONObject: replayedBlocks, options: [.sortedKeys])
+        let originalData = try JSONSerialization.data(withJSONObject: originalBlocks, options: [.sortedKeys])
+
+        #expect(replayedData == originalData)
+        #expect(converted.count == 2)
+    }
+
+    @Test("Opaque thinking state is not replayed across Anthropic model changes")
+    func reasoningContinuationDoesNotCrossModelBoundaries() throws {
+        let toolCall = MCPToolCall(
+            id: "call-1",
+            toolName: "web_search",
+            arguments: ["query": AnyCodable("weather")]
+        )
+        var assistant = Message(
+            role: .assistant,
+            content: "I will look that up.",
+            toolCalls: [toolCall],
+            model: "claude-opus-4-8"
+        )
+        assistant.reasoningContinuation = ReasoningContinuationState(
+            format: .anthropicMessages,
+            items: [AnyCodable([
+                "type": "thinking",
+                "thinking": "Private summary",
+                "signature": "signed-thinking"
+            ])],
+            model: "claude-opus-4-8"
+        )
+        let toolResult = Message(
+            role: .tool,
+            content: "sunny",
+            toolCalls: [MCPToolCall(
+                id: toolCall.id,
+                toolName: toolCall.toolName,
+                arguments: [:],
+                result: "sunny"
+            )]
+        )
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-5",
+            apiKey: "test-key"
+        )
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [assistant, toolResult],
+            config: config,
+            stream: false,
+            tools: nil
+        )
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        let blocks = try #require(messages.first?["content"] as? [[String: Any]])
+
+        #expect(!blocks.contains { $0["signature"] != nil })
+        #expect(blocks.contains { $0["type"] as? String == "tool_use" })
     }
 
     // MARK: - Tool Conversion Tests

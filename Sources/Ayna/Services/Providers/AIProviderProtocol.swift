@@ -7,6 +7,63 @@
 
 import Foundation
 
+/// Anthropic-specific reasoning controls for a request.
+///
+/// Adaptive thinking lets the model decide when and how much to think. Legacy
+/// enabled thinking reserves a fixed token budget and can opt in to the
+/// interleaved-thinking beta explicitly for models that support it.
+enum AnthropicReasoningConfiguration: Equatable, Sendable {
+    enum Effort: String, Codable, CaseIterable, Sendable {
+        case low
+        case medium
+        case high
+        case xhigh
+        case max
+    }
+
+    enum Display: String, Codable, CaseIterable, Sendable {
+        case summarized
+        case omitted
+    }
+
+    case disabled(effort: Effort? = nil)
+    case adaptive(
+        effort: Effort? = nil,
+        display: Display? = nil
+    )
+    case enabled(
+        budgetTokens: Int,
+        interleaved: Bool = false,
+        effort: Effort? = nil,
+        display: Display? = nil
+    )
+
+    var effort: Effort? {
+        switch self {
+        case let .disabled(effort):
+            effort
+        case let .adaptive(effort, _), let .enabled(_, _, effort, _):
+            effort
+        }
+    }
+
+    var display: Display? {
+        switch self {
+        case .disabled:
+            nil
+        case let .adaptive(_, display), let .enabled(_, _, _, display):
+            display
+        }
+    }
+
+    var usesInterleavedThinkingBeta: Bool {
+        guard case let .enabled(_, interleaved, _, _) = self else {
+            return false
+        }
+        return interleaved
+    }
+}
+
 /// Configuration for an AI provider request
 struct AIProviderRequestConfig: Sendable {
     let model: String
@@ -23,6 +80,10 @@ struct AIProviderRequestConfig: Sendable {
     /// Budget tokens for extended thinking (Anthropic only)
     let thinkingBudget: Int?
 
+    /// Typed Anthropic reasoning controls. When present, this takes precedence
+    /// over the legacy `thinkingBudget` compatibility parameter.
+    let anthropicReasoning: AnthropicReasoningConfiguration?
+
     init(
         model: String,
         apiKey: String,
@@ -30,7 +91,8 @@ struct AIProviderRequestConfig: Sendable {
         azureAPIVersion: String = "2025-04-01-preview",
         maxTokens: Int? = nil,
         temperature: Double? = nil,
-        thinkingBudget: Int? = nil
+        thinkingBudget: Int? = nil,
+        anthropicReasoning: AnthropicReasoningConfiguration? = nil
     ) {
         self.model = model
         self.apiKey = apiKey
@@ -39,6 +101,9 @@ struct AIProviderRequestConfig: Sendable {
         self.maxTokens = maxTokens
         self.temperature = temperature
         self.thinkingBudget = thinkingBudget
+        self.anthropicReasoning = anthropicReasoning ?? thinkingBudget.map {
+            .enabled(budgetTokens: $0)
+        }
     }
 }
 
@@ -50,6 +115,7 @@ struct AIProviderStreamCallbacks: Sendable {
     let onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?
     let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     let onReasoning: (@Sendable (String) -> Void)?
+    let onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)?
 
     init(
         onChunk: @escaping @Sendable (String) -> Void,
@@ -57,7 +123,8 @@ struct AIProviderStreamCallbacks: Sendable {
         onError: @escaping @Sendable (Error) -> Void,
         onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
-        onReasoning: (@Sendable (String) -> Void)? = nil
+        onReasoning: (@Sendable (String) -> Void)? = nil,
+        onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)? = nil
     ) {
         self.onChunk = onChunk
         self.onComplete = onComplete
@@ -65,6 +132,7 @@ struct AIProviderStreamCallbacks: Sendable {
         self.onToolCall = onToolCall
         self.onToolCallRequested = onToolCallRequested
         self.onReasoning = onReasoning
+        self.onReasoningContinuation = onReasoningContinuation
     }
 }
 

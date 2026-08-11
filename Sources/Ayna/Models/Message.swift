@@ -30,7 +30,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
     var content: String
     let timestamp: Date
     var isLiked: Bool
-        var toolCalls: [MCPToolCall]?
+    var toolCalls: [MCPToolCall]?
     var model: String? // Track which model generated this message
 
     // Multi-model response support
@@ -50,6 +50,29 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
 
     /// Reasoning/thinking support for o1/o3 models
     var reasoning: String?
+
+    /// Opaque provider state needed to continue reasoning across tool calls and
+    /// later turns. This is never rendered as user-visible reasoning text.
+    var reasoningContinuation: ReasoningContinuationState?
+
+    /// Text suitable for compact conversation previews.
+    /// Final answer content takes precedence, with reasoning as a fallback for reasoning-only responses.
+    var previewText: String? {
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return content
+        }
+        guard let reasoning,
+              !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+        return reasoning
+    }
+
+    mutating func appendReasoning(_ chunk: String) {
+        guard !chunk.isEmpty else { return }
+        reasoning = (reasoning ?? "") + chunk
+    }
 
     /// Web search citation support
     var citations: [CitationReference]?
@@ -71,7 +94,9 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         /// Helper to get data regardless of storage method
         @MainActor
         var content: Data? {
-            if let data { return data }
+            if let data {
+                return data
+            }
             if let path = localPath {
                 return Message.attachmentLoader?(path)
             }
@@ -80,8 +105,12 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
 
         /// Async loader that avoids blocking the current actor on disk I/O.
         func loadContent() async -> Data? {
-            if let data { return data }
-            guard let path = localPath else { return nil }
+            if let data {
+                return data
+            }
+            guard let path = localPath else {
+                return nil
+            }
             return await Message.loadAttachmentData(at: path)
         }
     }
@@ -109,6 +138,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
             reasoning: String? = nil,
+            reasoningContinuation: ReasoningContinuationState? = nil,
             citations: [CitationReference]? = nil,
             isEdited: Bool = false,
             editedAt: Date? = nil
@@ -127,6 +157,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             self.imagePath = imagePath
             self.attachments = attachments
             self.reasoning = reasoning
+            self.reasoningContinuation = reasoningContinuation
             self.citations = citations
             self.isEdited = isEdited
             self.editedAt = editedAt
@@ -148,6 +179,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             imagePath: String? = nil,
             attachments: [FileAttachment]? = nil,
             reasoning: String? = nil,
+            reasoningContinuation: ReasoningContinuationState? = nil,
             citations: [CitationReference]? = nil,
             isEdited: Bool = false,
             editedAt: Date? = nil
@@ -167,6 +199,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             self.imagePath = imagePath
             self.attachments = attachments
             self.reasoning = reasoning
+            self.reasoningContinuation = reasoningContinuation
             self.citations = citations
             self.isEdited = isEdited
             self.editedAt = editedAt
@@ -179,7 +212,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, toolCalls, model
             case responseGroupId, isSelectedResponse
-            case mediaType, imageData, imagePath, attachments, reasoning, citations
+            case mediaType, imageData, imagePath, attachments, reasoning, reasoningContinuation, citations
             case isEdited, editedAt
         }
 
@@ -201,6 +234,10 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+            reasoningContinuation = try container.decodeIfPresent(
+                ReasoningContinuationState.self,
+                forKey: .reasoningContinuation
+            )
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
             // Edit tracking (backward compatibility - defaults to false for old messages)
             isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
@@ -210,7 +247,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, toolCalls, model
             case responseGroupId, isSelectedResponse, pendingToolCalls
-            case mediaType, imageData, imagePath, attachments, reasoning, citations
+            case mediaType, imageData, imagePath, attachments, reasoning, reasoningContinuation, citations
             case isEdited, editedAt
         }
 
@@ -233,6 +270,10 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+            reasoningContinuation = try container.decodeIfPresent(
+                ReasoningContinuationState.self,
+                forKey: .reasoningContinuation
+            )
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
             // Edit tracking (backward compatibility - defaults to false for old messages)
             isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
@@ -243,7 +284,9 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
     /// Helper to get image data regardless of storage method
     @MainActor
     var effectiveImageData: Data? {
-        if let data = imageData { return data }
+        if let data = imageData {
+            return data
+        }
         if let path = imagePath {
             return Message.attachmentLoader?(path)
         }
@@ -252,8 +295,12 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
 
     /// Async loader that avoids blocking the current actor on attachment I/O.
     func loadEffectiveImageData() async -> Data? {
-        if let data = imageData { return data }
-        guard let path = imagePath else { return nil }
+        if let data = imageData {
+            return data
+        }
+        guard let path = imagePath else {
+            return nil
+        }
         return await Message.loadAttachmentData(at: path)
     }
 

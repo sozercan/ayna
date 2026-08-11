@@ -188,6 +188,41 @@ struct WatchConnectivitySupportTests {
     }
 
     @Test
+    func `reasoning mismatch prevents legacy create configuration acknowledgement`() {
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
+        let conversation = WatchConversation(
+            id: UUID(),
+            title: "Reasoning",
+            model: "reasoning-model",
+            updatedAt: Date(timeIntervalSince1970: 20),
+            createdAt: Date(timeIntervalSince1970: 10),
+            temperature: 0.3,
+            reasoningConfiguration: reasoningConfiguration,
+            resolvedSystemPrompt: "Prompt",
+            watchRevision: 1
+        )
+        let mutation = WatchConversationMutation(
+            revision: 1,
+            conversation: conversation,
+            fields: .fullState
+        )
+        var echo = conversation
+        echo.reasoningConfiguration = .automatic
+
+        let reconciliation = WatchLegacyEchoReconciler.reconcile(
+            mutation,
+            echoedConversations: [echo]
+        )
+
+        #expect(!reconciliation.matchedComponents.contains(.create(revision: 1)))
+        #expect(!reconciliation.matchedComponents.contains(.configuration(revision: 1)))
+        #expect(!reconciliation.canAcknowledgeMutation)
+    }
+
+    @Test
     func `covered or unrelated legacy creates cannot overwrite existing conversations`() {
         let conversationID = UUID()
         let activePeerID = UUID()
@@ -244,6 +279,10 @@ struct WatchConnectivitySupportTests {
     @Test
     func `late legacy create repairs a message placeholder without losing messages`() {
         let conversationID = UUID()
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .xhigh
+        )
         let message = Message(
             id: UUID(),
             role: .user,
@@ -266,6 +305,7 @@ struct WatchConnectivitySupportTests {
             updatedAt: Date(timeIntervalSince1970: 10),
             createdAt: Date(timeIntervalSince1970: 10),
             temperature: 0.3,
+            reasoningConfiguration: reasoningConfiguration,
             resolvedSystemPrompt: "Watch prompt",
             watchRevision: 1
         )
@@ -275,6 +315,7 @@ struct WatchConnectivitySupportTests {
         #expect(repaired.title == "Watch title")
         #expect(repaired.model == "watch-model")
         #expect(repaired.temperature == 0.3)
+        #expect(repaired.reasoningConfiguration == reasoningConfiguration)
         #expect(repaired.systemPromptMode == .inheritGlobal)
         #expect(repaired.createdAt == create.createdAt)
         #expect(repaired.updatedAt == message.timestamp)
@@ -2001,6 +2042,129 @@ struct WatchLegacyMetadataCompatibilityTests {
     }
 }
 
+@Suite("Watch reasoning configuration sync tests", .tags(.fast))
+struct WatchReasoningConfigurationSyncTests {
+    @Test
+    @MainActor
+    func `reasoning configuration changes request a coalesced Watch publication`() async {
+        let service = AIService()
+        let originalConfigurations = service.modelReasoningConfigurations
+        let manager = ConversationManager(
+            store: ScriptedConversationStore(),
+            startsLoadingImmediately: false
+        )
+        let model = "reasoning-observer-\(UUID().uuidString)"
+        let expectedConfiguration = reasoningConfiguration(effort: .high)
+        let publicationRequested = FlightTestSignal()
+        let cancellables = WatchConversationSyncObserver.observe(
+            conversationManager: manager,
+            aiService: service,
+            serviceChangeDebounce: .milliseconds(10)
+        ) { _ in
+            guard service.modelReasoningConfigurations[model] == expectedConfiguration else {
+                return
+            }
+            publicationRequested.signal()
+        }
+        defer {
+            cancellables.forEach { $0.cancel() }
+            service.modelReasoningConfigurations = originalConfigurations
+        }
+
+        await Task.yield()
+        service.modelReasoningConfigurations[model] = expectedConfiguration
+
+        #expect(await publicationRequested.wait(timeout: .seconds(1)))
+        withExtendedLifetime(cancellables) {}
+    }
+
+    @Test
+    func `reasoning configurations use property list safe wire values and round trip`() throws {
+        let model = "reasoning-model"
+        let configuration = reasoningConfiguration(effort: .xhigh)
+        let firstEncoding = WatchModelReasoningConfigurationCodec.encode([
+            model: configuration
+        ])
+        let secondEncoding = WatchModelReasoningConfigurationCodec.encode([
+            model: configuration
+        ])
+        let context: [String: Any] = [
+            WatchContextKeys.modelReasoningConfigurations: firstEncoding
+        ]
+
+        #expect(firstEncoding == secondEncoding)
+        #expect(PropertyListSerialization.propertyList(context, isValidFor: .binary))
+        #expect(try #require(WatchModelMetadataPage(context: context)
+                .modelReasoningConfigurations?[model]) == configuration)
+    }
+
+    @Test
+    func `bounded metadata preserves reasoning configurations omitted by the page`() {
+        let retainedModel = "retained-model"
+        let incomingModel = "incoming-model"
+        let retainedConfiguration = reasoningConfiguration(effort: .low)
+        let incomingConfiguration = reasoningConfiguration(effort: .high)
+        var state = WatchModelMetadataState(
+            selectedModel: retainedModel,
+            availableModels: [retainedModel],
+            customModels: [retainedModel],
+            defaultProvider: "openai",
+            modelProviders: [:],
+            modelEndpoints: [:],
+            modelEndpointTypes: [:],
+            modelAPIKeys: [:],
+            modelReasoningConfigurations: [retainedModel: retainedConfiguration]
+        )
+        let boundedPage = WatchModelMetadataPage(
+            selectedModel: incomingModel,
+            availableModels: [incomingModel],
+            customModels: [incomingModel],
+            modelReasoningConfigurations: [incomingModel: incomingConfiguration]
+        )
+        var accumulator = WatchModelMetadataCycleAccumulator()
+
+        accumulator.apply(
+            boundedPage,
+            cycleID: UUID(),
+            completesCycle: true,
+            isAuthoritative: false,
+            to: &state
+        )
+
+        #expect(state.modelReasoningConfigurations == [
+            retainedModel: retainedConfiguration,
+            incomingModel: incomingConfiguration
+        ])
+
+        accumulator.apply(
+            boundedPage,
+            cycleID: UUID(),
+            completesCycle: true,
+            isAuthoritative: true,
+            to: &state
+        )
+
+        #expect(state.modelReasoningConfigurations == [
+            incomingModel: incomingConfiguration
+        ])
+    }
+
+    private func reasoningConfiguration(
+        effort: ReasoningEffort
+    ) -> ModelReasoningConfiguration {
+        ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: effort,
+            openAIMode: .pro,
+            openAIContext: .allTurns,
+            summary: .detailed,
+            anthropicMode: .extended,
+            anthropicDisplay: .omitted,
+            legacyBudgetTokens: 8192
+        )
+    }
+}
+
 @Suite("Watch model removal compatibility tests", .tags(.fast))
 struct WatchModelRemovalCompatibilityTests {
     @Test
@@ -2022,8 +2186,8 @@ struct WatchModelRemovalCompatibilityTests {
     @Test
     func `model removal history rotates epoch before tombstones exceed the context budget`() throws {
         let limit = WatchModelRemovalTracker.maximumRetiredDigestCount
-        let fieldRetirementCount = limit / 5
-        let modelRetirementCount = limit - (fieldRetirementCount * 4)
+        let fieldRetirementCount = limit / 6
+        let modelRetirementCount = limit - (fieldRetirementCount * 5)
         let retiredModels = (0 ..< modelRetirementCount).map { "retired-model-\($0)" }
         let retiredFieldModels = Array(retiredModels.prefix(fieldRetirementCount))
         let retainedModel = "retained-model"
@@ -2035,14 +2199,16 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: retiredFieldModels + [retainedModel],
             endpointModelIDs: retiredFieldModels,
             endpointTypeModelIDs: retiredFieldModels,
-            apiKeyModelIDs: retiredFieldModels
+            apiKeyModelIDs: retiredFieldModels,
+            reasoningConfigurationModelIDs: retiredFieldModels
         )).isEmpty)
         let atLimit = tracker.publication(inventory: WatchModelMetadataInventory(
             modelIDs: [retainedModel],
             providerModelIDs: [retainedModel],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            apiKeyModelIDs: []
+            apiKeyModelIDs: [],
+            reasoningConfigurationModelIDs: []
         ))
         let atLimitContext: [String: Any] = [
             WatchContextKeys.removedModelDigests: atLimit.removedModelDigests,
@@ -2050,6 +2216,8 @@ struct WatchModelRemovalCompatibilityTests {
             WatchContextKeys.removedModelEndpointDigests: atLimit.removedEndpointDigests,
             WatchContextKeys.removedModelEndpointTypeDigests: atLimit.removedEndpointTypeDigests,
             WatchContextKeys.removedModelAPIKeyDigests: atLimit.removedAPIKeyDigests,
+            WatchContextKeys.removedModelReasoningConfigurationDigests:
+                atLimit.removedReasoningConfigurationDigests,
             WatchContextKeys.modelMetadataEpoch: tracker.epoch.uuidString
         ]
         let encodedAtLimit = try JSONEncoder().encode(tracker)
@@ -2058,6 +2226,7 @@ struct WatchModelRemovalCompatibilityTests {
             + atLimit.removedEndpointDigests.count
             + atLimit.removedEndpointTypeDigests.count
             + atLimit.removedAPIKeyDigests.count
+            + atLimit.removedReasoningConfigurationDigests.count
 
         #expect(retiredCount == limit)
         #expect(tracker.epoch == originalEpoch)
@@ -2069,7 +2238,8 @@ struct WatchModelRemovalCompatibilityTests {
             providerModelIDs: [],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            apiKeyModelIDs: []
+            apiKeyModelIDs: [],
+            reasoningConfigurationModelIDs: []
         ))
         let encodedAfterRotation = try JSONEncoder().encode(tracker)
 
@@ -2077,8 +2247,10 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(tracker.epoch != originalEpoch)
         #expect(tracker.publishedDigests == [WatchModelIdentity.digest(retainedModel)])
         #expect(tracker.publishedProviderDigests.isEmpty)
+        #expect(tracker.publishedReasoningConfigurationDigests.isEmpty)
         #expect(tracker.retiredDigests.isEmpty)
         #expect(tracker.retiredProviderDigests.isEmpty)
+        #expect(tracker.retiredReasoningConfigurationDigests.isEmpty)
         #expect(encodedAfterRotation.count < encodedAtLimit.count)
     }
 
@@ -2086,6 +2258,21 @@ struct WatchModelRemovalCompatibilityTests {
     func `changed bounded metadata invalidates stale values until replacements arrive`() {
         let model = "changed-model"
         let modelDigest = WatchModelIdentity.digest(model)
+        let oldReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .low
+        )
+        let newReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high,
+            summary: .detailed
+        )
+        let oldEncodedReasoning = WatchModelReasoningConfigurationCodec.encode([
+            model: oldReasoningConfiguration
+        ])
+        let newEncodedReasoning = WatchModelReasoningConfigurationCodec.encode([
+            model: newReasoningConfiguration
+        ])
         var tracker = WatchModelRemovalTracker()
         let oldInventory = WatchModelMetadataInventory(
             modelIDs: [model],
@@ -2093,11 +2280,13 @@ struct WatchModelRemovalCompatibilityTests {
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
             apiKeyModelIDs: [model],
-            valueDigests: WatchModelMetadataValueDigests(
-                providers: [modelDigest: WatchModelIdentity.digest("openai")],
-                endpoints: [modelDigest: WatchModelIdentity.digest("https://old.example")],
-                endpointTypes: [modelDigest: WatchModelIdentity.digest("responses")],
-                apiKeys: [modelDigest: WatchModelIdentity.digest("old-key")]
+            reasoningConfigurationModelIDs: [model],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "openai"],
+                endpoints: [model: "https://old.example"],
+                endpointTypes: [model: "responses"],
+                apiKeys: [model: "old-key"],
+                reasoningConfigurations: oldEncodedReasoning
             )
         )
         let newInventory = WatchModelMetadataInventory(
@@ -2106,11 +2295,13 @@ struct WatchModelRemovalCompatibilityTests {
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
             apiKeyModelIDs: [model],
-            valueDigests: WatchModelMetadataValueDigests(
-                providers: [modelDigest: WatchModelIdentity.digest("anthropic")],
-                endpoints: [modelDigest: WatchModelIdentity.digest("https://new.example")],
-                endpointTypes: [modelDigest: WatchModelIdentity.digest("messages")],
-                apiKeys: [modelDigest: WatchModelIdentity.digest("new-key")]
+            reasoningConfigurationModelIDs: [model],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "anthropic"],
+                endpoints: [model: "https://new.example"],
+                endpointTypes: [model: "messages"],
+                apiKeys: [model: "new-key"],
+                reasoningConfigurations: newEncodedReasoning
             )
         )
 
@@ -2121,6 +2312,7 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(invalidations.removedEndpointDigests == [modelDigest])
         #expect(invalidations.removedEndpointTypeDigests == [modelDigest])
         #expect(invalidations.removedAPIKeyDigests == [modelDigest])
+        #expect(invalidations.removedReasoningConfigurationDigests == [modelDigest])
         #expect(tracker.publication(inventory: newInventory) == invalidations)
 
         var state = WatchModelMetadataState(
@@ -2131,41 +2323,55 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [model: "openai"],
             modelEndpoints: [model: "https://old.example"],
             modelEndpointTypes: [model: "responses"],
-            modelAPIKeys: [model: "old-key"]
+            modelAPIKeys: [model: "old-key"],
+            modelReasoningConfigurations: [model: oldReasoningConfiguration]
         )
         state.merge(WatchModelMetadataPage(
             removedModelProviderDigests: invalidations.removedProviderDigests,
             removedModelEndpointDigests: invalidations.removedEndpointDigests,
             removedModelEndpointTypeDigests: invalidations.removedEndpointTypeDigests,
-            removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests
+            removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests,
+            removedModelReasoningConfigurationDigests: invalidations.removedReasoningConfigurationDigests
         ))
 
         #expect(state.modelProviders[model] == nil)
         #expect(state.modelEndpoints[model] == nil)
         #expect(state.modelEndpointTypes[model] == nil)
         #expect(state.modelAPIKeys[model] == nil)
+        #expect(state.modelReasoningConfigurations[model] == nil)
 
         state.merge(WatchModelMetadataPage(
             modelProviders: [model: "anthropic"],
             modelEndpoints: [model: "https://new.example"],
             modelEndpointTypes: [model: "messages"],
             modelAPIKeys: [model: "new-key"],
+            modelReasoningConfigurations: [model: newReasoningConfiguration],
             removedModelProviderDigests: invalidations.removedProviderDigests,
             removedModelEndpointDigests: invalidations.removedEndpointDigests,
             removedModelEndpointTypeDigests: invalidations.removedEndpointTypeDigests,
-            removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests
+            removedModelAPIKeyDigests: invalidations.removedAPIKeyDigests,
+            removedModelReasoningConfigurationDigests: invalidations.removedReasoningConfigurationDigests
         ))
 
         #expect(state.modelProviders[model] == "anthropic")
         #expect(state.modelEndpoints[model] == "https://new.example")
         #expect(state.modelEndpointTypes[model] == "messages")
         #expect(state.modelAPIKeys[model] == "new-key")
+        #expect(state.modelReasoningConfigurations[model] == newReasoningConfiguration)
     }
 
     @Test
     func `provisional metadata removes retired model credentials immediately`() {
         let removedModel = "removed-model"
         let retainedModel = "retained-model"
+        let removedConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
+        let retainedConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .low
+        )
         var state = WatchModelMetadataState(
             selectedModel: removedModel,
             availableModels: [removedModel, retainedModel],
@@ -2174,7 +2380,11 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [removedModel: "openai", retainedModel: "anthropic"],
             modelEndpoints: [removedModel: "https://removed.example", retainedModel: "https://retained.example"],
             modelEndpointTypes: [removedModel: "responses", retainedModel: "messages"],
-            modelAPIKeys: [removedModel: "revoked-key", retainedModel: "retained-key"]
+            modelAPIKeys: [removedModel: "revoked-key", retainedModel: "retained-key"],
+            modelReasoningConfigurations: [
+                removedModel: removedConfiguration,
+                retainedModel: retainedConfiguration
+            ]
         )
         let epoch = UUID()
         let pageContext: [String: Any] = [
@@ -2193,32 +2403,41 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(state.modelEndpoints[removedModel] == nil)
         #expect(state.modelEndpointTypes[removedModel] == nil)
         #expect(state.modelAPIKeys[removedModel] == nil)
+        #expect(state.modelReasoningConfigurations[removedModel] == nil)
         #expect(state.modelAPIKeys[retainedModel] == "retained-key")
+        #expect(state.modelReasoningConfigurations[retainedModel] == retainedConfiguration)
         #expect(pageContext[WatchContextKeys.modelMetadataEpoch] as? String == epoch.uuidString)
 
         state.resetModelSpecificState()
         #expect(state.selectedModel.isEmpty)
         #expect(state.availableModels.isEmpty)
         #expect(state.modelAPIKeys.isEmpty)
+        #expect(state.modelReasoningConfigurations.isEmpty)
     }
 
     @Test
     func `provisional metadata revokes fields while retaining the model`() {
         let model = "retained-model"
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .medium
+        )
         var tracker = WatchModelRemovalTracker()
         _ = tracker.publication(inventory: WatchModelMetadataInventory(
             modelIDs: [model],
             providerModelIDs: [model],
             endpointModelIDs: [model],
             endpointTypeModelIDs: [model],
-            apiKeyModelIDs: [model]
+            apiKeyModelIDs: [model],
+            reasoningConfigurationModelIDs: [model]
         ))
         let removals = tracker.publication(inventory: WatchModelMetadataInventory(
             modelIDs: [model],
             providerModelIDs: [model],
             endpointModelIDs: [],
             endpointTypeModelIDs: [],
-            apiKeyModelIDs: []
+            apiKeyModelIDs: [],
+            reasoningConfigurationModelIDs: []
         ))
         var state = WatchModelMetadataState(
             selectedModel: model,
@@ -2228,7 +2447,8 @@ struct WatchModelRemovalCompatibilityTests {
             modelProviders: [model: "openai"],
             modelEndpoints: [model: "https://removed.example"],
             modelEndpointTypes: [model: "responses"],
-            modelAPIKeys: [model: "revoked-key"]
+            modelAPIKeys: [model: "revoked-key"],
+            modelReasoningConfigurations: [model: reasoningConfiguration]
         )
         state.merge(WatchModelMetadataPage(context: [
             WatchContextKeys.selectedModel: model,
@@ -2237,7 +2457,9 @@ struct WatchModelRemovalCompatibilityTests {
             WatchContextKeys.modelProviders: [model: "openai"],
             WatchContextKeys.removedModelEndpointDigests: removals.removedEndpointDigests,
             WatchContextKeys.removedModelEndpointTypeDigests: removals.removedEndpointTypeDigests,
-            WatchContextKeys.removedModelAPIKeyDigests: removals.removedAPIKeyDigests
+            WatchContextKeys.removedModelAPIKeyDigests: removals.removedAPIKeyDigests,
+            WatchContextKeys.removedModelReasoningConfigurationDigests:
+                removals.removedReasoningConfigurationDigests
         ]))
 
         #expect(state.availableModels == [model])
@@ -2245,6 +2467,58 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(state.modelEndpoints[model] == nil)
         #expect(state.modelEndpointTypes[model] == nil)
         #expect(state.modelAPIKeys[model] == nil)
+        #expect(state.modelReasoningConfigurations[model] == nil)
+    }
+
+    @Test
+    func `persisted removal tracker decodes data written before reasoning sync`() throws {
+        let model = "reasoning-model"
+        let configuration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
+        let encodedConfiguration = WatchModelReasoningConfigurationCodec.encode([
+            model: configuration
+        ])
+        let inventory = WatchModelMetadataInventory(
+            modelIDs: [model],
+            providerModelIDs: [model],
+            endpointModelIDs: [],
+            endpointTypeModelIDs: [],
+            apiKeyModelIDs: [],
+            reasoningConfigurationModelIDs: [model],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "openai"],
+                endpoints: [:],
+                endpointTypes: [:],
+                apiKeys: [:],
+                reasoningConfigurations: encodedConfiguration
+            )
+        )
+        var tracker = WatchModelRemovalTracker()
+        _ = tracker.publication(inventory: inventory)
+        var legacyObject = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(tracker)
+        ) as? [String: Any])
+        legacyObject.removeValue(forKey: "publishedReasoningConfigurationDigests")
+        legacyObject.removeValue(forKey: "retiredReasoningConfigurationDigests")
+        var legacyValueDigests = try #require(
+            legacyObject["publishedValueDigests"] as? [String: Any]
+        )
+        legacyValueDigests.removeValue(forKey: "reasoningConfigurations")
+        legacyObject["publishedValueDigests"] = legacyValueDigests
+
+        var restored = try JSONDecoder().decode(
+            WatchModelRemovalTracker.self,
+            from: JSONSerialization.data(withJSONObject: legacyObject)
+        )
+
+        #expect(restored.epoch == tracker.epoch)
+        #expect(restored.publishedProviderDigests == tracker.publishedProviderDigests)
+        #expect(restored.publishedReasoningConfigurationDigests.isEmpty)
+        #expect(restored.retiredReasoningConfigurationDigests.isEmpty)
+        #expect(restored.publication(inventory: inventory)
+            .removedReasoningConfigurationDigests.isEmpty)
     }
 
     private func modelInventory(_ models: [String]) -> WatchModelMetadataInventory {

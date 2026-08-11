@@ -895,6 +895,7 @@ enum PhoneWatchMutationReducer {
         if mutation.changesConfiguration(after: acknowledgedRevision) {
             merged.model = watch.model
             merged.temperature = watch.temperature
+            merged.reasoningConfiguration = watch.reasoningConfiguration
         }
         merged.updatedAt = max(phone.updatedAt, watch.updatedAt)
         return merged
@@ -1109,6 +1110,7 @@ enum WatchSnapshotReconciler {
             if draft.deferredFields.contains(.configuration) {
                 remoteConversation.model = draft.conversation.model
                 remoteConversation.temperature = draft.conversation.temperature
+                remoteConversation.reasoningConfiguration = draft.conversation.reasoningConfiguration
             }
             remoteConversation.messages = mergeWatchMessages(
                 remote: remoteConversation.messages,
@@ -1187,6 +1189,7 @@ enum WatchSnapshotReconciler {
         if changesConfiguration {
             current.model = local.model
             current.temperature = local.temperature
+            current.reasoningConfiguration = local.reasoningConfiguration
         }
         if changesCreate {
             current.resolvedSystemPrompt = local.resolvedSystemPrompt
@@ -1277,6 +1280,8 @@ struct WatchSyncPayloadConfiguration: Equatable, Sendable {
     var maximumSystemPromptCharacters = 4000
     var maximumToolCallsPerMessage = 4
     var maximumToolMetadataBytes = 2048
+    /// Opaque provider continuation state is all-or-nothing and must never be truncated.
+    var maximumReasoningContinuationBytes = 8192
     var maximumCitationsPerMessage = 8
     var maximumCitationCharacters = 512
     var maximumAcknowledgements = 64
@@ -2264,6 +2269,7 @@ enum WatchSyncPayloadBuilder {
             id: conversation.id,
             model: conversation.model,
             temperature: conversation.temperature,
+            reasoningConfiguration: conversation.reasoningConfiguration,
             resolvedSystemPrompt: resolvedSystemPrompt
         )
     }
@@ -2299,6 +2305,10 @@ enum WatchSyncPayloadBuilder {
         result.reasoning = message.reasoning.map {
             bounded($0, maximum: configuration.maximumContentCharacters)
         }
+        result.reasoningContinuation = boundedReasoningContinuation(
+            message.reasoningContinuation,
+            maximumBytes: configuration.maximumReasoningContinuationBytes
+        )
         result.toolCalls = message.toolCalls.map { calls in
             Array(calls.prefix(max(0, configuration.maximumToolCallsPerMessage))).compactMap {
                 boundedToolCall($0, configuration: configuration)
@@ -2317,6 +2327,19 @@ enum WatchSyncPayloadBuilder {
             }
         }
         return result
+    }
+
+    private static func boundedReasoningContinuation(
+        _ continuation: ReasoningContinuationState?,
+        maximumBytes: Int
+    ) -> ReasoningContinuationState? {
+        guard let continuation, maximumBytes > 0,
+              let data = try? JSONEncoder().encode(continuation),
+              data.count <= maximumBytes
+        else {
+            return nil
+        }
+        return continuation
     }
 
     private static func boundedToolCall(

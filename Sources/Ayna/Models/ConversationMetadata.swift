@@ -15,6 +15,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     var model: String
     var systemPromptMode: SystemPromptMode
     var temperature: Double
+    var reasoningConfiguration: ModelReasoningConfiguration
     var multiModelEnabled: Bool
     var activeModels: [String]
     var messageCount: Int
@@ -31,6 +32,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         model: String,
         systemPromptMode: SystemPromptMode,
         temperature: Double,
+        reasoningConfiguration: ModelReasoningConfiguration = .automatic,
         multiModelEnabled: Bool,
         activeModels: [String],
         messageCount: Int,
@@ -46,6 +48,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         self.model = model
         self.systemPromptMode = systemPromptMode
         self.temperature = temperature
+        self.reasoningConfiguration = reasoningConfiguration
         self.multiModelEnabled = multiModelEnabled
         self.activeModels = activeModels
         self.messageCount = messageCount
@@ -64,6 +67,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
             model: conversation.model,
             systemPromptMode: conversation.systemPromptMode,
             temperature: conversation.temperature,
+            reasoningConfiguration: conversation.reasoningConfiguration,
             multiModelEnabled: conversation.multiModelEnabled,
             activeModels: conversation.activeModels,
             messageCount: conversation.messages.count,
@@ -75,7 +79,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, createdAt, updatedAt, model
-        case systemPromptMode, temperature, multiModelEnabled, activeModels
+        case systemPromptMode, temperature, reasoningConfiguration, multiModelEnabled, activeModels
         case messageCount, responseGroupCount, lastMessagePreview, searchableText
     }
 
@@ -88,6 +92,10 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         model = try container.decode(String.self, forKey: .model)
         systemPromptMode = try container.decode(SystemPromptMode.self, forKey: .systemPromptMode)
         temperature = try container.decode(Double.self, forKey: .temperature)
+        reasoningConfiguration = try container.decodeIfPresent(
+            ModelReasoningConfiguration.self,
+            forKey: .reasoningConfiguration
+        ) ?? .automatic
         multiModelEnabled = try container.decode(Bool.self, forKey: .multiModelEnabled)
         activeModels = try container.decode([String].self, forKey: .activeModels)
         messageCount = try container.decode(Int.self, forKey: .messageCount)
@@ -108,6 +116,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         try container.encode(model, forKey: .model)
         try container.encode(systemPromptMode, forKey: .systemPromptMode)
         try container.encode(temperature, forKey: .temperature)
+        try container.encode(reasoningConfiguration, forKey: .reasoningConfiguration)
         try container.encode(multiModelEnabled, forKey: .multiModelEnabled)
         try container.encode(activeModels, forKey: .activeModels)
         try container.encode(messageCount, forKey: .messageCount)
@@ -118,8 +127,8 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
 
     private static func previewText(from conversation: Conversation) -> String {
         let previewSource = conversation.messages.last
-        guard let content = previewSource?.content, !content.isEmpty else { return "" }
-        return String(content.prefix(240))
+        guard let previewText = previewSource?.previewText else { return "" }
+        return String(previewText.prefix(240))
     }
 
     private static func searchText(from conversation: Conversation) -> String {
@@ -174,6 +183,12 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         for message in conversation.messages {
             append("\n")
             append(message.content)
+            if let reasoning = message.reasoning,
+               !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                append("\n")
+                append(reasoning)
+            }
         }
 
         return exceededLimit ? "\(head)\n…\n\(tail)" : completeText

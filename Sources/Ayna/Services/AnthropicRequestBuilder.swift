@@ -10,11 +10,15 @@ import os
 
 /// Configuration for Anthropic API requests
 struct AnthropicRequestConfig: Sendable {
+    static let interleavedThinkingBeta = "interleaved-thinking-2025-05-14"
+    private static let minimumLegacyResponseAllowance = 1024
+
     let model: String
     let apiKey: String
     let customEndpoint: String?
     let maxTokens: Int
     let budgetTokens: Int?
+    let reasoning: AnthropicReasoningConfiguration?
     let betaHeaders: [String]
     let isAzureEndpoint: Bool
 
@@ -24,17 +28,53 @@ struct AnthropicRequestConfig: Sendable {
         customEndpoint: String? = nil,
         maxTokens: Int = 4096,
         budgetTokens: Int? = nil,
+        reasoning: AnthropicReasoningConfiguration? = nil,
         betaHeaders: [String] = []
     ) {
+        let resolvedReasoning = reasoning ?? budgetTokens.map {
+            .enabled(budgetTokens: $0)
+        }
+
         self.model = model
         self.apiKey = apiKey
         self.customEndpoint = customEndpoint
-        self.maxTokens = maxTokens
         self.budgetTokens = budgetTokens
+        self.reasoning = resolvedReasoning
+        self.maxTokens = Self.adjustedMaxTokens(
+            requested: maxTokens,
+            reasoning: resolvedReasoning
+        )
         self.betaHeaders = betaHeaders
         // Detect Azure endpoints by URL pattern
         isAzureEndpoint = customEndpoint?.contains(".azure.com") == true ||
             customEndpoint?.contains("azure.") == true
+    }
+
+    private static func adjustedMaxTokens(
+        requested: Int,
+        reasoning: AnthropicReasoningConfiguration?
+    ) -> Int {
+        guard let reasoning,
+              case let .enabled(budgetTokens, _, _, _) = reasoning,
+              budgetTokens >= 1024,
+              requested <= budgetTokens
+        else {
+            return requested
+        }
+
+        let (adjusted, overflowed) = budgetTokens.addingReportingOverflow(
+            minimumLegacyResponseAllowance
+        )
+        return overflowed ? Int.max : adjusted
+    }
+
+    var effectiveBetaHeaders: [String] {
+        guard reasoning?.usesInterleavedThinkingBeta == true,
+              !betaHeaders.contains(Self.interleavedThinkingBeta)
+        else {
+            return betaHeaders
+        }
+        return betaHeaders + [Self.interleavedThinkingBeta]
     }
 }
 
@@ -150,8 +190,9 @@ enum AnthropicRequestBuilder {
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
 
         // Add beta headers if any (only for non-Azure endpoints)
-        if !config.betaHeaders.isEmpty, !config.isAzureEndpoint {
-            let betaValue = config.betaHeaders.joined(separator: ",")
+        let betaHeaders = config.effectiveBetaHeaders
+        if !betaHeaders.isEmpty, !config.isAzureEndpoint {
+            let betaValue = betaHeaders.joined(separator: ",")
             request.setValue(betaValue, forHTTPHeaderField: "anthropic-beta")
         }
     }
@@ -173,7 +214,10 @@ enum AnthropicRequestBuilder {
     ) throws -> [String: Any] {
         try Task.checkCancellation()
         // Extract system prompt and convert remaining messages
-        let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
+        let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(
+            messages,
+            model: config.model
+        )
 
         var body: [String: Any] = [
             "model": config.model,
@@ -187,12 +231,8 @@ enum AnthropicRequestBuilder {
             body["system"] = system
         }
 
-        // Add extended thinking if budget_tokens is configured
-        if let budgetTokens = config.budgetTokens, budgetTokens >= 1024 {
-            body["thinking"] = [
-                "type": "enabled",
-                "budget_tokens": budgetTokens
-            ]
+        if let reasoning = config.reasoning {
+            addReasoningConfiguration(reasoning, to: &body)
         }
 
         // Convert and add tools if provided
@@ -209,6 +249,37 @@ enum AnthropicRequestBuilder {
         return body
     }
 
+    private static func addReasoningConfiguration(
+        _ reasoning: AnthropicReasoningConfiguration,
+        to body: inout [String: Any]
+    ) {
+        var thinking: [String: Any]
+
+        switch reasoning {
+        case .disabled:
+            thinking = ["type": "disabled"]
+
+        case .adaptive:
+            thinking = ["type": "adaptive"]
+
+        case let .enabled(budgetTokens, _, _, _):
+            guard budgetTokens >= 1024 else { return }
+            thinking = [
+                "type": "enabled",
+                "budget_tokens": budgetTokens
+            ]
+        }
+
+        if let display = reasoning.display {
+            thinking["display"] = display.rawValue
+        }
+        body["thinking"] = thinking
+
+        if let effort = reasoning.effort {
+            body["output_config"] = ["effort": effort.rawValue]
+        }
+    }
+
     // MARK: - Message Conversion
 
     /// Extract system prompt and convert messages to Anthropic format.
@@ -217,7 +288,8 @@ enum AnthropicRequestBuilder {
     /// - Returns: Tuple of (system prompt, converted messages)
     /// - Throws: `AynaError` if validation fails
     static func extractSystemAndConvertMessages(
-        _ messages: [Message]
+        _ messages: [Message],
+        model: String? = nil
     ) throws -> (systemPrompt: String?, messages: [[String: Any]]) {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var systemPrompt: String?
@@ -304,7 +376,10 @@ enum AnthropicRequestBuilder {
                     // No valid tool calls - add assistant without tool_calls
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = nil
-                    let (converted, msgImageCount) = try convertMessage(modifiedMessage)
+                    let (converted, msgImageCount) = try convertMessage(
+                        modifiedMessage,
+                        model: model
+                    )
                     imageCount += msgImageCount
                     if imageCount > maxImagesPerRequest {
                         throw AynaError.apiError(
@@ -317,7 +392,10 @@ enum AnthropicRequestBuilder {
                     // Some tool calls are orphaned - keep only valid ones
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = validToolCalls
-                    let (converted, msgImageCount) = try convertMessage(modifiedMessage)
+                    let (converted, msgImageCount) = try convertMessage(
+                        modifiedMessage,
+                        model: model
+                    )
                     imageCount += msgImageCount
                     if imageCount > maxImagesPerRequest {
                         throw AynaError.apiError(
@@ -331,7 +409,7 @@ enum AnthropicRequestBuilder {
             }
 
             // Convert message
-            let (converted, msgImageCount) = try convertMessage(message)
+            let (converted, msgImageCount) = try convertMessage(message, model: model)
             imageCount += msgImageCount
 
             // Validate image count
@@ -350,7 +428,10 @@ enum AnthropicRequestBuilder {
     /// - Parameter message: Message to convert
     /// - Returns: Tuple of (converted message, image count in this message)
     /// - Throws: `AynaError` if validation fails
-    static func convertMessage(_ message: Message) throws -> (converted: [String: Any], imageCount: Int) {
+    static func convertMessage(
+        _ message: Message,
+        model: String? = nil
+    ) throws -> (converted: [String: Any], imageCount: Int) {
         try Task.checkCancellation()
         var payload: [String: Any] = [:]
         var imageCount = 0
@@ -366,6 +447,17 @@ enum AnthropicRequestBuilder {
             "user"
         }
         payload["role"] = role
+
+        if message.role == .assistant,
+           let continuationContent = anthropicContinuationContent(
+               from: message.reasoningContinuation,
+               messageModel: message.model,
+               requestModel: model
+           )
+        {
+            payload["content"] = continuationContent
+            return (payload, imageCount)
+        }
 
         // Check for attachments
         if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
@@ -431,6 +523,24 @@ enum AnthropicRequestBuilder {
 
         try Task.checkCancellation()
         return (payload, imageCount)
+    }
+
+    private static func anthropicContinuationContent(
+        from state: ReasoningContinuationState?,
+        messageModel: String?,
+        requestModel: String?
+    ) -> [[String: Any]]? {
+        guard let state,
+              state.format == .anthropicMessages,
+              !state.items.isEmpty,
+              requestModel == nil || state.model == requestModel,
+              requestModel == nil || messageModel == nil || messageModel == requestModel
+        else {
+            return nil
+        }
+
+        let blocks = state.items.compactMap { $0.value as? [String: Any] }
+        return blocks.count == state.items.count ? blocks : nil
     }
 
     // MARK: - Image Validation

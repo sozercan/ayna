@@ -425,7 +425,8 @@ extension MacChatView {
     func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],
-        temperature: Double
+        temperature: Double,
+        reasoningConfiguration: ModelReasoningConfiguration
     ) {
         logChat(
             "🔀 Starting multi-model request",
@@ -586,7 +587,8 @@ extension MacChatView {
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     bufferMultiModelReasoning(reasoning, model: model, messageIdsByModel: messageIdsByModel, conversationId: conversationId)
                 }
-            }
+            },
+            reasoningConfiguration: reasoningConfiguration
         )
         coordinator.onCancel(for: operationID) {
             finishAndPersistMultiModelReasoning(conversationId: conversationId)

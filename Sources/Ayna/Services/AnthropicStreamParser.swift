@@ -11,7 +11,7 @@ import os
 private enum AnthropicStreamParserLimits {
     static let initialBlockBufferCapacity = 1024
     static let maxToolInputSize = 10_485_760 // 10MB
-    static let maxSignatureSize = 65_536 // 64KB
+    static let maxSignatureSize = 65536 // 64KB
 }
 
 /// Result from parsing Anthropic SSE events
@@ -20,6 +20,7 @@ struct AnthropicStreamResult: Sendable {
     let content: String?
     let reasoning: String?
     let toolCall: AnthropicToolCall?
+    let reasoningContinuation: ReasoningContinuationState?
     let error: (any Error)?
 
     static var empty: AnthropicStreamResult {
@@ -28,6 +29,7 @@ struct AnthropicStreamResult: Sendable {
             content: nil,
             reasoning: nil,
             toolCall: nil,
+            reasoningContinuation: nil,
             error: nil
         )
     }
@@ -54,12 +56,23 @@ struct AnthropicBlockState {
     var buffer: Data
     var toolName: String?
     var toolId: String?
+    var contentBlock: [String: Any]
 
-    init(type: AnthropicContentBlockType, toolName: String? = nil, toolId: String? = nil) {
+    init(
+        type: AnthropicContentBlockType,
+        contentBlock: [String: Any],
+        toolName: String? = nil,
+        toolId: String? = nil
+    ) {
         self.type = type
         buffer = Data(capacity: AnthropicStreamParserLimits.initialBlockBufferCapacity)
         self.toolName = toolName
         self.toolId = toolId
+        self.contentBlock = contentBlock
+    }
+
+    mutating func append(_ fragment: String, to key: String) {
+        contentBlock[key] = (contentBlock[key] as? String ?? "") + fragment
     }
 }
 
@@ -90,6 +103,9 @@ final class AnthropicStreamParser {
     /// Active content blocks being accumulated
     private var activeBlocks: [Int: AnthropicBlockState] = [:]
 
+    /// Completed content blocks retained in wire order for exact replay.
+    private var completedContentBlocks: [Int: [String: Any]] = [:]
+
     /// Stop reason from message_delta
     private(set) var stopReason: String?
 
@@ -101,12 +117,14 @@ final class AnthropicStreamParser {
     typealias ChunkCallback = @Sendable (String) -> Void
     typealias ReasoningCallback = @Sendable (String) -> Void
     typealias ToolCallCallback = @Sendable (String, String, [String: AnyCodable]) -> Void
+    typealias ReasoningContinuationCallback = @Sendable (ReasoningContinuationState) -> Void
     typealias CompleteCallback = @Sendable () -> Void
     typealias ErrorCallback = @Sendable (any Error) -> Void
 
     private let onChunk: ChunkCallback?
     private let onReasoning: ReasoningCallback?
     private let onToolCallRequested: ToolCallCallback?
+    private let onReasoningContinuation: ReasoningContinuationCallback?
     private let onComplete: CompleteCallback?
     private let onError: ErrorCallback?
 
@@ -117,11 +135,13 @@ final class AnthropicStreamParser {
         onReasoning: ReasoningCallback? = nil,
         onToolCallRequested: ToolCallCallback? = nil,
         onComplete: CompleteCallback? = nil,
-        onError: ErrorCallback? = nil
+        onError: ErrorCallback? = nil,
+        onReasoningContinuation: ReasoningContinuationCallback? = nil
     ) {
         self.onChunk = onChunk
         self.onReasoning = onReasoning
         self.onToolCallRequested = onToolCallRequested
+        self.onReasoningContinuation = onReasoningContinuation
         self.onComplete = onComplete
         self.onError = onError
     }
@@ -268,6 +288,7 @@ final class AnthropicStreamParser {
     func reset() {
         pendingEventType = nil
         activeBlocks.removeAll()
+        completedContentBlocks.removeAll()
         stopReason = nil
         messageId = nil
     }
@@ -300,12 +321,17 @@ final class AnthropicStreamParser {
             return handleMessageDelta(json)
 
         case "message_stop":
+            let continuation = makeReasoningContinuation()
+            if let continuation {
+                onReasoningContinuation?(continuation)
+            }
             onComplete?()
             return AnthropicStreamResult(
                 shouldComplete: true,
                 content: nil,
                 reasoning: nil,
                 toolCall: nil,
+                reasoningContinuation: continuation,
                 error: nil
             )
 
@@ -338,9 +364,11 @@ final class AnthropicStreamParser {
             return .empty
         }
 
-        let blockType = AnthropicContentBlockType(rawValue: typeStr) ?? .text
+        guard let blockType = AnthropicContentBlockType(rawValue: typeStr) else {
+            return .empty
+        }
 
-        var state = AnthropicBlockState(type: blockType)
+        var state = AnthropicBlockState(type: blockType, contentBlock: contentBlock)
 
         // For tool_use, capture the tool name and ID
         if blockType == .toolUse {
@@ -368,12 +396,14 @@ final class AnthropicStreamParser {
         case "text_delta":
             if let text = delta["text"] as? String {
                 content = text
+                activeBlocks[index]?.append(text, to: "text")
                 onChunk?(text)
             }
 
         case "thinking_delta":
             if let thinking = delta["thinking"] as? String {
                 reasoning = thinking
+                activeBlocks[index]?.append(thinking, to: "thinking")
                 onReasoning?(thinking)
             }
 
@@ -388,12 +418,14 @@ final class AnthropicStreamParser {
             }
 
         case "signature_delta":
-            // Accumulate signature for redacted thinking
+            // A regular thinking block's signature arrives immediately before
+            // content_block_stop and must be replayed unchanged.
             if let signature = delta["signature"] as? String,
-               let sigData = signature.data(using: .utf8)
+               let signatureData = signature.data(using: .utf8),
+               activeBlocks[index]?.type == .thinking
             {
-                if (activeBlocks[index]?.buffer.count ?? 0) + sigData.count <= AnthropicStreamParserLimits.maxSignatureSize {
-                    activeBlocks[index]?.buffer.append(sigData)
+                if (activeBlocks[index]?.buffer.count ?? 0) + signatureData.count <= AnthropicStreamParserLimits.maxSignatureSize {
+                    activeBlocks[index]?.buffer.append(signatureData)
                 }
             }
 
@@ -406,18 +438,26 @@ final class AnthropicStreamParser {
             content: content,
             reasoning: reasoning,
             toolCall: nil,
+            reasoningContinuation: nil,
             error: nil
         )
     }
 
     private func handleContentBlockStop(_ json: [String: Any]) -> AnthropicStreamResult {
         guard let index = json["index"] as? Int,
-              let state = activeBlocks[index]
+              var state = activeBlocks[index]
         else {
             return .empty
         }
 
         var toolCall: AnthropicToolCall?
+
+        if state.type == .thinking,
+           !state.buffer.isEmpty,
+           let signature = String(data: state.buffer, encoding: .utf8)
+        {
+            state.contentBlock["signature"] = signature
+        }
 
         // If this was a tool_use block, parse the accumulated JSON
         if state.type == .toolUse,
@@ -425,12 +465,15 @@ final class AnthropicStreamParser {
            let toolName = state.toolName
         {
             if state.buffer.isEmpty {
-                // Empty input, use empty object
-                toolCall = AnthropicToolCall(id: toolId, name: toolName, input: [:])
+                let initialInput = state.contentBlock["input"] as? [String: Any] ?? [:]
+                let codableInput = initialInput.mapValues(AnyCodable.init)
+                toolCall = AnthropicToolCall(id: toolId, name: toolName, input: codableInput)
+                state.contentBlock["input"] = initialInput
             } else if let inputJson = try? JSONSerialization.jsonObject(with: state.buffer) as? [String: Any] {
                 // Convert [String: Any] to [String: AnyCodable] for Sendable safety
                 let codableInput = inputJson.mapValues { AnyCodable($0) }
                 toolCall = AnthropicToolCall(id: toolId, name: toolName, input: codableInput)
+                state.contentBlock["input"] = inputJson
             } else {
                 // JSON parse failure
                 let bufferPreview = String(data: state.buffer.prefix(200), encoding: .utf8) ?? ""
@@ -447,10 +490,15 @@ final class AnthropicStreamParser {
                     input: ["_error": AnyCodable("Failed to parse tool input")]
                 )
             }
+        }
 
-            if let call = toolCall {
-                onToolCallRequested?(call.id, call.name, call.input)
-            }
+        completedContentBlocks[index] = state.contentBlock
+        let continuation = state.type == .toolUse ? makeReasoningContinuation() : nil
+        if let continuation {
+            onReasoningContinuation?(continuation)
+        }
+        if let call = toolCall {
+            onToolCallRequested?(call.id, call.name, call.input)
         }
 
         // Clean up the block state
@@ -461,6 +509,7 @@ final class AnthropicStreamParser {
             content: nil,
             reasoning: nil,
             toolCall: toolCall,
+            reasoningContinuation: continuation,
             error: nil
         )
     }
@@ -489,7 +538,25 @@ final class AnthropicStreamParser {
             content: nil,
             reasoning: nil,
             toolCall: nil,
+            reasoningContinuation: nil,
             error: error
+        )
+    }
+
+    private func makeReasoningContinuation() -> ReasoningContinuationState? {
+        let orderedBlocks = completedContentBlocks.keys.sorted().compactMap {
+            completedContentBlocks[$0]
+        }
+        let containsReasoning = orderedBlocks.contains { block in
+            guard let type = block["type"] as? String else { return false }
+            return type == AnthropicContentBlockType.thinking.rawValue ||
+                type == AnthropicContentBlockType.redactedThinking.rawValue
+        }
+        guard containsReasoning else { return nil }
+
+        return ReasoningContinuationState(
+            format: .anthropicMessages,
+            items: orderedBlocks.map(AnyCodable.init)
         )
     }
 }
@@ -513,14 +580,16 @@ extension AnthropicStreamParser {
         onComplete: @escaping CompleteCallback,
         onError: @escaping ErrorCallback,
         onToolCallRequested: ToolCallCallback? = nil,
-        onReasoning: ReasoningCallback? = nil
+        onReasoning: ReasoningCallback? = nil,
+        onReasoningContinuation: ReasoningContinuationCallback? = nil
     ) -> AnthropicStreamParser {
         AnthropicStreamParser(
             onChunk: onChunk,
             onReasoning: onReasoning,
             onToolCallRequested: onToolCallRequested,
             onComplete: onComplete,
-            onError: onError
+            onError: onError,
+            onReasoningContinuation: onReasoningContinuation
         )
     }
 }

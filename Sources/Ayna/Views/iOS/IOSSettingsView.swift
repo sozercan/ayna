@@ -237,18 +237,7 @@ struct IOSSettingsView: View {
             message: "🗑️ Removing model",
             metadata: ["model": model]
         )
-        if let index = aiService.customModels.firstIndex(of: model) {
-            aiService.customModels.remove(at: index)
-            aiService.modelProviders.removeValue(forKey: model)
-            aiService.modelEndpoints.removeValue(forKey: model)
-            aiService.modelAPIKeys.removeValue(forKey: model)
-            aiService.modelEndpointTypes.removeValue(forKey: model)
-
-            // If we removed the selected model, select the first available one
-            if aiService.selectedModel == model, let first = aiService.customModels.first {
-                aiService.selectedModel = first
-            }
-        }
+        aiService.removeConfiguredModel(model)
     }
 
     private func duplicateModel(_ model: String) {
@@ -282,6 +271,9 @@ struct IOSSettingsView: View {
         }
         if let endpointType = aiService.modelEndpointTypes[model] {
             aiService.modelEndpointTypes[newName] = endpointType
+        }
+        if let reasoningConfiguration = aiService.modelReasoningConfigurations[model] {
+            aiService.modelReasoningConfigurations[newName] = reasoningConfiguration
         }
     }
 }
@@ -363,6 +355,7 @@ struct IOSModelEditView: View {
     @State private var apiKey = ""
     @State private var endpoint = ""
     @State private var endpointType: APIEndpointType = .chatCompletions
+    @State private var saveErrorMessage: String?
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
@@ -433,6 +426,7 @@ struct IOSModelEditView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
+
         }
         .navigationTitle(isNew ? "Add Model" : "Edit Model")
         .toolbar {
@@ -447,11 +441,12 @@ struct IOSModelEditView: View {
 
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    saveModel()
-                    dismiss()
+                    if saveModel() {
+                        dismiss()
+                    }
                 }
                 .disabled(
-                    modelName.isEmpty ||
+                    modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                         (provider == .anthropic && apiKey.isEmpty)
                 )
                 .accessibilityIdentifier("settings.addModel.saveButton")
@@ -461,6 +456,23 @@ struct IOSModelEditView: View {
             if !isNew {
                 loadModelData()
             }
+        }
+        .alert(
+            "Unable to Save Model",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        saveErrorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                saveErrorMessage = nil
+            }
+        } message: {
+            Text(saveErrorMessage ?? "")
         }
     }
 
@@ -485,9 +497,15 @@ struct IOSModelEditView: View {
         }
     }
 
-    private func saveModel() {
+    private func saveModel() -> Bool {
         let trimmedName = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
         let isRename = !isNew && trimmedName != originalModelName
+        saveErrorMessage = nil
+
+        guard !trimmedName.isEmpty else {
+            saveErrorMessage = "Model name is required."
+            return false
+        }
 
         DiagnosticsLogger.log(
             .aiService,
@@ -509,7 +527,8 @@ struct IOSModelEditView: View {
                     message: "⚠️ Duplicate model name, skipping",
                     metadata: ["model": trimmedName]
                 )
-                return
+                saveErrorMessage = "A model named \(trimmedName) already exists."
+                return false
             }
             aiService.customModels.append(trimmedName)
         } else if isRename {
@@ -521,23 +540,31 @@ struct IOSModelEditView: View {
                     message: "⚠️ Model name already exists, skipping rename",
                     metadata: ["model": trimmedName]
                 )
-                return
+                saveErrorMessage = "A model named \(trimmedName) already exists."
+                return false
             }
 
-            // Update the model list: replace old name with new name
-            if let index = aiService.customModels.firstIndex(of: originalModelName) {
-                aiService.customModels[index] = trimmedName
-            }
-
-            // Remove old model settings
-            aiService.modelProviders.removeValue(forKey: originalModelName)
-            aiService.modelAPIKeys.removeValue(forKey: originalModelName)
-            aiService.modelEndpoints.removeValue(forKey: originalModelName)
-            aiService.modelEndpointTypes.removeValue(forKey: originalModelName)
-
-            // Update selected model if it was the renamed one
-            if aiService.selectedModel == originalModelName {
-                aiService.selectedModel = trimmedName
+            switch aiService.renameConfiguredModel(from: originalModelName, to: trimmedName) {
+            case .renamed, .unchanged:
+                break
+            case .destinationExists:
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .default,
+                    message: "⚠️ Model name already exists, skipping rename",
+                    metadata: ["model": trimmedName]
+                )
+                saveErrorMessage = "A model named \(trimmedName) already exists."
+                return false
+            case .sourceMissing:
+                DiagnosticsLogger.log(
+                    .aiService,
+                    level: .error,
+                    message: "Failed to rename missing model",
+                    metadata: ["model": originalModelName]
+                )
+                saveErrorMessage = "The model being edited no longer exists."
+                return false
             }
         }
 
@@ -552,6 +579,7 @@ struct IOSModelEditView: View {
             }
             aiService.modelEndpointTypes[trimmedName] = endpointType
         } else if provider == .anthropic {
+            aiService.modelEndpointTypes.removeValue(forKey: trimmedName)
             if !apiKey.isEmpty {
                 aiService.modelAPIKeys[trimmedName] = apiKey
             }
@@ -564,6 +592,7 @@ struct IOSModelEditView: View {
         if aiService.customModels.count == 1 {
             aiService.selectedModel = trimmedName
         }
+        return true
     }
 }
 

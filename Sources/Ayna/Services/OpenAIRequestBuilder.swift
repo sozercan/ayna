@@ -189,7 +189,8 @@ enum OpenAIRequestBuilder {
         model: String,
         stream: Bool,
         tools: [[String: Any]]? = nil,
-        supportsParallelToolCalls: Bool = true
+        supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil
     ) -> [String: Any] {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
 
@@ -313,6 +314,20 @@ enum OpenAIRequestBuilder {
             "stream": stream
         ]
 
+        let requestedEffort = reasoning?.dialect == .openAIChat ? reasoning?.effort : nil
+        let profile = ReasoningCapabilityResolver.modelPolicy(
+            model: model,
+            provider: .openai,
+            endpointType: .chatCompletions
+        )
+        let effort = profile?.chatCompletionsEffort(
+            requested: requestedEffort,
+            hasTools: !(tools?.isEmpty ?? true)
+        ) ?? requestedEffort
+        if let effort {
+            body["reasoning_effort"] = effort.rawValue
+        }
+
         // Add tools if provided
         if let tools, !tools.isEmpty {
             body["tools"] = tools
@@ -339,7 +354,7 @@ enum OpenAIRequestBuilder {
     ///
     /// - Parameter messages: Messages to convert
     /// - Returns: Array of input items for the Responses API
-    static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
+    static func buildResponsesInput(from messages: [Message], model: String? = nil) -> [[String: Any]] {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var inputArray: [[String: Any]] = []
         var messageIndex = 0
@@ -360,16 +375,6 @@ enum OpenAIRequestBuilder {
             }
 
             if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                if !message.content.isEmpty {
-                    inputArray.append([
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [
-                            ["type": "output_text", "text": message.content]
-                        ]
-                    ])
-                }
-
                 // Tool outputs belong to this round only while they are contiguous
                 // and immediately follow the assistant call.
                 var resultByCallID: [String: Message] = [:]
@@ -382,6 +387,33 @@ enum OpenAIRequestBuilder {
                         resultByCallID[callID] = resultMessage
                     }
                     nextIndex += 1
+                }
+
+                if let continuationItems = openAIResponsesContinuationItems(
+                    from: message,
+                    model: model
+                ) {
+                    inputArray.append(contentsOf: continuationItems)
+                    for toolCall in toolCalls {
+                        guard let resultMessage = resultByCallID[toolCall.id] else { continue }
+                        inputArray.append([
+                            "type": "function_call_output",
+                            "call_id": toolCall.id,
+                            "output": resultMessage.content
+                        ])
+                    }
+                    messageIndex = nextIndex
+                    continue
+                }
+
+                if !message.content.isEmpty {
+                    inputArray.append([
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            ["type": "output_text", "text": message.content]
+                        ]
+                    ])
                 }
 
                 var validCalls: [MCPToolCall] = []
@@ -422,6 +454,17 @@ enum OpenAIRequestBuilder {
                 continue
             }
 
+            if message.role == .assistant,
+               let continuationItems = openAIResponsesContinuationItems(
+                   from: message,
+                   model: model
+               )
+            {
+                inputArray.append(contentsOf: continuationItems)
+                messageIndex += 1
+                continue
+            }
+
             var messageItem: [String: Any] = [
                 "type": "message",
                 "role": message.role.rawValue
@@ -458,6 +501,23 @@ enum OpenAIRequestBuilder {
         }
 
         return inputArray
+    }
+
+    private static func openAIResponsesContinuationItems(
+        from message: Message,
+        model: String?
+    ) -> [[String: Any]]? {
+        guard let state = message.reasoningContinuation,
+              state.format == .openAIResponses,
+              !state.items.isEmpty,
+              model == nil || state.model == model,
+              model == nil || message.model == nil || message.model == model
+        else {
+            return nil
+        }
+
+        let items = state.items.compactMap { $0.value as? [String: Any] }
+        return items.count == state.items.count ? items : nil
     }
 
     /// Convert tools from Chat Completions format to Responses API format.
@@ -515,16 +575,34 @@ enum OpenAIRequestBuilder {
         model: String,
         messages: [Message],
         tools: [[String: Any]]? = nil,
-        supportsParallelToolCalls: Bool = true
+        supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil
     ) -> [String: Any] {
-        let inputArray = buildResponsesInput(from: messages)
+        let inputArray = buildResponsesInput(from: messages, model: model)
 
         var body: [String: Any] = [
             "model": model,
-            "input": inputArray,
-            "reasoning": ["summary": "auto"],
-            "text": ["verbosity": "medium"]
+            "input": inputArray
         ]
+
+        if reasoning?.dialect == .openAIResponses {
+            var reasoningBody: [String: Any] = [:]
+            if let effort = reasoning?.effort {
+                reasoningBody["effort"] = effort.rawValue
+            }
+            if let summary = reasoning?.summary.wireValue {
+                reasoningBody["summary"] = summary
+            }
+            if let context = reasoning?.openAIContext.wireValue {
+                reasoningBody["context"] = context
+            }
+            if let mode = reasoning?.openAIMode {
+                reasoningBody["mode"] = mode.rawValue
+            }
+            if !reasoningBody.isEmpty {
+                body["reasoning"] = reasoningBody
+            }
+        }
 
         let instructions = messages
             .filter { $0.role == .system && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -560,6 +638,7 @@ enum OpenAIRequestBuilder {
     struct ResponsesOutputResult {
         let hasToolCalls: Bool
         let toolCalls: [ToolCallInfo]
+        let reasoningContinuation: ReasoningContinuationState?
     }
 
     /// Deliver output from the Responses API to callbacks.
@@ -579,9 +658,17 @@ enum OpenAIRequestBuilder {
         _ outputArray: [[String: Any]],
         onChunk: @escaping (String) -> Void,
         onReasoning: ((String) -> Void)?,
+        onReasoningContinuation: ((ReasoningContinuationState) -> Void)? = nil,
         onToolCallRequested: ((String, String, [String: Any]) -> Void)? = nil
     ) -> ResponsesOutputResult {
         var toolCalls: [ToolCallInfo] = []
+        let continuation = outputArray.isEmpty ? nil : ReasoningContinuationState(
+            format: .openAIResponses,
+            items: outputArray.map(AnyCodable.init)
+        )
+        if let continuation {
+            onReasoningContinuation?(continuation)
+        }
 
         for outputItem in outputArray {
             let itemType = outputItem["type"] as? String
@@ -647,7 +734,11 @@ enum OpenAIRequestBuilder {
             }
         }
 
-        return ResponsesOutputResult(hasToolCalls: !toolCalls.isEmpty, toolCalls: toolCalls)
+        return ResponsesOutputResult(
+            hasToolCalls: !toolCalls.isEmpty,
+            toolCalls: toolCalls,
+            reasoningContinuation: continuation
+        )
     }
 
     // MARK: - Request Configuration
@@ -685,6 +776,7 @@ enum OpenAIRequestBuilder {
         apiKey: String,
         isAzure: Bool,
         supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil,
         attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async -> URLRequest? {
         let resolvedMessages: [Message]
@@ -706,7 +798,8 @@ enum OpenAIRequestBuilder {
                 tools: tools.value,
                 apiKey: apiKey,
                 isAzure: isAzure,
-                supportsParallelToolCalls: supportsParallelToolCalls
+                supportsParallelToolCalls: supportsParallelToolCalls,
+                reasoning: reasoning
             )
         }
 
@@ -741,7 +834,8 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil,
         apiKey: String,
         isAzure: Bool,
-        supportsParallelToolCalls: Bool = true
+        supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil
     ) -> URLRequest? {
         guard !Task.isCancelled else { return nil }
         var request = URLRequest(url: url)
@@ -752,7 +846,8 @@ enum OpenAIRequestBuilder {
             model: model,
             stream: stream,
             tools: tools,
-            supportsParallelToolCalls: supportsParallelToolCalls
+            supportsParallelToolCalls: supportsParallelToolCalls,
+            reasoning: reasoning
         )
 
         guard !Task.isCancelled else { return nil }
@@ -774,6 +869,7 @@ enum OpenAIRequestBuilder {
         apiKey: String,
         isAzure: Bool,
         supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil,
         attachmentDataLoader: RequestBuilderAttachmentResolver.AttachmentDataLoader? = nil
     ) async -> URLRequest? {
         let resolvedMessages: [Message]
@@ -794,7 +890,8 @@ enum OpenAIRequestBuilder {
                 tools: tools.value,
                 apiKey: apiKey,
                 isAzure: isAzure,
-                supportsParallelToolCalls: supportsParallelToolCalls
+                supportsParallelToolCalls: supportsParallelToolCalls,
+                reasoning: reasoning
             )
         }
 
@@ -827,7 +924,8 @@ enum OpenAIRequestBuilder {
         tools: [[String: Any]]? = nil,
         apiKey: String,
         isAzure: Bool,
-        supportsParallelToolCalls: Bool = true
+        supportsParallelToolCalls: Bool = true,
+        reasoning: ResolvedReasoningConfiguration? = nil
     ) -> URLRequest? {
         guard !Task.isCancelled else { return nil }
         var request = URLRequest(url: url)
@@ -837,7 +935,8 @@ enum OpenAIRequestBuilder {
             model: model,
             messages: messages,
             tools: tools,
-            supportsParallelToolCalls: supportsParallelToolCalls
+            supportsParallelToolCalls: supportsParallelToolCalls,
+            reasoning: reasoning
         )
 
         guard !Task.isCancelled else { return nil }

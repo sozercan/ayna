@@ -286,6 +286,12 @@ struct IOSNewChatView: View {
                 errorMessage: $viewModel.errorMessage,
                 attachedFiles: $viewModel.attachedFiles,
                 attachedImages: $viewModel.attachedImages,
+                reasoningConfiguration: Binding(
+                    get: { viewModel.reasoningConfiguration },
+                    set: { viewModel.updateReasoningConfiguration($0) }
+                ),
+                selectedModels: viewModel.selectedModels,
+                primaryModel: viewModel.selectedModel,
                 errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
                 onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                 showAttachmentButton: true,
