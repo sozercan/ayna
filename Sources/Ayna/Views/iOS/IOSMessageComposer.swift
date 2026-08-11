@@ -20,6 +20,10 @@ struct IOSMessageComposer: View {
     @Binding var errorMessage: String?
     @Binding var attachedFiles: [URL]
     @Binding var attachedImages: [UIImage]
+    @Binding var reasoningConfiguration: ModelReasoningConfiguration
+
+    let selectedModels: Set<String>
+    let primaryModel: String
 
     /// Optional recovery suggestion for the current error
     var errorRecoverySuggestion: String?
@@ -97,6 +101,9 @@ struct IOSMessageComposer: View {
         errorMessage: Binding<String?>,
         attachedFiles: Binding<[URL]> = .constant([]),
         attachedImages: Binding<[UIImage]> = .constant([]),
+        reasoningConfiguration: Binding<ModelReasoningConfiguration>,
+        selectedModels: Set<String>,
+        primaryModel: String,
         errorRecoverySuggestion: String? = nil,
         onRetry: (() -> Void)? = nil,
         showAttachmentButton: Bool = true,
@@ -112,6 +119,9 @@ struct IOSMessageComposer: View {
         _errorMessage = errorMessage
         _attachedFiles = attachedFiles
         _attachedImages = attachedImages
+        _reasoningConfiguration = reasoningConfiguration
+        self.selectedModels = selectedModels
+        self.primaryModel = primaryModel
         self.errorRecoverySuggestion = errorRecoverySuggestion
         self.onRetry = onRetry
         self.showAttachmentButton = showAttachmentButton
@@ -155,6 +165,17 @@ struct IOSMessageComposer: View {
                 }
                 .accessibilityIdentifier("\(identifierPrefix).attachmentsList")
             }
+
+            HStack {
+                ChatReasoningControl(
+                    configuration: $reasoningConfiguration,
+                    selectedModels: selectedModels,
+                    primaryModel: primaryModel,
+                    identifier: "\(identifierPrefix).reasoning"
+                )
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
 
             // Input bar - iMessage style
             HStack(alignment: .center, spacing: Spacing.sm) {

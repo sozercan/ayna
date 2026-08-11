@@ -242,6 +242,133 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test
+        func `existing conversation reasoning updates persist and dispatch`() {
+            let originalConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .medium
+            )
+            let conversation = Conversation(
+                model: "model-a",
+                systemPromptMode: .disabled,
+                reasoningConfiguration: originalConfiguration
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            #expect(viewModel.selectedModel == conversation.model)
+            #expect(viewModel.selectedModels == [conversation.model])
+            #expect(viewModel.reasoningConfiguration == originalConfiguration)
+
+            let updatedConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high,
+                summary: .concise
+            )
+            viewModel.updateReasoningConfiguration(updatedConfiguration)
+
+            #expect(manager.conversation(byId: conversation.id)?.reasoningConfiguration == updatedConfiguration)
+
+            viewModel.messageText = "Use the configured effort"
+            viewModel.sendMessage()
+
+            #expect(aiService.singleModelReasoningConfigurations == [updatedConfiguration])
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test
+        func `new multi-model conversation persists and dispatches reasoning`() throws {
+            let models = ["model-a", "model-b"]
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: models)
+            let viewModel = IOSChatViewModel(
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let configuration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .low
+            )
+            viewModel.selectedModel = models[0]
+            viewModel.selectedModels = Set(models)
+            viewModel.updateReasoningConfiguration(configuration)
+            viewModel.messageText = "Compare the options"
+
+            viewModel.sendMessage()
+
+            let conversation = try #require(manager.conversations.first)
+            #expect(conversation.reasoningConfiguration == configuration)
+            #expect(aiService.multiModelReasoningConfigurations == [configuration])
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `tool continuation keeps the reasoning configuration captured by the initial send`() async {
+            let initialConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high
+            )
+            let conversation = Conversation(
+                model: "model-a",
+                systemPromptMode: .disabled,
+                reasoningConfiguration: initialConfiguration
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+            let aiService = ToolReasoningCapturingAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService,
+                executeBuiltInTool: { _, _ in ("Tool result", nil) }
+            )
+            viewModel.messageText = "Use a tool"
+
+            viewModel.sendMessage()
+            #expect(aiService.reasoningConfigurations == [initialConfiguration])
+
+            viewModel.updateReasoningConfiguration(
+                ModelReasoningConfiguration(activation: .disabled)
+            )
+            aiService.emitToolRequest(
+                requestIndex: 0,
+                id: "tool-call-1",
+                name: "web_search"
+            )
+            aiService.emitCompletion(requestIndex: 0)
+
+            #expect(await waitUntil { aiService.reasoningConfigurations.count == 2 })
+            #expect(aiService.reasoningConfigurations == [
+                initialConfiguration,
+                initialConfiguration,
+            ])
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `failed lazy history load keeps the draft and attachments without sending`() async {
             let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
@@ -588,7 +715,10 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            requestFlightID: RequestFlightID?
+            onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)?,
+            requestFlightID: RequestFlightID?,
+            reasoningConfiguration: ModelReasoningConfiguration?,
+            reasoningSnapshot: AIReasoningRequestSnapshot?
         ) -> AITextRequest {
             let requestModel = model ?? selectedModel
             capturedRequests.append(
@@ -612,7 +742,10 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                requestFlightID: requestFlightID
+                onReasoningContinuation: onReasoningContinuation,
+                requestFlightID: requestFlightID,
+                reasoningConfiguration: reasoningConfiguration,
+                reasoningSnapshot: reasoningSnapshot
             )
         }
     }
@@ -621,6 +754,8 @@
     private final class SendHistoryCapturingAIService: AIService {
         private(set) var singleModelRequests: [[Message]] = []
         private(set) var multiModelRequests: [[Message]] = []
+        private(set) var singleModelReasoningConfigurations: [ModelReasoningConfiguration?] = []
+        private(set) var multiModelReasoningConfigurations: [ModelReasoningConfiguration?] = []
 
         init() {
             super.init(responseSimulator: { _, _ in })
@@ -641,10 +776,14 @@
             onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            requestFlightID: RequestFlightID?
+            onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)?,
+            requestFlightID: RequestFlightID?,
+            reasoningConfiguration: ModelReasoningConfiguration?,
+            reasoningSnapshot: AIReasoningRequestSnapshot?
         ) -> AITextRequest {
             if !isMultiModelRequest {
                 singleModelRequests.append(messages)
+                singleModelReasoningConfigurations.append(reasoningConfiguration)
             }
             return super.sendMessage(
                 messages: messages,
@@ -661,7 +800,10 @@
                 onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
-                requestFlightID: requestFlightID
+                onReasoningContinuation: onReasoningContinuation,
+                requestFlightID: requestFlightID,
+                reasoningConfiguration: reasoningConfiguration,
+                reasoningSnapshot: reasoningSnapshot
             )
         }
 
@@ -674,9 +816,12 @@
             onAllComplete: @escaping @Sendable () -> Void,
             onError: @escaping @Sendable (String, Error) -> Void,
             onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
-            onReasoning: (@Sendable (String, String) -> Void)?
+            onReasoning: (@Sendable (String, String) -> Void)?,
+            onReasoningContinuation: (@Sendable (String, ReasoningContinuationState) -> Void)?,
+            reasoningConfiguration: ModelReasoningConfiguration?
         ) -> AITextBatchRequest {
             multiModelRequests.append(messages)
+            multiModelReasoningConfigurations.append(reasoningConfiguration)
             return super.sendToMultipleModels(
                 messages: messages,
                 models: models,
@@ -686,8 +831,79 @@
                 onAllComplete: onAllComplete,
                 onError: onError,
                 onPendingToolCall: onPendingToolCall,
-                onReasoning: onReasoning
+                onReasoning: onReasoning,
+                onReasoningContinuation: onReasoningContinuation,
+                reasoningConfiguration: reasoningConfiguration
             )
+        }
+    }
+
+    @MainActor
+    private final class ToolReasoningCapturingAIService: AIService {
+        private typealias CompletionCallback = @Sendable () -> Void
+        private typealias ToolCallback = @Sendable (String, String, [String: Any]) -> Void
+
+        private var completionCallbacks: [CompletionCallback] = []
+        private var toolCallbacks: [ToolCallback?] = []
+        private(set) var reasoningConfigurations: [ModelReasoningConfiguration?] = []
+
+        init() {
+            super.init(responseSimulator: { _, _ in })
+        }
+
+        override func sendMessage(
+            messages: [Message],
+            model: String?,
+            temperature: Double?,
+            stream: Bool,
+            tools: [[String: Any]]?,
+            conversationId: UUID?,
+            requestLane: AITextRequestLane,
+            isMultiModelRequest: Bool,
+            onChunk _: @escaping @Sendable (String) -> Void,
+            onComplete: @escaping @Sendable () -> Void,
+            onError _: @escaping @Sendable (Error) -> Void,
+            onToolCall _: (@Sendable (String, String, [String: Any]) async -> String)?,
+            onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+            onReasoning _: (@Sendable (String) -> Void)?,
+            onReasoningContinuation _: (@Sendable (ReasoningContinuationState) -> Void)?,
+            requestFlightID: RequestFlightID?,
+            reasoningConfiguration: ModelReasoningConfiguration?,
+            reasoningSnapshot: AIReasoningRequestSnapshot?
+        ) -> AITextRequest {
+            reasoningConfigurations.append(reasoningConfiguration)
+            completionCallbacks.append(onComplete)
+            toolCallbacks.append(onToolCallRequested)
+            return super.sendMessage(
+                messages: messages,
+                model: model,
+                temperature: temperature,
+                stream: stream,
+                tools: tools,
+                conversationId: conversationId,
+                requestLane: requestLane,
+                isMultiModelRequest: isMultiModelRequest,
+                onChunk: { _ in },
+                onComplete: {},
+                onError: { _ in },
+                onToolCall: nil,
+                onToolCallRequested: nil,
+                onReasoning: nil,
+                onReasoningContinuation: nil,
+                requestFlightID: requestFlightID,
+                reasoningConfiguration: reasoningConfiguration,
+                reasoningSnapshot: reasoningSnapshot
+            )
+        }
+
+        func emitToolRequest(requestIndex: Int, id: String, name: String) {
+            guard toolCallbacks.indices.contains(requestIndex) else { return }
+            toolCallbacks[requestIndex]?(id, name, [:])
+        }
+
+        func emitCompletion(requestIndex: Int) {
+            guard completionCallbacks.indices.contains(requestIndex) else { return }
+            completionCallbacks[requestIndex]()
         }
     }
 
@@ -714,7 +930,9 @@
             onAllComplete _: @escaping @Sendable () -> Void,
             onError _: @escaping @Sendable (String, Error) -> Void,
             onPendingToolCall _: (@Sendable (String, String, String, [String: Any]) -> Void)?,
-            onReasoning: (@Sendable (String, String) -> Void)?
+            onReasoning: (@Sendable (String, String) -> Void)?,
+            onReasoningContinuation _: (@Sendable (String, ReasoningContinuationState) -> Void)?,
+            reasoningConfiguration: ModelReasoningConfiguration?
         ) -> AITextBatchRequest {
             reasoningCallbacks.append(onReasoning)
             return super.sendToMultipleModels(
@@ -726,7 +944,9 @@
                 onAllComplete: {},
                 onError: { _, _ in },
                 onPendingToolCall: nil,
-                onReasoning: nil
+                onReasoning: nil,
+                onReasoningContinuation: nil,
+                reasoningConfiguration: reasoningConfiguration
             )
         }
 
@@ -765,7 +985,10 @@
             onToolCall _: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested _: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
-            requestFlightID: RequestFlightID?
+            onReasoningContinuation _: (@Sendable (ReasoningContinuationState) -> Void)?,
+            requestFlightID: RequestFlightID?,
+            reasoningConfiguration: ModelReasoningConfiguration?,
+            reasoningSnapshot: AIReasoningRequestSnapshot?
         ) -> AITextRequest {
             reasoningCallbacks.append(onReasoning)
             return super.sendMessage(
@@ -783,7 +1006,10 @@
                 onToolCall: nil,
                 onToolCallRequested: nil,
                 onReasoning: nil,
-                requestFlightID: requestFlightID
+                onReasoningContinuation: nil,
+                requestFlightID: requestFlightID,
+                reasoningConfiguration: reasoningConfiguration,
+                reasoningSnapshot: reasoningSnapshot
             )
         }
 

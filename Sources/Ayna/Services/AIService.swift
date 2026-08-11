@@ -940,7 +940,8 @@ class AIService: ObservableObject {
         provider: AIProvider,
         endpointType: APIEndpointType,
         endpoint: String?,
-        messages: [Message]
+        messages: [Message],
+        requestedConfiguration: ModelReasoningConfiguration?
     ) throws -> ResolvedReasoningConfiguration? {
         if let continuationRound = toolContinuationRound(in: messages) {
             if let continuationSnapshot = try opaqueToolContinuationReasoningSnapshot(
@@ -967,7 +968,7 @@ class AIService: ObservableObject {
             provider: provider,
             endpointType: endpointType,
             endpoint: endpoint,
-            configuration: reasoningConfiguration(for: model)
+            configuration: requestedConfiguration ?? reasoningConfiguration(for: model)
         )
     }
 
@@ -1620,6 +1621,7 @@ class AIService: ObservableObject {
         onReasoning: (@Sendable (String) -> Void)? = nil,
         onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)? = nil,
         requestFlightID: RequestFlightID? = nil,
+        reasoningConfiguration: ModelReasoningConfiguration? = nil,
         reasoningSnapshot: AIReasoningRequestSnapshot? = nil
     ) -> AITextRequest {
         let flightID = requestFlightID ?? RequestFlightID()
@@ -1712,7 +1714,8 @@ class AIService: ObservableObject {
                         provider: effectiveProvider,
                         endpointType: endpointType,
                         endpoint: endpointInfo?.endpoint,
-                        messages: messages
+                        messages: messages,
+                        requestedConfiguration: reasoningConfiguration
                     )
                 )
             }
@@ -2026,7 +2029,8 @@ class AIService: ObservableObject {
         onError: @escaping @Sendable (String, Error) -> Void,
         onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String, String) -> Void)? = nil,
-        onReasoningContinuation: (@Sendable (String, ReasoningContinuationState) -> Void)? = nil
+        onReasoningContinuation: (@Sendable (String, ReasoningContinuationState) -> Void)? = nil,
+        reasoningConfiguration: ModelReasoningConfiguration? = nil
     ) -> AITextBatchRequest {
         let flightID = RequestFlightID()
         let requestHandle = AITextBatchRequest(service: self, flightID: flightID)
@@ -2075,7 +2079,8 @@ class AIService: ObservableObject {
                         provider: effectiveProvider,
                         endpointType: modelEndpointTypes[model] ?? .chatCompletions,
                         endpoint: customEndpoint(for: model)?.endpoint,
-                        messages: messages
+                        messages: messages,
+                        requestedConfiguration: reasoningConfiguration
                     )
                 )
             }

@@ -75,6 +75,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
     var model: String
     var systemPromptMode: SystemPromptMode
     var temperature: Double
+    var reasoningConfiguration: ModelReasoningConfiguration
 
     // Multi-model support
     var multiModelEnabled: Bool
@@ -97,6 +98,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         model: String = "gpt-4o",
         systemPromptMode: SystemPromptMode = .inheritGlobal,
         temperature: Double = 0.7,
+        reasoningConfiguration: ModelReasoningConfiguration = .automatic,
         multiModelEnabled: Bool = false,
         activeModels: [String] = [],
         responseGroups: [ResponseGroup] = [],
@@ -110,6 +112,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
         self.model = model
         self.systemPromptMode = systemPromptMode
         self.temperature = temperature
+        self.reasoningConfiguration = reasoningConfiguration
         self.multiModelEnabled = multiModelEnabled
         self.activeModels = activeModels
         self.responseGroups = responseGroups
@@ -120,7 +123,7 @@ struct Conversation: Identifiable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, messages, createdAt, updatedAt, model
-        case systemPromptMode, temperature
+        case systemPromptMode, temperature, reasoningConfiguration
         case multiModelEnabled, activeModels, responseGroups
     }
 
@@ -149,6 +152,10 @@ struct Conversation: Identifiable, Equatable, Sendable {
             }
         }
         temperature = try container.decode(Double.self, forKey: .temperature)
+        reasoningConfiguration = try container.decodeIfPresent(
+            ModelReasoningConfiguration.self,
+            forKey: .reasoningConfiguration
+        ) ?? .automatic
         // Provide defaults for new multi-model fields (backward compatibility)
         multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
         activeModels = try container.decodeIfPresent([String].self, forKey: .activeModels) ?? []

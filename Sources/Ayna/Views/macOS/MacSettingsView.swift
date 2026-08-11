@@ -849,7 +849,6 @@ struct APISettingsView: View {
     @State private var tempModelName = ""
     @State private var selectedModelName: String?
     @State private var tempEndpointType: APIEndpointType = .chatCompletions
-    @State private var tempReasoningConfiguration = ModelReasoningConfiguration.automatic
     @State private var isValidating = false
     @State private var validationStatus: ValidationStatus = .notChecked
 
@@ -1217,8 +1216,6 @@ struct APISettingsView: View {
                                                 // Update provider and endpoint type
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
-                                                aiService.modelReasoningConfigurations[modelName] =
-                                                    tempReasoningConfiguration
 
                                                 // Update per-model API key
                                                 if !apiKey.isEmpty {
@@ -1261,8 +1258,6 @@ struct APISettingsView: View {
                                                 aiService.customModels.append(modelName)
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
-                                                aiService.modelReasoningConfigurations[modelName] =
-                                                    tempReasoningConfiguration
 
                                                 // Save per-model API key if provided
                                                 if !apiKey.isEmpty {
@@ -1388,8 +1383,6 @@ struct APISettingsView: View {
                                             if !aiService.customModels.contains(finalModelName) {
                                                 aiService.customModels.append(finalModelName)
                                                 aiService.modelProviders[finalModelName] = .appleIntelligence
-                                                aiService.modelReasoningConfigurations[finalModelName] =
-                                                    tempReasoningConfiguration
                                                 if aiService.customModels.count == 1 {
                                                     aiService.selectedModel = finalModelName
                                                 }
@@ -1415,33 +1408,12 @@ struct APISettingsView: View {
                                 tempModelName: $tempModelName,
                                 tempAPIKey: $tempAPIKey,
                                 tempEndpoint: $tempEndpoint,
-                                tempReasoningConfiguration: $tempReasoningConfiguration,
                                 showAPIKey: $showAPIKey,
                                 selectedModelName: $selectedModelName,
                                 validationStatus: $validationStatus
                             )
                             .padding(.horizontal)
                         }
-
-                        VStack(alignment: .leading, spacing: Spacing.lg) {
-                            Text("Reasoning")
-                                .font(Typography.headline)
-                                .foregroundStyle(.primary)
-
-                            VStack(alignment: .leading, spacing: Spacing.md) {
-                                ModelReasoningSettingsControls(
-                                    configuration: $tempReasoningConfiguration,
-                                    model: tempModelName,
-                                    provider: aiService.provider,
-                                    endpointType: tempEndpointType,
-                                    endpoint: tempEndpoint
-                                )
-                            }
-                            .padding(Spacing.lg)
-                            .background(Theme.backgroundSecondary)
-                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
-                        }
-                        .padding(.horizontal)
 
                         // Status Section
                         if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
@@ -1552,7 +1524,6 @@ struct APISettingsView: View {
         // For others, use OpenAI endpoint
         tempEndpoint = aiService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
-        tempReasoningConfiguration = .automatic
         validationStatus = .notChecked
     }
 
@@ -1672,7 +1643,6 @@ struct APISettingsView: View {
         // Load per-model API key if available
         tempAPIKey = aiService.modelAPIKeys[model] ?? ""
         tempEndpointType = aiService.modelEndpointTypes[model] ?? .chatCompletions
-        tempReasoningConfiguration = aiService.reasoningConfiguration(for: model)
 
         // Load endpoint based on provider
         switch aiService.provider {
@@ -1796,7 +1766,6 @@ struct AnthropicConfigurationView: View {
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
     @Binding var tempEndpoint: String
-    @Binding var tempReasoningConfiguration: ModelReasoningConfiguration
     @Binding var showAPIKey: Bool
     @Binding var selectedModelName: String?
     @Binding var validationStatus: APISettingsView.ValidationStatus
@@ -2144,7 +2113,6 @@ struct AnthropicConfigurationView: View {
         aiService.modelProviders[modelName] = .anthropic
         aiService.modelAPIKeys[modelName] = apiKey
         aiService.modelEndpointTypes.removeValue(forKey: modelName)
-        aiService.modelReasoningConfigurations[modelName] = tempReasoningConfiguration
 
         if !endpoint.isEmpty {
             aiService.modelEndpoints[modelName] = endpoint

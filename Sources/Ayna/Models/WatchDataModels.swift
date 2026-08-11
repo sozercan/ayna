@@ -13,17 +13,20 @@ struct WatchConversationRequestConfiguration: Codable, Equatable, Identifiable, 
     let id: UUID
     var model: String
     var temperature: Double
+    var reasoningConfiguration: ModelReasoningConfiguration
     var resolvedSystemPrompt: String?
 
     init(
         id: UUID,
         model: String,
         temperature: Double,
+        reasoningConfiguration: ModelReasoningConfiguration = .automatic,
         resolvedSystemPrompt: String?
     ) {
         self.id = id
         self.model = model
         self.temperature = temperature
+        self.reasoningConfiguration = reasoningConfiguration
         self.resolvedSystemPrompt = resolvedSystemPrompt?.nilIfEmpty
     }
 
@@ -32,6 +35,7 @@ struct WatchConversationRequestConfiguration: Codable, Equatable, Identifiable, 
             id: conversation.id,
             model: conversation.model,
             temperature: conversation.temperature,
+            reasoningConfiguration: conversation.reasoningConfiguration,
             resolvedSystemPrompt: resolvedSystemPrompt
         )
     }
@@ -40,7 +44,40 @@ struct WatchConversationRequestConfiguration: Codable, Equatable, Identifiable, 
         guard conversation.id == id else { return }
         conversation.model = model
         conversation.temperature = temperature
+        conversation.reasoningConfiguration = reasoningConfiguration
         conversation.resolvedSystemPrompt = resolvedSystemPrompt?.nilIfEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case model
+        case temperature
+        case reasoningConfiguration
+        case resolvedSystemPrompt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        model = try container.decode(String.self, forKey: .model)
+        temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? 0.7
+        reasoningConfiguration = try container.decodeIfPresent(
+            ModelReasoningConfiguration.self,
+            forKey: .reasoningConfiguration
+        ) ?? .automatic
+        resolvedSystemPrompt = try container.decodeIfPresent(
+            String.self,
+            forKey: .resolvedSystemPrompt
+        )?.nilIfEmpty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(model, forKey: .model)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(reasoningConfiguration, forKey: .reasoningConfiguration)
+        try container.encodeIfPresent(resolvedSystemPrompt, forKey: .resolvedSystemPrompt)
     }
 }
 
@@ -57,6 +94,7 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
     var updatedAt: Date
     var createdAt: Date
     var temperature: Double
+    var reasoningConfiguration: ModelReasoningConfiguration
     var resolvedSystemPrompt: String?
     var watchRevision: UInt64
 
@@ -68,6 +106,7 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         updatedAt: Date,
         createdAt: Date,
         temperature: Double = 0.7,
+        reasoningConfiguration: ModelReasoningConfiguration = .automatic,
         resolvedSystemPrompt: String? = nil,
         watchRevision: UInt64 = 0
     ) {
@@ -78,6 +117,7 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         self.updatedAt = updatedAt
         self.createdAt = createdAt
         self.temperature = temperature
+        self.reasoningConfiguration = reasoningConfiguration
         self.resolvedSystemPrompt = resolvedSystemPrompt
         self.watchRevision = watchRevision
     }
@@ -107,6 +147,7 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         updatedAt = conversation.updatedAt
         createdAt = conversation.createdAt
         temperature = conversation.temperature
+        reasoningConfiguration = conversation.reasoningConfiguration
         self.resolvedSystemPrompt = resolvedSystemPrompt?.nilIfEmpty
         self.watchRevision = watchRevision
 
@@ -124,7 +165,8 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
             createdAt: createdAt,
             model: model,
             systemPromptMode: .inheritGlobal,
-            temperature: temperature
+            temperature: temperature,
+            reasoningConfiguration: reasoningConfiguration
         )
         conversation.updatedAt = updatedAt
         conversation.messages = messages.map { $0.toMessage() }
@@ -171,6 +213,7 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         case updatedAt
         case createdAt
         case temperature
+        case reasoningConfiguration
         case resolvedSystemPrompt
         case watchRevision
     }
@@ -184,6 +227,10 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? 0.7
+        reasoningConfiguration = try container.decodeIfPresent(
+            ModelReasoningConfiguration.self,
+            forKey: .reasoningConfiguration
+        ) ?? .automatic
         resolvedSystemPrompt = try container.decodeIfPresent(String.self, forKey: .resolvedSystemPrompt)?.nilIfEmpty
         watchRevision = try container.decodeIfPresent(UInt64.self, forKey: .watchRevision) ?? 0
     }

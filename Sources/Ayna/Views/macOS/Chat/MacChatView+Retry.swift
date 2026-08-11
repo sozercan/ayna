@@ -141,6 +141,7 @@ extension MacChatView {
             model: updatedConversation.model,
             temperature: updatedConversation.temperature,
             tools: tools,
+            reasoningConfiguration: updatedConversation.reasoningConfiguration,
             isInitialRequest: true,
             assistantMessageID: assistantMessage.id
         )
@@ -193,6 +194,7 @@ extension MacChatView {
             model: model,
             temperature: updatedConversation.temperature,
             tools: tools,
+            reasoningConfiguration: updatedConversation.reasoningConfiguration,
             isInitialRequest: true,
             assistantMessageID: assistantMessage.id
         )

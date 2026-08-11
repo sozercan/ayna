@@ -355,7 +355,6 @@ struct IOSModelEditView: View {
     @State private var apiKey = ""
     @State private var endpoint = ""
     @State private var endpointType: APIEndpointType = .chatCompletions
-    @State private var reasoningConfiguration = ModelReasoningConfiguration.automatic
     @State private var saveErrorMessage: String?
 
     init(modelName: String, isNew: Bool) {
@@ -428,15 +427,6 @@ struct IOSModelEditView: View {
                 }
             }
 
-            Section("Reasoning") {
-                ModelReasoningSettingsControls(
-                    configuration: $reasoningConfiguration,
-                    model: modelName,
-                    provider: provider,
-                    endpointType: endpointType,
-                    endpoint: endpoint
-                )
-            }
         }
         .navigationTitle(isNew ? "Add Model" : "Edit Model")
         .toolbar {
@@ -505,7 +495,6 @@ struct IOSModelEditView: View {
         if let savedType = aiService.modelEndpointTypes[modelName] {
             endpointType = savedType
         }
-        reasoningConfiguration = aiService.reasoningConfiguration(for: modelName)
     }
 
     private func saveModel() -> Bool {
@@ -580,7 +569,6 @@ struct IOSModelEditView: View {
         }
 
         aiService.modelProviders[trimmedName] = provider
-        aiService.modelReasoningConfigurations[trimmedName] = reasoningConfiguration
 
         if provider == .openai {
             if !apiKey.isEmpty {

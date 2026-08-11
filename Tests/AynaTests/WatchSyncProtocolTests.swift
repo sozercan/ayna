@@ -73,11 +73,19 @@ struct WatchSyncProtocolTests {
     func `Long model identifiers remain exact through compact configuration build Codable and reconcile`() throws {
         let maximumModelCharacters = 16
         let model = "custom-provider/" + String(repeating: "configuration-segment-", count: 12)
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .max,
+            openAIMode: .pro,
+            openAIContext: .allTurns,
+            summary: .detailed
+        )
         #expect(model.count > maximumModelCharacters)
         let phone = Conversation(
             title: "Manifest only",
             model: model,
-            temperature: 0.25
+            temperature: 0.25,
+            reasoningConfiguration: reasoningConfiguration
         )
         var configuration = WatchSyncPayloadConfiguration.default
         configuration.maximumConversations = 0
@@ -108,8 +116,10 @@ struct WatchSyncProtocolTests {
 
         #expect(decoded.conversations.isEmpty)
         #expect(compactConfiguration.model == model)
+        #expect(compactConfiguration.reasoningConfiguration == reasoningConfiguration)
         #expect(settingsByModel[compactConfiguration.model] == "exact-settings")
         #expect(reconciled.model == model)
+        #expect(reconciled.reasoningConfiguration == reasoningConfiguration)
         #expect(reconciled.messages == [retainedMessage])
         #expect(settingsByModel[reconciled.model] == "exact-settings")
     }
@@ -871,14 +881,23 @@ struct WatchSyncProtocolTests {
     }
 
     @Test
-    func `Configuration mutation updates model and temperature without replacing phone prompt`() throws {
+    func `Configuration mutation updates request settings without replacing phone prompt`() throws {
         let conversationID = UUID()
+        let phoneReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .low
+        )
+        let watchReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .xhigh
+        )
         var phone = Conversation(
             id: conversationID,
             title: "Phone",
             model: "old-model",
             systemPromptMode: .custom("phone prompt"),
-            temperature: 0.4
+            temperature: 0.4,
+            reasoningConfiguration: phoneReasoningConfiguration
         )
         phone.pendingAutoSendPrompt = "pending"
         let watch = WatchConversation(
@@ -888,6 +907,7 @@ struct WatchSyncProtocolTests {
             updatedAt: Date(timeIntervalSince1970: 2),
             createdAt: Date(timeIntervalSince1970: 1),
             temperature: 0.9,
+            reasoningConfiguration: watchReasoningConfiguration,
             resolvedSystemPrompt: "stale resolved prompt",
             watchRevision: 1
         )
@@ -905,6 +925,7 @@ struct WatchSyncProtocolTests {
 
         #expect(updated.model == "new-model")
         #expect(updated.temperature == 0.9)
+        #expect(updated.reasoningConfiguration == watchReasoningConfiguration)
         #expect(updated.systemPromptMode == .custom("phone prompt"))
         #expect(updated.pendingAutoSendPrompt == "pending")
     }
@@ -1100,6 +1121,10 @@ struct WatchSyncProtocolTests {
     func `Partial legacy coverage suppresses delivered fields but retains unsupported configuration`() throws {
         let conversationID = UUID()
         let messageID = UUID()
+        let localReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
         let deliveredMessage = WatchMessage(
             id: messageID,
             role: Message.Role.user.rawValue,
@@ -1113,6 +1138,7 @@ struct WatchSyncProtocolTests {
             model: "watch-model",
             updatedAt: Date(timeIntervalSince1970: 2),
             createdAt: Date(timeIntervalSince1970: 1),
+            reasoningConfiguration: localReasoningConfiguration,
             watchRevision: 2
         )
         let pending = WatchConversationMutation(
@@ -1161,6 +1187,7 @@ struct WatchSyncProtocolTests {
         #expect(visible.title == "Phone title")
         #expect(visible.messages == [phoneMessage])
         #expect(visible.model == "watch-model")
+        #expect(visible.reasoningConfiguration == localReasoningConfiguration)
         #expect(result.state.pendingMutations == [pending])
     }
 
@@ -1451,6 +1478,10 @@ struct WatchSyncProtocolTests {
     func `Source replacement preserves a manifest-listed cached body omitted by bounds`() throws {
         let oldSourceID = UUID()
         let newSourceID = UUID()
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
         var cached = makeWatchConversation(title: "Cached body", updatedAt: 20)
         cached.model = "old-model"
         let stale = makeWatchConversation(title: "Old phone only", updatedAt: 10)
@@ -1470,6 +1501,7 @@ struct WatchSyncProtocolTests {
                     id: cached.id,
                     model: "new-model",
                     temperature: 0.2,
+                    reasoningConfiguration: reasoningConfiguration,
                     resolvedSystemPrompt: "new prompt"
                 )
             ],
@@ -1484,6 +1516,7 @@ struct WatchSyncProtocolTests {
         #expect(retained.title == "Cached body")
         #expect(retained.model == "new-model")
         #expect(retained.temperature == 0.2)
+        #expect(retained.reasoningConfiguration == reasoningConfiguration)
         #expect(retained.resolvedSystemPrompt == "new prompt")
     }
 

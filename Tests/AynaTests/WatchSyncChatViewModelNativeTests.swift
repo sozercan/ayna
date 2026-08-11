@@ -12,7 +12,16 @@
     struct WatchSyncChatViewModelNativeTests {
         @Test
         func `Request uses durable prompt, effective history, conversation model, and temperature`() async throws {
-            let fixture = makeViewModelFixture()
+            let expectedReasoningConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high,
+                openAIMode: .pro,
+                openAIContext: .allTurns,
+                summary: .detailed
+            )
+            let fixture = makeViewModelFixture(
+                reasoningConfiguration: expectedReasoningConfiguration
+            )
             let callbacks = FlightTestBox<AIServiceResponseSimulationCallbacks?>(nil)
             let aiService = configuredAIService(model: fixture.conversation.model) { _, value in
                 callbacks.value = value
@@ -33,6 +42,7 @@
             let request = try #require(observed)
             #expect(request.model == fixture.conversation.model)
             #expect(request.temperature == fixture.conversation.temperature)
+            #expect(request.reasoningConfiguration == expectedReasoningConfiguration)
             #expect(request.conversationID == fixture.conversation.id)
             #expect(request.messages.map(\.role) == [.system, .user])
             #expect(request.messages.first?.content == fixture.conversation.resolvedSystemPrompt)
@@ -990,7 +1000,17 @@
 
         @Test
         func `Tool continuation includes final throttled assistant content`() async throws {
-            let fixture = makeViewModelFixture()
+            let expectedReasoningConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high
+            )
+            let changedReasoningConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .low
+            )
+            let fixture = makeViewModelFixture(
+                reasoningConfiguration: expectedReasoningConfiguration
+            )
             let aiService = configuredCapturingAIService(model: fixture.conversation.model)
             var requests: [WatchChatViewModel.RequestConfiguration] = []
             let viewModel = WatchChatViewModel(
@@ -1005,6 +1025,20 @@
             #expect(viewModel.sendMessage("Prompt") == .started)
             let firstRequest = try #require(aiService.capturedRequests.value.first)
             let onToolCallRequested = try #require(firstRequest.onToolCallRequested)
+            var refreshedConversation = fixture.conversation
+            refreshedConversation.reasoningConfiguration = changedReasoningConfiguration
+            refreshedConversation.updatedAt = Date(timeIntervalSince1970: 2)
+            #expect(fixture.store.applySyncSnapshot(
+                WatchSyncSnapshot(
+                    revision: 2,
+                    conversations: [refreshedConversation],
+                    authoritativeConversationIDs: [refreshedConversation.id]
+                )
+            ) == .applied)
+            #expect(
+                fixture.store.conversation(for: fixture.conversation.id)?.reasoningConfiguration
+                    == changedReasoningConfiguration
+            )
             firstRequest.onChunk("First")
             firstRequest.onChunk(" second")
             onToolCallRequested("current-call", "unavailable_watch_tool", [:])
@@ -1013,6 +1047,15 @@
             #expect(await waitUntil { requests.count == 2 })
             let continuation = try #require(requests.last)
             #expect(continuation.messages.first { $0.role == .assistant }?.content == "First second")
+            #expect(requests.map(\.reasoningConfiguration) == [
+                expectedReasoningConfiguration,
+                expectedReasoningConfiguration,
+            ])
+            let capturedRequests = aiService.capturedRequests.value
+            #expect(capturedRequests.count == 2)
+            #expect(capturedRequests.allSatisfy {
+                $0.reasoningConfiguration == expectedReasoningConfiguration
+            })
             viewModel.cancelRequest()
         }
 
@@ -1505,6 +1548,7 @@
         title: String = "Synced",
         messages: [WatchMessage] = [],
         model: String = "conversation-model",
+        reasoningConfiguration: ModelReasoningConfiguration = .automatic,
         persistenceWriter: ((Data) -> Bool)? = nil
     ) -> ViewModelFixture {
         let suiteName = "WatchChatViewModelNativeTests.\(UUID().uuidString)"
@@ -1527,6 +1571,7 @@
             updatedAt: date,
             createdAt: date,
             temperature: 0.15,
+            reasoningConfiguration: reasoningConfiguration,
             resolvedSystemPrompt: "System prompt"
         )
         store.applySyncSnapshot(
@@ -1695,6 +1740,7 @@
         let onError: @Sendable (Error) -> Void
         let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
         let onReasoning: (@Sendable (String) -> Void)?
+        let reasoningConfiguration: ModelReasoningConfiguration?
     }
 
     @MainActor
@@ -1722,6 +1768,7 @@
             onReasoning: (@Sendable (String) -> Void)?,
             onReasoningContinuation: (@Sendable (ReasoningContinuationState) -> Void)?,
             requestFlightID: RequestFlightID?,
+            reasoningConfiguration: ModelReasoningConfiguration?,
             reasoningSnapshot: AIReasoningRequestSnapshot?
         ) -> AITextRequest {
             capturedRequests.update {
@@ -1732,7 +1779,8 @@
                         onComplete: onComplete,
                         onError: onError,
                         onToolCallRequested: onToolCallRequested,
-                        onReasoning: onReasoning
+                        onReasoning: onReasoning,
+                        reasoningConfiguration: reasoningConfiguration
                     )
                 )
             }
@@ -1753,6 +1801,7 @@
                 onReasoning: onReasoning,
                 onReasoningContinuation: onReasoningContinuation,
                 requestFlightID: requestFlightID,
+                reasoningConfiguration: reasoningConfiguration,
                 reasoningSnapshot: reasoningSnapshot
             )
         }

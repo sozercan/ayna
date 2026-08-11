@@ -188,6 +188,41 @@ struct WatchConnectivitySupportTests {
     }
 
     @Test
+    func `reasoning mismatch prevents legacy create configuration acknowledgement`() {
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
+        let conversation = WatchConversation(
+            id: UUID(),
+            title: "Reasoning",
+            model: "reasoning-model",
+            updatedAt: Date(timeIntervalSince1970: 20),
+            createdAt: Date(timeIntervalSince1970: 10),
+            temperature: 0.3,
+            reasoningConfiguration: reasoningConfiguration,
+            resolvedSystemPrompt: "Prompt",
+            watchRevision: 1
+        )
+        let mutation = WatchConversationMutation(
+            revision: 1,
+            conversation: conversation,
+            fields: .fullState
+        )
+        var echo = conversation
+        echo.reasoningConfiguration = .automatic
+
+        let reconciliation = WatchLegacyEchoReconciler.reconcile(
+            mutation,
+            echoedConversations: [echo]
+        )
+
+        #expect(!reconciliation.matchedComponents.contains(.create(revision: 1)))
+        #expect(!reconciliation.matchedComponents.contains(.configuration(revision: 1)))
+        #expect(!reconciliation.canAcknowledgeMutation)
+    }
+
+    @Test
     func `covered or unrelated legacy creates cannot overwrite existing conversations`() {
         let conversationID = UUID()
         let activePeerID = UUID()
@@ -244,6 +279,10 @@ struct WatchConnectivitySupportTests {
     @Test
     func `late legacy create repairs a message placeholder without losing messages`() {
         let conversationID = UUID()
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .xhigh
+        )
         let message = Message(
             id: UUID(),
             role: .user,
@@ -266,6 +305,7 @@ struct WatchConnectivitySupportTests {
             updatedAt: Date(timeIntervalSince1970: 10),
             createdAt: Date(timeIntervalSince1970: 10),
             temperature: 0.3,
+            reasoningConfiguration: reasoningConfiguration,
             resolvedSystemPrompt: "Watch prompt",
             watchRevision: 1
         )
@@ -275,6 +315,7 @@ struct WatchConnectivitySupportTests {
         #expect(repaired.title == "Watch title")
         #expect(repaired.model == "watch-model")
         #expect(repaired.temperature == 0.3)
+        #expect(repaired.reasoningConfiguration == reasoningConfiguration)
         #expect(repaired.systemPromptMode == .inheritGlobal)
         #expect(repaired.createdAt == create.createdAt)
         #expect(repaired.updatedAt == message.timestamp)

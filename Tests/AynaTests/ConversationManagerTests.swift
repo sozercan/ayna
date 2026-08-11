@@ -267,7 +267,11 @@ extension AIServiceGlobalStateTests {
             let keychain = InMemoryKeychainStorage()
             let keyId = "test-metadata-placeholder-key"
             let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
-            let conversation = TestHelpers.sampleConversation(title: "Metadata Only")
+            var conversation = TestHelpers.sampleConversation(title: "Metadata Only")
+            conversation.reasoningConfiguration = ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high
+            )
             try await store.save(conversation)
 
             let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
@@ -277,9 +281,14 @@ extension AIServiceGlobalStateTests {
             #expect(manager.conversations.first?.id == conversation.id)
             #expect(manager.conversations.first?.title == "Metadata Only")
             #expect(manager.conversations.first?.messages.isEmpty == true)
+            #expect(
+                manager.conversations.first?.reasoningConfiguration
+                    == conversation.reasoningConfiguration
+            )
 
             let hydrated = await manager.ensureConversationLoaded(conversation.id)
             #expect(hydrated?.messages.count == conversation.messages.count)
+            #expect(hydrated?.reasoningConfiguration == conversation.reasoningConfiguration)
             #expect(manager.conversations.first?.messages.count == conversation.messages.count)
         }
 

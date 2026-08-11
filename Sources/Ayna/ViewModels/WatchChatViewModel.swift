@@ -133,6 +133,7 @@ enum WatchLiveModelPolicy {
             let messages: [Message]
             let model: String
             let temperature: Double
+            let reasoningConfiguration: ModelReasoningConfiguration
             let conversationID: UUID
         }
 
@@ -357,6 +358,7 @@ enum WatchLiveModelPolicy {
                 messages: requestConversation.effectiveHistory,
                 model: model,
                 temperature: requestConversation.temperature,
+                reasoningConfiguration: requestConversation.reasoningConfiguration,
                 conversationId: conversationId,
                 assistantMessageId: assistantMessage.id,
                 tools: tools,
@@ -380,6 +382,7 @@ enum WatchLiveModelPolicy {
             messages: [Message],
             model: String,
             temperature: Double,
+            reasoningConfiguration: ModelReasoningConfiguration,
             conversationId: UUID,
             assistantMessageId: UUID,
             tools: [[String: Any]]?,
@@ -407,6 +410,7 @@ enum WatchLiveModelPolicy {
                     messages: messages,
                     model: model,
                     temperature: temperature,
+                    reasoningConfiguration: reasoningConfiguration,
                     conversationID: conversationId
                 )
             )
@@ -460,6 +464,7 @@ enum WatchLiveModelPolicy {
                             assistantMessageId: assistantMessageId,
                             model: model,
                             temperature: temperature,
+                            reasoningConfiguration: reasoningConfiguration,
                             conversationId: conversationId,
                             tools: tools,
                             isFirstMessage: isFirstMessage,
@@ -557,6 +562,7 @@ enum WatchLiveModelPolicy {
                             assistantMessageId: assistantMessageId,
                             model: model,
                             temperature: temperature,
+                            reasoningConfiguration: reasoningConfiguration,
                             conversationId: conversationId,
                             tools: tools,
                             userContent: userContent
@@ -597,7 +603,8 @@ enum WatchLiveModelPolicy {
                             reasoningContinuation: state
                         )
                     }
-                }
+                },
+                reasoningConfiguration: reasoningConfiguration
             )
             coordinator.onCancel(for: operationID) {
                 request.cancel()
@@ -617,6 +624,7 @@ enum WatchLiveModelPolicy {
             assistantMessageId: UUID,
             model: String,
             temperature: Double,
+            reasoningConfiguration: ModelReasoningConfiguration,
             conversationId: UUID,
             tools: [[String: Any]]?,
             userContent: String
@@ -671,6 +679,7 @@ enum WatchLiveModelPolicy {
                     assistantMessageId: assistantMessageId,
                     model: model,
                     temperature: temperature,
+                    reasoningConfiguration: reasoningConfiguration,
                     conversationId: conversationId,
                     tools: tools,
                     isFirstMessage: false,
@@ -686,6 +695,7 @@ enum WatchLiveModelPolicy {
             assistantMessageId: UUID,
             model: String,
             temperature: Double,
+            reasoningConfiguration: ModelReasoningConfiguration,
             conversationId: UUID,
             tools: [[String: Any]]?,
             isFirstMessage: Bool,
@@ -715,6 +725,7 @@ enum WatchLiveModelPolicy {
                     assistantMessageId: assistantMessageId,
                     model: model,
                     temperature: temperature,
+                    reasoningConfiguration: reasoningConfiguration,
                     conversationId: conversationId,
                     tools: tools,
                     userContent: userContent
@@ -728,6 +739,7 @@ enum WatchLiveModelPolicy {
             assistantMessageId: UUID,
             model: String,
             temperature: Double,
+            reasoningConfiguration: ModelReasoningConfiguration,
             conversationId: UUID,
             tools: [[String: Any]]?,
             userContent: String
@@ -814,6 +826,7 @@ enum WatchLiveModelPolicy {
                 messages: continuationMessages,
                 model: model,
                 temperature: temperature,
+                reasoningConfiguration: reasoningConfiguration,
                 conversationId: conversationId,
                 assistantMessageId: continuationMessage.id,
                 tools: tools,

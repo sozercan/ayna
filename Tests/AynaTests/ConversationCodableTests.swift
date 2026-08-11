@@ -14,6 +14,7 @@ struct ConversationCodableTests {
 
         #expect(conversation.systemPromptMode == .custom("Answer concisely."))
         #expect(conversation.temperature == 0.25)
+        #expect(conversation.reasoningConfiguration == .automatic)
     }
 
     @Test(
@@ -26,6 +27,7 @@ struct ConversationCodableTests {
 
         #expect(conversation.systemPromptMode == .inheritGlobal)
         #expect(conversation.temperature == 0.25)
+        #expect(conversation.reasoningConfiguration == .automatic)
     }
 
     @Test
@@ -40,6 +42,13 @@ struct ConversationCodableTests {
             model: "gpt-5",
             systemPromptMode: .disabled,
             temperature: 0.5,
+            reasoningConfiguration: ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .xhigh,
+                openAIMode: .pro,
+                openAIContext: .allTurns,
+                summary: .detailed
+            ),
             multiModelEnabled: true,
             activeModels: ["gpt-5", "claude-sonnet-4"],
             responseGroups: []
@@ -49,6 +58,55 @@ struct ConversationCodableTests {
         let decoded = try JSONDecoder().decode(Conversation.self, from: data)
 
         #expect(decoded == original)
+    }
+
+    @Test
+    func `metadata round-trip preserves conversation reasoning`() throws {
+        let configuration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high,
+            summary: .concise
+        )
+        let conversation = Conversation(
+            title: "Reasoning metadata",
+            model: "gpt-5.6",
+            reasoningConfiguration: configuration
+        )
+        let metadata = ConversationMetadata(conversation: conversation)
+
+        let data = try JSONEncoder().encode(metadata)
+        let decoded = try JSONDecoder().decode(ConversationMetadata.self, from: data)
+
+        #expect(metadata.reasoningConfiguration == configuration)
+        #expect(decoded.reasoningConfiguration == configuration)
+    }
+
+    @Test
+    func `legacy metadata without reasoning decodes as automatic`() throws {
+        let id = try #require(UUID(uuidString: "BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF"))
+        let data = Data(
+            """
+            {
+                "id": "\(id.uuidString)",
+                "title": "Legacy metadata",
+                "createdAt": 1000,
+                "updatedAt": 2000,
+                "model": "gpt-4o",
+                "systemPromptMode": {"type": "inheritGlobal"},
+                "temperature": 0.7,
+                "multiModelEnabled": false,
+                "activeModels": [],
+                "messageCount": 0,
+                "responseGroupCount": 0,
+                "lastMessagePreview": "",
+                "searchableText": "Legacy metadata"
+            }
+            """.utf8
+        )
+
+        let metadata = try JSONDecoder().decode(ConversationMetadata.self, from: data)
+
+        #expect(metadata.reasoningConfiguration == .automatic)
     }
 
     @Test

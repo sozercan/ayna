@@ -13,6 +13,16 @@ import SwiftUI
 
 // swiftlint:disable:next type_body_length
 struct MacNewChatView: View {
+    private struct ToolContinuationContext: Sendable {
+        let operationID: ToolChainCoordinator.OperationID
+        let sourceAssistantMessageID: UUID
+        let conversationID: UUID
+        let model: String
+        let temperature: Double
+        let tools: UncheckedSendableWrapper<[[String: Any]]?>
+        let reasoningConfiguration: ModelReasoningConfiguration
+    }
+
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject var aiService = AIService.shared
     @Binding var selectedConversationId: UUID?
@@ -22,6 +32,7 @@ struct MacNewChatView: View {
     @State var isGenerating = false
     @State var currentConversationId: UUID?
     @State private var selectedModel = AIService.shared.selectedModel
+    @State private var reasoningConfiguration = ModelReasoningConfiguration.automatic
         @State var toolCallDepth = 0
         @State var currentToolName: String?
         @State var activeAssistantMessageID: UUID?
@@ -141,9 +152,13 @@ struct MacNewChatView: View {
                                                             in: conversation,
                                                             messageId: message.id,
                                                             newContent: newContent
-                                                    )
+                                                        )
                                                         if edited {
-                                                            sendMessageForConversation(conversation, model: conversation.model)
+                                                            sendMessageForConversation(
+                                                                conversation,
+                                                                model: conversation.model,
+                                                                reasoningConfiguration: conversation.reasoningConfiguration
+                                                            )
                                                         }
                                                     }
                                                 } : nil
@@ -219,6 +234,19 @@ struct MacNewChatView: View {
         .onAppear {
             syncSelectedModelState()
         }
+        .onChange(of: reasoningConfiguration) { _, configuration in
+            guard var conversation = currentConversation,
+                  conversation.reasoningConfiguration != configuration
+            else {
+                return
+            }
+            conversation.reasoningConfiguration = configuration
+            conversationManager.updateConversation(conversation)
+        }
+        .onChange(of: currentConversation?.reasoningConfiguration) { _, configuration in
+            guard let configuration, reasoningConfiguration != configuration else { return }
+            reasoningConfiguration = configuration
+        }
         .onDisappear {
                 cancelOwnedGenerationForLifecycle()
         }
@@ -255,11 +283,13 @@ struct MacNewChatView: View {
             selectedModel: $selectedModel,
             showModelSelector: $showModelSelector,
             isToolSectionExpanded: $isToolSectionExpanded,
+            reasoningConfiguration: $reasoningConfiguration,
             isGenerating: isGenerating,
             composerModelLabel: composerModelLabel,
             textEditorIdentifier: TestIdentifiers.NewChatComposer.textEditor,
             sendButtonIdentifier: TestIdentifiers.NewChatComposer.sendButton,
-                onSendMessage: { beginSendMessage() },
+            reasoningControlIdentifier: "newchat.composer.reasoning",
+            onSendMessage: { beginSendMessage() },
             onAttachFile: attachFile,
             onShowAppContentPicker: { showAppContentPicker = true },
             onToggleModelSelection: toggleModelSelection,
@@ -419,11 +449,15 @@ struct MacNewChatView: View {
         }
 
             let preparationID = UUID()
+            let requestReasoningConfiguration = reasoningConfiguration
             sendPreparationID = preparationID
             isGenerating = true
             let task = Task { @MainActor in
                 guard !Task.isCancelled, sendPreparationID == preparationID else { return }
-                await sendMessage(preparationID: preparationID)
+                await sendMessage(
+                    preparationID: preparationID,
+                    reasoningConfiguration: requestReasoningConfiguration
+                )
             }
             sendPreparationTask = task
         }
@@ -434,7 +468,10 @@ struct MacNewChatView: View {
             sendPreparationID = nil
         }
 
-        private func sendMessage(preparationID: UUID) async {
+        private func sendMessage(
+            preparationID: UUID,
+            reasoningConfiguration requestReasoningConfiguration: ModelReasoningConfiguration
+        ) async {
             var handedOff = false
             defer {
                 if sendPreparationID == preparationID {
@@ -508,6 +545,7 @@ struct MacNewChatView: View {
         var updatedConversation = conversation
         updatedConversation.activeModels = Array(selectedModels)
         updatedConversation.multiModelEnabled = selectedModels.count > 1
+        updatedConversation.reasoningConfiguration = requestReasoningConfiguration
         conversationManager.updateConversation(updatedConversation)
 
             if appContentToSend != nil {
@@ -557,15 +595,24 @@ struct MacNewChatView: View {
             sendMultiModelMessage(
                 userMessageId: userMessage.id,
                 models: Array(selectedModels),
-                temperature: conversation.temperature
+                temperature: conversation.temperature,
+                reasoningConfiguration: requestReasoningConfiguration
             )
         } else {
                 handedOff = true
-            sendMessageForConversation(conversation, model: activeModel)
+            sendMessageForConversation(
+                conversation,
+                model: activeModel,
+                reasoningConfiguration: requestReasoningConfiguration
+            )
         }
     }
 
-    private func sendMessageForConversation(_ conversation: Conversation, model: String) {
+    private func sendMessageForConversation(
+        _ conversation: Conversation,
+        model: String,
+        reasoningConfiguration: ModelReasoningConfiguration
+    ) {
         // Get the conversation with the user message we just added
         guard
             let updatedConversation = conversationManager.conversations.first(where: {
@@ -602,8 +649,9 @@ struct MacNewChatView: View {
             messages: currentMessages,
             model: activeModel,
             temperature: updatedConversation.temperature,
-                tools: tools,
-                assistantMessageID: assistantMessage.id
+            tools: tools,
+            reasoningConfiguration: reasoningConfiguration,
+            assistantMessageID: assistantMessage.id
         )
     }
 
@@ -865,7 +913,8 @@ struct MacNewChatView: View {
     private func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],
-        temperature: Double
+        temperature: Double,
+        reasoningConfiguration: ModelReasoningConfiguration
     ) {
         logNewChat(
             "🔀 Starting multi-model request",
@@ -1028,7 +1077,8 @@ struct MacNewChatView: View {
                         conversationManager.save(conversation)
                     }
                 }
-            }
+            },
+            reasoningConfiguration: reasoningConfiguration
         )
             coordinator.onCancel(for: operationID) {
                 multiModelReasoningBuffer.finishAll()
@@ -1046,6 +1096,7 @@ struct MacNewChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
+        reasoningConfiguration: ModelReasoningConfiguration,
         assistantMessageID requestedAssistantMessageID: UUID? = nil,
         operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
     ) {
@@ -1081,6 +1132,15 @@ struct MacNewChatView: View {
                 return
             }
             let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
+            let continuationContext = ToolContinuationContext(
+                operationID: operationID,
+                sourceAssistantMessageID: assistantMessageID,
+                conversationID: conversationId,
+                model: model,
+                temperature: temperature,
+                tools: toolsWrapper,
+                reasoningConfiguration: reasoningConfiguration
+            )
 
             let request = aiService.sendMessage(
             messages: messages,
@@ -1121,12 +1181,7 @@ struct MacNewChatView: View {
                         )
                         handleNewChatToolRoundResolution(
                             resolution,
-                            operationID: operationID,
-                            sourceAssistantMessageID: assistantMessageID,
-                            conversationID: conversationId,
-                            model: model,
-                            temperature: temperature,
-                            tools: toolsWrapper.value
+                            context: continuationContext
                         )
                 }
             },
@@ -1259,13 +1314,8 @@ struct MacNewChatView: View {
                             let resolution = requestRounds.toolDidComplete(token, result: result)
                             handleNewChatToolRoundResolution(
                                 resolution,
-                                operationID: operationID,
-                                sourceAssistantMessageID: assistantMessageID,
-                                conversationID: conversationId,
-                                    model: model,
-                                    temperature: temperature,
-                                    tools: toolsWrapper.value
-                                )
+                                context: continuationContext
+                            )
                             }
                     }
                 },
@@ -1297,25 +1347,21 @@ struct MacNewChatView: View {
                             conversationManager.save(conversation)
                         }
                     }
-                }
+                },
+                reasoningConfiguration: reasoningConfiguration
                                 )
             coordinator.track(request, for: operationID)
                             }
 
         private func handleNewChatToolRoundResolution(
             _ resolution: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Resolution,
-            operationID: ToolChainCoordinator.OperationID,
-            sourceAssistantMessageID: UUID,
-            conversationID: UUID,
-            model: String,
-            temperature: Double,
-            tools: [[String: Any]]?
+            context: ToolContinuationContext
         ) {
             switch resolution {
             case .pending, .ignored:
                 return
             case .responseCompleted:
-                guard toolChainCoordinator.finishOperation(operationID) else { return }
+                guard toolChainCoordinator.finishOperation(context.operationID) else { return }
                 activeAssistantMessageID = nil
                     currentToolName = nil
                 toolCallDepth = 0
@@ -1323,35 +1369,28 @@ struct MacNewChatView: View {
                     logNewChat(
                     "✅ Initial message finished streaming, switching to ChatView",
                         level: .info,
-                    metadata: ["conversationId": conversationID.uuidString]
+                    metadata: ["conversationId": context.conversationID.uuidString]
                     )
-                selectedConversationId = conversationID
+                selectedConversationId = context.conversationID
             case let .launchContinuation(continuation):
                 launchNewChatToolContinuation(
                     continuation,
-                    operationID: operationID,
-                    sourceAssistantMessageID: sourceAssistantMessageID,
-                    conversationID: conversationID,
-                    model: model,
-                    temperature: temperature,
-                    tools: tools
+                    context: context
                 )
             }
         }
 
         private func launchNewChatToolContinuation(
             _ continuation: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Continuation,
-            operationID: ToolChainCoordinator.OperationID,
-            sourceAssistantMessageID: UUID,
-            conversationID: UUID,
-            model: String,
-            temperature: Double,
-            tools: [[String: Any]]?
+            context: ToolContinuationContext
         ) {
-            guard toolChainCoordinator.owns(operationID, conversationID: conversationID),
-                  continuation.operationID == operationID,
-                  activeAssistantMessageID == sourceAssistantMessageID,
-                  let conversation = conversationManager.conversation(byId: conversationID)
+            guard toolChainCoordinator.owns(
+                context.operationID,
+                conversationID: context.conversationID
+            ),
+            continuation.operationID == context.operationID,
+            activeAssistantMessageID == context.sourceAssistantMessageID,
+            let conversation = conversationManager.conversation(byId: context.conversationID)
             else {
                 return
                 }
@@ -1362,14 +1401,17 @@ struct MacNewChatView: View {
                     }
 
             let citations = ToolExecutionResult.combinedCitations(from: results)
-            var continuationMessage = Message(role: .assistant, content: "", model: model)
+            var continuationMessage = Message(role: .assistant, content: "", model: context.model)
             if !citations.isEmpty {
                 continuationMessage.citations = citations
                 }
             conversationManager.addMessage(to: conversation, message: continuationMessage)
 
-            guard let conversationWithAssistant = conversationManager.conversation(byId: conversationID),
-                  toolChainCoordinator.owns(operationID, conversationID: conversationID)
+            guard let conversationWithAssistant = conversationManager.conversation(byId: context.conversationID),
+                  toolChainCoordinator.owns(
+                      context.operationID,
+                      conversationID: context.conversationID
+                  )
             else {
                 return
             }
@@ -1384,11 +1426,12 @@ struct MacNewChatView: View {
             sendMessageWithToolSupport(
                 conversation: conversationWithAssistant,
                 messages: continuationMessages,
-                model: model,
-                temperature: temperature,
-                tools: tools,
+                model: context.model,
+                temperature: context.temperature,
+                tools: context.tools.value,
+                reasoningConfiguration: context.reasoningConfiguration,
                 assistantMessageID: continuationMessage.id,
-                operationID: operationID
+                operationID: context.operationID
         )
     }
 

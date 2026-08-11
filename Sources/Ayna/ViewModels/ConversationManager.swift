@@ -1417,6 +1417,7 @@ final class ConversationManager: ObservableObject {
             model: metadata.model,
             systemPromptMode: metadata.systemPromptMode,
             temperature: metadata.temperature,
+            reasoningConfiguration: metadata.reasoningConfiguration,
             multiModelEnabled: metadata.multiModelEnabled,
             activeModels: metadata.activeModels,
             responseGroups: [],
@@ -1512,6 +1513,7 @@ final class ConversationManager: ObservableObject {
             mergedConversation.model = proposedConversation.model
             mergedConversation.systemPromptMode = proposedConversation.systemPromptMode
             mergedConversation.temperature = proposedConversation.temperature
+            mergedConversation.reasoningConfiguration = proposedConversation.reasoningConfiguration
             mergedConversation.multiModelEnabled = proposedConversation.multiModelEnabled
             mergedConversation.activeModels = proposedConversation.activeModels
             mergedConversation.pendingAutoSendPrompt = proposedConversation.pendingAutoSendPrompt

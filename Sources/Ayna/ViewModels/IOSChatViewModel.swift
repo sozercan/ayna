@@ -118,6 +118,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         let selectedModel: String
         let selectedModels: Set<String>
         let requestModel: String
+        let reasoningConfiguration: ModelReasoningConfiguration
     }
 
     private var toolExecutionStates: [
@@ -138,6 +139,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
     /// Selected models for multi-model chat
     @Published var selectedModels: Set<String> = []
+
+    /// Reasoning controls for the active conversation or pending new chat.
+    @Published var reasoningConfiguration: ModelReasoningConfiguration = .automatic
 
     /// Callback when a new conversation is created and first response completes.
     /// Used by IOSNewChatView to navigate to IOSChatView.
@@ -172,8 +176,22 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 arguments: arguments
             )
         }
-        selectedModel = resolvedAIService.selectedModel
-        selectedModels = [resolvedAIService.selectedModel]
+        let initialConversation = conversationManager.conversation(byId: conversationId)
+        let initialModel = initialConversation?.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedModel = if let initialModel, !initialModel.isEmpty {
+            initialModel
+        } else {
+            resolvedAIService.selectedModel
+        }
+        if let initialConversation,
+           initialConversation.multiModelEnabled,
+           !initialConversation.activeModels.isEmpty
+        {
+            selectedModels = Set(initialConversation.activeModels)
+        } else {
+            selectedModels = selectedModel.isEmpty ? [] : [selectedModel]
+        }
+        reasoningConfiguration = initialConversation?.reasoningConfiguration ?? .automatic
     }
 
     /// Initialize for a new chat (no conversation yet).
@@ -224,9 +242,31 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             }
         conversationManager = manager
         self.conversationId = conversationId
+        if let conversation = manager.conversation(byId: conversationId) {
+            reasoningConfiguration = conversation.reasoningConfiguration
+            let model = conversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !model.isEmpty {
+                selectedModel = model
+            }
+            if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
+                selectedModels = Set(conversation.activeModels)
+            } else {
+                selectedModels = selectedModel.isEmpty ? [] : [selectedModel]
+            }
+        } else {
+            reasoningConfiguration = .automatic
+        }
 
         // Check for pending auto-send prompt (from deep link)
         checkAndProcessPendingPrompt()
+    }
+
+    func updateReasoningConfiguration(_ configuration: ModelReasoningConfiguration) {
+        reasoningConfiguration = configuration
+        guard var conversation else { return }
+        guard conversation.reasoningConfiguration != configuration else { return }
+        conversation.reasoningConfiguration = configuration
+        conversationManager.updateConversation(conversation)
     }
 
     /// The model to use for sending messages.
@@ -261,6 +301,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         attachedImages.removeAll()
         selectedModel = aiService.selectedModel
         selectedModels = [aiService.selectedModel]
+        reasoningConfiguration = .automatic
 
         DiagnosticsLogger.log(
             .chatView,
@@ -531,7 +572,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             attachedImages: attachedImages,
             selectedModel: selectedModel,
             selectedModels: selectedModels,
-            requestModel: currentConversation?.model ?? selectedModel
+            requestModel: currentConversation?.model ?? selectedModel,
+            reasoningConfiguration: reasoningConfiguration
         )
 
         DiagnosticsLogger.log(
@@ -681,6 +723,10 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         }
 
         let targetConversationId = targetConversation.id
+        var configuredConversation = conversationManager.conversation(byId: targetConversationId)
+            ?? targetConversation
+        configuredConversation.reasoningConfiguration = preparation.reasoningConfiguration
+        conversationManager.updateConversation(configuredConversation)
 
         DiagnosticsLogger.log(
             .chatView,
@@ -820,7 +866,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             model: requestModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            reasoningConfiguration: preparation.reasoningConfiguration
         )
     }
     }
@@ -833,6 +880,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         conversationId: UUID,
         assistantMessageId: UUID,
         tools: [[String: Any]]?,
+        reasoningConfiguration: ModelReasoningConfiguration,
         operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
     ) {
         let toolsWrapper = UncheckedSendable(tools)
@@ -931,7 +979,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             assistantMessageId: assistantMessageId,
                             model: model,
                             conversationId: conversationId,
-                            tools: toolsWrapper.value
+                            tools: toolsWrapper.value,
+                            reasoningConfiguration: reasoningConfiguration
                         )
                     }
                 },
@@ -1030,7 +1079,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             assistantMessageId: assistantMessageId,
                             model: model,
                             conversationId: conversationId,
-                            tools: toolsWrapper
+                            tools: toolsWrapper,
+                            reasoningConfiguration: reasoningConfiguration
                         )
                     }
                 },
@@ -1071,7 +1121,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             self.conversationManager.save(conversation)
                         }
                     }
-                }
+                },
+                reasoningConfiguration: reasoningConfiguration
             )
             coordinator.onCancel(for: operationID) {
                 request.cancel()
@@ -1089,7 +1140,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             assistantMessageId: UUID,
             model: String,
             conversationId: UUID,
-            tools: UncheckedSendable<[[String: Any]]?>
+            tools: UncheckedSendable<[[String: Any]]?>,
+            reasoningConfiguration: ModelReasoningConfiguration
         ) {
             let coordinator = toolChainCoordinator
             let roundCoordinator = toolCallRequestRoundCoordinator
@@ -1141,7 +1193,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                     assistantMessageId: assistantMessageId,
                     model: model,
                     conversationId: conversationId,
-                    tools: tools.value
+                    tools: tools.value,
+                    reasoningConfiguration: reasoningConfiguration
                 )
             }
         }
@@ -1152,7 +1205,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             assistantMessageId: UUID,
             model: String,
             conversationId: UUID,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            reasoningConfiguration: ModelReasoningConfiguration
         ) {
             guard toolChainCoordinator.owns(operationID, conversationID: conversationId),
                   activeAssistantMessageId == assistantMessageId
@@ -1176,7 +1230,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                     assistantMessageId: assistantMessageId,
                     model: model,
                     conversationId: conversationId,
-                    tools: tools
+                    tools: tools,
+                    reasoningConfiguration: reasoningConfiguration
                 )
             }
         }
@@ -1187,7 +1242,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             assistantMessageId: UUID,
             model: String,
             conversationId: UUID,
-            tools: [[String: Any]]?
+            tools: [[String: Any]]?,
+            reasoningConfiguration: ModelReasoningConfiguration
         ) {
             guard continuation.operationID == operationID,
                   toolChainCoordinator.owns(operationID, conversationID: conversationId),
@@ -1255,6 +1311,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 conversationId: conversationId,
                 assistantMessageId: continuationAssistantMessage.id,
                 tools: tools,
+                reasoningConfiguration: reasoningConfiguration,
                 operationID: operationID
                                     )
                             }
@@ -1688,7 +1745,8 @@ extension IOSChatViewModel {
             model: retryModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            reasoningConfiguration: updatedConversation.reasoningConfiguration
         )
     }
 
@@ -1746,7 +1804,8 @@ extension IOSChatViewModel {
             model: refreshed.model,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            reasoningConfiguration: refreshed.reasoningConfiguration
         )
     }
 
@@ -1827,7 +1886,8 @@ extension IOSChatViewModel {
             model: newModel,
             conversationId: targetConversationId,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: tools,
+            reasoningConfiguration: updatedConversation.reasoningConfiguration
         )
     }
 }
@@ -1852,6 +1912,9 @@ extension IOSChatViewModel {
         }
         let conversationId = targetConversation.id
         let models = Array(preparation.selectedModels)
+        var configuredConversation = targetConversation
+        configuredConversation.reasoningConfiguration = preparation.reasoningConfiguration
+        conversationManager.updateConversation(configuredConversation)
 
         // Check for image generation and route accordingly
         if let firstModel = preparation.selectedModels.sorted().first,
@@ -2002,7 +2065,8 @@ extension IOSChatViewModel {
                         self.conversationManager.save(conversation)
                     }
                 }
-            }
+            },
+            reasoningConfiguration: preparation.reasoningConfiguration
         )
             coordinator.onCancel(for: operationID) { [weak self] in
                 self?.finishAndPersistMultiModelReasoning(conversationId: conversationId)

@@ -177,3 +177,76 @@ struct ModelReasoningSettingsPresentation: Equatable, Sendable {
         return normalized
     }
 }
+
+struct ChatReasoningModelContext: Equatable, Sendable {
+    let model: String
+    let provider: AIProvider
+    let endpointType: APIEndpointType
+    let endpoint: String?
+}
+
+/// Capability intersection for one conversation's selected models.
+///
+/// A conversation stores one reasoning configuration, so multi-model controls
+/// must expose only values that every selected model accepts.
+struct ChatReasoningSettingsPresentation: Equatable, Sendable {
+    let models: [ChatReasoningModelContext]
+    let individualPresentations: [ModelReasoningSettingsPresentation]
+    let isAvailable: Bool
+    let activationOptions: [ReasoningActivationMode]
+    let effortOptions: [ReasoningEffort]
+
+    init(
+        models: [ChatReasoningModelContext],
+        configuration: ModelReasoningConfiguration
+    ) {
+        self.models = models
+        let presentations = models.map { context in
+            ModelReasoningSettingsPresentation(
+                model: context.model,
+                provider: context.provider,
+                endpointType: context.endpointType,
+                endpoint: context.endpoint,
+                configuration: configuration
+            )
+        }
+        individualPresentations = presentations
+        isAvailable = !presentations.isEmpty && presentations.allSatisfy(\.isActivationEnabled)
+        activationOptions = ReasoningActivationMode.allCases.filter { activation in
+            !presentations.isEmpty && presentations.allSatisfy {
+                $0.activationOptions.contains(activation)
+            }
+        }
+        if let first = presentations.first?.effortOptions {
+            effortOptions = first.filter { effort in
+                presentations.dropFirst().allSatisfy { $0.effortOptions.contains(effort) }
+            }
+        } else {
+            effortOptions = []
+        }
+    }
+
+    func normalizedConfiguration(
+        _ configuration: ModelReasoningConfiguration
+    ) -> ModelReasoningConfiguration {
+        guard let first = models.first else { return configuration }
+        if models.count == 1 {
+            return ModelReasoningSettingsPresentation.normalizedConfiguration(
+                model: first.model,
+                provider: first.provider,
+                endpointType: first.endpointType,
+                endpoint: first.endpoint,
+                configuration: configuration
+            )
+        }
+
+        var normalized = configuration
+        if !activationOptions.contains(normalized.activation) {
+            normalized.activation = .automatic
+        }
+        if let effort = normalized.effort, !effortOptions.contains(effort) {
+            normalized.effort = nil
+        }
+        return normalized
+    }
+}

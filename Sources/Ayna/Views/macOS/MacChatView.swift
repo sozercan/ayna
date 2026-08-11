@@ -121,6 +121,17 @@ struct MacChatView: View {
         let selectedModel: String
         let selectedModels: Set<String>
         let activeModel: String?
+        let reasoningConfiguration: ModelReasoningConfiguration
+    }
+
+    private struct ToolContinuationContext: Sendable {
+        let operationID: ToolChainCoordinator.OperationID
+        let sourceAssistantMessageID: UUID
+        let conversationID: UUID
+        let model: String
+        let temperature: Double
+        let tools: UncheckedSendableWrapper<[[String: Any]]?>
+        let reasoningConfiguration: ModelReasoningConfiguration
     }
 
     let conversation: Conversation
@@ -128,6 +139,7 @@ struct MacChatView: View {
     init(conversation: Conversation) {
         self.conversation = conversation
         _selectedModel = State(initialValue: conversation.model)
+        _reasoningConfiguration = State(initialValue: conversation.reasoningConfiguration)
         // Initialize selectedModels with the conversation's active models if available, otherwise fallback to single model
         if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
             _selectedModels = State(initialValue: Set(conversation.activeModels))
@@ -146,6 +158,7 @@ struct MacChatView: View {
     @State var errorRecoverySuggestion: String?
     @State private var failedMessage: String?
     @State private var selectedModel: String
+    @State private var reasoningConfiguration: ModelReasoningConfiguration
     @State private var attachedFiles: [URL] = []
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
@@ -339,9 +352,10 @@ struct MacChatView: View {
                     selectedModel: $selectedModel,
                     showModelSelector: $showModelSelector,
                     isToolSectionExpanded: $isToolSectionExpanded,
+                    reasoningConfiguration: $reasoningConfiguration,
                     isGenerating: isGenerating,
                     composerModelLabel: composerModelLabel,
-                        onSendMessage: { beginSendMessage() },
+                    onSendMessage: { beginSendMessage() },
                     onAttachFile: attachFile,
                     onShowAppContentPicker: { showAppContentPicker = true },
                     onToggleModelSelection: toggleModelSelection,
@@ -404,6 +418,20 @@ struct MacChatView: View {
         .onAppear {
             isComposerFocused = true
             checkAndProcessPendingPrompt()
+        }
+        .onChange(of: reasoningConfiguration) { _, configuration in
+            guard var current = conversationManager.conversation(byId: conversation.id),
+                  current.reasoningConfiguration != configuration
+            else {
+                return
+            }
+            current.reasoningConfiguration = configuration
+            conversationManager.updateConversation(current)
+        }
+        .onChange(of: currentConversation.reasoningConfiguration) { _, configuration in
+            if reasoningConfiguration != configuration {
+                reasoningConfiguration = configuration
+            }
         }
         .onDisappear {
                 cancelOwnedGenerationForLifecycle()
@@ -486,8 +514,9 @@ struct MacChatView: View {
             model: currentConversation.model,
             temperature: currentConversation.temperature,
             tools: tools,
-                isInitialRequest: true,
-                assistantMessageID: assistantMessage.id
+            reasoningConfiguration: currentConversation.reasoningConfiguration,
+            isInitialRequest: true,
+            assistantMessageID: assistantMessage.id
         )
     }
 
@@ -824,7 +853,8 @@ struct MacChatView: View {
                 appContent: attachedAppContent,
                 selectedModel: selectedModel,
                 selectedModels: selectedModels,
-                activeModel: resolveModelForSending(selection: selectedModel)
+                activeModel: resolveModelForSending(selection: selectedModel),
+                reasoningConfiguration: reasoningConfiguration
             )
             let preparationID = UUID()
             sendPreparationID = preparationID
@@ -961,6 +991,13 @@ struct MacChatView: View {
                 return
             }
 
+            if var configuredConversation = conversationManager.conversation(byId: conversation.id),
+               configuredConversation.reasoningConfiguration != preparation.reasoningConfiguration
+            {
+                configuredConversation.reasoningConfiguration = preparation.reasoningConfiguration
+                conversationManager.updateConversation(configuredConversation)
+            }
+
             guard await ConversationSendPreflight.loadConversationHistory(
                 conversationId: conversation.id,
                 manager: conversationManager
@@ -1050,8 +1087,9 @@ struct MacChatView: View {
                 handedOff = true
             sendMultiModelMessage(
                 userMessageId: userMessage.id,
-                    models: Array(selectedModelsToSend),
-                temperature: updatedConversation.temperature
+                models: Array(selectedModelsToSend),
+                temperature: updatedConversation.temperature,
+                reasoningConfiguration: preparation.reasoningConfiguration
             )
             return
         }
@@ -1138,6 +1176,7 @@ struct MacChatView: View {
             model: activeModel,
             temperature: updatedConversation.temperature,
             tools: tools,
+            reasoningConfiguration: preparation.reasoningConfiguration,
             isInitialRequest: true,
             assistantMessageID: assistantMessage.id
         )
@@ -1150,6 +1189,7 @@ struct MacChatView: View {
         model: String,
         temperature: Double,
         tools: [[String: Any]]?,
+        reasoningConfiguration: ModelReasoningConfiguration,
         isInitialRequest _: Bool,
         assistantMessageID requestedAssistantMessageID: UUID? = nil,
         operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
@@ -1189,6 +1229,15 @@ struct MacChatView: View {
                 return
             }
             let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
+            let continuationContext = ToolContinuationContext(
+                operationID: operationID,
+                sourceAssistantMessageID: assistantMessageID,
+                conversationID: conversationId,
+                model: model,
+                temperature: temperature,
+                tools: toolsWrapper,
+                reasoningConfiguration: reasoningConfiguration
+            )
 
             let request = aiService.sendMessage(
             messages: messages,
@@ -1262,12 +1311,7 @@ struct MacChatView: View {
                         )
                         handleToolRoundResolution(
                             resolution,
-                            operationID: operationID,
-                            sourceAssistantMessageID: assistantMessageID,
-                            conversationID: conversationId,
-                            model: model,
-                            temperature: temperature,
-                            tools: toolsWrapper.value
+                            context: continuationContext
                         )
                 }
             },
@@ -1407,12 +1451,7 @@ struct MacChatView: View {
                             let resolution = requestRounds.toolDidComplete(token, result: result)
                             handleToolRoundResolution(
                                 resolution,
-                                operationID: operationID,
-                                sourceAssistantMessageID: assistantMessageID,
-                                conversationID: conversationId,
-                                model: model,
-                                temperature: temperature,
-                                tools: toolsWrapper.value
+                                context: continuationContext
                             )
                         }
                     }
@@ -1450,19 +1489,15 @@ struct MacChatView: View {
                         conversationManager.save(conversation)
                     }
                 }
-                }
+                },
+                reasoningConfiguration: reasoningConfiguration
             )
             coordinator.track(request, for: operationID)
         }
 
         private func handleToolRoundResolution(
             _ resolution: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Resolution,
-            operationID: ToolChainCoordinator.OperationID,
-            sourceAssistantMessageID: UUID,
-            conversationID: UUID,
-            model: String,
-            temperature: Double,
-            tools: [[String: Any]]?
+            context: ToolContinuationContext
         ) {
             switch resolution {
             case .pending:
@@ -1472,7 +1507,7 @@ struct MacChatView: View {
             case .responseCompleted:
                 toolChainTimeoutTask?.cancel()
                 toolChainTimeoutTask = nil
-                guard toolChainCoordinator.finishOperation(operationID) else { return }
+                guard toolChainCoordinator.finishOperation(context.operationID) else { return }
                 activeAssistantMessageID = nil
                 currentToolName = nil
                 toolCallDepth = 0
@@ -1483,29 +1518,22 @@ struct MacChatView: View {
                 toolChainTimeoutTask = nil
                 launchToolContinuation(
                     continuation,
-                    operationID: operationID,
-                    sourceAssistantMessageID: sourceAssistantMessageID,
-                    conversationID: conversationID,
-                    model: model,
-                    temperature: temperature,
-                    tools: tools
+                    context: context
                 )
             }
         }
 
         private func launchToolContinuation(
             _ continuation: ToolCallRequestRoundCoordinator<ToolExecutionResult>.Continuation,
-            operationID: ToolChainCoordinator.OperationID,
-            sourceAssistantMessageID: UUID,
-            conversationID: UUID,
-            model: String,
-            temperature: Double,
-            tools: [[String: Any]]?
+            context: ToolContinuationContext
         ) {
-            guard toolChainCoordinator.owns(operationID, conversationID: conversationID),
-                  continuation.operationID == operationID,
-                  activeAssistantMessageID == sourceAssistantMessageID,
-                  let conversation = conversationManager.conversation(byId: conversationID)
+            guard toolChainCoordinator.owns(
+                context.operationID,
+                conversationID: context.conversationID
+            ),
+            continuation.operationID == context.operationID,
+            activeAssistantMessageID == context.sourceAssistantMessageID,
+            let conversation = conversationManager.conversation(byId: context.conversationID)
             else {
                 return
             }
@@ -1517,13 +1545,16 @@ struct MacChatView: View {
 
             let citations = ToolExecutionResult.combinedCitations(from: results)
             let continuationMessage = ToolCallHandler.createContinuationMessage(
-                model: model,
+                model: context.model,
                 citations: citations.isEmpty ? nil : citations
             )
             conversationManager.addMessage(to: conversation, message: continuationMessage)
 
-            guard let conversationWithAssistant = conversationManager.conversation(byId: conversationID),
-                  toolChainCoordinator.owns(operationID, conversationID: conversationID)
+            guard let conversationWithAssistant = conversationManager.conversation(byId: context.conversationID),
+                  toolChainCoordinator.owns(
+                      context.operationID,
+                      conversationID: context.conversationID
+                  )
             else {
                 return
             }
@@ -1538,12 +1569,13 @@ struct MacChatView: View {
             currentToolName = nil
             sendMessageWithToolSupport(
                 messages: continuationMessages,
-                model: model,
-                temperature: temperature,
-                tools: tools,
+                model: context.model,
+                temperature: context.temperature,
+                tools: context.tools.value,
+                reasoningConfiguration: context.reasoningConfiguration,
                 isInitialRequest: false,
                 assistantMessageID: continuationMessage.id,
-                operationID: operationID
+                operationID: context.operationID
             )
         }
     }

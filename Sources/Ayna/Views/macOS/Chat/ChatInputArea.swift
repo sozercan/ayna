@@ -20,11 +20,13 @@ struct ChatInputArea: View {
     @Binding var selectedModel: String
     @Binding var showModelSelector: Bool
     @Binding var isToolSectionExpanded: Bool
+    @Binding var reasoningConfiguration: ModelReasoningConfiguration
 
     let isGenerating: Bool
     let composerModelLabel: String
     var textEditorIdentifier: String = TestIdentifiers.ChatComposer.textEditor
     var sendButtonIdentifier: String = TestIdentifiers.ChatComposer.sendButton
+    var reasoningControlIdentifier = "chat.composer.reasoning"
     let onSendMessage: () -> Void
     let onAttachFile: () -> Void
     let onShowAppContentPicker: () -> Void
@@ -54,6 +56,13 @@ struct ChatInputArea: View {
             // Main input row
             HStack(spacing: 0) {
                 textEditorWithAttachButton(textHeight: textHeight)
+                ChatReasoningControl(
+                    configuration: $reasoningConfiguration,
+                    selectedModels: selectedModels,
+                    primaryModel: selectedModel,
+                    identifier: reasoningControlIdentifier
+                )
+                .padding(.horizontal, Spacing.xs)
                 modelSelectorButton(textHeight: textHeight)
                 sendButton(textHeight: textHeight)
             }

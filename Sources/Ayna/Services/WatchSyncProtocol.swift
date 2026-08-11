@@ -895,6 +895,7 @@ enum PhoneWatchMutationReducer {
         if mutation.changesConfiguration(after: acknowledgedRevision) {
             merged.model = watch.model
             merged.temperature = watch.temperature
+            merged.reasoningConfiguration = watch.reasoningConfiguration
         }
         merged.updatedAt = max(phone.updatedAt, watch.updatedAt)
         return merged
@@ -1109,6 +1110,7 @@ enum WatchSnapshotReconciler {
             if draft.deferredFields.contains(.configuration) {
                 remoteConversation.model = draft.conversation.model
                 remoteConversation.temperature = draft.conversation.temperature
+                remoteConversation.reasoningConfiguration = draft.conversation.reasoningConfiguration
             }
             remoteConversation.messages = mergeWatchMessages(
                 remote: remoteConversation.messages,
@@ -1187,6 +1189,7 @@ enum WatchSnapshotReconciler {
         if changesConfiguration {
             current.model = local.model
             current.temperature = local.temperature
+            current.reasoningConfiguration = local.reasoningConfiguration
         }
         if changesCreate {
             current.resolvedSystemPrompt = local.resolvedSystemPrompt
@@ -2266,6 +2269,7 @@ enum WatchSyncPayloadBuilder {
             id: conversation.id,
             model: conversation.model,
             temperature: conversation.temperature,
+            reasoningConfiguration: conversation.reasoningConfiguration,
             resolvedSystemPrompt: resolvedSystemPrompt
         )
     }

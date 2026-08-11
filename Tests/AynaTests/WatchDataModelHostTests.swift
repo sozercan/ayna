@@ -66,6 +66,13 @@ struct WatchDataModelHostTests {
     @Test
     func `Compact request configuration round trips and clears a retained prompt without touching messages`() throws {
         let conversationID = UUID()
+        let expectedReasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .xhigh,
+            openAIMode: .pro,
+            openAIContext: .allTurns,
+            summary: .detailed
+        )
         let retainedMessage = WatchMessage(from: Message(role: .user, content: "Keep me"))
         var conversation = WatchConversation(
             id: conversationID,
@@ -75,12 +82,17 @@ struct WatchDataModelHostTests {
             updatedAt: Date(timeIntervalSince1970: 2),
             createdAt: Date(timeIntervalSince1970: 1),
             temperature: 1.0,
+            reasoningConfiguration: ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .low
+            ),
             resolvedSystemPrompt: "Old prompt"
         )
         let original = WatchConversationRequestConfiguration(
             id: conversationID,
             model: "new-model",
             temperature: 0.3,
+            reasoningConfiguration: expectedReasoningConfiguration,
             resolvedSystemPrompt: nil
         )
 
@@ -94,8 +106,48 @@ struct WatchDataModelHostTests {
         #expect(decoded == original)
         #expect(conversation.model == "new-model")
         #expect(conversation.temperature == 0.3)
+        #expect(conversation.reasoningConfiguration == expectedReasoningConfiguration)
         #expect(conversation.resolvedSystemPrompt == nil)
         #expect(conversation.messages == [retainedMessage])
+    }
+
+    @Test
+    func `Legacy Watch request configuration and conversation decode automatic reasoning`() throws {
+        let configuration = WatchConversationRequestConfiguration(
+            id: UUID(),
+            model: "legacy-model",
+            temperature: 0.4,
+            reasoningConfiguration: ModelReasoningConfiguration(
+                activation: .enabled,
+                effort: .high
+            ),
+            resolvedSystemPrompt: "Legacy prompt"
+        )
+        let conversation = WatchConversation(
+            id: configuration.id,
+            title: "Legacy",
+            model: configuration.model,
+            updatedAt: Date(timeIntervalSince1970: 2),
+            createdAt: Date(timeIntervalSince1970: 1),
+            reasoningConfiguration: configuration.reasoningConfiguration,
+            resolvedSystemPrompt: configuration.resolvedSystemPrompt
+        )
+
+        let legacyConfiguration = try removingReasoningConfiguration(
+            from: JSONEncoder().encode(configuration)
+        )
+        let legacyConversation = try removingReasoningConfiguration(
+            from: JSONEncoder().encode(conversation)
+        )
+
+        #expect(try JSONDecoder().decode(
+            WatchConversationRequestConfiguration.self,
+            from: legacyConfiguration
+        ).reasoningConfiguration == .automatic)
+        #expect(try JSONDecoder().decode(
+            WatchConversation.self,
+            from: legacyConversation
+        ).reasoningConfiguration == .automatic)
     }
 
     @Test
@@ -149,6 +201,10 @@ struct WatchDataModelHostTests {
 
     @Test
     func `Conversation conversion carries temperature prompt revision and effective history`() {
+        let reasoningConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high
+        )
         let groupID = UUID()
         let userID = UUID()
         let rejectedID = UUID()
@@ -191,6 +247,7 @@ struct WatchDataModelHostTests {
             model: "chosen",
             systemPromptMode: .custom("Be precise"),
             temperature: 0.25,
+            reasoningConfiguration: reasoningConfiguration,
             responseGroups: [group]
         )
 
@@ -201,6 +258,7 @@ struct WatchDataModelHostTests {
         )
 
         #expect(watch.temperature == 0.25)
+        #expect(watch.reasoningConfiguration == reasoningConfiguration)
         #expect(watch.resolvedSystemPrompt == "Be precise")
         #expect(watch.watchRevision == 7)
         #expect(watch.messages.map(\.id) == [userID, selectedID])
@@ -210,8 +268,15 @@ struct WatchDataModelHostTests {
         conversation.pendingAutoSendPrompt = "phone-only"
         let restored = watch.toConversation()
         #expect(restored.temperature == 0.25)
+        #expect(restored.reasoningConfiguration == reasoningConfiguration)
         #expect(restored.systemPromptMode == .inheritGlobal)
         #expect(restored.messages.map(\.id) == [userID, selectedID])
+    }
+
+    private func removingReasoningConfiguration(from data: Data) throws -> Data {
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "reasoningConfiguration")
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
     @Test

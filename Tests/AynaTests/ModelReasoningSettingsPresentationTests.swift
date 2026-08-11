@@ -316,6 +316,85 @@ struct ModelReasoningSettingsPresentationTests {
 
         #expect(normalized.anthropicMode == .extended)
     }
+
+    @Test
+    func `Multi-model presentation exposes only common activation and effort options`() {
+        let presentation = ChatReasoningSettingsPresentation(
+            models: [
+                ChatReasoningModelContext(
+                    model: "gpt-5",
+                    provider: .openai,
+                    endpointType: .chatCompletions,
+                    endpoint: nil
+                ),
+                ChatReasoningModelContext(
+                    model: "gpt-5.6",
+                    provider: .openai,
+                    endpointType: .responses,
+                    endpoint: nil
+                ),
+            ],
+            configuration: .automatic
+        )
+
+        #expect(presentation.isAvailable)
+        #expect(presentation.activationOptions == [.automatic, .disabled, .enabled])
+        #expect(presentation.effortOptions == [.low, .medium, .high])
+    }
+
+    @Test
+    func `Multi-model normalization clears controls unsupported by any selected model`() {
+        let configuration = ModelReasoningConfiguration(
+            activation: .explicitlyDisabled,
+            effort: .xhigh
+        )
+        let presentation = ChatReasoningSettingsPresentation(
+            models: [
+                ChatReasoningModelContext(
+                    model: "gpt-5",
+                    provider: .openai,
+                    endpointType: .chatCompletions,
+                    endpoint: nil
+                ),
+                ChatReasoningModelContext(
+                    model: "gpt-5.6",
+                    provider: .openai,
+                    endpointType: .responses,
+                    endpoint: nil
+                ),
+            ],
+            configuration: configuration
+        )
+
+        let normalized = presentation.normalizedConfiguration(configuration)
+
+        #expect(normalized.activation == .automatic)
+        #expect(normalized.effort == nil)
+    }
+
+    @Test
+    func `Multi-model reasoning is unavailable when any selected model lacks request controls`() {
+        let presentation = ChatReasoningSettingsPresentation(
+            models: [
+                ChatReasoningModelContext(
+                    model: "gpt-5",
+                    provider: .openai,
+                    endpointType: .chatCompletions,
+                    endpoint: nil
+                ),
+                ChatReasoningModelContext(
+                    model: "apple-intelligence",
+                    provider: .appleIntelligence,
+                    endpointType: .chatCompletions,
+                    endpoint: nil
+                ),
+            ],
+            configuration: .automatic
+        )
+
+        #expect(!presentation.isAvailable)
+        #expect(presentation.effortOptions.isEmpty)
+    }
 }
 
 // swiftlint:enable identifier_name

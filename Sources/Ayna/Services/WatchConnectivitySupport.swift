@@ -619,6 +619,7 @@ enum WatchLegacyConversationMerger {
         existingConversation.model = created.model
         existingConversation.systemPromptMode = created.systemPromptMode
         existingConversation.temperature = created.temperature
+        existingConversation.reasoningConfiguration = created.reasoningConfiguration
         existingConversation.createdAt = created.createdAt
         existingConversation.updatedAt = max(existingConversation.updatedAt, created.updatedAt)
 
@@ -786,6 +787,7 @@ enum WatchLegacyEchoReconciler {
     ) -> Bool {
         mutation.model == echo.model
             && mutation.temperature == echo.temperature
+            && mutation.reasoningConfiguration == echo.reasoningConfiguration
             && mutation.resolvedSystemPrompt == echo.resolvedSystemPrompt
     }
 }

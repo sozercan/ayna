@@ -32,6 +32,51 @@ extension AIServiceTests {
         #expect(service.modelReasoningConfigurations[invalidModel] == nil)
     }
 
+    @Test("Single-model request prefers an explicit conversation reasoning configuration", .timeLimit(.minutes(1)))
+    func singleModelRequestPrefersExplicitConversationReasoning() async throws {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: configuration))
+        let model = "gpt-5.6-sol"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelEndpointTypes[model] = .responses
+        service.modelAPIKeys[model] = "sk-unit-test"
+        service.modelReasoningConfigurations[model] = ModelReasoningConfiguration(
+            activation: .disabled
+        )
+        let conversationConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .high,
+            summary: .automatic
+        )
+
+        let completed = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Solve this")],
+            model: model,
+            stream: false,
+            onChunk: { _ in },
+            onComplete: { completed.signal() },
+            onError: { error in Issue.record("Unexpected error: \(error)") },
+            reasoningConfiguration: conversationConfiguration
+        )
+
+        let exchange = await server.exchange(at: 0)
+        let body = try requestBody(from: exchange.request)
+        let reasoning = try #require(body["reasoning"] as? [String: Any])
+        #expect(reasoning["effort"] as? String == "high")
+        #expect(reasoning["summary"] as? String == "auto")
+
+        exchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        exchange.send(Data(#"{"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}"#.utf8))
+        exchange.finish()
+        #expect(await completed.wait(timeout: .seconds(1)))
+    }
+
     @Test("Multi-model requests freeze reasoning settings at dispatch", .timeLimit(.minutes(1)))
     func multiModelRequestsFreezeReasoningSettingsAtDispatch() async throws {
         let server = FlightTestURLProtocolServer()
@@ -69,6 +114,56 @@ extension AIServiceTests {
         let body = try requestBody(from: exchange.request)
         let reasoning = try #require(body["reasoning"] as? [String: Any])
         #expect(reasoning["effort"] as? String == "high")
+        #expect(reasoning["summary"] as? String == "auto")
+
+        exchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        exchange.send(Data(#"{"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}"#.utf8))
+        exchange.finish()
+        #expect(await completed.wait(timeout: .seconds(1)))
+    }
+
+    @Test("Multi-model requests freeze an explicit conversation override", .timeLimit(.minutes(1)))
+    func multiModelRequestsFreezeExplicitConversationOverride() async throws {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: configuration))
+        let model = "gpt-5.6-sol"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelEndpointTypes[model] = .responses
+        service.modelAPIKeys[model] = "sk-unit-test"
+        service.modelReasoningConfigurations[model] = ModelReasoningConfiguration(
+            activation: .disabled
+        )
+        let conversationConfiguration = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .medium,
+            summary: .automatic
+        )
+
+        let completed = FlightTestSignal()
+        service.sendToMultipleModels(
+            messages: [Message(role: .user, content: "Compare this")],
+            models: [model],
+            onChunk: { _, _ in },
+            onModelComplete: { _ in },
+            onAllComplete: { completed.signal() },
+            onError: { _, error in Issue.record("Unexpected error: \(error)") },
+            reasoningConfiguration: conversationConfiguration
+        )
+
+        service.modelReasoningConfigurations[model] = ModelReasoningConfiguration(
+            activation: .enabled,
+            effort: .max
+        )
+
+        let exchange = await server.exchange(at: 0)
+        let body = try requestBody(from: exchange.request)
+        let reasoning = try #require(body["reasoning"] as? [String: Any])
+        #expect(reasoning["effort"] as? String == "medium")
         #expect(reasoning["summary"] as? String == "auto")
 
         exchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
@@ -249,8 +344,8 @@ extension AIServiceTests {
         #expect(await completed.wait(timeout: .seconds(1)))
     }
 
-    @Test("Chat Completions tool continuations freeze the originating reasoning settings", .timeLimit(.minutes(1)))
-    func chatCompletionsToolContinuationFreezesReasoningSettings() async throws {
+    @Test("Chat Completions tool continuations freeze explicit conversation reasoning", .timeLimit(.minutes(1)))
+    func chatCompletionsToolContinuationFreezesExplicitConversationReasoning() async throws {
         let server = FlightTestURLProtocolServer()
         FlightTestURLProtocol.install(server: server)
         let configuration = URLSessionConfiguration.ephemeral
@@ -262,16 +357,19 @@ extension AIServiceTests {
         var initialReasoning = ModelReasoningConfiguration.automatic
         initialReasoning.activation = .enabled
         initialReasoning.effort = .high
-        service.modelReasoningConfigurations[model] = initialReasoning
+        service.modelReasoningConfigurations[model] = ModelReasoningConfiguration(
+            activation: .disabled
+        )
 
         let messages = try await registerOpenAIChatToolRequest(
             service: service,
             server: server,
             model: model,
-            toolCallID: "chat-freeze-call"
+            toolCallID: "chat-freeze-call",
+            reasoningConfiguration: initialReasoning
         )
 
-        service.modelReasoningConfigurations[model] = ModelReasoningConfiguration(
+        let changedConversationConfiguration = ModelReasoningConfiguration(
             activation: .disabled
         )
 
@@ -282,7 +380,8 @@ extension AIServiceTests {
             stream: false,
             onChunk: { _ in },
             onComplete: { completed.signal() },
-            onError: { error in Issue.record("Unexpected error: \(error)") }
+            onError: { error in Issue.record("Unexpected error: \(error)") },
+            reasoningConfiguration: changedConversationConfiguration
         )
 
         let continuation = await server.exchange(at: 1)
@@ -410,7 +509,8 @@ extension AIServiceTests {
         service: AIService,
         server: FlightTestURLProtocolServer,
         model: String,
-        toolCallID: String
+        toolCallID: String,
+        reasoningConfiguration: ModelReasoningConfiguration? = nil
     ) async throws -> [Message] {
         let toolRequested = FlightTestSignal()
         service.sendMessage(
@@ -422,7 +522,8 @@ extension AIServiceTests {
             onToolCallRequested: { id, _, _ in
                 #expect(id == toolCallID)
                 toolRequested.signal()
-            }
+            },
+            reasoningConfiguration: reasoningConfiguration
         )
 
         let exchange = await server.exchange(at: 0)
