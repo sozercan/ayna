@@ -349,6 +349,8 @@ jobs:
 
     - name: Update Appcast
       if: success()
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         # Fetch and checkout the default branch
         git fetch origin ${{ github.event.repository.default_branch }}
@@ -402,8 +404,39 @@ jobs:
           sed -i '' 's/^        //' appcast.xml
 
           git add appcast.xml
-          git diff --cached --quiet || git commit -s -m "chore: update appcast to ${{ steps.artifact.outputs.tag }}"
-          git push origin ${{ github.event.repository.default_branch }}
+          if git diff --cached --quiet; then
+            echo "Appcast is already up to date"
+          else
+            APPCAST_BRANCH="automation/appcast-${TAG}-${{ github.run_id }}"
+            git switch -c "$APPCAST_BRANCH"
+            git commit -s -m "chore: update appcast to ${{ steps.artifact.outputs.tag }}"
+            git push origin "$APPCAST_BRANCH"
+
+            PR_URL=$(gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --head "$APPCAST_BRANCH" \
+              --title "chore: update appcast to ${{ steps.artifact.outputs.tag }}" \
+              --body "Publish the signed Sparkle appcast for ${{ steps.artifact.outputs.tag }}.")
+
+            for attempt in 1 2 3; do
+              if gh pr merge "$PR_URL" \
+                --squash \
+                --delete-branch \
+                --subject "chore: update appcast to ${{ steps.artifact.outputs.tag }}" \
+                --body "Publish the signed Sparkle appcast for ${{ steps.artifact.outputs.tag }}.
+
+        Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"; then
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "Error: Could not merge appcast pull request"
+                exit 1
+              fi
+
+              sleep 5
+            done
+          fi
         fi
 
     - name: Checkout Homebrew tap repo
