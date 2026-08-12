@@ -29,6 +29,14 @@ enum ChatDraftContent {
             || attachments.contains(where: isProviderImageAttachment)
     }
 
+    static func messagesByIncludingUserMessageIfNeeded(
+        _ userMessage: Message,
+        in messages: [Message]
+    ) -> [Message] {
+        guard !messages.contains(where: { $0.id == userMessage.id }) else { return messages }
+        return messages + [userMessage]
+    }
+
     static func isImageFile(_ fileURL: URL) -> Bool {
         guard !fileURL.pathExtension.isEmpty,
               let contentType = UTType(filenameExtension: fileURL.pathExtension.lowercased())

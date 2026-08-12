@@ -70,4 +70,22 @@ struct ChatDraftContentTests {
 
         #expect(ChatDraftContent.isSendable(text: "", attachments: attachments))
     }
+
+    @Test
+    func `request history includes a user message only once by identity`() {
+        let userMessage = Message(role: .user, content: "Retry me")
+        let assistantMessage = Message(role: .assistant, content: "")
+
+        let appended = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+            userMessage,
+            in: [assistantMessage]
+        )
+        let reused = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+            userMessage,
+            in: [userMessage, assistantMessage]
+        )
+
+        #expect(appended.map(\.id) == [assistantMessage.id, userMessage.id])
+        #expect(reused.map(\.id) == [userMessage.id, assistantMessage.id])
+    }
 }

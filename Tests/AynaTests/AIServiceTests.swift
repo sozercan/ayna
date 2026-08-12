@@ -62,6 +62,15 @@ extension AIServiceGlobalStateTests {
                     count: AnthropicRequestBuilder.maxImagesPerRequest + 1
                 )
             )
+            let retried = Message(
+                role: .user,
+                content: "Retry",
+                attachments: Array(repeating: attachment, count: 11)
+            )
+            let retryHistory = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+                retried,
+                in: [retried]
+            )
 
             #expect(service.attachmentImageLimitError(
                 for: [anthropicModel],
@@ -74,6 +83,55 @@ extension AIServiceGlobalStateTests {
             #expect(service.attachmentImageLimitError(
                 for: [openAIModel],
                 messages: [exceeding]
+            ) == nil)
+            #expect(retryHistory.first?.attachments?.count == 11)
+            #expect(service.attachmentImageLimitError(
+                for: [anthropicModel],
+                messages: retryHistory
+            ) == nil)
+        }
+
+        @Test
+        func `Anthropic image bytes are validated before request dispatch`() async {
+            let service = makeService()
+            let anthropicModel = "claude-test"
+            let openAIModel = "openai-test"
+            service.modelProviders[anthropicModel] = .anthropic
+            service.modelProviders[openAIModel] = .openai
+
+            var oversizedJPEG = Data([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0])
+            oversizedJPEG.append(Data(
+                repeating: 0,
+                count: AnthropicRequestBuilder.maxImageSizeBytes
+            ))
+            let oversizedImageData = oversizedJPEG
+            let inlineAttachment = Message.FileAttachment(
+                fileName: "large.jpg",
+                mimeType: "image/jpeg",
+                data: oversizedImageData
+            )
+            let storedAttachment = Message.FileAttachment(
+                fileName: "stored.jpg",
+                mimeType: "image/jpeg",
+                localPath: "stored.jpg"
+            )
+            let originalLoader = Message.attachmentAsyncLoader
+            Message.attachmentAsyncLoader = { path in
+                path == "stored.jpg" ? oversizedImageData : nil
+            }
+            defer { Message.attachmentAsyncLoader = originalLoader }
+
+            #expect(service.attachmentImageValidationError(
+                for: [anthropicModel],
+                inMemoryAttachments: [inlineAttachment]
+            )?.contains("Image too large") == true)
+            #expect(await service.attachmentImageValidationError(
+                for: [anthropicModel],
+                loading: [storedAttachment]
+            )?.contains("Image too large") == true)
+            #expect(service.attachmentImageValidationError(
+                for: [openAIModel],
+                inMemoryAttachments: [inlineAttachment]
             ) == nil)
         }
 

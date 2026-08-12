@@ -203,13 +203,14 @@ private final class PasteAwareTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
-        let imageCandidates = Self.imageCandidates(from: pasteboard)
-        guard !imageCandidates.isEmpty else {
+        let selection = Self.imageCandidates(
+            from: pasteboard,
+            limit: ChatDraftContent.maximumImageCount
+        )
+        guard !selection.candidates.isEmpty else {
             super.paste(sender)
             return
         }
-        let candidates = Array(imageCandidates.prefix(ChatDraftContent.maximumImageCount))
-        let skippedImageCount = imageCandidates.count - candidates.count
 
         if pasteboard.string(forType: .string) != nil {
             super.paste(sender)
@@ -231,7 +232,7 @@ private final class PasteAwareTextView: NSTextView {
             }
 
             let images: [PastedImage] = await Task.detached(priority: .userInitiated) {
-                candidates.compactMap { candidate -> PastedImage? in
+                selection.candidates.compactMap { candidate -> PastedImage? in
                     guard let contentType = UTType(candidate.contentTypeIdentifier) else {
                         return nil
                     }
@@ -257,13 +258,13 @@ private final class PasteAwareTextView: NSTextView {
                 return
             }
             onPasteImages?(images)
-            if skippedImageCount > 0 {
+            if selection.skippedImageCount > 0 {
                 NSSound.beep()
                 DiagnosticsLogger.log(
                     .chatView,
                     level: .default,
                     message: "Skipped clipboard images above the request limit",
-                    metadata: ["skippedImageCount": "\(skippedImageCount)"]
+                    metadata: ["skippedImageCount": "\(selection.skippedImageCount)"]
                 )
             }
         }
@@ -282,9 +283,22 @@ private final class PasteAwareTextView: NSTextView {
         pasteImportSessionID = sessionID
     }
 
-    private static func imageCandidates(from pasteboard: NSPasteboard) -> [Candidate] {
+    private static func imageCandidates(
+        from pasteboard: NSPasteboard,
+        limit: Int
+    ) -> (candidates: [Candidate], skippedImageCount: Int) {
         if let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty {
-            return pasteboardItems.compactMap { item in
+            let supportedTypes = Set(supportedImageTypes.map(\.pasteboardType))
+            var selectedItems: [NSPasteboardItem] = []
+            var imageItemCount = 0
+            for item in pasteboardItems where !supportedTypes.isDisjoint(with: item.types) {
+                imageItemCount += 1
+                if selectedItems.count < limit {
+                    selectedItems.append(item)
+                }
+            }
+
+            let candidates = selectedItems.compactMap { item in
                 for supportedType in supportedImageTypes {
                     if let data = item.data(forType: supportedType.pasteboardType) {
                         return Candidate(
@@ -295,17 +309,24 @@ private final class PasteAwareTextView: NSTextView {
                 }
                 return nil
             }
+            return (
+                candidates,
+                skippedImageCount: max(0, imageItemCount - selectedItems.count)
+            )
         }
 
         for supportedType in supportedImageTypes {
             if let data = pasteboard.data(forType: supportedType.pasteboardType) {
-                return [Candidate(
-                    data: data,
-                    contentTypeIdentifier: supportedType.contentType.identifier
-                )]
+                return (
+                    [Candidate(
+                        data: data,
+                        contentTypeIdentifier: supportedType.contentType.identifier
+                    )],
+                    skippedImageCount: 0
+                )
             }
         }
-        return []
+        return ([], skippedImageCount: 0)
     }
 
     private static func hasImageCandidates(in pasteboard: NSPasteboard) -> Bool {

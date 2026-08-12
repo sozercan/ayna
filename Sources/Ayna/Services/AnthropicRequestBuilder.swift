@@ -444,15 +444,10 @@ enum AnthropicRequestBuilder {
     /// - Throws: `AynaError` if validation fails
     static func validateAndBuildImageBlock(data: Data, fileName _: String?) throws -> [String: Any] {
         try Task.checkCancellation()
-        // Check size
-        if data.count > maxImageSizeBytes {
-            let sizeMB = Double(data.count) / 1_048_576.0
-            throw AynaError.apiError(message: "Image too large: \(String(format: "%.1f", sizeMB)) MB (max 3.75 MB)")
+        if let validationError = imageValidationError(data: data) {
+            throw AynaError.apiError(message: validationError)
         }
-
-        // Detect media type from magic bytes
-        let mediaType = detectImageMediaType(data: data)
-        guard let type = mediaType else {
+        guard let type = detectImageMediaType(data: data) else {
             throw AynaError.apiError(message: "Unsupported image format. Supported: JPEG, PNG, GIF, WebP")
         }
 
@@ -469,6 +464,17 @@ enum AnthropicRequestBuilder {
                 "data": encodedData
             ]
         ]
+    }
+
+    static func imageValidationError(data: Data) -> String? {
+        if data.count > maxImageSizeBytes {
+            let sizeMB = Double(data.count) / 1_048_576.0
+            return "Image too large: \(String(format: "%.1f", sizeMB)) MB (max 3.75 MB)"
+        }
+        guard detectImageMediaType(data: data) != nil else {
+            return "Unsupported image format. Supported: JPEG, PNG, GIF, WebP"
+        }
+        return nil
     }
 
     /// Detect image media type from magic bytes.

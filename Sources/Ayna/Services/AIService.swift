@@ -917,12 +917,7 @@ class AIService: ObservableObject {
 
     /// Returns a user-facing reason when an Anthropic request would exceed its image limit.
     func attachmentImageLimitError(for models: [String], messages: [Message]) -> String? {
-        let usesAnthropic = models.contains { model in
-            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalizedModel.isEmpty else { return false }
-            return (modelProviders[normalizedModel] ?? provider) == .anthropic
-        }
-        guard usesAnthropic else { return nil }
+        guard usesAnthropicModel(models) else { return nil }
 
         let supportedTypes = Set(AnthropicRequestBuilder.supportedImageTypes)
         let imageCount = messages.reduce(into: 0) { count, message in
@@ -934,6 +929,56 @@ class AIService: ObservableObject {
         guard imageCount > AnthropicRequestBuilder.maxImagesPerRequest else { return nil }
 
         return "Anthropic supports at most \(AnthropicRequestBuilder.maxImagesPerRequest) images per request. Remove some images or start a new conversation."
+    }
+
+    func attachmentImageValidationError(
+        for models: [String],
+        inMemoryAttachments attachments: [Message.FileAttachment]
+    ) -> String? {
+        guard usesAnthropicModel(models) else { return nil }
+
+        for attachment in anthropicImageAttachments(in: attachments) {
+            guard let data = attachment.data else {
+                return "Unable to load image attachment \"\(attachment.fileName)\". Remove it and try again."
+            }
+            if let validationError = AnthropicRequestBuilder.imageValidationError(data: data) {
+                return "\(attachment.fileName): \(validationError)"
+            }
+        }
+        return nil
+    }
+
+    func attachmentImageValidationError(
+        for models: [String],
+        loading attachments: [Message.FileAttachment]
+    ) async -> String? {
+        guard usesAnthropicModel(models) else { return nil }
+
+        for attachment in anthropicImageAttachments(in: attachments) {
+            guard !Task.isCancelled else { return nil }
+            guard let data = await attachment.loadContent() else {
+                return "Unable to load image attachment \"\(attachment.fileName)\". Remove it and try again."
+            }
+            if let validationError = AnthropicRequestBuilder.imageValidationError(data: data) {
+                return "\(attachment.fileName): \(validationError)"
+            }
+        }
+        return nil
+    }
+
+    private func usesAnthropicModel(_ models: [String]) -> Bool {
+        models.contains { model in
+            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedModel.isEmpty else { return false }
+            return (modelProviders[normalizedModel] ?? provider) == .anthropic
+        }
+    }
+
+    private func anthropicImageAttachments(
+        in attachments: [Message.FileAttachment]
+    ) -> [Message.FileAttachment] {
+        let supportedTypes = Set(AnthropicRequestBuilder.supportedImageTypes)
+        return attachments.filter { supportedTypes.contains($0.mimeType.lowercased()) }
     }
 
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {

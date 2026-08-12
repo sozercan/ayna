@@ -127,6 +127,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     }
 
     private struct PreparedSend {
+        let userMessageID: UUID
         let text: String
         let attachments: [Message.FileAttachment]
         let selectedModel: String
@@ -135,6 +136,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
         func makeUserMessage() -> Message {
             Message(
+                id: userMessageID,
                 role: .user,
                 content: text,
                 attachments: attachments.isEmpty ? nil : attachments
@@ -702,6 +704,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     private func sendPreparedMessage(_ preparation: SendPreparation) {
         let messageBuild = makeUserMessage(from: preparation)
         let payload = PreparedSend(
+            userMessageID: messageBuild.message.id,
             text: preparation.text,
             attachments: messageBuild.message.attachments ?? [],
             selectedModel: preparation.selectedModel,
@@ -728,18 +731,33 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         )
     }
 
-    private func validateAttachmentImageLimit(
-        for payload: PreparedSend,
-        consuming preparation: SendPreparation?
-    ) -> Bool {
-        guard preparation != nil else { return true }
-
-        let requestModels = payload.selectedModels.count >= 2
+    private func requestModels(for payload: PreparedSend) -> [String] {
+        payload.selectedModels.count >= 2
             ? Array(payload.selectedModels)
             : [payload.requestModel.isEmpty ? payload.selectedModel : payload.requestModel]
-        let proposedMessages = (conversation?.messages ?? []) + [payload.makeUserMessage()]
+    }
+
+    private func validateAttachmentImageData(for payload: PreparedSend) -> Bool {
+        guard let validationError = aiService.attachmentImageValidationError(
+            for: requestModels(for: payload),
+            inMemoryAttachments: payload.attachments
+        ) else {
+            return true
+        }
+
+        errorMessage = validationError
+        errorRecoverySuggestion = "Remove the image or choose a different model."
+        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+        return false
+    }
+
+    private func validateAttachmentImageLimit(for payload: PreparedSend) -> Bool {
+        let proposedMessages = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+            payload.makeUserMessage(),
+            in: conversation?.messages ?? []
+        )
         guard let limitError = aiService.attachmentImageLimitError(
-            for: requestModels,
+            for: requestModels(for: payload),
             messages: proposedMessages
         ) else {
             return true
@@ -751,12 +769,40 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         return false
     }
 
+    @discardableResult
+    private func commitUserMessageIfNeeded(
+        _ userMessage: Message,
+        to conversation: Conversation,
+        consuming preparation: SendPreparation?
+    ) -> Bool {
+        guard !conversation.messages.contains(where: { $0.id == userMessage.id }) else {
+            return false
+        }
+
+        conversationManager.addMessage(to: conversation, message: userMessage)
+        consumePendingAutoSendClaim(afterCommittingTo: conversation.id)
+        if let preparation {
+            consumeComposer(preparation)
+        }
+
+        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .info,
+                message: "💾 Memory command processed",
+                metadata: ["response": memoryResponse]
+            )
+        }
+        return true
+    }
+
     private func sendPreparedPayload(
         _ payload: PreparedSend,
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
-        guard validateAttachmentImageLimit(for: payload, consuming: preparation) else { return }
+        guard validateAttachmentImageData(for: payload) else { return }
+        guard validateAttachmentImageLimit(for: payload) else { return }
 
         // Check for multi-model mode
         if payload.selectedModels.count >= 2 {
@@ -814,21 +860,14 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         )
 
         let userMessage = payload.makeUserMessage()
-
-        conversationManager.addMessage(to: targetConversation, message: userMessage)
-        consumePendingAutoSendClaim(afterCommittingTo: targetConversationId)
-        if let preparation {
-            consumeComposer(preparation)
-        }
-
-        // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: payload.text) {
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .info,
-                message: "💾 Memory command processed",
-                metadata: ["response": memoryResponse]
-            )
+        let committedUserMessage = commitUserMessageIfNeeded(
+            userMessage,
+            to: targetConversation,
+            consuming: preparation
+        )
+        let reusesCommittedUserMessage = !committedUserMessage
+        if committedUserMessage {
+            SoundEngine.messageSent()
         }
 
         pendingSendPayload = payload
@@ -840,13 +879,12 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         errorRecoverySuggestion = nil
         failedMessage = nil
 
-        // Play message sent sound
-        SoundEngine.messageSent()
-
         DiagnosticsLogger.log(
             .chatView,
             level: .info,
-            message: "📝 User message added, isGenerating=true",
+            message: reusesCommittedUserMessage
+                ? "🔄 Reusing committed user message, isGenerating=true"
+                : "📝 User message added, isGenerating=true",
             metadata: ["userMessageId": userMessage.id.uuidString]
         )
 
@@ -1974,11 +2012,13 @@ extension IOSChatViewModel {
         pendingSendPayload = payload
         failedSendPayload = nil
         failedMessage = nil
+        let userMessage = payload.makeUserMessage()
         generateImagesWithMultipleModels(
             prompt: payload.text,
             models: models,
             conversation: conversation,
-            draftText: preparation?.draftText
+            draftText: preparation?.draftText,
+            userMessage: userMessage
         )
         return true
     }
@@ -1990,7 +2030,6 @@ extension IOSChatViewModel {
         attachmentErrors: [String]
     ) {
         guard !isGenerating else { return }
-        let text = payload.text
 
         guard let targetConversation = getOrCreateConversationForMultiModel(
             selectedModels: payload.selectedModels
@@ -2014,16 +2053,11 @@ extension IOSChatViewModel {
                               metadata: ["models": models.joined(separator: ", ")])
 
         let userMessage = payload.makeUserMessage()
-        conversationManager.addMessage(to: targetConversation, message: userMessage)
-        consumePendingAutoSendClaim(afterCommittingTo: conversationId)
-        if let preparation {
-            consumeComposer(preparation)
-        }
-
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: text) {
-            DiagnosticsLogger.log(.chatView, level: .info, message: "💾 Memory command processed",
-                                  metadata: ["response": memoryResponse])
-        }
+        commitUserMessageIfNeeded(
+            userMessage,
+            to: targetConversation,
+            consuming: preparation
+        )
 
         pendingSendPayload = payload
         failedSendPayload = nil
@@ -2561,7 +2595,8 @@ extension IOSChatViewModel {
         prompt: String,
         models: [String],
         conversation: Conversation,
-        draftText: String?
+        draftText: String?,
+        userMessage: Message
     ) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
@@ -2574,9 +2609,10 @@ extension IOSChatViewModel {
         let conversationId = conversation.id
         let previousImageSource = previousImageSource(in: conversation)
 
-        let userMessage = Message(role: .user, content: prompt)
-        conversationManager.addMessage(to: conversation, message: userMessage)
-        consumePendingAutoSendClaim(afterCommittingTo: conversationId)
+        if !conversation.messages.contains(where: { $0.id == userMessage.id }) {
+            conversationManager.addMessage(to: conversation, message: userMessage)
+            consumePendingAutoSendClaim(afterCommittingTo: conversationId)
+        }
 
         if let draftText, messageText == draftText {
             messageText = ""

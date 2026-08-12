@@ -945,14 +945,7 @@ struct MacChatView: View {
             for preparation: SendPreparation
         ) async -> (message: Message, ownsStoredAttachments: Bool) {
             if let prebuiltUserMessage = preparation.prebuiltUserMessage {
-                return (
-                    Message(
-                        role: .user,
-                        content: prebuiltUserMessage.content,
-                        attachments: prebuiltUserMessage.attachments
-                    ),
-                    false
-                )
+                return (prebuiltUserMessage, false)
             }
 
             let message = await ChatMessageBuilder.createUserMessage(
@@ -1157,23 +1150,50 @@ struct MacChatView: View {
                 return
             }
 
-            if preparation.consumesComposer {
-                let requestModels = selectedModelsToSend.isEmpty
-                    ? [activeModel]
-                    : Array(selectedModelsToSend)
-                if let limitError = aiService.attachmentImageLimitError(
-                    for: requestModels,
-                    messages: loadedConversation.messages + [userMessage]
-                ) {
-                    discardStoredAttachments(
-                        in: userMessage,
-                        ifOwnedByPreparation: ownsStoredAttachments
-                    )
-                    errorMessage = limitError
-                    errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
-                    restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-                    return
-                }
+            let requestModels = selectedModelsToSend.isEmpty
+                ? [activeModel]
+                : Array(selectedModelsToSend)
+            let validationError = await aiService.attachmentImageValidationError(
+                for: requestModels,
+                loading: userMessage.attachments ?? []
+            )
+            guard sendPreparationID == preparationID, !Task.isCancelled else {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                return
+            }
+            if let validationError {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = validationError
+                errorRecoverySuggestion = "Remove the image or choose a different model."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+            let requestMessages = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+                userMessage,
+                in: loadedConversation.messages
+            )
+            if let limitError = aiService.attachmentImageLimitError(
+                for: requestModels,
+                messages: requestMessages
+            ) {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = limitError
+                errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+
+            let reusesCommittedUserMessage = loadedConversation.messages.contains {
+                $0.id == userMessage.id
             }
 
             if appContentToSend != nil {
@@ -1189,22 +1209,26 @@ struct MacChatView: View {
         }
 
             logChat(
-                "📨 Creating message with \(userMessage.attachments?.count ?? 0) attachments",
+                reusesCommittedUserMessage
+                    ? "🔄 Reusing committed user message"
+                    : "📨 Creating message with \(userMessage.attachments?.count ?? 0) attachments",
             level: .info,
             metadata: ["attachmentCount": "\(userMessage.attachments?.count ?? 0)"]
             )
-            conversationManager.addMessage(to: conversation, message: userMessage)
-            consumePendingAutoSendClaim(
-                afterCommitting: promptText,
-                to: conversation.id
-            )
+            if !reusesCommittedUserMessage {
+                conversationManager.addMessage(to: conversation, message: userMessage)
+                consumePendingAutoSendClaim(
+                    afterCommitting: promptText,
+                    to: conversation.id
+                )
 
-        // Process memory commands (e.g., "remember that I prefer dark mode")
-        if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
-            logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
-        }
+                // Process memory commands (e.g., "remember that I prefer dark mode")
+                if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
+                    logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
+                }
 
-            consumeComposer(for: preparation)
+                consumeComposer(for: preparation)
+            }
         isComposerFocused = true
         errorMessage = nil
         errorRecoverySuggestion = nil

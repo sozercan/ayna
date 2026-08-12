@@ -543,6 +543,14 @@ struct MacNewChatView: View {
             let requestModels = selectedModelsToSend.isEmpty
                 ? [activeModel]
                 : Array(selectedModelsToSend)
+            if let validationError = aiService.attachmentImageValidationError(
+                for: requestModels,
+                inMemoryAttachments: userMessage.attachments ?? []
+            ) {
+                errorMessage = validationError
+                errorRecoverySuggestion = "Remove the image or choose a different model."
+                return
+            }
             guard await validateAttachmentImageLimit(
                 for: userMessage,
                 conversationId: currentConversationId,

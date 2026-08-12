@@ -57,6 +57,35 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `paste caps image data loading before import`() async throws {
+            let pasteboard = NSPasteboard.general
+            let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+            defer { snapshot.restore(to: pasteboard) }
+
+            let imageData = try #require(Self.imageData)
+            let providers = (0 ... ChatDraftContent.maximumImageCount).map { _ in
+                PasteboardImageDataProvider(data: imageData)
+            }
+            let items = providers.map { provider in
+                let item = NSPasteboardItem()
+                item.setDataProvider(provider, forTypes: [.init("public.png")])
+                return item
+            }
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects(items))
+
+            let state = EditorState()
+            let hostedEditor = try Self.hostEditor(state: state)
+            hostedEditor.textView.paste(nil)
+
+            #expect(await Self.waitUntil {
+                !state.isImportingPastedImages
+                    && state.pastedImages.count == ChatDraftContent.maximumImageCount
+            })
+            #expect(providers.reduce(0) { $0 + $1.requestCount } == ChatDraftContent.maximumImageCount)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `rotating the paste session discards an in-flight image import`() async throws {
             let pasteboard = NSPasteboard.general
             let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
@@ -169,6 +198,24 @@
         var pasteImportSessionID = UUID()
         var isImportingPastedImages = false
         var pastedImages: [PastedImage] = []
+    }
+
+    private final class PasteboardImageDataProvider: NSObject, NSPasteboardItemDataProvider {
+        private let data: Data
+        private(set) var requestCount = 0
+
+        init(data: Data) {
+            self.data = data
+        }
+
+        func pasteboard(
+            _: NSPasteboard?,
+            item: NSPasteboardItem,
+            provideDataForType type: NSPasteboard.PasteboardType
+        ) {
+            requestCount += 1
+            item.setData(data, forType: type)
+        }
     }
 
     private struct PasteboardSnapshot {

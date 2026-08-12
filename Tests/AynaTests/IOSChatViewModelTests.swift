@@ -153,6 +153,46 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test
+        func `oversized anthropic file image is rejected before committing the message`() throws {
+            let model = "claude-test"
+            let conversation = Conversation(model: model, systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [model])
+            aiService.modelProviders[model] = .anthropic
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let directory = try TestHelpers.makeTemporaryDirectory()
+            let fileURL = directory.appendingPathComponent("large.jpg")
+            var imageData = Data([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0])
+            imageData.append(Data(
+                repeating: 0,
+                count: AnthropicRequestBuilder.maxImageSizeBytes
+            ))
+            try imageData.write(to: fileURL)
+            viewModel.attachedFiles = [fileURL]
+
+            viewModel.sendMessage()
+
+            #expect(aiService.singleModelRequests.isEmpty)
+            #expect(manager.conversation(byId: conversation.id)?.messages.isEmpty == true)
+            #expect(viewModel.attachedFiles == [fileURL])
+            #expect(viewModel.errorMessage?.contains("Image too large") == true)
+            #expect(!viewModel.isGenerating)
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `multi-model send waits for lazy history and includes it in the request`() async throws {
             let priorUser = Message(role: .user, content: "Prior question")
@@ -434,6 +474,9 @@
             viewModel.sendMessage()
             #expect(aiService.requests.count == 1)
             #expect(viewModel.pastedImages.isEmpty)
+            let committedUserMessage = try #require(
+                manager.conversation(byId: conversation.id)?.messages.first(where: { $0.role == .user })
+            )
 
             aiService.failLatestRequest()
             #expect(await waitUntil {
@@ -447,9 +490,17 @@
                 aiService.requests.last?.last(where: { $0.role == .user })
             )
             let retriedAttachment = try #require(retriedUserMessage.attachments?.first)
+            let persistedUserMessages = try #require(
+                manager.conversation(byId: conversation.id)?.messages.filter { $0.role == .user }
+            )
+            let requestedUserMessages = try #require(
+                aiService.requests.last?.filter { $0.role == .user }
+            )
             #expect(retriedAttachment.fileName == pastedImage.fileName)
             #expect(retriedAttachment.mimeType == pastedImage.mimeType)
             #expect(retriedAttachment.data == pastedImage.data)
+            #expect(persistedUserMessages.map(\.id) == [committedUserMessage.id])
+            #expect(requestedUserMessages.map(\.id) == [committedUserMessage.id])
             #expect(viewModel.pastedImages.isEmpty)
             #expect(viewModel.failedMessage == nil)
             viewModel.cancelOwnedOperations()
