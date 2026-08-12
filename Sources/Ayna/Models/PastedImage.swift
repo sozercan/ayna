@@ -59,19 +59,21 @@
         static func importing(data: Data, contentType: UTType) throws -> PastedImage {
             guard !data.isEmpty,
                   let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  CGImageSourceGetCount(source) > 0
+                  CGImageSourceGetCount(source) > 0,
+                  let dimensions = pixelDimensions(of: source)
             else {
                 throw ImportError.invalidImage
             }
 
-            guard let sourceImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-                throw ImportError.invalidImage
-            }
-
-            if let format = providerFormat(for: contentType),
+            let decodedContentType = CGImageSourceGetType(source)
+                .flatMap { UTType($0 as String) }
+            if let format = providerFormat(for: decodedContentType ?? contentType),
                data.count <= maximumByteCount,
-               max(sourceImage.width, sourceImage.height) <= maximumDimension
+               max(dimensions.width, dimensions.height) <= maximumDimension
             {
+                guard CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
+                    throw ImportError.invalidImage
+                }
                 return PastedImage(
                     data: data,
                     mimeType: format.mimeType,
@@ -79,7 +81,32 @@
                 )
             }
 
+            guard let sourceImage = transformedThumbnail(from: source) else {
+                throw ImportError.invalidImage
+            }
             return try convertedImage(from: sourceImage)
+        }
+
+        private static func pixelDimensions(of source: CGImageSource) -> (width: Int, height: Int)? {
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary?,
+                  let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+                  let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+                  width > 0,
+                  height > 0
+            else {
+                return nil
+            }
+            return (width, height)
+        }
+
+        private static func transformedThumbnail(from source: CGImageSource) -> CGImage? {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maximumDimension,
+                kCGImageSourceShouldCacheImmediately: true,
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }
 
         private static func providerFormat(for contentType: UTType) -> (mimeType: String, fileExtension: String)? {

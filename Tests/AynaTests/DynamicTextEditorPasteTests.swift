@@ -34,6 +34,10 @@
                     get: { state.pasteImportSessionID },
                     set: { state.pasteImportSessionID = $0 }
                 ),
+                isImportingPastedImages: Binding(
+                    get: { state.isImportingPastedImages },
+                    set: { state.isImportingPastedImages = $0 }
+                ),
                 onSubmit: {},
                 onPasteImages: { _ in },
                 accessibilityIdentifier: "test.dynamicTextEditor"
@@ -80,6 +84,7 @@
         var text = ""
         var isFirstResponder = false
         var pasteImportSessionID = UUID()
+        var isImportingPastedImages = false
     }
 
     private struct PasteboardSnapshot {

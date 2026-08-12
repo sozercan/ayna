@@ -122,6 +122,38 @@ struct MacChatView: View {
         let selectedModel: String
         let selectedModels: Set<String>
         let activeModel: String?
+        let prebuiltUserMessage: Message?
+        let consumesComposer: Bool
+
+        init(
+            promptText: String,
+            files: [URL],
+            pastedImages: [PastedImage],
+            appContent: AppContent?,
+            selectedModel: String,
+            selectedModels: Set<String>,
+            activeModel: String?,
+            prebuiltUserMessage: Message? = nil,
+            consumesComposer: Bool = true
+        ) {
+            self.promptText = promptText
+            self.files = files
+            self.pastedImages = pastedImages
+            self.appContent = appContent
+            self.selectedModel = selectedModel
+            self.selectedModels = selectedModels
+            self.activeModel = activeModel
+            self.prebuiltUserMessage = prebuiltUserMessage
+            self.consumesComposer = consumesComposer
+        }
+    }
+
+    private struct FailedSendPayload {
+        let promptText: String
+        let userMessage: Message
+        let selectedModel: String
+        let selectedModels: Set<String>
+        let activeModel: String
     }
 
     let conversation: Conversation
@@ -150,6 +182,8 @@ struct MacChatView: View {
     @State private var attachedFiles: [URL] = []
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
+    @State private var isImportingPastedImages = false
+    @State private var failedSendPayload: FailedSendPayload?
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
@@ -339,6 +373,7 @@ struct MacChatView: View {
                     attachedFiles: $attachedFiles,
                     pastedImages: $pastedImages,
                     pasteImportSessionID: $pasteImportSessionID,
+                    isImportingPastedImages: $isImportingPastedImages,
                     attachedAppContent: $attachedAppContent,
                     selectedModels: $selectedModels,
                     selectedModel: $selectedModel,
@@ -693,25 +728,56 @@ struct MacChatView: View {
 
     /// Retry the last failed message
     private func retryFailedMessage() {
-        guard let message = failedMessage else { return }
+        guard !isGenerating, sendPreparationTask == nil,
+              let payload = failedSendPayload
+        else {
+            return
+        }
 
-        logChat("🔄 Retrying failed message", level: .info, metadata: ["messageLength": "\(message.count)"])
+        logChat(
+            "🔄 Retrying failed message",
+            level: .info,
+            metadata: ["messageLength": "\(payload.promptText.count)"]
+        )
 
-        // Clear error state
-        failedMessage = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
 
-        // Set message text and send
-        messageText = message
-            beginSendMessage()
+        scheduleSend(
+            SendPreparation(
+                promptText: payload.promptText,
+                files: [],
+                pastedImages: [],
+                appContent: nil,
+                selectedModel: payload.selectedModel,
+                selectedModels: payload.selectedModels,
+                activeModel: payload.activeModel,
+                prebuiltUserMessage: payload.userMessage,
+                consumesComposer: false
+            )
+        )
     }
 
     /// Dismiss the current error without retrying
     private func dismissError() {
         failedMessage = nil
+        failedSendPayload = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
+    }
+
+    func clearFailedSendState() {
+        failedMessage = nil
+        failedSendPayload = nil
+    }
+
+    func retainFailedSendState(
+        errorMessage: String,
+        recoverySuggestion: String? = nil
+    ) {
+        failedMessage = failedSendPayload?.promptText
+        self.errorMessage = errorMessage
+        errorRecoverySuggestion = recoverySuggestion
     }
 
         private func cancelOwnedGenerationForLifecycle() {
@@ -818,9 +884,12 @@ struct MacChatView: View {
             return
         }
 
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !attachedFiles.isEmpty
-            || !pastedImages.isEmpty
+        guard !isImportingPastedImages,
+              ChatDraftContent.isSendable(
+                  text: messageText,
+                  fileURLs: attachedFiles,
+                  inMemoryImageCount: pastedImages.count
+              )
         else {
             isComposerFocused = true
             return
@@ -836,6 +905,13 @@ struct MacChatView: View {
                 activeModel: resolveModelForSending(selection: selectedModel)
             )
             pasteImportSessionID = UUID()
+            scheduleSend(preparation, delay: delay)
+        }
+
+        private func scheduleSend(
+            _ preparation: SendPreparation,
+            delay: Duration? = nil
+        ) {
             let preparationID = UUID()
             sendPreparationID = preparationID
             isGenerating = true
@@ -854,6 +930,52 @@ struct MacChatView: View {
                 if let localPath = attachment.localPath {
                     AttachmentStorage.shared.delete(path: localPath)
                 }
+            }
+        }
+
+        private func discardStoredAttachments(
+            in message: Message,
+            ifOwnedByPreparation ownsStoredAttachments: Bool
+        ) {
+            guard ownsStoredAttachments else { return }
+            discardStoredAttachments(in: message)
+        }
+
+        private func makeUserMessage(
+            for preparation: SendPreparation
+        ) async -> (message: Message, ownsStoredAttachments: Bool) {
+            if let prebuiltUserMessage = preparation.prebuiltUserMessage {
+                return (
+                    Message(
+                        role: .user,
+                        content: prebuiltUserMessage.content,
+                        attachments: prebuiltUserMessage.attachments
+                    ),
+                    false
+                )
+            }
+
+            let message = await ChatMessageBuilder.createUserMessage(
+                text: preparation.promptText,
+                appContent: preparation.appContent,
+                fileURLs: preparation.files,
+                pastedImages: preparation.pastedImages,
+                saveToStorage: true
+            )
+            return (message, true)
+        }
+
+        private func consumeComposer(for preparation: SendPreparation) {
+            guard preparation.consumesComposer else { return }
+
+            if messageText == preparation.promptText {
+                messageText = ""
+            }
+            attachedFiles.removeAll { preparation.files.contains($0) }
+            let pastedImageIDs = Set(preparation.pastedImages.map(\.id))
+            pastedImages.removeAll { pastedImageIDs.contains($0.id) }
+            if isSameAppContent(attachedAppContent, preparation.appContent) {
+                attachedAppContent = nil
             }
         }
 
@@ -901,10 +1023,11 @@ struct MacChatView: View {
         private func attachmentSupportError(
             files: [URL],
             pastedImages: [PastedImage],
+            hasPrebuiltAttachments: Bool,
             selectedModels: Set<String>,
             activeModel: String
         ) -> String? {
-            guard !files.isEmpty || !pastedImages.isEmpty else { return nil }
+            guard !files.isEmpty || !pastedImages.isEmpty || hasPrebuiltAttachments else { return nil }
             let models = selectedModels.isEmpty ? [activeModel] : Array(selectedModels)
             return aiService.attachmentSupportError(for: models)
         }
@@ -965,6 +1088,7 @@ struct MacChatView: View {
             if let supportError = attachmentSupportError(
                 files: filesToSend,
                 pastedImages: pastedImagesToSend,
+                hasPrebuiltAttachments: preparation.prebuiltUserMessage?.attachments?.isEmpty == false,
                 selectedModels: selectedModelsToSend,
                 activeModel: activeModel
             ) {
@@ -982,16 +1106,28 @@ struct MacChatView: View {
             metadata: ["model": activeModel]
         )
 
-        // Build user message using ChatMessageBuilder
-        let userMessage = await ChatMessageBuilder.createUserMessage(
-                text: promptText,
-                appContent: appContentToSend,
-                fileURLs: filesToSend,
-                pastedImages: pastedImagesToSend,
-                saveToStorage: true
-        )
+            let userMessageBuild = await makeUserMessage(for: preparation)
+            let userMessage = userMessageBuild.message
+            let ownsStoredAttachments = userMessageBuild.ownsStoredAttachments
             guard sendPreparationID == preparationID, !Task.isCancelled else {
-                discardStoredAttachments(in: userMessage)
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                return
+            }
+
+            guard ChatDraftContent.isSendable(
+                text: userMessage.content,
+                attachments: userMessage.attachments ?? []
+            ) else {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = "Unable to load a supported image attachment."
+                errorRecoverySuggestion = "Choose a JPEG, PNG, GIF, or WebP image and try again."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }
 
@@ -999,7 +1135,10 @@ struct MacChatView: View {
                 conversationId: conversation.id,
                 manager: conversationManager
             ) != nil else {
-                discardStoredAttachments(in: userMessage)
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
                 guard sendPreparationID == preparationID, !Task.isCancelled else { return }
                 logChat(
                     "❌ Conversation changed while preparing attachments",
@@ -1011,7 +1150,10 @@ struct MacChatView: View {
                 return
             }
             guard sendPreparationID == preparationID, !Task.isCancelled else {
-                discardStoredAttachments(in: userMessage)
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
                 return
             }
 
@@ -1043,19 +1185,18 @@ struct MacChatView: View {
             logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
         }
 
-            if messageText == promptText {
-        messageText = ""
-            }
+            consumeComposer(for: preparation)
         isComposerFocused = true
-            attachedFiles.removeAll { filesToSend.contains($0) }
-            let pastedImageIDs = Set(pastedImagesToSend.map(\.id))
-            pastedImages.removeAll { pastedImageIDs.contains($0.id) }
-            if isSameAppContent(attachedAppContent, appContentToSend) {
-                attachedAppContent = nil
-            }
         errorMessage = nil
         errorRecoverySuggestion = nil
         failedMessage = promptText // Store for retry in case of failure
+            failedSendPayload = FailedSendPayload(
+                promptText: promptText,
+                userMessage: userMessage,
+                selectedModel: preparation.selectedModel,
+                selectedModels: selectedModelsToSend,
+                activeModel: activeModel
+            )
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
         // Get updated messages after adding user message
@@ -1480,6 +1621,7 @@ struct MacChatView: View {
                 toolCallDepth = 0
                 isGenerating = false
                 failedMessage = nil
+                failedSendPayload = nil
             case let .launchContinuation(continuation):
                 toolChainTimeoutTask?.cancel()
                 toolChainTimeoutTask = nil

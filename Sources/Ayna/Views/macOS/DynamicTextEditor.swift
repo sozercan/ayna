@@ -15,6 +15,7 @@ struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFirstResponder: Bool
     @Binding var pasteImportSessionID: UUID
+    @Binding var isImportingPastedImages: Bool
     let onSubmit: () -> Void
     let onPasteImages: ([PastedImage]) -> Void
     let accessibilityIdentifier: String?
@@ -107,6 +108,9 @@ struct DynamicTextEditor: NSViewRepresentable {
             guard pasteImportSessionID == expectedSessionID else { return }
             onPasteImages(images)
         }
+        textView.onPasteImportStateChange = { isImporting in
+            isImportingPastedImages = isImporting
+        }
     }
 
     private func syncFirstResponderState(for textView: NSTextView, retryCount: Int = 8) {
@@ -185,8 +189,10 @@ private final class PasteAwareTextView: NSTextView {
     ]
 
     var onPasteImages: (([PastedImage]) -> Void)?
+    var onPasteImportStateChange: ((Bool) -> Void)?
     private var pasteImportTask: Task<Void, Never>?
     private var pasteImportSessionID: UUID?
+    private var activePasteImportID: UUID?
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(paste(_:)), Self.hasImageCandidates(in: .general) {
@@ -204,10 +210,14 @@ private final class PasteAwareTextView: NSTextView {
 
         let previousTask = pasteImportTask
         let expectedSessionID = pasteImportSessionID
+        let importID = UUID()
+        activePasteImportID = importID
+        onPasteImportStateChange?(true)
         pasteImportTask = Task { @MainActor [weak self] in
             await previousTask?.value
-            guard let self,
-                  !Task.isCancelled,
+            guard let self else { return }
+            defer { self.finishPasteImport(importID) }
+            guard !Task.isCancelled,
                   pasteImportSessionID == expectedSessionID
             else {
                 return
@@ -297,7 +307,18 @@ private final class PasteAwareTextView: NSTextView {
     private func invalidatePasteImports() {
         pasteImportTask?.cancel()
         pasteImportTask = nil
+        if activePasteImportID != nil {
+            activePasteImportID = nil
+            onPasteImportStateChange?(false)
+        }
         pasteImportSessionID = nil
+    }
+
+    private func finishPasteImport(_ importID: UUID) {
+        guard activePasteImportID == importID else { return }
+        activePasteImportID = nil
+        pasteImportTask = nil
+        onPasteImportStateChange?(false)
     }
 }
 #endif

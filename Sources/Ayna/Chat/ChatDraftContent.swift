@@ -1,0 +1,44 @@
+//
+//  ChatDraftContent.swift
+//  Ayna
+//
+
+import Foundation
+import UniformTypeIdentifiers
+
+/// Shared rules for deciding whether a composer draft can form a provider request.
+enum ChatDraftContent {
+    static func isSendable(
+        text: String,
+        fileURLs: [URL],
+        inMemoryImageCount: Int
+    ) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || fileURLs.contains(where: isImageFile)
+            || inMemoryImageCount > 0
+    }
+
+    static func isSendable(
+        text: String,
+        attachments: [Message.FileAttachment]
+    ) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || attachments.contains(where: isProviderImageAttachment)
+    }
+
+    static func isImageFile(_ fileURL: URL) -> Bool {
+        guard !fileURL.pathExtension.isEmpty,
+              let contentType = UTType(filenameExtension: fileURL.pathExtension.lowercased())
+        else {
+            return false
+        }
+
+        return [.jpeg, .png, .gif, .webP].contains { supportedType in
+            contentType.conforms(to: supportedType)
+        }
+    }
+
+    private static func isProviderImageAttachment(_ attachment: Message.FileAttachment) -> Bool {
+        ["image/jpeg", "image/png", "image/gif", "image/webp"].contains(attachment.mimeType.lowercased())
+    }
+}

@@ -450,7 +450,17 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
     init(from message: Message) {
         id = message.id
         role = message.role.rawValue
-        content = message.content
+        let imageCount = message.attachments?.count(where: {
+            $0.mimeType.starts(with: "image/")
+        }) ?? 0
+        if message.role == .user,
+           message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           imageCount > 0
+        {
+            content = imageCount == 1 ? "[Image]" : "[\(imageCount) images]"
+        } else {
+            content = message.content
+        }
         reasoning = message.reasoning
         timestamp = message.timestamp
         model = message.model

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 #if os(macOS)
 //
 //  MacNewChatView.swift
@@ -27,6 +28,7 @@ struct MacNewChatView: View {
     @State private var attachedFiles: [URL] = []
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
+    @State private var isImportingPastedImages = false
     @State var isGenerating = false
     @State var currentConversationId: UUID?
     @State private var selectedModel = AIService.shared.selectedModel
@@ -260,6 +262,7 @@ struct MacNewChatView: View {
             attachedFiles: $attachedFiles,
             pastedImages: $pastedImages,
             pasteImportSessionID: $pasteImportSessionID,
+            isImportingPastedImages: $isImportingPastedImages,
             attachedAppContent: $attachedAppContent,
             selectedModels: $selectedModels,
             selectedModel: $selectedModel,
@@ -422,9 +425,7 @@ struct MacNewChatView: View {
             isComposerFocused = true
             return
         }
-
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !attachedFiles.isEmpty || !pastedImages.isEmpty else {
+        guard !isImportingPastedImages, ChatDraftContent.isSendable(text: messageText, fileURLs: attachedFiles, inMemoryImageCount: pastedImages.count) else {
             isComposerFocused = true
             return
         }
@@ -500,6 +501,14 @@ struct MacNewChatView: View {
                 saveToStorage: false
             )
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+            guard ChatDraftContent.isSendable(
+                text: userMessage.content,
+                attachments: userMessage.attachments ?? []
+            ) else {
+                errorMessage = "Unable to load a supported image attachment."
+                errorRecoverySuggestion = "Choose a JPEG, PNG, GIF, or WebP image and try again."
+                return
+            }
 
         // Get or create the conversation
         let conversation: Conversation

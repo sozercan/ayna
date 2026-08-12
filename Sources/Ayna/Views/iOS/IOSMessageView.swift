@@ -814,7 +814,9 @@ private struct IOSMessageAttachmentView: View {
         guard !didFinishLoading else { return }
         let data = await attachment.loadContent()
         guard !Task.isCancelled else { return }
-        decodedImage = data.flatMap(UIImage.init(data:))
+        decodedImage = await Task.detached(priority: .userInitiated) {
+            data.flatMap(UIImage.init(data:))
+        }.value
         didFinishLoading = true
     }
 }

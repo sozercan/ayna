@@ -22,6 +22,17 @@ import Testing
         }
 
         @Test
+        func `importing labels the image from its decoded format`() throws {
+            let pngData = try Self.encodedImage(as: .png)
+
+            let pastedImage = try PastedImage.importing(data: pngData, contentType: .jpeg)
+
+            #expect(pastedImage.data == pngData)
+            #expect(pastedImage.mimeType == "image/png")
+            #expect(pastedImage.fileExtension == "png")
+        }
+
+        @Test
         func `importing supported PNG rejects bytes that cannot decode`() throws {
             let completePNG = try #require(Data(base64Encoded:
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
@@ -91,6 +102,30 @@ import Testing
         }
 
         @Test
+        func `converting applies EXIF orientation to the image pixels`() throws {
+            let orientedTIFF = try Self.encodedImage(
+                as: .tiff,
+                width: 96,
+                height: 64,
+                properties: [kCGImagePropertyOrientation: 6]
+            )
+            let originalSource = try #require(CGImageSourceCreateWithData(orientedTIFF as CFData, nil))
+            let originalProperties = try #require(
+                CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as NSDictionary?
+            )
+            #expect((originalProperties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue == 96)
+            #expect((originalProperties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue == 64)
+            #expect((originalProperties[kCGImagePropertyOrientation] as? NSNumber)?.intValue == 6)
+
+            let pastedImage = try PastedImage.importing(data: orientedTIFF, contentType: .tiff)
+
+            let convertedSource = try #require(CGImageSourceCreateWithData(pastedImage.data as CFData, nil))
+            let convertedImage = try #require(CGImageSourceCreateImageAtIndex(convertedSource, 0, nil))
+            #expect(convertedImage.width == 64)
+            #expect(convertedImage.height == 96)
+        }
+
+        @Test
         func `importing invalid bytes rejects the image`() {
             do {
                 _ = try PastedImage.importing(
@@ -111,7 +146,8 @@ import Testing
         private static func encodedImage(
             as contentType: UTType,
             width: Int = 96,
-            height: Int = 64
+            height: Int = 64,
+            properties: [CFString: Any]? = nil
         ) throws -> Data {
             let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
                 | CGImageAlphaInfo.premultipliedLast.rawValue
@@ -145,7 +181,11 @@ import Testing
             ) else {
                 throw PastedImageFixtureError.destinationCreationFailed
             }
-            CGImageDestinationAddImage(destination, image, nil)
+            CGImageDestinationAddImage(
+                destination,
+                image,
+                properties.map { $0 as CFDictionary }
+            )
             guard CGImageDestinationFinalize(destination) else {
                 throw PastedImageFixtureError.encodingFailed
             }

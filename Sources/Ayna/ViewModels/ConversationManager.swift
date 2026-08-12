@@ -2917,17 +2917,26 @@ final class ConversationManager: ObservableObject {
             return
         }
 
+        let content = firstMessage.content
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let imageCount = firstMessage.attachments?.count(where: {
+                $0.mimeType.starts(with: "image/")
+            }) ?? 0
+            guard imageCount > 0 else { return }
+            let fallbackTitle = imageCount == 1 ? "Image" : "\(imageCount) Images"
+            renameConversation(conversation, newTitle: fallbackTitle)
+            return
+        }
+
         // Skip AI title generation for image generation models - use fallback instead
         let modelCapability = AIService.shared.getModelCapability(conversation.model)
         if modelCapability == .imageGeneration {
             // Use simple fallback title for image generation conversations
-            let content = firstMessage.content
             let fallbackTitle = String(content.prefix(50))
             renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
             return
         }
 
-        let content = firstMessage.content
         let titleRequestGeneration = beginTitleRequest(for: conversation.id)
         let firstMessageId = firstMessage.id
 

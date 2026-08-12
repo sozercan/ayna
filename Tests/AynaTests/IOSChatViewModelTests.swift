@@ -76,6 +76,45 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test
+        func `send is ignored while a pasted image import is pending`() {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let pastedImage = PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            viewModel.messageText = "Wait for the paste"
+            viewModel.pastedImages = [pastedImage]
+            viewModel.isImportingPastedImages = true
+            let initialSessionID = viewModel.pasteImportSessionID
+
+            viewModel.sendMessage()
+
+            #expect(aiService.singleModelRequests.isEmpty)
+            #expect(manager.conversation(byId: conversation.id)?.messages.isEmpty == true)
+            #expect(viewModel.messageText == "Wait for the paste")
+            #expect(viewModel.pastedImages == [pastedImage])
+            #expect(viewModel.pasteImportSessionID == initialSessionID)
+            #expect(!viewModel.isGenerating)
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `multi-model send waits for lazy history and includes it in the request`() async throws {
             let priorUser = Message(role: .user, content: "Prior question")
@@ -326,6 +365,176 @@
             #expect(viewModel.messageText == "Keep this draft")
             #expect(viewModel.attachedFiles == [attachment])
             #expect(viewModel.errorMessage != nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `failed send retry restores pasted images`() async throws {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = ControllableErrorAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let pastedImage = PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            viewModel.messageText = "Retry this image"
+            viewModel.pastedImages = [pastedImage]
+
+            viewModel.sendMessage()
+            #expect(aiService.requests.count == 1)
+            #expect(viewModel.pastedImages.isEmpty)
+
+            aiService.failLatestRequest()
+            #expect(await waitUntil {
+                !viewModel.isGenerating && viewModel.failedMessage == "Retry this image"
+            })
+
+            viewModel.retryFailedMessage()
+
+            #expect(aiService.requests.count == 2)
+            let retriedUserMessage = try #require(
+                aiService.requests.last?.last(where: { $0.role == .user })
+            )
+            let retriedAttachment = try #require(retriedUserMessage.attachments?.first)
+            #expect(retriedAttachment.fileName == pastedImage.fileName)
+            #expect(retriedAttachment.mimeType == pastedImage.mimeType)
+            #expect(retriedAttachment.data == pastedImage.data)
+            #expect(viewModel.pastedImages.isEmpty)
+            #expect(viewModel.failedMessage == nil)
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `failed send retry preserves a newer composer draft`() async throws {
+            let conversation = Conversation(model: "model-a", systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = ControllableErrorAIService()
+            configure(aiService, models: [conversation.model])
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let failedPaste = PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47, 0x01]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            let laterPaste = PastedImage(
+                data: Data([0xFF, 0xD8, 0xFF, 0xE0, 0x02]),
+                mimeType: "image/jpeg",
+                fileExtension: "jpg"
+            )
+            viewModel.messageText = "Retry the failed image"
+            viewModel.pastedImages = [failedPaste]
+
+            viewModel.sendMessage()
+            #expect(aiService.requests.count == 1)
+            viewModel.messageText = "Keep this newer draft"
+            viewModel.pastedImages = [laterPaste]
+
+            aiService.failLatestRequest()
+            #expect(await waitUntil {
+                !viewModel.isGenerating && viewModel.failedMessage == "Retry the failed image"
+            })
+            #expect(viewModel.messageText == "Keep this newer draft")
+            #expect(viewModel.pastedImages == [laterPaste])
+
+            viewModel.retryFailedMessage()
+
+            #expect(aiService.requests.count == 2)
+            let retriedUserMessage = try #require(
+                aiService.requests.last?.last(where: { $0.role == .user })
+            )
+            let retriedAttachment = try #require(retriedUserMessage.attachments?.first)
+            #expect(retriedUserMessage.content == "Retry the failed image")
+            #expect(retriedUserMessage.attachments?.count == 1)
+            #expect(retriedAttachment.fileName == failedPaste.fileName)
+            #expect(retriedAttachment.mimeType == failedPaste.mimeType)
+            #expect(retriedAttachment.data == failedPaste.data)
+            #expect(viewModel.messageText == "Keep this newer draft")
+            #expect(viewModel.pastedImages == [laterPaste])
+            #expect(viewModel.failedMessage == nil)
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `all-failed multi-model send retains its pasted image for retry`() async throws {
+            let models = ["model-a", "model-b"]
+            let conversation = Conversation(
+                model: models[0],
+                systemPromptMode: .disabled,
+                multiModelEnabled: true,
+                activeModels: models
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = ControllableMultiModelErrorAIService()
+            configure(aiService, models: models)
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            let pastedImage = PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47, 0x03]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )
+            viewModel.selectedModels = Set(models)
+            viewModel.messageText = "Compare this image"
+            viewModel.pastedImages = [pastedImage]
+
+            viewModel.sendMessage()
+            #expect(aiService.requests.count == 1)
+            #expect(viewModel.pastedImages.isEmpty)
+
+            aiService.failAllModelsInLatestRequest()
+            #expect(await waitUntil {
+                !viewModel.isGenerating && viewModel.failedMessage == "Compare this image"
+            })
+            #expect(viewModel.errorMessage == "All models failed")
+
+            viewModel.retryFailedMessage()
+
+            #expect(aiService.requests.count == 2)
+            let retriedUserMessage = try #require(
+                aiService.requests.last?.last(where: { $0.role == .user })
+            )
+            let retriedAttachment = try #require(retriedUserMessage.attachments?.first)
+            #expect(retriedUserMessage.content == "Compare this image")
+            #expect(retriedUserMessage.attachments?.count == 1)
+            #expect(retriedAttachment.fileName == pastedImage.fileName)
+            #expect(retriedAttachment.mimeType == pastedImage.mimeType)
+            #expect(retriedAttachment.data == pastedImage.data)
+            #expect(viewModel.failedMessage == nil)
+            viewModel.cancelOwnedOperations()
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -619,6 +828,115 @@
     private struct CapturedRetryRequest {
         let model: String
         let provider: AIProvider
+    }
+
+    private enum ControllableSendError: Error {
+        case failed
+    }
+
+    @MainActor
+    private final class ControllableErrorAIService: AIService {
+        private(set) var requests: [[Message]] = []
+        private var errorCallbacks: [@Sendable (Error) -> Void] = []
+
+        init() {
+            super.init(responseSimulator: { _, _ in })
+        }
+
+        override func sendMessage(
+            messages: [Message],
+            model: String?,
+            temperature: Double?,
+            stream: Bool,
+            tools: [[String: Any]]?,
+            conversationId: UUID?,
+            requestLane: AITextRequestLane,
+            isMultiModelRequest: Bool,
+            onChunk: @escaping @Sendable (String) -> Void,
+            onComplete: @escaping @Sendable () -> Void,
+            onError: @escaping @Sendable (Error) -> Void,
+            onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
+            onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+            onReasoning: (@Sendable (String) -> Void)?,
+            requestFlightID: RequestFlightID?
+        ) -> AITextRequest {
+            requests.append(messages)
+            errorCallbacks.append(onError)
+            return super.sendMessage(
+                messages: messages,
+                model: model,
+                temperature: temperature,
+                stream: stream,
+                tools: tools,
+                conversationId: conversationId,
+                requestLane: requestLane,
+                isMultiModelRequest: isMultiModelRequest,
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onToolCall: onToolCall,
+                onToolCallRequested: onToolCallRequested,
+                onReasoning: onReasoning,
+                requestFlightID: requestFlightID
+            )
+        }
+
+        func failLatestRequest() {
+            errorCallbacks.last?(ControllableSendError.failed)
+        }
+    }
+
+    @MainActor
+    private final class ControllableMultiModelErrorAIService: AIService {
+        private(set) var requests: [[Message]] = []
+        private var requestModels: [[String]] = []
+        private var errorCallbacks: [@Sendable (String, Error) -> Void] = []
+        private var allCompleteCallbacks: [@Sendable () -> Void] = []
+
+        init() {
+            super.init(responseSimulator: { _, _ in })
+        }
+
+        override func sendToMultipleModels(
+            messages: [Message],
+            models: [String],
+            temperature: Double?,
+            onChunk: @escaping @Sendable (String, String) -> Void,
+            onModelComplete: @escaping @Sendable (String) -> Void,
+            onAllComplete: @escaping @Sendable () -> Void,
+            onError: @escaping @Sendable (String, Error) -> Void,
+            onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
+            onReasoning: (@Sendable (String, String) -> Void)?
+        ) -> AITextBatchRequest {
+            requests.append(messages)
+            requestModels.append(models)
+            errorCallbacks.append(onError)
+            allCompleteCallbacks.append(onAllComplete)
+            return super.sendToMultipleModels(
+                messages: messages,
+                models: [],
+                temperature: temperature,
+                onChunk: { _, _ in },
+                onModelComplete: { _ in },
+                onAllComplete: {},
+                onError: { _, _ in },
+                onPendingToolCall: nil,
+                onReasoning: nil
+            )
+        }
+
+        func failAllModelsInLatestRequest() {
+            guard let models = requestModels.last,
+                  let onError = errorCallbacks.last,
+                  let onAllComplete = allCompleteCallbacks.last
+            else {
+                return
+            }
+            for model in models {
+                onError(model, ControllableSendError.failed)
+            }
+            onAllComplete()
+        }
     }
 
     @MainActor

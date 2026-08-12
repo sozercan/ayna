@@ -197,6 +197,7 @@ struct IOSChatView: View {
                 attachedImages: $viewModel.attachedImages,
                 pastedImages: $viewModel.pastedImages,
                 pasteImportSessionID: $viewModel.pasteImportSessionID,
+                isImportingPastedImages: $viewModel.isImportingPastedImages,
                 errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
                 onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                 showAttachmentButton: true,

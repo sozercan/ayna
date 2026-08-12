@@ -112,6 +112,43 @@ struct ConversationManagerTests {
 
     @Test
     @MainActor
+    func `attachment-only first message uses stable image title without AI generation`() async throws {
+        defaults.set(true, forKey: "autoGenerateTitle")
+        let previousSelectedModel = AIService.shared.selectedModel
+        AIService.shared.selectedModel = ""
+        defer {
+            defaults.set(false, forKey: "autoGenerateTitle")
+            AIService.shared.selectedModel = previousSelectedModel
+        }
+
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+        manager.createNewConversation()
+        let conversation = try #require(manager.conversations.first)
+        var message = Message(role: .user, content: "")
+        message.attachments = [
+            Message.FileAttachment(
+                fileName: "pasted-image.png",
+                mimeType: "image/png",
+                data: Data([0x89]),
+                localPath: nil
+            ),
+        ]
+
+        manager.addMessage(to: conversation, message: message)
+
+        let fallbackTitle = try #require(manager.conversation(byId: conversation.id)?.title)
+        #expect(fallbackTitle == "Image")
+        #expect(!fallbackTitle.isEmpty)
+
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+        #expect(manager.conversation(byId: conversation.id)?.title == fallbackTitle)
+    }
+
+    @Test
+    @MainActor
     func `search finds matches in title and messages`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
 

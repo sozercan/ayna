@@ -8,7 +8,6 @@
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The chat input/composer area including text editor, attachments, and model selector
 struct ChatInputArea: View {
@@ -17,6 +16,7 @@ struct ChatInputArea: View {
     @Binding var attachedFiles: [URL]
     @Binding var pastedImages: [PastedImage]
     @Binding var pasteImportSessionID: UUID
+    @Binding var isImportingPastedImages: Bool
     @Binding var attachedAppContent: AppContent?
     @Binding var selectedModels: Set<String>
     @Binding var selectedModel: String
@@ -162,7 +162,11 @@ struct ChatInputArea: View {
                 text: $messageText,
                 isFirstResponder: $isComposerFocused,
                 pasteImportSessionID: $pasteImportSessionID,
-                onSubmit: onSendMessage,
+                isImportingPastedImages: $isImportingPastedImages,
+                onSubmit: {
+                    guard canSend else { return }
+                    onSendMessage()
+                },
                 onPasteImages: { images in
                     pastedImages.append(contentsOf: images)
                 },
@@ -263,12 +267,12 @@ struct ChatInputArea: View {
                 } else {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: Typography.IconSize.xl))
-                        .foregroundStyle(hasSendableContent ? Theme.accent : Theme.textSecondary.opacity(0.5))
+                        .foregroundStyle(canSend ? Theme.accent : Theme.textSecondary.opacity(0.5))
                 }
             }
         }
         .buttonStyle(.plain)
-        .allowsHitTesting(isGenerating || hasSendableContent)
+        .allowsHitTesting(isGenerating || canSend)
         .accessibilityIdentifier(sendButtonIdentifier)
         .padding(.horizontal, Spacing.md)
         .frame(height: textHeight + Spacing.xxl)
@@ -299,9 +303,15 @@ struct ChatInputArea: View {
     }
 
     private var hasSendableContent: Bool {
-        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !attachedFiles.isEmpty
-            || !pastedImages.isEmpty
+        ChatDraftContent.isSendable(
+            text: messageText,
+            fileURLs: attachedFiles,
+            inMemoryImageCount: pastedImages.count
+        )
+    }
+
+    private var canSend: Bool {
+        hasSendableContent && !isImportingPastedImages
     }
 }
 
@@ -334,7 +344,7 @@ struct AttachedFileRow: View {
     }
 
     private var isImageFile: Bool {
-        fileURL.isImageFile
+        ChatDraftContent.isImageFile(fileURL)
     }
 
     var body: some View {
@@ -410,11 +420,12 @@ struct AttachedFileRow: View {
 private struct PastedImageRow: View {
     let pastedImage: PastedImage
     let onRemove: () -> Void
+    @State private var thumbnail: NSImage?
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            if let image = NSImage(data: pastedImage.data) {
-                Image(nsImage: image)
+            if let thumbnail {
+                Image(nsImage: thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 48, height: 48)
@@ -439,18 +450,12 @@ private struct PastedImageRow: View {
         }
         .padding(Spacing.sm)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
-    }
-}
-
-private extension URL {
-    var isImageFile: Bool {
-        guard !pathExtension.isEmpty,
-              let contentType = UTType(filenameExtension: pathExtension.lowercased())
-        else {
-            return false
+        .task(id: pastedImage.id) {
+            guard thumbnail == nil else { return }
+            thumbnail = NSImage(data: pastedImage.data)?.scaledThumbnail(
+                maxSize: NSSize(width: 48, height: 48)
+            )
         }
-
-        return contentType.conforms(to: .image)
     }
 }
 

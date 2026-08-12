@@ -134,11 +134,16 @@ extension MacChatView {
             await deleteImageData(at: imagePath)
             _ = imageGenerationCoordinator.finishOperation(operationID)
             isGenerating = false
+            retainFailedSendState(
+                errorMessage: "Unable to save the generated image.",
+                recoverySuggestion: "Try again or choose a different model."
+            )
             return
         }
 
         guard imageGenerationCoordinator.finishOperation(operationID) else { return }
         isGenerating = false
+        clearFailedSendState()
     }
 
     private func handleImageGenerationError(
@@ -149,8 +154,10 @@ extension MacChatView {
         guard imageGenerationCoordinator.finishOperation(operationID) else { return }
 
         isGenerating = false
-        errorMessage = ErrorPresenter.userMessage(for: error)
-        errorRecoverySuggestion = ErrorPresenter.recoverySuggestion(for: error)
+        retainFailedSendState(
+            errorMessage: ErrorPresenter.userMessage(for: error),
+            recoverySuggestion: ErrorPresenter.recoverySuggestion(for: error)
+        )
 
         // Remove the empty assistant placeholder message since we show error in banner
         conversationManager.removeMessage(conversationId: conversation.id, messageId: messageId)
@@ -251,7 +258,8 @@ extension MacChatView {
                         finishImageBatchIfComplete(
                             counter: counter,
                             coordinator: coordinator,
-                            operationID: operationID
+                            operationID: operationID,
+                            responseGroupID: responseGroupId
                         )
                     }
                 }
@@ -277,7 +285,8 @@ extension MacChatView {
                         finishImageBatchIfComplete(
                             counter: counter,
                             coordinator: coordinator,
-                            operationID: operationID
+                            operationID: operationID,
+                            responseGroupID: responseGroupId
                         )
                     }
                 }
@@ -322,16 +331,31 @@ extension MacChatView {
         finishImageBatchIfComplete(
             counter: counter,
             coordinator: coordinator,
-            operationID: operationID
+            operationID: operationID,
+            responseGroupID: responseGroupID
         )
     }
 
     private func finishImageBatchIfComplete(
         counter: MainActorCompletionCounter,
         coordinator: ImageGenerationCoordinator,
-        operationID: ImageGenerationCoordinator.OperationID
+        operationID: ImageGenerationCoordinator.OperationID,
+        responseGroupID: UUID
     ) {
         guard counter.isComplete, coordinator.finishOperation(operationID) else { return }
+        let hasSuccessfulResponse = conversationManager.conversation(byId: conversation.id)?
+            .getResponseGroup(responseGroupID)?
+            .responses
+            .contains { $0.status == .completed || $0.status == .selected } == true
+
+        if hasSuccessfulResponse {
+            clearFailedSendState()
+        } else {
+            retainFailedSendState(
+                errorMessage: "Image generation failed for all selected models.",
+                recoverySuggestion: "Try again or choose different models."
+            )
+        }
         if let conversation = conversationManager.conversation(byId: conversation.id) {
             conversationManager.save(conversation)
         }
@@ -512,19 +536,12 @@ extension MacChatView {
             },
             onAllComplete: {
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
-                    guard coordinator.owns(operationID, conversationID: conversationId) else { return }
-                    multiModelReasoningBuffer.finishAll()
-                    isGenerating = false
-                    logChat("🏁 All models completed", level: .info)
-
-                    // Save the conversation immediately on completion
-                    if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }) {
-                        conversationManager.saveImmediately(conversationManager.conversations[convIndex])
-                    }
-                    activeMultiModelResponseGroupID = nil
-                    _ = coordinator.finishOperation(operationID)
+                    finishMultiModelMessage(
+                        coordinator: coordinator,
+                        operationID: operationID,
+                        conversationID: conversationId,
+                        responseGroupID: responseGroupId
+                    )
                 }
             },
             onError: { model, error in
@@ -592,6 +609,38 @@ extension MacChatView {
             finishAndPersistMultiModelReasoning(conversationId: conversationId)
             request.cancel()
         }
+    }
+
+    private func finishMultiModelMessage(
+        coordinator: ToolChainCoordinator,
+        operationID: ToolChainCoordinator.OperationID,
+        conversationID: UUID,
+        responseGroupID: UUID
+    ) {
+        guard coordinator.owns(operationID, conversationID: conversationID) else { return }
+        multiModelReasoningBuffer.finishAll()
+        isGenerating = false
+        logChat("🏁 All models completed", level: .info)
+
+        if let conversationIndex = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }) {
+            conversationManager.saveImmediately(conversationManager.conversations[conversationIndex])
+        }
+        let hasSuccessfulResponse = conversationManager.conversation(byId: conversationID)?
+            .getResponseGroup(responseGroupID)?
+            .responses
+            .contains { $0.status == .completed || $0.status == .selected } == true
+        if hasSuccessfulResponse {
+            clearFailedSendState()
+        } else {
+            retainFailedSendState(
+                errorMessage: "All selected models failed to respond.",
+                recoverySuggestion: "Try again or choose different models."
+            )
+        }
+        activeMultiModelResponseGroupID = nil
+        _ = coordinator.finishOperation(operationID)
     }
 
     private func bufferMultiModelReasoning(

@@ -42,6 +42,24 @@ struct WatchDataModelHostTests {
     }
 
     @Test
+    func `Watch message renders attachment-only user content as an image placeholder`() {
+        var original = Message(role: .user, content: "")
+        original.attachments = [
+            Message.FileAttachment(
+                fileName: "pasted-image.png",
+                mimeType: "image/png",
+                data: Data([0x89]),
+                localPath: nil
+            ),
+        ]
+
+        let converted = WatchMessage(from: original)
+
+        #expect(converted.content == "[Image]")
+        #expect(converted.visibleContent == "[Image]")
+    }
+
+    @Test
     func `Watch message exposes reasoning when final content is empty`() {
         let reasoningOnly = WatchMessage(
             id: UUID(),
