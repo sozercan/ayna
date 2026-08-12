@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Smoke tests for iOS app - covers critical user flows
@@ -42,6 +43,44 @@ final class IOSSmokeUITests: IOSUITestCase {
     }
 
     // MARK: - Conversation Tests
+
+    func testComposerPastesImagesAndPlainText() throws {
+        try skipIfNavigationBroken()
+
+        let pasteboard = UIPasteboard.general
+        pasteboard.items = []
+        defer { pasteboard.items = [] }
+
+        let composer = try XCTUnwrap(
+            app.waitForTextInput(
+                identifier: "newchat.composer.textEditor",
+                timeout: UITestTimeout.normal
+            )
+        )
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        pasteboard.image = image
+
+        pasteFromEditMenu(into: composer)
+
+        let attachments = app.descendants(matching: .any)["newchat.composer.attachmentsList"]
+        XCTAssertTrue(
+            attachments.waitForExistence(timeout: UITestTimeout.async),
+            "Image paste should create a composer attachment"
+        )
+        XCTAssertTrue(
+            app.buttons["newchat.composer.sendButton"].waitForExistence(timeout: UITestTimeout.normal),
+            "Image-only paste should enable sending"
+        )
+
+        let pastedText = "Plain clipboard text"
+        pasteboard.string = pastedText
+        pasteFromEditMenu(into: composer)
+
+        XCTAssertEqual(composer.value as? String, pastedText)
+    }
 
     /// Combined test: verifies conversation creation, response, and sidebar listing
     func testNewConversationCreationAndSidebarListing() throws {
@@ -174,6 +213,24 @@ final class IOSSmokeUITests: IOSUITestCase {
         let welcomeText = app.staticTexts["How can I help you?"]
         let hasEmptyState = emptyState.waitForExistence(timeout: UITestTimeout.normal) || welcomeText.waitForExistence(timeout: UITestTimeout.normal)
         XCTAssertTrue(hasEmptyState, "Empty state or welcome view should be visible after navigating to new chat")
+    }
+
+    private func pasteFromEditMenu(into element: XCUIElement) {
+        element.tap()
+        element.press(forDuration: 1)
+
+        let pasteMenuItem = app.menuItems["Paste"]
+        if pasteMenuItem.waitForExistence(timeout: UITestTimeout.immediate) {
+            pasteMenuItem.tap()
+            return
+        }
+
+        let pasteButton = app.buttons["Paste"]
+        XCTAssertTrue(
+            pasteButton.waitForExistence(timeout: UITestTimeout.immediate),
+            "Paste should be available in the edit menu"
+        )
+        pasteButton.tap()
     }
 }
 

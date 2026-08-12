@@ -4,7 +4,7 @@ import Foundation
 import Testing
 
 // swiftlint:disable identifier_name
-@Suite("ConversationManager Tests", .tags(.viewModel, .persistence))
+@Suite("ConversationManager Tests", .tags(.viewModel, .persistence), .serialized)
 // swiftlint:disable:next type_body_length
 struct ConversationManagerTests {
     private var defaults: UserDefaults
@@ -113,11 +113,16 @@ struct ConversationManagerTests {
     @Test
     @MainActor
     func `attachment-only first message uses stable image title without AI generation`() async throws {
+        let previousAutoGenerateTitle = defaults.object(forKey: "autoGenerateTitle")
         defaults.set(true, forKey: "autoGenerateTitle")
         let previousSelectedModel = AIService.shared.selectedModel
         AIService.shared.selectedModel = ""
         defer {
-            defaults.set(false, forKey: "autoGenerateTitle")
+            if let previousAutoGenerateTitle {
+                defaults.set(previousAutoGenerateTitle, forKey: "autoGenerateTitle")
+            } else {
+                defaults.removeObject(forKey: "autoGenerateTitle")
+            }
             AIService.shared.selectedModel = previousSelectedModel
         }
 
