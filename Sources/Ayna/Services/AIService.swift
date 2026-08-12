@@ -915,6 +915,27 @@ class AIService: ObservableObject {
         return nil
     }
 
+    /// Returns a user-facing reason when an Anthropic request would exceed its image limit.
+    func attachmentImageLimitError(for models: [String], messages: [Message]) -> String? {
+        let usesAnthropic = models.contains { model in
+            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedModel.isEmpty else { return false }
+            return (modelProviders[normalizedModel] ?? provider) == .anthropic
+        }
+        guard usesAnthropic else { return nil }
+
+        let supportedTypes = Set(AnthropicRequestBuilder.supportedImageTypes)
+        let imageCount = messages.reduce(into: 0) { count, message in
+            guard message.role == .user else { return }
+            count += message.attachments?.count(where: {
+                supportedTypes.contains($0.mimeType.lowercased())
+            }) ?? 0
+        }
+        guard imageCount > AnthropicRequestBuilder.maxImagesPerRequest else { return nil }
+
+        return "Anthropic supports at most \(AnthropicRequestBuilder.maxImagesPerRequest) images per request. Remove some images or start a new conversation."
+    }
+
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {
         let dataTask = currentTask.take(ifOwnedBy: flightID)
         let backgroundDataTask = backgroundDataTasks.removeValue(forKey: flightID)

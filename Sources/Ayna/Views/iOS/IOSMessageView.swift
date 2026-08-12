@@ -237,7 +237,7 @@ struct IOSMessageView: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if let attachments = message.attachments, !attachments.isEmpty {
-                    ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
+                    ForEach(attachments) { attachment in
                         IOSMessageAttachmentView(attachment: attachment)
                     }
                 }

@@ -566,10 +566,17 @@ private final class PasteAwareTextView: UITextView {
     }
 
     override func paste(_ sender: Any?) {
-        let providers = Self.imageProviders(from: .general)
-        guard !providers.isEmpty else {
+        let pasteboard = UIPasteboard.general
+        let imageProviders = Self.imageProviders(from: pasteboard)
+        guard !imageProviders.isEmpty else {
             super.paste(sender)
             return
+        }
+        let providers = Array(imageProviders.prefix(ChatDraftContent.maximumImageCount))
+        let skippedImageCount = imageProviders.count - providers.count
+
+        if pasteboard.hasStrings {
+            super.paste(sender)
         }
 
         let previousTask = pasteImportTask
@@ -610,6 +617,11 @@ private final class PasteAwareTextView: UITextView {
                 return
             }
             onPasteImages?(images)
+            if skippedImageCount > 0 {
+                onPasteFailure?(
+                    "Only the first \(ChatDraftContent.maximumImageCount) clipboard images were attached."
+                )
+            }
         }
     }
 

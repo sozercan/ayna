@@ -454,6 +454,36 @@ struct MacNewChatView: View {
             sendPreparationID = nil
         }
 
+        private func validateAttachmentImageLimit(
+            for userMessage: Message,
+            conversationId: UUID?,
+            models: [String]
+        ) async -> Bool {
+            let existingMessages: [Message]
+            if let conversationId {
+                guard let loadedConversation = await ConversationSendPreflight.loadConversationHistory(
+                    conversationId: conversationId,
+                    manager: conversationManager
+                ) else {
+                    errorMessage = "Unable to load this conversation's history. Try again."
+                    return false
+                }
+                existingMessages = loadedConversation.messages
+            } else {
+                existingMessages = []
+            }
+
+            guard let limitError = aiService.attachmentImageLimitError(
+                for: models,
+                messages: existingMessages + [userMessage]
+            ) else {
+                return true
+            }
+            errorMessage = limitError
+            errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+            return false
+        }
+
         private func sendMessage(preparationID: UUID, preparation: SendPreparation) async {
             var handedOff = false
             defer {
@@ -509,6 +539,15 @@ struct MacNewChatView: View {
                 errorRecoverySuggestion = "Choose a JPEG, PNG, GIF, or WebP image and try again."
                 return
             }
+
+            let requestModels = selectedModelsToSend.isEmpty
+                ? [activeModel]
+                : Array(selectedModelsToSend)
+            guard await validateAttachmentImageLimit(
+                for: userMessage,
+                conversationId: currentConversationId,
+                models: requestModels
+            ) else { return }
 
         // Get or create the conversation
         let conversation: Conversation

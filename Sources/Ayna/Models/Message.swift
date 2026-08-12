@@ -62,11 +62,41 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         case image
     }
 
-    struct FileAttachment: Codable, Equatable, Sendable {
+    struct FileAttachment: Identifiable, Codable, Equatable, Sendable {
+        let id: UUID
         let fileName: String
         let mimeType: String
         var data: Data?
         var localPath: String? // Path relative to AttachmentStorage
+
+        init(
+            id: UUID = UUID(),
+            fileName: String,
+            mimeType: String,
+            data: Data? = nil,
+            localPath: String? = nil
+        ) {
+            self.id = id
+            self.fileName = fileName
+            self.mimeType = mimeType
+            self.data = data
+            self.localPath = localPath
+        }
+
+        // FileAttachment is already nested in Message; Codable requires one further key type.
+        // swiftlint:disable:next nesting
+        private enum CodingKeys: String, CodingKey {
+            case id, fileName, mimeType, data, localPath
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+            fileName = try container.decode(String.self, forKey: .fileName)
+            mimeType = try container.decode(String.self, forKey: .mimeType)
+            data = try container.decodeIfPresent(Data.self, forKey: .data)
+            localPath = try container.decodeIfPresent(String.self, forKey: .localPath)
+        }
 
         /// Helper to get data regardless of storage method
         @MainActor

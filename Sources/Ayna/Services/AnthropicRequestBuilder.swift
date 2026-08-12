@@ -50,7 +50,7 @@ enum AnthropicRequestBuilder {
     // MARK: - Constants
 
     /// Maximum number of images per request
-    static let maxImagesPerRequest = 20
+    static let maxImagesPerRequest = ChatDraftContent.maximumImageCount
 
     /// Maximum image size in bytes (3.75 MB)
     static let maxImageSizeBytes = 3_932_160

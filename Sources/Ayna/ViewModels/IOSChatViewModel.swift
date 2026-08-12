@@ -728,11 +728,36 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         )
     }
 
+    private func validateAttachmentImageLimit(
+        for payload: PreparedSend,
+        consuming preparation: SendPreparation?
+    ) -> Bool {
+        guard preparation != nil else { return true }
+
+        let requestModels = payload.selectedModels.count >= 2
+            ? Array(payload.selectedModels)
+            : [payload.requestModel.isEmpty ? payload.selectedModel : payload.requestModel]
+        let proposedMessages = (conversation?.messages ?? []) + [payload.makeUserMessage()]
+        guard let limitError = aiService.attachmentImageLimitError(
+            for: requestModels,
+            messages: proposedMessages
+        ) else {
+            return true
+        }
+
+        errorMessage = limitError
+        errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+        return false
+    }
+
     private func sendPreparedPayload(
         _ payload: PreparedSend,
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
+        guard validateAttachmentImageLimit(for: payload, consuming: preparation) else { return }
+
         // Check for multi-model mode
         if payload.selectedModels.count >= 2 {
             sendToMultipleModels(

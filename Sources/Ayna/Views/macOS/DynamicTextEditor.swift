@@ -202,10 +202,17 @@ private final class PasteAwareTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        let candidates = Self.imageCandidates(from: .general)
-        guard !candidates.isEmpty else {
+        let pasteboard = NSPasteboard.general
+        let imageCandidates = Self.imageCandidates(from: pasteboard)
+        guard !imageCandidates.isEmpty else {
             super.paste(sender)
             return
+        }
+        let candidates = Array(imageCandidates.prefix(ChatDraftContent.maximumImageCount))
+        let skippedImageCount = imageCandidates.count - candidates.count
+
+        if pasteboard.string(forType: .string) != nil {
+            super.paste(sender)
         }
 
         let previousTask = pasteImportTask
@@ -250,6 +257,15 @@ private final class PasteAwareTextView: NSTextView {
                 return
             }
             onPasteImages?(images)
+            if skippedImageCount > 0 {
+                NSSound.beep()
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .default,
+                    message: "Skipped clipboard images above the request limit",
+                    metadata: ["skippedImageCount": "\(skippedImageCount)"]
+                )
+            }
         }
     }
 

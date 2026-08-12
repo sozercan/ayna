@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import ImageIO
 import SwiftUI
 
 /// The chat input/composer area including text editor, attachments, and model selector
@@ -452,8 +453,23 @@ private struct PastedImageRow: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         .task(id: pastedImage.id) {
             guard thumbnail == nil else { return }
-            thumbnail = NSImage(data: pastedImage.data)?.scaledThumbnail(
-                maxSize: NSSize(width: 48, height: 48)
+            let data = pastedImage.data
+            let image = await Task.detached(priority: .utility) { () -> CGImage? in
+                guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+                    return nil
+                }
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 96,
+                    kCGImageSourceShouldCacheImmediately: true,
+                ]
+                return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            }.value
+            guard !Task.isCancelled, let image else { return }
+            thumbnail = NSImage(
+                cgImage: image,
+                size: NSSize(width: image.width, height: image.height)
             )
         }
     }

@@ -1034,8 +1034,8 @@ struct MacChatView: View {
 
         // This method coordinates attachment handling, MCP tool availability, streaming setup, and state
         // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
-        // we defer that refactor and explicitly allow the longer body.
-        // swiftlint:disable:next function_body_length
+        // we defer that refactor and explicitly allow the longer, branching body.
+        // swiftlint:disable:next function_body_length cyclomatic_complexity
         private func sendMessage(
             preparationID: UUID,
             preparation: SendPreparation
@@ -1131,10 +1131,10 @@ struct MacChatView: View {
                 return
             }
 
-            guard await ConversationSendPreflight.loadConversationHistory(
+            guard let loadedConversation = await ConversationSendPreflight.loadConversationHistory(
                 conversationId: conversation.id,
                 manager: conversationManager
-            ) != nil else {
+            ) else {
                 discardStoredAttachments(
                     in: userMessage,
                     ifOwnedByPreparation: ownsStoredAttachments
@@ -1155,6 +1155,25 @@ struct MacChatView: View {
                     ifOwnedByPreparation: ownsStoredAttachments
                 )
                 return
+            }
+
+            if preparation.consumesComposer {
+                let requestModels = selectedModelsToSend.isEmpty
+                    ? [activeModel]
+                    : Array(selectedModelsToSend)
+                if let limitError = aiService.attachmentImageLimitError(
+                    for: requestModels,
+                    messages: loadedConversation.messages + [userMessage]
+                ) {
+                    discardStoredAttachments(
+                        in: userMessage,
+                        ifOwnedByPreparation: ownsStoredAttachments
+                    )
+                    errorMessage = limitError
+                    errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+                    restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                    return
+                }
             }
 
             if appContentToSend != nil {

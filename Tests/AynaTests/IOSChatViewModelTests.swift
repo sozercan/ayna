@@ -115,6 +115,44 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test
+        func `anthropic image limit is rejected before committing the message`() {
+            let model = "claude-test"
+            let conversation = Conversation(model: model, systemPromptMode: .disabled)
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [model])
+            aiService.modelProviders[model] = .anthropic
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+            viewModel.pastedImages = (0 ... ChatDraftContent.maximumImageCount).map { index in
+                PastedImage(
+                    data: Data([0x89, 0x50, 0x4E, UInt8(index)]),
+                    mimeType: "image/png",
+                    fileExtension: "png"
+                )
+            }
+
+            viewModel.sendMessage()
+
+            #expect(aiService.singleModelRequests.isEmpty)
+            #expect(manager.conversation(byId: conversation.id)?.messages.isEmpty == true)
+            #expect(viewModel.pastedImages.count == ChatDraftContent.maximumImageCount + 1)
+            #expect(viewModel.errorMessage?.contains("at most 20 images") == true)
+            #expect(!viewModel.isGenerating)
+            viewModel.cancelOwnedOperations()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `multi-model send waits for lazy history and includes it in the request`() async throws {
             let priorUser = Message(role: .user, content: "Prior question")

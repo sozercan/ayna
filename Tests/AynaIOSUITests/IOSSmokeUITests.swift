@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 import XCTest
 
 /// Smoke tests for iOS app - covers critical user flows
@@ -44,7 +45,7 @@ final class IOSSmokeUITests: IOSUITestCase {
 
     // MARK: - Conversation Tests
 
-    func testComposerPastesImagesAndPlainText() throws {
+    func testComposerPastesImagesPlainTextAndMixedContent() throws {
         try skipIfNavigationBroken()
 
         let pasteboard = UIPasteboard.general
@@ -80,6 +81,31 @@ final class IOSSmokeUITests: IOSUITestCase {
         pasteFromEditMenu(into: composer)
 
         XCTAssertEqual(composer.value as? String, pastedText)
+
+        let attachmentPredicate = NSPredicate(
+            format: "identifier BEGINSWITH %@ AND NOT identifier CONTAINS %@",
+            "newchat.composer.attachment.",
+            ".remove."
+        )
+        let attachmentElements = app.descendants(matching: .any).matching(attachmentPredicate)
+        let nextAttachment = attachmentElements.element(boundBy: attachmentElements.count)
+        let mixedText = " plus mixed clipboard text"
+        let mixedImageData = try XCTUnwrap(image.pngData())
+        pasteboard.items = [[
+            UTType.png.identifier: mixedImageData,
+            UTType.plainText.identifier: mixedText,
+        ]]
+
+        pasteFromEditMenu(into: composer)
+
+        XCTAssertTrue(
+            nextAttachment.waitForExistence(timeout: UITestTimeout.async),
+            "Mixed paste should import its image representation"
+        )
+        XCTAssertTrue(
+            (composer.value as? String)?.contains(mixedText) == true,
+            "Mixed paste should preserve its text representation"
+        )
     }
 
     /// Combined test: verifies conversation creation, response, and sidebar listing

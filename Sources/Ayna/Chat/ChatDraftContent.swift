@@ -8,6 +8,9 @@ import UniformTypeIdentifiers
 
 /// Shared rules for deciding whether a composer draft can form a provider request.
 enum ChatDraftContent {
+    /// Matches the strictest supported provider limit (Anthropic: 20 images per request).
+    static let maximumImageCount = 20
+
     static func isSendable(
         text: String,
         fileURLs: [URL],

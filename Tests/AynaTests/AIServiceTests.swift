@@ -35,6 +35,49 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test
+        func `Anthropic image limit is validated across request history`() {
+            let service = makeService()
+            let anthropicModel = "claude-test"
+            let openAIModel = "openai-test"
+            service.modelProviders[anthropicModel] = .anthropic
+            service.modelProviders[openAIModel] = .openai
+            let attachment = Message.FileAttachment(
+                fileName: "image.png",
+                mimeType: "image/png",
+                data: Data([0x89, 0x50, 0x4E, 0x47])
+            )
+            let allowed = Message(
+                role: .user,
+                content: "",
+                attachments: Array(
+                    repeating: attachment,
+                    count: AnthropicRequestBuilder.maxImagesPerRequest
+                )
+            )
+            let exceeding = Message(
+                role: .user,
+                content: "",
+                attachments: Array(
+                    repeating: attachment,
+                    count: AnthropicRequestBuilder.maxImagesPerRequest + 1
+                )
+            )
+
+            #expect(service.attachmentImageLimitError(
+                for: [anthropicModel],
+                messages: [allowed]
+            ) == nil)
+            #expect(service.attachmentImageLimitError(
+                for: [anthropicModel],
+                messages: [exceeding]
+            ) == "Anthropic supports at most 20 images per request. Remove some images or start a new conversation.")
+            #expect(service.attachmentImageLimitError(
+                for: [openAIModel],
+                messages: [exceeding]
+            ) == nil)
+        }
+
+        @Test
         func `An unrecognized default provider cannot route inherited models`() throws {
             let inheritedModel = "future-inherited"
             let explicitModel = "valid-explicit"
