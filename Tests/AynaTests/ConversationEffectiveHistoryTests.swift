@@ -122,7 +122,7 @@ struct ConversationEffectiveHistoryTests {
     }
 
     @Test
-    func `replacement response group removes failed partials for the same user turn`() {
+    func `explicit replacement removes failed partials for the same user turn`() {
         let user = Message(role: .user, content: "Question")
         let failedGroupID = UUID()
         let failedPartial = Message(
@@ -169,6 +169,7 @@ struct ConversationEffectiveHistoryTests {
             responseGroups: [failedGroup, unrelatedGroup]
         )
 
+        conversation.removeFailedResponseGroups(for: user.id)
         conversation.addResponseGroup(replacementGroup)
 
         #expect(conversation.responseGroups.map(\.id) == [unrelatedGroupID, replacementGroupID])
@@ -183,6 +184,24 @@ struct ConversationEffectiveHistoryTests {
             unrelatedUser.id,
             unrelatedResponse.id,
         ])
+    }
+
+    @Test
+    func `adding a response group does not remove prior attempts`() {
+        let user = Message(role: .user, content: "Question")
+        let failedGroup = ResponseGroup(
+            userMessageId: user.id,
+            responses: [.init(id: UUID(), modelName: "model-a", status: .failed)]
+        )
+        let replacementGroup = ResponseGroup(
+            userMessageId: user.id,
+            responses: [.init(id: UUID(), modelName: "model-a", status: .streaming)]
+        )
+        var conversation = Conversation(responseGroups: [failedGroup])
+
+        conversation.addResponseGroup(replacementGroup)
+
+        #expect(conversation.responseGroups.map(\.id) == [failedGroup.id, replacementGroup.id])
     }
 
     @Test

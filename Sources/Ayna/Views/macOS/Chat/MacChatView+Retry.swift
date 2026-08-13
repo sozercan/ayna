@@ -31,11 +31,6 @@ extension MacChatView {
                 conversationID: conversationID
             )
         }
-
-        guard aiService.getModelCapability(resendModel) != .imageGeneration else {
-            performEdit()
-            return
-        }
         preflightHistoryMutation(
             models: [resendModel],
             messages: proposedHistory,
@@ -92,10 +87,6 @@ extension MacChatView {
                 usesConversationModel: usesConversationModel
             )
         }
-        guard aiService.getModelCapability(model) != .imageGeneration else {
-            retryAction()
-            return
-        }
 
         var retryConversation = targetConversation
         retryConversation.messages = Array(targetConversation.messages.prefix(assistantIndex))
@@ -111,30 +102,17 @@ extension MacChatView {
         messages: [Message],
         onSuccess: @escaping @MainActor @Sendable () -> Void
     ) {
-        if let supportError = aiService.attachmentHistorySupportError(
-            for: models,
-            messages: messages
+        if let failure = ConversationSendPreflight.attachmentRuleFailure(
+            models: models,
+            messages: messages,
+            aiService: aiService
         ) {
-            errorMessage = supportError
-            errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-            return
-        }
-        if let limitError = aiService.attachmentImageLimitError(
-            for: models,
-            messages: messages
-        ) {
-            errorMessage = limitError
-            errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+            errorMessage = failure.message
+            errorRecoverySuggestion = failure.recoverySuggestion
             return
         }
 
-        let hasImages = messages.contains { message in
-            guard message.role == .user else { return false }
-            return message.attachments?.contains(where: {
-                $0.mimeType.lowercased().hasPrefix("image/")
-            }) == true
-        }
-        guard hasImages else {
+        guard ConversationSendPreflight.hasImageAttachments(in: messages) else {
             onSuccess()
             return
         }
@@ -143,9 +121,10 @@ extension MacChatView {
         sendPreparationID = preparationID
         isGenerating = true
         let task = Task { @MainActor in
-            let validationError = await aiService.attachmentImageValidationError(
-                for: models,
-                in: messages,
+            let failure = await ConversationSendPreflight.attachmentDataFailure(
+                models: models,
+                messages: messages,
+                aiService: aiService,
                 loadAttachmentData: { path in
                     await AttachmentStorage.shared.loadData(path: path)
                 }
@@ -155,9 +134,9 @@ extension MacChatView {
             sendPreparationTask = nil
             sendPreparationID = nil
             isGenerating = false
-            if let validationError {
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
+            if let failure {
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
                 return
             }
             onSuccess()

@@ -608,31 +608,16 @@ struct MacNewChatView: View {
                 userMessage,
                 in: existingMessages
             )
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: models,
-                messages: proposedMessages
-            ) {
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-                return false
-            }
-            if let limitError = aiService.attachmentImageLimitError(
-                for: models,
-                messages: proposedMessages
-            ) {
-                errorMessage = limitError
-                errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
-                return false
-            }
-            if let validationError = await aiService.attachmentImageValidationError(
-                for: models,
-                in: proposedMessages,
+            if let failure = await ConversationSendPreflight.attachmentFailure(
+                models: models,
+                messages: proposedMessages,
+                aiService: aiService,
                 loadAttachmentData: { path in
                     await AttachmentStorage.shared.loadData(path: path)
                 }
             ) {
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
                 return false
             }
             return true
@@ -842,11 +827,6 @@ struct MacNewChatView: View {
                 conversationID: conversationID
             )
         }
-
-        guard aiService.getModelCapability(resendModel) != .imageGeneration else {
-            performEdit()
-            return
-        }
         preflightHistoryMutation(
             models: [resendModel],
             messages: proposedHistory,
@@ -859,30 +839,17 @@ struct MacNewChatView: View {
         messages: [Message],
         onSuccess: @escaping @MainActor @Sendable () -> Void
     ) {
-        if let supportError = aiService.attachmentHistorySupportError(
-            for: models,
-            messages: messages
+        if let failure = ConversationSendPreflight.attachmentRuleFailure(
+            models: models,
+            messages: messages,
+            aiService: aiService
         ) {
-            errorMessage = supportError
-            errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-            return
-        }
-        if let limitError = aiService.attachmentImageLimitError(
-            for: models,
-            messages: messages
-        ) {
-            errorMessage = limitError
-            errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+            errorMessage = failure.message
+            errorRecoverySuggestion = failure.recoverySuggestion
             return
         }
 
-        let hasImages = messages.contains { message in
-            guard message.role == .user else { return false }
-            return message.attachments?.contains(where: {
-                $0.mimeType.lowercased().hasPrefix("image/")
-            }) == true
-        }
-        guard hasImages else {
+        guard ConversationSendPreflight.hasImageAttachments(in: messages) else {
             onSuccess()
             return
         }
@@ -891,9 +858,10 @@ struct MacNewChatView: View {
         sendPreparationID = preparationID
         isGenerating = true
         let task = Task { @MainActor in
-            let validationError = await aiService.attachmentImageValidationError(
-                for: models,
-                in: messages,
+            let failure = await ConversationSendPreflight.attachmentDataFailure(
+                models: models,
+                messages: messages,
+                aiService: aiService,
                 loadAttachmentData: { path in
                     await AttachmentStorage.shared.loadData(path: path)
                 }
@@ -903,9 +871,9 @@ struct MacNewChatView: View {
             sendPreparationTask = nil
             sendPreparationID = nil
             isGenerating = false
-            if let validationError {
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
+            if let failure {
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
                 return
             }
             onSuccess()
@@ -1034,12 +1002,14 @@ struct MacNewChatView: View {
         let responseGroupId = responsePlan.responseGroupId
         let messageIds = responsePlan.messageIDsByModel
 
-        for placeholderMessage in responsePlan.placeholderMessages {
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-        }
-
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
+        guard conversationManager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ) != nil else {
+            _ = coordinator.finishOperation(operationID)
+            isGenerating = false
+            return
         }
 
         registerNewChatImageBatchCancellation(
@@ -1208,11 +1178,8 @@ struct MacNewChatView: View {
             metadata: ["models": models.joined(separator: ", ")]
         )
 
-        // Get updated conversation
         guard let conversationId = currentConversationId,
-              let updatedConversation = conversationManager.conversations.first(where: {
-                  $0.id == conversationId
-              })
+              let conversation = conversationManager.conversation(byId: conversationId)
         else {
             isGenerating = false
             return
@@ -1220,12 +1187,14 @@ struct MacNewChatView: View {
 
         let responsePlan = MultiModelResponsePlan(models: models, userMessageId: userMessageId)
         let responseGroupId = responsePlan.responseGroupId
-        for placeholderMessage in responsePlan.placeholderMessages {
-            conversationManager.addMessage(to: updatedConversation, message: placeholderMessage)
+        guard let updatedConversation = conversationManager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ) else {
+            isGenerating = false
+            return
         }
-
-        // Add response group to conversation
-        conversationManager.addResponseGroup(to: updatedConversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = responsePlan.messageIDsByModel
 

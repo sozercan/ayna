@@ -5,6 +5,40 @@ import Testing
 @Suite("Conversation Send Preflight Tests", .tags(.viewModel, .async))
 @MainActor
 struct ConversationSendPreflightTests {
+    @Test
+    func `attachment preflight combines policy and data validation`() async {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        let openAIModel = "openai-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        service.modelProviders[openAIModel] = .openai
+        let storedImage = Message(
+            role: .user,
+            content: "Image",
+            attachments: [Message.FileAttachment(
+                fileName: "stored.png",
+                mimeType: "image/png",
+                localPath: "stored.png"
+            )]
+        )
+
+        let policyFailure = await ConversationSendPreflight.attachmentFailure(
+            models: [imageModel],
+            messages: [storedImage],
+            aiService: service,
+            loadAttachmentData: { _ in Data() }
+        )
+        let dataFailure = await ConversationSendPreflight.attachmentFailure(
+            models: [openAIModel],
+            messages: [storedImage],
+            aiService: service,
+            loadAttachmentData: { _ in Data([0x89, 0x50, 0x4E, 0x47]) }
+        )
+
+        #expect(policyFailure?.message.contains("do not accept attachments") == true)
+        #expect(dataFailure?.message.contains("invalid or corrupted") == true)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     // swiftlint:disable:next identifier_name
     func `Send preflight waits for full history before request preparation`() async throws {

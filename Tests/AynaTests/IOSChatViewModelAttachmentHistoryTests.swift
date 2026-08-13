@@ -103,6 +103,58 @@
             #expect(!viewModel.isGenerating)
         }
 
+        @Test
+        func `image generation model-switch retry preserves an attachment response`() {
+            let sourceModel = "openai-test"
+            let imageModel = "image-test"
+            let userMessage = Message(
+                role: .user,
+                content: "",
+                attachments: [Message.FileAttachment(
+                    fileName: "prior.png",
+                    mimeType: "image/png",
+                    data: Data([0x89, 0x50, 0x4E, 0x47])
+                )]
+            )
+            let assistantMessage = Message(
+                role: .assistant,
+                content: "Existing response",
+                model: sourceModel
+            )
+            let conversation = Conversation(
+                messages: [userMessage, assistantMessage],
+                model: sourceModel,
+                systemPromptMode: .disabled
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = AIService(urlSession: URLSession(configuration: .ephemeral))
+            aiService.customModels = [sourceModel, imageModel]
+            aiService.selectedModel = sourceModel
+            aiService.modelProviders[sourceModel] = .openai
+            aiService.modelEndpointTypes[imageModel] = .imageGeneration
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+
+            viewModel.switchModelAndRetry(beforeMessage: assistantMessage, newModel: imageModel)
+
+            #expect(manager.conversation(byId: conversation.id)?.messages.map(\.id) == [
+                userMessage.id,
+                assistantMessage.id,
+            ])
+            #expect(viewModel.errorMessage?.contains("do not accept attachments") == true)
+            #expect(!viewModel.isGenerating)
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `anthropic historical image is rejected before committing a text turn`() async throws {
             let model = "claude-test"

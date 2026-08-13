@@ -188,13 +188,14 @@ extension MacChatView {
         let responseGroupId = responsePlan.responseGroupId
         let messageIds = responsePlan.messageIDsByModel
 
-        for placeholderMessage in responsePlan.placeholderMessages {
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-        }
-
-        // Add response group to conversation
-        if let index = conversationManager.conversations.firstIndex(where: { $0.id == conversation.id }) {
-            conversationManager.conversations[index].responseGroups.append(responsePlan.responseGroup)
+        guard conversationManager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ) != nil else {
+            _ = coordinator.finishOperation(operationID)
+            isGenerating = false
+            return
         }
 
         registerImageBatchCancellation(
@@ -457,22 +458,16 @@ extension MacChatView {
             metadata: ["models": models.joined(separator: ", ")]
         )
 
-        // Get updated conversation
-        guard let updatedConversation = conversationManager.conversations.first(where: {
-            $0.id == conversation.id
-        }) else {
+        let responsePlan = MultiModelResponsePlan(models: models, userMessageId: userMessageId)
+        let responseGroupId = responsePlan.responseGroupId
+        guard let updatedConversation = conversationManager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ) else {
             isGenerating = false
             return
         }
-
-        let responsePlan = MultiModelResponsePlan(models: models, userMessageId: userMessageId)
-        let responseGroupId = responsePlan.responseGroupId
-        for placeholderMessage in responsePlan.placeholderMessages {
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
-        }
-
-        // Add response group to conversation
-        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let messageIdsByModel = responsePlan.messageIDsByModel
 

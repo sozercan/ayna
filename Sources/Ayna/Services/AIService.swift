@@ -917,19 +917,10 @@ class AIService: ObservableObject {
         return nil
     }
 
-    /// Returns a user-facing reason when Apple Intelligence cannot consume attachment history.
+    /// Returns a user-facing reason when a selected model cannot consume attachment history.
     func attachmentHistorySupportError(for models: [String], messages: [Message]) -> String? {
         guard messages.contains(where: { $0.attachments?.isEmpty == false }) else { return nil }
-
-        for model in models {
-            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalizedModel.isEmpty else { continue }
-            let modelProvider = modelProviders[normalizedModel] ?? provider
-            if modelProvider == .appleIntelligence {
-                return "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
-            }
-        }
-        return nil
+        return attachmentSupportError(for: models)
     }
 
     /// Returns a user-facing reason when an Anthropic request would exceed its image limit.

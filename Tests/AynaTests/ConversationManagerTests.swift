@@ -112,6 +112,42 @@ struct ConversationManagerTests {
 
     @Test
     @MainActor
+    func `begin multi-model response returns the updated retry history`() throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let manager = makeManager(directory: directory)
+        let user = Message(role: .user, content: "Question")
+        let failedGroupID = UUID()
+        let failedPartial = Message(
+            role: .assistant,
+            content: "Failed partial",
+            responseGroupId: failedGroupID
+        )
+        let failedGroup = ResponseGroup(
+            id: failedGroupID,
+            userMessageId: user.id,
+            responses: [.init(id: failedPartial.id, modelName: "model-a", status: .failed)]
+        )
+        let conversation = Conversation(
+            messages: [user, failedPartial],
+            responseGroups: [failedGroup]
+        )
+        manager.conversations = [conversation]
+
+        let responsePlan = MultiModelResponsePlan(models: ["model-a"], userMessageId: user.id)
+        let updated = try #require(manager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ))
+
+        #expect(updated == manager.conversation(byId: conversation.id))
+        #expect(updated.responseGroups.map(\.id) == [responsePlan.responseGroup.id])
+        #expect(!updated.messages.contains { $0.id == failedPartial.id })
+        #expect(updated.messages.contains { $0.responseGroupId == responsePlan.responseGroup.id })
+    }
+
+    @Test
+    @MainActor
     func `attachment-only first message uses stable image title without AI generation`() async throws {
         let previousAutoGenerateTitle = defaults.object(forKey: "autoGenerateTitle")
         defaults.set(true, forKey: "autoGenerateTitle")

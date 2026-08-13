@@ -774,9 +774,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
-        guard validateAttachmentHistorySupport(for: payload) else { return }
-        guard validateAttachmentImageLimit(for: payload) else { return }
-
         // Check for multi-model mode
         if payload.selectedModels.count >= 2 {
             sendToMultipleModels(
@@ -1749,15 +1746,11 @@ extension IOSChatViewModel {
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
-        guard validateAttachmentHistorySupport(for: payload) else { return }
-        guard validateAttachmentImageLimit(for: payload) else { return }
+        guard validateAttachmentRules(for: payload) else { return }
 
-        let hasHistoricalImages = proposedMessages(for: payload).contains { message in
-            guard message.role == .user else { return false }
-            return message.attachments?.contains(where: {
-                $0.mimeType.lowercased().hasPrefix("image/")
-            }) == true
-        }
+        let hasHistoricalImages = ConversationSendPreflight.hasImageAttachments(
+            in: proposedMessages(for: payload)
+        )
         guard !payload.attachments.isEmpty || hasHistoricalImages else {
             sendPreparedPayload(
                 payload,
@@ -1797,9 +1790,10 @@ extension IOSChatViewModel {
                 return
             }
 
-            let validationError = await aiService.attachmentImageValidationError(
-                for: requestModels(for: preparedPayload),
-                in: proposedMessages(for: preparedPayload),
+            let validationFailure = await ConversationSendPreflight.attachmentDataFailure(
+                models: requestModels(for: preparedPayload),
+                messages: proposedMessages(for: preparedPayload),
+                aiService: aiService,
                 loadAttachmentData: { [attachmentStorage] path in
                     await attachmentStorage.loadData(path: path)
                 }
@@ -1808,13 +1802,13 @@ extension IOSChatViewModel {
                 await discardStoredAttachments(at: newlyStoredPaths)
                 return
             }
-            if let validationError {
+            if let validationFailure {
                 await discardStoredAttachments(at: newlyStoredPaths)
                 sendPreparationTask = nil
                 sendPreparationID = nil
                 isGenerating = false
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
+                errorMessage = validationFailure.message
+                errorRecoverySuggestion = validationFailure.recoverySuggestion
                 restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }
@@ -1881,31 +1875,17 @@ extension IOSChatViewModel {
         }.value
     }
 
-    private func validateAttachmentImageLimit(for payload: PreparedSend) -> Bool {
-        let proposedMessages = proposedMessages(for: payload)
-        guard let limitError = aiService.attachmentImageLimitError(
-            for: requestModels(for: payload),
-            messages: proposedMessages
+    private func validateAttachmentRules(for payload: PreparedSend) -> Bool {
+        guard let failure = ConversationSendPreflight.attachmentRuleFailure(
+            models: requestModels(for: payload),
+            messages: proposedMessages(for: payload),
+            aiService: aiService
         ) else {
             return true
         }
 
-        errorMessage = limitError
-        errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
-        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-        return false
-    }
-
-    private func validateAttachmentHistorySupport(for payload: PreparedSend) -> Bool {
-        guard let supportError = aiService.attachmentHistorySupportError(
-            for: requestModels(for: payload),
-            messages: proposedMessages(for: payload)
-        ) else {
-            return true
-        }
-
-        errorMessage = supportError
-        errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+        errorMessage = failure.message
+        errorRecoverySuggestion = failure.recoverySuggestion
         restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
         return false
     }
@@ -1949,11 +1929,6 @@ extension IOSChatViewModel {
                 model: resendModel,
                 conversationID: conversationID
             )
-        }
-
-        guard aiService.getModelCapability(resendModel) != .imageGeneration else {
-            performEdit()
-            return
         }
         preflightHistoryMutation(
             models: [resendModel],
@@ -2050,10 +2025,6 @@ extension IOSChatViewModel {
                 conversationID: conversationID
             )
         }
-        guard aiService.getModelCapability(model) != .imageGeneration else {
-            performRetry()
-            return
-        }
 
         var retryConversation = conversation
         retryConversation.messages = Array(conversation.messages.prefix(messageIndex))
@@ -2069,30 +2040,17 @@ extension IOSChatViewModel {
         messages: [Message],
         onSuccess: @escaping @MainActor @Sendable () -> Void
     ) {
-        if let supportError = aiService.attachmentHistorySupportError(
-            for: models,
-            messages: messages
+        if let failure = ConversationSendPreflight.attachmentRuleFailure(
+            models: models,
+            messages: messages,
+            aiService: aiService
         ) {
-            errorMessage = supportError
-            errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-            return
-        }
-        if let limitError = aiService.attachmentImageLimitError(
-            for: models,
-            messages: messages
-        ) {
-            errorMessage = limitError
-            errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+            errorMessage = failure.message
+            errorRecoverySuggestion = failure.recoverySuggestion
             return
         }
 
-        let hasImages = messages.contains { message in
-            guard message.role == .user else { return false }
-            return message.attachments?.contains(where: {
-                $0.mimeType.lowercased().hasPrefix("image/")
-            }) == true
-        }
-        guard hasImages else {
+        guard ConversationSendPreflight.hasImageAttachments(in: messages) else {
             onSuccess()
             return
         }
@@ -2103,9 +2061,10 @@ extension IOSChatViewModel {
         let task = Task { @MainActor [weak self] in
             defer { self?.sendPreparationDidFinish?() }
             guard let self else { return }
-            let validationError = await self.aiService.attachmentImageValidationError(
-                for: models,
-                in: messages,
+            let failure = await ConversationSendPreflight.attachmentDataFailure(
+                models: models,
+                messages: messages,
+                aiService: self.aiService,
                 loadAttachmentData: { [attachmentStorage = self.attachmentStorage] path in
                     await attachmentStorage.loadData(path: path)
                 }
@@ -2115,9 +2074,9 @@ extension IOSChatViewModel {
             self.sendPreparationTask = nil
             self.sendPreparationID = nil
             self.isGenerating = false
-            if let validationError {
-                self.errorMessage = validationError
-                self.errorRecoverySuggestion = "Remove the image or choose a different model."
+            if let failure {
+                self.errorMessage = failure.message
+                self.errorRecoverySuggestion = failure.recoverySuggestion
                 return
             }
             onSuccess()
@@ -2290,13 +2249,11 @@ extension IOSChatViewModel {
         )
         let responseGroupId = responsePlan.responseGroupId
         let messageIdsByModel = responsePlan.messageIDsByModel
-        conversationManager.addMultiModelResponse(
+        guard let updatedConversation = conversationManager.beginMultiModelResponse(
             to: targetConversation,
             messages: responsePlan.placeholderMessages,
             responseGroup: responsePlan.responseGroup
-        )
-
-        guard let updatedConversation = conversation else {
+        ) else {
             isGenerating = false
             errorMessage = "Unable to prepare this conversation for sending."
             capturePendingSendFailure()
@@ -2858,11 +2815,17 @@ extension IOSChatViewModel {
         let responseGroupId = responsePlan.responseGroupId
         let messageIds = responsePlan.messageIDsByModel
 
-        for placeholderMessage in responsePlan.placeholderMessages {
-            conversationManager.addMessage(to: conversation, message: placeholderMessage)
+        guard conversationManager.beginMultiModelResponse(
+            to: conversation,
+            messages: responsePlan.placeholderMessages,
+            responseGroup: responsePlan.responseGroup
+        ) != nil else {
+            _ = coordinator.finishOperation(operationID)
+            isGenerating = false
+            errorMessage = "Unable to prepare this conversation for sending."
+            capturePendingSendFailure()
+            return
         }
-
-        conversationManager.addResponseGroup(to: conversation, group: responsePlan.responseGroup)
 
         let conversationManager = conversationManager
         let cancelledMessageIDs = Array(messageIds.values)

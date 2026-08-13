@@ -1133,9 +1133,10 @@ struct MacChatView: View {
                 userMessage,
                 in: loadedConversation.messages
             )
-            let validationError = await aiService.attachmentImageValidationError(
-                for: requestModels,
-                in: requestMessages,
+            let validationFailure = await ConversationSendPreflight.attachmentFailure(
+                models: requestModels,
+                messages: requestMessages,
+                aiService: aiService,
                 loadAttachmentData: { path in
                     await AttachmentStorage.shared.loadData(path: path)
                 }
@@ -1147,39 +1148,13 @@ struct MacChatView: View {
                 )
                 return
             }
-            if let validationError {
+            if let validationFailure {
                 discardStoredAttachments(
                     in: userMessage,
                     ifOwnedByPreparation: ownsStoredAttachments
                 )
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
-                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-                return
-            }
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: requestModels,
-                messages: requestMessages
-            ) {
-                discardStoredAttachments(
-                    in: userMessage,
-                    ifOwnedByPreparation: ownsStoredAttachments
-                )
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-                return
-            }
-            if let limitError = aiService.attachmentImageLimitError(
-                for: requestModels,
-                messages: requestMessages
-            ) {
-                discardStoredAttachments(
-                    in: userMessage,
-                    ifOwnedByPreparation: ownsStoredAttachments
-                )
-                errorMessage = limitError
-                errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+                errorMessage = validationFailure.message
+                errorRecoverySuggestion = validationFailure.recoverySuggestion
                 restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }

@@ -272,10 +272,9 @@ struct Conversation: Identifiable, Equatable, Sendable {
         return nil
     }
 
-    /// Add a response group for multi-model responses
-    mutating func addResponseGroup(_ group: ResponseGroup) {
+    mutating func removeFailedResponseGroups(for userMessageId: UUID) {
         let failedGroupIDs = Set<UUID>(responseGroups.compactMap { existingGroup in
-            guard existingGroup.userMessageId == group.userMessageId,
+            guard existingGroup.userMessageId == userMessageId,
                   !existingGroup.responses.isEmpty,
                   existingGroup.responses.allSatisfy({ $0.status == .failed })
             else {
@@ -283,14 +282,18 @@ struct Conversation: Identifiable, Equatable, Sendable {
             }
             return existingGroup.id
         })
-        if !failedGroupIDs.isEmpty {
-            messages.removeAll { message in
-                guard let responseGroupId = message.responseGroupId else { return false }
-                return failedGroupIDs.contains(responseGroupId)
-            }
-            responseGroups.removeAll { failedGroupIDs.contains($0.id) }
-        }
+        guard !failedGroupIDs.isEmpty else { return }
 
+        messages.removeAll { message in
+            guard let responseGroupId = message.responseGroupId else { return false }
+            return failedGroupIDs.contains(responseGroupId)
+        }
+        responseGroups.removeAll { failedGroupIDs.contains($0.id) }
+        updatedAt = Date()
+    }
+
+    /// Add a response group for multi-model responses.
+    mutating func addResponseGroup(_ group: ResponseGroup) {
         responseGroups.append(group)
         updatedAt = Date()
     }

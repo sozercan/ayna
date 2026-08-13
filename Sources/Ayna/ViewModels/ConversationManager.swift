@@ -2746,32 +2746,19 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Adds multiple messages and a response group atomically.
-    /// This ensures the UI updates once with all data ready, preventing visual glitches
-    /// where multi-model responses appear as separate messages briefly.
-    func addMultiModelResponse(
+    /// Starts or retries a multi-model response as one conversation mutation.
+    func beginMultiModelResponse(
         to conversation: Conversation,
         messages: [Message],
         responseGroup: ResponseGroup
-    ) {
-        if let index = conversations.firstIndex(where: { $0.id == conversation.id }) {
-            // Add all messages
-            for message in messages {
-                conversations[index].messages.append(message)
-            }
-            // Add the response group
-            conversations[index].addResponseGroup(responseGroup)
-            conversations[index].updatedAt = Date()
-            save(conversations[index])
-        }
-    }
+    ) -> Conversation? {
+        guard let index = getConversationIndex(for: conversation.id) else { return nil }
 
-    /// Adds a response group to track parallel responses
-    func addResponseGroup(to conversation: Conversation, group: ResponseGroup) {
-        if let index = getConversationIndex(for: conversation.id) {
-            conversations[index].addResponseGroup(group)
-            save(conversations[index])
-        }
+        conversations[index].removeFailedResponseGroups(for: responseGroup.userMessageId)
+        conversations[index].messages.append(contentsOf: messages)
+        conversations[index].addResponseGroup(responseGroup)
+        save(conversations[index])
+        return conversations[index]
     }
 
     /// Updates a response group (e.g., when streaming completes)
