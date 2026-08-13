@@ -32,6 +32,44 @@
             #expect(!truncated.isTruncated)
         }
 
+        @Test("Attachment payload comparison ignores display icon identity")
+        func attachmentPayloadComparison() {
+            let first = AppContent(
+                appName: "Test",
+                appIcon: nil,
+                bundleIdentifier: "com.test",
+                windowTitle: "Window",
+                content: "Captured content",
+                contentType: .selectedText,
+                isTruncated: false,
+                originalLength: 16
+            )
+            let samePayload = AppContent(
+                appName: first.appName,
+                appIcon: nil,
+                bundleIdentifier: first.bundleIdentifier,
+                windowTitle: first.windowTitle,
+                content: first.content,
+                contentType: first.contentType,
+                isTruncated: first.isTruncated,
+                originalLength: first.originalLength
+            )
+            let replacement = AppContent(
+                appName: first.appName,
+                appIcon: nil,
+                bundleIdentifier: first.bundleIdentifier,
+                windowTitle: first.windowTitle,
+                content: "Newer captured content",
+                contentType: first.contentType,
+                isTruncated: false,
+                originalLength: 22
+            )
+
+            #expect(AppContent.hasSamePayload(nil, nil))
+            #expect(AppContent.hasSamePayload(first, samePayload))
+            #expect(!AppContent.hasSamePayload(first, replacement))
+        }
+
         @Test("Truncation of long content")
         func truncationLongContent() {
             let longContent = String(repeating: "a", count: 5000)

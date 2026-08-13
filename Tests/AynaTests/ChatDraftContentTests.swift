@@ -46,6 +46,24 @@ struct ChatDraftContentTests {
     }
 
     @Test
+    func `remaining image capacity counts draft images across sources`() {
+        let fileURLs = [
+            URL(fileURLWithPath: "/tmp/photo.png"),
+            URL(fileURLWithPath: "/tmp/notes.txt"),
+            URL(fileURLWithPath: "/tmp/second.webp"),
+        ]
+
+        #expect(ChatDraftContent.remainingImageCapacity(
+            fileURLs: fileURLs,
+            inMemoryImageCount: 3
+        ) == ChatDraftContent.maximumImageCount - 5)
+        #expect(ChatDraftContent.remainingImageCapacity(
+            fileURLs: fileURLs,
+            inMemoryImageCount: ChatDraftContent.maximumImageCount
+        ) == 0)
+    }
+
+    @Test
     func `built non-image attachments alone are not sendable`() {
         let attachments = [
             Message.FileAttachment(

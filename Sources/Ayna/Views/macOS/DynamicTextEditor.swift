@@ -16,6 +16,7 @@ struct DynamicTextEditor: NSViewRepresentable {
     @Binding var isFirstResponder: Bool
     @Binding var pasteImportSessionID: UUID
     @Binding var isImportingPastedImages: Bool
+    let remainingImageCapacity: () -> Int
     let onSubmit: () -> Void
     let onPasteImages: ([PastedImage]) -> Void
     let accessibilityIdentifier: String?
@@ -104,6 +105,7 @@ struct DynamicTextEditor: NSViewRepresentable {
     private func configurePasteHandling(for textView: PasteAwareTextView) {
         let expectedSessionID = pasteImportSessionID
         textView.updatePasteImportSession(expectedSessionID)
+        textView.remainingImageCapacity = remainingImageCapacity
         textView.onPasteImages = { images in
             guard pasteImportSessionID == expectedSessionID else { return }
             onPasteImages(images)
@@ -176,6 +178,17 @@ private final class PasteAwareTextView: NSTextView {
         let contentTypeIdentifier: String
     }
 
+    private enum CandidateSource {
+        case item(NSPasteboardItem)
+        case preloaded(Candidate)
+    }
+
+    private struct CandidateSelection {
+        let sources: [CandidateSource]
+        let skippedImageCount: Int
+        let hasImageCandidates: Bool
+    }
+
     private static let supportedImageTypes: [(
         pasteboardType: NSPasteboard.PasteboardType,
         contentType: UTType
@@ -190,9 +203,11 @@ private final class PasteAwareTextView: NSTextView {
 
     var onPasteImages: (([PastedImage]) -> Void)?
     var onPasteImportStateChange: ((Bool) -> Void)?
+    var remainingImageCapacity: (() -> Int)?
     private var pasteImportTask: Task<Void, Never>?
     private var pasteImportSessionID: UUID?
     private var activePasteImportID: UUID?
+    private var reservedImageCount = 0
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(paste(_:)), Self.hasImageCandidates(in: .general) {
@@ -203,17 +218,43 @@ private final class PasteAwareTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
-        let selection = Self.imageCandidates(
-            from: pasteboard,
-            limit: ChatDraftContent.maximumImageCount
+        let capacity = max(
+            0,
+            (remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount)
+                - reservedImageCount
         )
-        guard !selection.candidates.isEmpty else {
+        let selection = Self.imageCandidateSelection(
+            from: pasteboard,
+            limit: capacity
+        )
+        guard selection.hasImageCandidates else {
             super.paste(sender)
             return
         }
 
         if pasteboard.string(forType: .string) != nil {
             super.paste(sender)
+        }
+
+        guard !selection.sources.isEmpty else {
+            reportImageLimit(skippedImageCount: selection.skippedImageCount)
+            return
+        }
+
+        let selectedSourceCount = selection.sources.count
+        reservedImageCount += selectedSourceCount
+        let candidates = selection.sources.compactMap(Self.loadCandidate)
+        let failedCandidateCount = selectedSourceCount - candidates.count
+        reservedImageCount -= failedCandidateCount
+        let reservationCount = candidates.count
+        guard reservationCount > 0 else {
+            NSSound.beep()
+            DiagnosticsLogger.log(
+                .chatView,
+                level: .error,
+                message: "Failed to load pasted clipboard image data"
+            )
+            return
         }
 
         let previousTask = pasteImportTask
@@ -224,7 +265,13 @@ private final class PasteAwareTextView: NSTextView {
         pasteImportTask = Task { @MainActor [weak self] in
             await previousTask?.value
             guard let self else { return }
-            defer { self.finishPasteImport(importID) }
+            defer {
+                self.releaseImageReservation(
+                    reservationCount,
+                    sessionID: expectedSessionID
+                )
+                self.finishPasteImport(importID)
+            }
             guard !Task.isCancelled,
                   pasteImportSessionID == expectedSessionID
             else {
@@ -232,7 +279,7 @@ private final class PasteAwareTextView: NSTextView {
             }
 
             let images: [PastedImage] = await Task.detached(priority: .userInitiated) {
-                selection.candidates.compactMap { candidate -> PastedImage? in
+                candidates.compactMap { candidate -> PastedImage? in
                     guard let contentType = UTType(candidate.contentTypeIdentifier) else {
                         return nil
                     }
@@ -248,7 +295,19 @@ private final class PasteAwareTextView: NSTextView {
             else {
                 return
             }
-            guard !images.isEmpty else {
+
+            let finalCapacity = max(
+                0,
+                remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount
+            )
+            let acceptedImages = Array(images.prefix(finalCapacity))
+            guard !acceptedImages.isEmpty else {
+                if finalCapacity == 0 {
+                    reportImageLimit(
+                        skippedImageCount: selection.skippedImageCount + images.count
+                    )
+                    return
+                }
                 NSSound.beep()
                 DiagnosticsLogger.log(
                     .chatView,
@@ -257,15 +316,12 @@ private final class PasteAwareTextView: NSTextView {
                 )
                 return
             }
-            onPasteImages?(images)
-            if selection.skippedImageCount > 0 {
-                NSSound.beep()
-                DiagnosticsLogger.log(
-                    .chatView,
-                    level: .default,
-                    message: "Skipped clipboard images above the request limit",
-                    metadata: ["skippedImageCount": "\(selection.skippedImageCount)"]
-                )
+            onPasteImages?(acceptedImages)
+
+            let skippedImageCount = selection.skippedImageCount
+                + max(0, images.count - acceptedImages.count)
+            if skippedImageCount > 0 {
+                reportImageLimit(skippedImageCount: skippedImageCount)
             }
         }
     }
@@ -283,50 +339,72 @@ private final class PasteAwareTextView: NSTextView {
         pasteImportSessionID = sessionID
     }
 
-    private static func imageCandidates(
+    private static func imageCandidateSelection(
         from pasteboard: NSPasteboard,
         limit: Int
-    ) -> (candidates: [Candidate], skippedImageCount: Int) {
+    ) -> CandidateSelection {
         if let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty {
             let supportedTypes = Set(supportedImageTypes.map(\.pasteboardType))
-            var selectedItems: [NSPasteboardItem] = []
+            var selectedItems: [CandidateSource] = []
             var imageItemCount = 0
             for item in pasteboardItems where !supportedTypes.isDisjoint(with: item.types) {
                 imageItemCount += 1
                 if selectedItems.count < limit {
-                    selectedItems.append(item)
+                    selectedItems.append(.item(item))
                 }
             }
-
-            let candidates = selectedItems.compactMap { item in
-                for supportedType in supportedImageTypes {
-                    if let data = item.data(forType: supportedType.pasteboardType) {
-                        return Candidate(
-                            data: data,
-                            contentTypeIdentifier: supportedType.contentType.identifier
-                        )
-                    }
-                }
-                return nil
-            }
-            return (
-                candidates,
-                skippedImageCount: max(0, imageItemCount - selectedItems.count)
+            return CandidateSelection(
+                sources: selectedItems,
+                skippedImageCount: max(0, imageItemCount - selectedItems.count),
+                hasImageCandidates: imageItemCount > 0
             )
         }
 
         for supportedType in supportedImageTypes {
+            if limit == 0,
+               pasteboard.availableType(from: [supportedType.pasteboardType]) != nil
+            {
+                return CandidateSelection(
+                    sources: [],
+                    skippedImageCount: 1,
+                    hasImageCandidates: true
+                )
+            }
             if let data = pasteboard.data(forType: supportedType.pasteboardType) {
-                return (
-                    [Candidate(
-                        data: data,
-                        contentTypeIdentifier: supportedType.contentType.identifier
-                    )],
-                    skippedImageCount: 0
+                return CandidateSelection(
+                    sources: [
+                        .preloaded(Candidate(
+                            data: data,
+                            contentTypeIdentifier: supportedType.contentType.identifier
+                        )),
+                    ],
+                    skippedImageCount: 0,
+                    hasImageCandidates: true
                 )
             }
         }
-        return ([], skippedImageCount: 0)
+        return CandidateSelection(
+            sources: [],
+            skippedImageCount: 0,
+            hasImageCandidates: false
+        )
+    }
+
+    private static func loadCandidate(_ source: CandidateSource) -> Candidate? {
+        switch source {
+        case let .item(item):
+            for supportedType in supportedImageTypes {
+                if let data = item.data(forType: supportedType.pasteboardType) {
+                    return Candidate(
+                        data: data,
+                        contentTypeIdentifier: supportedType.contentType.identifier
+                    )
+                }
+            }
+            return nil
+        case let .preloaded(candidate):
+            return candidate
+        }
     }
 
     private static func hasImageCandidates(in pasteboard: NSPasteboard) -> Bool {
@@ -344,6 +422,7 @@ private final class PasteAwareTextView: NSTextView {
     private func invalidatePasteImports() {
         pasteImportTask?.cancel()
         pasteImportTask = nil
+        reservedImageCount = 0
         if activePasteImportID != nil {
             activePasteImportID = nil
             onPasteImportStateChange?(false)
@@ -356,6 +435,21 @@ private final class PasteAwareTextView: NSTextView {
         activePasteImportID = nil
         pasteImportTask = nil
         onPasteImportStateChange?(false)
+    }
+
+    private func releaseImageReservation(_ count: Int, sessionID: UUID?) {
+        guard pasteImportSessionID == sessionID else { return }
+        reservedImageCount = max(0, reservedImageCount - count)
+    }
+
+    private func reportImageLimit(skippedImageCount: Int) {
+        NSSound.beep()
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .default,
+            message: "Skipped clipboard images above the draft limit",
+            metadata: ["skippedImageCount": "\(skippedImageCount)"]
+        )
     }
 }
 #endif

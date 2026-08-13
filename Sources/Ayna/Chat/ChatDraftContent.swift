@@ -29,6 +29,14 @@ enum ChatDraftContent {
             || attachments.contains(where: isProviderImageAttachment)
     }
 
+    static func remainingImageCapacity(
+        fileURLs: [URL],
+        inMemoryImageCount: Int
+    ) -> Int {
+        let imageFileCount = fileURLs.count(where: isImageFile)
+        return max(0, maximumImageCount - imageFileCount - max(0, inMemoryImageCount))
+    }
+
     static func messagesByIncludingUserMessageIfNeeded(
         _ userMessage: Message,
         in messages: [Message]

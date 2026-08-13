@@ -967,7 +967,7 @@ struct MacChatView: View {
             attachedFiles.removeAll { preparation.files.contains($0) }
             let pastedImageIDs = Set(preparation.pastedImages.map(\.id))
             pastedImages.removeAll { pastedImageIDs.contains($0.id) }
-            if isSameAppContent(attachedAppContent, preparation.appContent) {
+            if AppContent.hasSamePayload(attachedAppContent, preparation.appContent) {
                 attachedAppContent = nil
             }
         }
@@ -994,23 +994,6 @@ struct MacChatView: View {
                 in: conversationManager
             )
             pendingAutoSendClaim = nil
-        }
-
-        private func isSameAppContent(_ lhs: AppContent?, _ rhs: AppContent?) -> Bool {
-            switch (lhs, rhs) {
-            case (nil, nil):
-                true
-            case let (lhs?, rhs?):
-                lhs.appName == rhs.appName &&
-                    lhs.bundleIdentifier == rhs.bundleIdentifier &&
-                    lhs.windowTitle == rhs.windowTitle &&
-                    lhs.content == rhs.content &&
-                    lhs.contentType == rhs.contentType &&
-                    lhs.isTruncated == rhs.isTruncated &&
-                    lhs.originalLength == rhs.originalLength
-            default:
-                false
-            }
         }
 
         private func attachmentSupportError(

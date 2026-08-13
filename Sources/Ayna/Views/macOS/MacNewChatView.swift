@@ -547,7 +547,9 @@ struct MacNewChatView: View {
                 attachedFiles.removeAll { preparation.files.contains($0) }
                 let pastedImageIDs = Set(preparation.pastedImages.map(\.id))
                 pastedImages.removeAll { pastedImageIDs.contains($0.id) }
-                attachedAppContent = nil
+                if AppContent.hasSamePayload(attachedAppContent, preparation.appContent) {
+                    attachedAppContent = nil
+                }
             }
             isComposerFocused = true
             return true

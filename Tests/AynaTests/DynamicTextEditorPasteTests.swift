@@ -86,6 +86,71 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `repeated paste loads only the remaining draft capacity`() async throws {
+            let pasteboard = NSPasteboard.general
+            let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+            defer { snapshot.restore(to: pasteboard) }
+
+            let imageData = try #require(Self.imageData)
+            let state = EditorState()
+            let hostedEditor = try Self.hostEditor(state: state)
+
+            let firstProviders = (0 ..< 18).map { _ in
+                PasteboardImageDataProvider(data: imageData)
+            }
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects(firstProviders.map { Self.pasteboardItem(for: $0) }))
+            hostedEditor.textView.paste(nil)
+            #expect(await Self.waitUntil {
+                !state.isImportingPastedImages && state.pastedImages.count == 18
+            })
+
+            let secondProviders = (0 ..< 5).map { _ in
+                PasteboardImageDataProvider(data: imageData)
+            }
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects(secondProviders.map { Self.pasteboardItem(for: $0) }))
+            hostedEditor.textView.paste(nil)
+            #expect(await Self.waitUntil {
+                !state.isImportingPastedImages
+                    && state.pastedImages.count == ChatDraftContent.maximumImageCount
+            })
+
+            #expect(firstProviders.reduce(0) { $0 + $1.requestCount } == 18)
+            #expect(secondProviders.reduce(0) { $0 + $1.requestCount } == 2)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `rapid repeated paste reserves capacity before loading image data`() async throws {
+            let pasteboard = NSPasteboard.general
+            let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+            defer { snapshot.restore(to: pasteboard) }
+
+            let imageData = try #require(Self.imageData)
+            let existingImage = try PastedImage.importing(data: imageData, contentType: .png)
+            let state = EditorState()
+            state.pastedImages = Array(
+                repeating: existingImage,
+                count: ChatDraftContent.maximumImageCount - 2
+            )
+            let hostedEditor = try Self.hostEditor(state: state)
+            let providers = (0 ..< 2).map { _ in
+                PasteboardImageDataProvider(data: imageData)
+            }
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects(providers.map { Self.pasteboardItem(for: $0) }))
+
+            hostedEditor.textView.paste(nil)
+            hostedEditor.textView.paste(nil)
+
+            #expect(await Self.waitUntil {
+                !state.isImportingPastedImages
+                    && state.pastedImages.count == ChatDraftContent.maximumImageCount
+            })
+            #expect(providers.reduce(0) { $0 + $1.requestCount } == 2)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `rotating the paste session discards an in-flight image import`() async throws {
             let pasteboard = NSPasteboard.general
             let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
@@ -134,6 +199,9 @@
                     get: { state.isImportingPastedImages },
                     set: { state.isImportingPastedImages = $0 }
                 ),
+                remainingImageCapacity: {
+                    max(0, ChatDraftContent.maximumImageCount - state.pastedImages.count)
+                },
                 onSubmit: {},
                 onPasteImages: { state.pastedImages.append(contentsOf: $0) },
                 accessibilityIdentifier: "test.dynamicTextEditor"
@@ -182,6 +250,14 @@
                 }
             }
             return nil
+        }
+
+        private static func pasteboardItem(
+            for provider: PasteboardImageDataProvider
+        ) -> NSPasteboardItem {
+            let item = NSPasteboardItem()
+            item.setDataProvider(provider, forTypes: [.init("public.png")])
+            return item
         }
 
         private struct HostedEditor {

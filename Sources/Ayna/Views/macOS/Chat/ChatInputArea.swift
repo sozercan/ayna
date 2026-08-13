@@ -164,6 +164,7 @@ struct ChatInputArea: View {
                 isFirstResponder: $isComposerFocused,
                 pasteImportSessionID: $pasteImportSessionID,
                 isImportingPastedImages: $isImportingPastedImages,
+                remainingImageCapacity: { remainingImageCapacity },
                 onSubmit: {
                     guard canSend else { return }
                     onSendMessage()
@@ -313,6 +314,13 @@ struct ChatInputArea: View {
 
     private var canSend: Bool {
         hasSendableContent && !isImportingPastedImages
+    }
+
+    private var remainingImageCapacity: Int {
+        ChatDraftContent.remainingImageCapacity(
+            fileURLs: attachedFiles,
+            inMemoryImageCount: pastedImages.count
+        )
     }
 }
 

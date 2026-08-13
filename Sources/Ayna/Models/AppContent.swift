@@ -60,6 +60,23 @@
             }
         }
 
+        static func hasSamePayload(_ lhs: AppContent?, _ rhs: AppContent?) -> Bool {
+            switch (lhs, rhs) {
+            case (nil, nil):
+                true
+            case let (lhs?, rhs?):
+                lhs.appName == rhs.appName &&
+                    lhs.bundleIdentifier == rhs.bundleIdentifier &&
+                    lhs.windowTitle == rhs.windowTitle &&
+                    lhs.content == rhs.content &&
+                    lhs.contentType == rhs.contentType &&
+                    lhs.isTruncated == rhs.isTruncated &&
+                    lhs.originalLength == rhs.originalLength
+            default:
+                false
+            }
+        }
+
         /// Creates a truncated version of this content.
         /// For terminal output, keeps the END (most recent output).
         /// For other content types, keeps the START.

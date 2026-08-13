@@ -209,6 +209,7 @@ struct IOSMessageComposer: View {
                         text: $messageText,
                         pasteImportSessionID: $pasteImportSessionID,
                         isImportingPastedImages: $isImportingPastedImages,
+                        remainingImageCapacity: { remainingImageCapacity },
                         placeholder: "Ask anything",
                         accessibilityIdentifier: "\(identifierPrefix).textEditor",
                         onSubmit: {
@@ -335,6 +336,13 @@ struct IOSMessageComposer: View {
         hasSendableContent && !isImportingPastedImages
     }
 
+    private var remainingImageCapacity: Int {
+        ChatDraftContent.remainingImageCapacity(
+            fileURLs: attachedFiles,
+            inMemoryImageCount: attachedImages.count + pastedImages.count
+        )
+    }
+
     private func handleSendOrCancel() {
         if isGenerating {
             // Use centralized haptic engine
@@ -409,6 +417,7 @@ private struct IOSPasteAwareTextEditor: UIViewRepresentable {
     @Binding var pasteImportSessionID: UUID
     @Binding var isImportingPastedImages: Bool
 
+    let remainingImageCapacity: () -> Int
     let placeholder: String
     let accessibilityIdentifier: String
     let onSubmit: () -> Void
@@ -476,6 +485,7 @@ private struct IOSPasteAwareTextEditor: UIViewRepresentable {
     private func configurePasteHandling(for textView: PasteAwareTextView) {
         let expectedSessionID = pasteImportSessionID
         textView.updatePasteImportSession(expectedSessionID)
+        textView.remainingImageCapacity = remainingImageCapacity
         textView.onPasteImages = { images in
             guard pasteImportSessionID == expectedSessionID else { return }
             onPasteImages(images)
@@ -522,10 +532,12 @@ private final class PasteAwareTextView: UITextView {
     private var pasteImportTask: Task<Void, Never>?
     private var pasteImportSessionID: UUID?
     private var activePasteImportID: UUID?
+    private var reservedImageCount = 0
 
     var onPasteImages: (([PastedImage]) -> Void)?
     var onPasteFailure: ((String) -> Void)?
     var onPasteImportStateChange: ((Bool) -> Void)?
+    var remainingImageCapacity: (() -> Int)?
     private(set) var isInsertingModifiedNewline = false
     var placeholder = "" {
         didSet { placeholderLabel.text = placeholder }
@@ -571,13 +583,25 @@ private final class PasteAwareTextView: UITextView {
             super.paste(sender)
             return
         }
-        let providers = Array(imageProviders.prefix(ChatDraftContent.maximumImageCount))
-        let skippedImageCount = imageProviders.count - providers.count
 
         if pasteboard.hasStrings {
             super.paste(sender)
         }
 
+        let capacity = max(
+            0,
+            (remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount)
+                - reservedImageCount
+        )
+        let providers = Array(imageProviders.prefix(capacity))
+        let initiallySkippedImageCount = max(0, imageProviders.count - providers.count)
+        guard !providers.isEmpty else {
+            reportImageLimit()
+            return
+        }
+
+        let reservationCount = providers.count
+        reservedImageCount += reservationCount
         let previousTask = pasteImportTask
         let expectedSessionID = pasteImportSessionID
         let importID = UUID()
@@ -586,7 +610,13 @@ private final class PasteAwareTextView: UITextView {
         pasteImportTask = Task { @MainActor [weak self] in
             await previousTask?.value
             guard let self else { return }
-            defer { self.finishPasteImport(importID) }
+            defer {
+                self.releaseImageReservation(
+                    reservationCount,
+                    sessionID: expectedSessionID
+                )
+                self.finishPasteImport(importID)
+            }
             guard !Task.isCancelled,
                   pasteImportSessionID == expectedSessionID
             else {
@@ -605,7 +635,16 @@ private final class PasteAwareTextView: UITextView {
                 }
             }
 
-            guard !images.isEmpty else {
+            let finalCapacity = max(
+                0,
+                remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount
+            )
+            let acceptedImages = Array(images.prefix(finalCapacity))
+            guard !acceptedImages.isEmpty else {
+                if finalCapacity == 0 {
+                    reportImageLimit()
+                    return
+                }
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
                 DiagnosticsLogger.log(
                     .chatView,
@@ -615,11 +654,12 @@ private final class PasteAwareTextView: UITextView {
                 onPasteFailure?("The pasted image could not be attached.")
                 return
             }
-            onPasteImages?(images)
+            onPasteImages?(acceptedImages)
+
+            let skippedImageCount = initiallySkippedImageCount
+                + max(0, images.count - acceptedImages.count)
             if skippedImageCount > 0 {
-                onPasteFailure?(
-                    "Only the first \(ChatDraftContent.maximumImageCount) clipboard images were attached."
-                )
+                reportImageLimit()
             }
         }
     }
@@ -664,6 +704,7 @@ private final class PasteAwareTextView: UITextView {
     private func invalidatePasteImports() {
         pasteImportTask?.cancel()
         pasteImportTask = nil
+        reservedImageCount = 0
         if activePasteImportID != nil {
             activePasteImportID = nil
             onPasteImportStateChange?(false)
@@ -676,6 +717,18 @@ private final class PasteAwareTextView: UITextView {
         activePasteImportID = nil
         pasteImportTask = nil
         onPasteImportStateChange?(false)
+    }
+
+    private func releaseImageReservation(_ count: Int, sessionID: UUID?) {
+        guard pasteImportSessionID == sessionID else { return }
+        reservedImageCount = max(0, reservedImageCount - count)
+    }
+
+    private func reportImageLimit() {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        onPasteFailure?(
+            "A draft can contain at most \(ChatDraftContent.maximumImageCount) images. Extra clipboard images were not attached."
+        )
     }
 
     private static func loadImage(from provider: NSItemProvider) async -> PastedImage? {
