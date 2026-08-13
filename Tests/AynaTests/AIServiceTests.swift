@@ -139,12 +139,14 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test
-        func `Anthropic image bytes are validated before request dispatch`() async {
+        func `provider image bytes are validated before request dispatch`() async throws {
             let service = makeService()
             let anthropicModel = "claude-test"
             let openAIModel = "openai-test"
             service.modelProviders[anthropicModel] = .anthropic
             service.modelProviders[openAIModel] = .openai
+            let validPNGData = try #require(Data(base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
 
             var oversizedJPEG = Data([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0])
             oversizedJPEG.append(Data(
@@ -167,11 +169,21 @@ extension AIServiceGlobalStateTests {
                 mimeType: "image/heic",
                 data: Data(repeating: 0, count: 12)
             )
-            #expect(service.attachmentImageValidationError(
+            let validAttachment = Message.FileAttachment(
+                fileName: "valid.png",
+                mimeType: "image/png",
+                data: validPNGData
+            )
+            let mismatchedAttachment = Message.FileAttachment(
+                fileName: "renamed.jpg",
+                mimeType: "image/jpeg",
+                data: validPNGData
+            )
+            #expect(await service.attachmentImageValidationError(
                 for: [anthropicModel],
                 inMemoryAttachments: [inlineAttachment]
             )?.contains("Image too large") == true)
-            #expect(service.attachmentImageValidationError(
+            #expect(await service.attachmentImageValidationError(
                 for: [anthropicModel],
                 inMemoryAttachments: [unsupportedAttachment]
             )?.contains("Unsupported image format") == true)
@@ -193,10 +205,18 @@ extension AIServiceGlobalStateTests {
                     path == "stored.jpg" ? oversizedImageData : nil
                 }
             )?.contains("Image too large") == true)
-            #expect(service.attachmentImageValidationError(
+            #expect(await service.attachmentImageValidationError(
                 for: [openAIModel],
                 inMemoryAttachments: [inlineAttachment]
+            )?.contains("invalid or corrupted") == true)
+            #expect(await service.attachmentImageValidationError(
+                for: [openAIModel],
+                inMemoryAttachments: [validAttachment]
             ) == nil)
+            #expect(await service.attachmentImageValidationError(
+                for: [openAIModel],
+                inMemoryAttachments: [mismatchedAttachment]
+            )?.contains("does not match") == true)
         }
 
         @Test

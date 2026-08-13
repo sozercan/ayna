@@ -1923,96 +1923,15 @@ extension IOSChatViewModel {
 extension IOSChatViewModel {
     /// Retry from a specific assistant message.
     func retryMessage(beforeMessage: Message) {
-        guard !isGenerating else { return }
         guard let conversation else { return }
-        let targetConversationId = conversation.id
-        let retryModel = beforeMessage.model ?? conversation.model
-        let isImageRetry = aiService.getModelCapability(retryModel) == .imageGeneration
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🔄 Retrying message",
-            metadata: ["conversationId": targetConversationId.uuidString]
-        )
-
-        // Find the index of the message to retry
-        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessage.id }) else {
-            return
-        }
-
-        // Remove the assistant message and any subsequent messages
-        let updatedMessages = Array(conversation.messages.prefix(messageIndex))
-
-        if !isImageRetry {
-            var retryConversation = conversation
-            retryConversation.messages = updatedMessages
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: [retryModel],
-                messages: retryConversation.getEffectiveHistory()
-            ) {
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-                return
-            }
-        }
-
-        // Update the conversation
-        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == targetConversationId }) {
-            conversationManager.conversations[convIndex].messages = updatedMessages
-        }
-
-        // Create a new assistant message placeholder
-        var assistantMessage = Message(role: .assistant, content: "", model: retryModel)
-        if isImageRetry {
-            assistantMessage.mediaType = .image
-        }
-        conversationManager.addMessage(to: conversation, message: assistantMessage)
-
-        isGenerating = true
-        errorMessage = nil
-
-        // Re-fetch conversation with updated messages
-        guard let updatedConversation = self.conversation else {
-            isGenerating = false
-            return
-        }
-        if isImageRetry {
-            guard let prompt = updatedMessages.last(where: { $0.role == .user })?.content else {
-                isGenerating = false
-                return
-            }
-            generateImage(
-                text: prompt,
-                assistantMessage: assistantMessage,
-                conversationId: targetConversationId,
-                model: retryModel
-            )
-            return
-        }
-            var messagesToSend = updatedConversation.getEffectiveHistory()
-
-        // Prepend system prompt if configured
-        if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
-
-        // Get available tools and use helper method
-        let tools = aiService.getAllAvailableTools()
-        toolCallDepth = 0
-
-        sendMessageWithToolSupport(
-            messages: messagesToSend,
-            model: retryModel,
-            conversationId: targetConversationId,
-            assistantMessageId: assistantMessage.id,
-            tools: tools
+        scheduleRetry(
+            beforeMessageID: beforeMessage.id,
+            model: beforeMessage.model ?? conversation.model
         )
     }
 
     func editMessageAndResend(_ message: Message, newContent: String) {
-        guard !isGenerating, let conversation else { return }
+        guard !isGenerating, sendPreparationTask == nil, let conversation else { return }
         guard let proposedHistory = ChatDraftContent.effectiveHistory(
             byEditingUserMessage: message.id,
             newContent: newContent,
@@ -2022,33 +1941,25 @@ extension IOSChatViewModel {
         }
 
         let resendModel = conversation.model
-        if aiService.getModelCapability(resendModel) != .imageGeneration {
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: [resendModel],
-                messages: proposedHistory
-            ) {
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-                return
-            }
-            if let limitError = aiService.attachmentImageLimitError(
-                for: [resendModel],
-                messages: proposedHistory
-            ) {
-                errorMessage = limitError
-                errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
-                return
-            }
+        let conversationID = conversation.id
+        let performEdit: @MainActor @Sendable () -> Void = { [weak self] in
+            self?.performEditMessageAndResend(
+                messageID: message.id,
+                newContent: newContent,
+                model: resendModel,
+                conversationID: conversationID
+            )
         }
 
-        guard conversationManager.editMessage(
-            in: conversation,
-            messageId: message.id,
-            newContent: newContent
-        ) else {
+        guard aiService.getModelCapability(resendModel) != .imageGeneration else {
+            performEdit()
             return
         }
-        resendAfterEdit()
+        preflightHistoryMutation(
+            models: [resendModel],
+            messages: proposedHistory,
+            onSuccess: performEdit
+        )
     }
 
     /// Re-send the last user message to get a new AI response after editing.
@@ -2112,49 +2023,131 @@ extension IOSChatViewModel {
     /// Switch to a different model and retry the message.
     /// This retries with the specified model without changing the conversation's default model.
     func switchModelAndRetry(beforeMessage: Message, newModel: String) {
-        guard !isGenerating else { return }
-        guard let conversation else { return }
-        let targetConversationId = conversation.id
-        let isImageRetry = aiService.getModelCapability(newModel) == .imageGeneration
+        scheduleRetry(beforeMessageID: beforeMessage.id, model: newModel)
+    }
 
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🔄 Switching model and retrying",
-            metadata: [
-                "conversationId": targetConversationId.uuidString,
-                "newModel": newModel,
-            ]
-        )
-
-        // Find the index of the message to retry
-        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessage.id }) else {
+    private func scheduleRetry(beforeMessageID: UUID, model: String) {
+        guard !isGenerating, sendPreparationTask == nil, let conversation else { return }
+        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessageID }) else {
             return
         }
 
-        // Remove the assistant message and any subsequent messages
-        let updatedMessages = Array(conversation.messages.prefix(messageIndex))
+        let conversationID = conversation.id
+        DiagnosticsLogger.log(
+            .chatView,
+            level: .info,
+            message: "🔄 Retrying message",
+            metadata: [
+                "conversationId": conversationID.uuidString,
+                "model": model,
+            ]
+        )
 
-        if !isImageRetry {
-            var retryConversation = conversation
-            retryConversation.messages = updatedMessages
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: [newModel],
-                messages: retryConversation.getEffectiveHistory()
-            ) {
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+        let performRetry: @MainActor @Sendable () -> Void = { [weak self] in
+            self?.performRetry(
+                beforeMessageID: beforeMessageID,
+                model: model,
+                conversationID: conversationID
+            )
+        }
+        guard aiService.getModelCapability(model) != .imageGeneration else {
+            performRetry()
+            return
+        }
+
+        var retryConversation = conversation
+        retryConversation.messages = Array(conversation.messages.prefix(messageIndex))
+        preflightHistoryMutation(
+            models: [model],
+            messages: retryConversation.getEffectiveHistory(),
+            onSuccess: performRetry
+        )
+    }
+
+    private func preflightHistoryMutation(
+        models: [String],
+        messages: [Message],
+        onSuccess: @escaping @MainActor @Sendable () -> Void
+    ) {
+        if let supportError = aiService.attachmentHistorySupportError(
+            for: models,
+            messages: messages
+        ) {
+            errorMessage = supportError
+            errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+            return
+        }
+        if let limitError = aiService.attachmentImageLimitError(
+            for: models,
+            messages: messages
+        ) {
+            errorMessage = limitError
+            errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+            return
+        }
+
+        let hasImages = messages.contains { message in
+            guard message.role == .user else { return false }
+            return message.attachments?.contains(where: {
+                $0.mimeType.lowercased().hasPrefix("image/")
+            }) == true
+        }
+        guard hasImages else {
+            onSuccess()
+            return
+        }
+
+        let preparationID = UUID()
+        sendPreparationID = preparationID
+        isGenerating = true
+        let task = Task { @MainActor [weak self] in
+            defer { self?.sendPreparationDidFinish?() }
+            guard let self else { return }
+            let validationError = await self.aiService.attachmentImageValidationError(
+                for: models,
+                in: messages,
+                loadAttachmentData: { [attachmentStorage = self.attachmentStorage] path in
+                    await attachmentStorage.loadData(path: path)
+                }
+            )
+            guard !Task.isCancelled, self.sendPreparationID == preparationID else { return }
+
+            self.sendPreparationTask = nil
+            self.sendPreparationID = nil
+            self.isGenerating = false
+            if let validationError {
+                self.errorMessage = validationError
+                self.errorRecoverySuggestion = "Remove the image or choose a different model."
                 return
             }
+            onSuccess()
+        }
+        sendPreparationTask = task
+    }
+
+    private func performRetry(
+        beforeMessageID: UUID,
+        model: String,
+        conversationID: UUID
+    ) {
+        guard !isGenerating, sendPreparationTask == nil,
+              self.conversationId == conversationID,
+              let conversation = conversationManager.conversation(byId: conversationID),
+              let messageIndex = conversation.messages.firstIndex(where: { $0.id == beforeMessageID })
+        else {
+            return
         }
 
-        // Update the conversation
-        if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == targetConversationId }) {
-            conversationManager.conversations[convIndex].messages = updatedMessages
+        let updatedMessages = Array(conversation.messages.prefix(messageIndex))
+        guard let conversationIndex = conversationManager.conversations.firstIndex(where: {
+            $0.id == conversationID
+        }) else {
+            return
         }
+        conversationManager.conversations[conversationIndex].messages = updatedMessages
 
-        // Create a new assistant message placeholder with the new model
-        var assistantMessage = Message(role: .assistant, content: "", model: newModel)
+        let isImageRetry = aiService.getModelCapability(model) == .imageGeneration
+        var assistantMessage = Message(role: .assistant, content: "", model: model)
         if isImageRetry {
             assistantMessage.mediaType = .image
         }
@@ -2162,9 +2155,7 @@ extension IOSChatViewModel {
 
         isGenerating = true
         errorMessage = nil
-
-        // Re-fetch conversation with updated messages
-        guard let updatedConversation = self.conversation else {
+        guard let updatedConversation = conversationManager.conversation(byId: conversationID) else {
             isGenerating = false
             return
         }
@@ -2176,31 +2167,46 @@ extension IOSChatViewModel {
             generateImage(
                 text: prompt,
                 assistantMessage: assistantMessage,
-                conversationId: targetConversationId,
-                model: newModel
+                conversationId: conversationID,
+                model: model
             )
             return
         }
-            var messagesToSend = updatedConversation.getEffectiveHistory()
 
-        // Prepend system prompt if configured
+        var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
+            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
-        // Get available tools and use helper method
-        let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
-
-        // Use the new model for this request
         sendMessageWithToolSupport(
             messages: messagesToSend,
-            model: newModel,
-            conversationId: targetConversationId,
+            model: model,
+            conversationId: conversationID,
             assistantMessageId: assistantMessage.id,
-            tools: tools
+            tools: aiService.getAllAvailableTools()
         )
+    }
+
+    private func performEditMessageAndResend(
+        messageID: UUID,
+        newContent: String,
+        model: String,
+        conversationID: UUID
+    ) {
+        guard !isGenerating, sendPreparationTask == nil,
+              self.conversationId == conversationID,
+              let conversation = conversationManager.conversation(byId: conversationID),
+              conversation.model == model,
+              conversationManager.editMessage(
+                  in: conversation,
+                  messageId: messageID,
+                  newContent: newContent
+              )
+        else {
+            return
+        }
+        resendAfterEdit()
     }
 }
 

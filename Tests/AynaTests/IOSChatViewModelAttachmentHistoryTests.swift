@@ -168,6 +168,186 @@
             viewModel.cancelOwnedOperations()
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `openAI corrupt historical image is rejected before committing a text turn`() async throws {
+            let model = "openai-test"
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
+            let storedPath = try storage.save(
+                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                extension: "png"
+            )
+            let priorImageMessage = Message(
+                role: .user,
+                content: "Prior image",
+                attachments: [Message.FileAttachment(
+                    fileName: "corrupt.png",
+                    mimeType: "image/png",
+                    localPath: storedPath
+                )]
+            )
+            let priorResponse = Message(
+                role: .assistant,
+                content: "Prior response",
+                model: model
+            )
+            let conversation = Conversation(
+                messages: [priorImageMessage, priorResponse],
+                model: model,
+                systemPromptMode: .disabled
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = AIService(urlSession: URLSession(configuration: .ephemeral))
+            aiService.customModels = [model]
+            aiService.selectedModel = model
+            aiService.modelProviders[model] = .openai
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService,
+                attachmentStorage: storage
+            )
+            viewModel.messageText = "Continue without a new image"
+
+            viewModel.sendMessage()
+            #expect(await waitUntil {
+                viewModel.errorMessage?.contains("invalid or corrupted") == true
+            })
+
+            #expect(manager.conversation(byId: conversation.id)?.messages.map(\.id) == [
+                priorImageMessage.id,
+                priorResponse.id,
+            ])
+            #expect(viewModel.messageText == "Continue without a new image")
+            #expect(!viewModel.isGenerating)
+            viewModel.cancelOwnedOperations()
+        }
+
+        @Test
+        func `anthropic image-limit model switch preserves the existing response`() {
+            let sourceModel = "openai-test"
+            let anthropicModel = "claude-test"
+            let imageAttachment = Message.FileAttachment(
+                fileName: "image.png",
+                mimeType: "image/png",
+                data: Data([0x89, 0x50, 0x4E, 0x47])
+            )
+            let userMessage = Message(
+                role: .user,
+                content: "Many images",
+                attachments: Array(
+                    repeating: imageAttachment,
+                    count: AnthropicRequestBuilder.maxImagesPerRequest + 1
+                )
+            )
+            let assistantMessage = Message(
+                role: .assistant,
+                content: "Existing response",
+                model: sourceModel
+            )
+            let conversation = Conversation(
+                messages: [userMessage, assistantMessage],
+                model: sourceModel,
+                systemPromptMode: .disabled
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = AIService(urlSession: URLSession(configuration: .ephemeral))
+            aiService.customModels = [sourceModel, anthropicModel]
+            aiService.selectedModel = sourceModel
+            aiService.modelProviders[sourceModel] = .openai
+            aiService.modelProviders[anthropicModel] = .anthropic
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+
+            viewModel.switchModelAndRetry(beforeMessage: assistantMessage, newModel: anthropicModel)
+
+            #expect(manager.conversation(byId: conversation.id)?.messages.map(\.id) == [
+                userMessage.id,
+                assistantMessage.id,
+            ])
+            #expect(viewModel.errorMessage?.contains("at most 20 images") == true)
+            #expect(!viewModel.isGenerating)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `anthropic legacy retry validates stored image before removing the response`() async throws {
+            let model = "claude-test"
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
+            let storedPath = try storage.save(
+                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                extension: "png"
+            )
+            let userMessage = Message(
+                role: .user,
+                content: "Corrupt image",
+                attachments: [Message.FileAttachment(
+                    fileName: "corrupt.png",
+                    mimeType: "image/png",
+                    localPath: storedPath
+                )]
+            )
+            let assistantMessage = Message(role: .assistant, content: "Existing response")
+            let conversation = Conversation(
+                messages: [userMessage, assistantMessage],
+                model: model,
+                systemPromptMode: .disabled
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = AIService(urlSession: URLSession(configuration: .ephemeral))
+            aiService.customModels = [model]
+            aiService.selectedModel = model
+            aiService.modelProviders[model] = .anthropic
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService,
+                attachmentStorage: storage
+            )
+
+            viewModel.retryMessage(beforeMessage: assistantMessage)
+            #expect(await waitUntil {
+                viewModel.errorMessage?.contains("invalid or corrupted") == true
+            })
+
+            #expect(manager.conversation(byId: conversation.id)?.messages.map(\.id) == [
+                userMessage.id,
+                assistantMessage.id,
+            ])
+            #expect(!viewModel.isGenerating)
+            viewModel.cancelOwnedOperations()
+        }
+
         private func waitUntil(
             timeout: Duration = .seconds(2),
             _ condition: @MainActor () -> Bool

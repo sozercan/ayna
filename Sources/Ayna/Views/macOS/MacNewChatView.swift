@@ -823,6 +823,7 @@ struct MacNewChatView: View {
         newContent: String,
         in conversation: Conversation
     ) {
+        guard !isGenerating, sendPreparationTask == nil else { return }
         guard let proposedHistory = ChatDraftContent.effectiveHistory(
             byEditingUserMessage: message.id,
             newContent: newContent,
@@ -832,30 +833,101 @@ struct MacNewChatView: View {
         }
 
         let resendModel = conversation.model
-        if aiService.getModelCapability(resendModel) != .imageGeneration {
-            if let supportError = aiService.attachmentHistorySupportError(
-                for: [resendModel],
-                messages: proposedHistory
-            ) {
-                errorMessage = supportError
-                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
-                return
-            }
-            if let limitError = aiService.attachmentImageLimitError(
-                for: [resendModel],
-                messages: proposedHistory
-            ) {
-                errorMessage = limitError
-                errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
-                return
-            }
+        let conversationID = conversation.id
+        let performEdit: @MainActor @Sendable () -> Void = {
+            performEditMessageAndResend(
+                messageID: message.id,
+                newContent: newContent,
+                model: resendModel,
+                conversationID: conversationID
+            )
         }
 
-        guard conversationManager.editMessage(
-            in: conversation,
-            messageId: message.id,
-            newContent: newContent
-        ), let updatedConversation = conversationManager.conversation(byId: conversation.id)
+        guard aiService.getModelCapability(resendModel) != .imageGeneration else {
+            performEdit()
+            return
+        }
+        preflightHistoryMutation(
+            models: [resendModel],
+            messages: proposedHistory,
+            onSuccess: performEdit
+        )
+    }
+
+    private func preflightHistoryMutation(
+        models: [String],
+        messages: [Message],
+        onSuccess: @escaping @MainActor @Sendable () -> Void
+    ) {
+        if let supportError = aiService.attachmentHistorySupportError(
+            for: models,
+            messages: messages
+        ) {
+            errorMessage = supportError
+            errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+            return
+        }
+        if let limitError = aiService.attachmentImageLimitError(
+            for: models,
+            messages: messages
+        ) {
+            errorMessage = limitError
+            errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+            return
+        }
+
+        let hasImages = messages.contains { message in
+            guard message.role == .user else { return false }
+            return message.attachments?.contains(where: {
+                $0.mimeType.lowercased().hasPrefix("image/")
+            }) == true
+        }
+        guard hasImages else {
+            onSuccess()
+            return
+        }
+
+        let preparationID = UUID()
+        sendPreparationID = preparationID
+        isGenerating = true
+        let task = Task { @MainActor in
+            let validationError = await aiService.attachmentImageValidationError(
+                for: models,
+                in: messages,
+                loadAttachmentData: { path in
+                    await AttachmentStorage.shared.loadData(path: path)
+                }
+            )
+            guard !Task.isCancelled, sendPreparationID == preparationID else { return }
+
+            sendPreparationTask = nil
+            sendPreparationID = nil
+            isGenerating = false
+            if let validationError {
+                errorMessage = validationError
+                errorRecoverySuggestion = "Remove the image or choose a different model."
+                return
+            }
+            onSuccess()
+        }
+        sendPreparationTask = task
+    }
+
+    private func performEditMessageAndResend(
+        messageID: UUID,
+        newContent: String,
+        model: String,
+        conversationID: UUID
+    ) {
+        guard !isGenerating, sendPreparationTask == nil,
+              let conversation = conversationManager.conversation(byId: conversationID),
+              conversation.model == model,
+              conversationManager.editMessage(
+                  in: conversation,
+                  messageId: messageID,
+                  newContent: newContent
+              ),
+              let updatedConversation = conversationManager.conversation(byId: conversationID)
         else {
             return
         }

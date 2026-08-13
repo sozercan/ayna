@@ -10,7 +10,9 @@
 
 import Combine
 import Foundation
+import ImageIO
 import os
+import UniformTypeIdentifiers
 
 // swiftlint:disable type_body_length
 // This service intentionally aggregates every provider workflow until we extract dedicated modules.
@@ -948,18 +950,12 @@ class AIService: ObservableObject {
     func attachmentImageValidationError(
         for models: [String],
         inMemoryAttachments attachments: [Message.FileAttachment]
-    ) -> String? {
-        guard usesAnthropicModel(models) else { return nil }
-
-        for attachment in anthropicImageAttachments(in: attachments) {
-            guard let data = attachment.data else {
-                return "Unable to load image attachment \"\(attachment.fileName)\". Remove it and try again."
-            }
-            if let validationError = AnthropicRequestBuilder.imageValidationError(data: data) {
-                return "\(attachment.fileName): \(validationError)"
-            }
-        }
-        return nil
+    ) async -> String? {
+        await attachmentImageValidationError(
+            for: models,
+            loading: attachments,
+            loadAttachmentData: { _ in nil }
+        )
     }
 
     func attachmentImageValidationError(
@@ -967,9 +963,9 @@ class AIService: ObservableObject {
         loading attachments: [Message.FileAttachment],
         loadAttachmentData: @Sendable (String) async -> Data?
     ) async -> String? {
-        guard usesAnthropicModel(models) else { return nil }
+        let appliesAnthropicPolicy = usesAnthropicModel(models)
 
-        for attachment in anthropicImageAttachments(in: attachments) {
+        for attachment in imageAttachments(in: attachments) {
             guard !Task.isCancelled else { return nil }
             let data: Data? = if let inlineData = attachment.data {
                 inlineData
@@ -981,7 +977,25 @@ class AIService: ObservableObject {
             guard let data else {
                 return "Unable to load image attachment \"\(attachment.fileName)\". Remove it and try again."
             }
-            if let validationError = AnthropicRequestBuilder.imageValidationError(data: data) {
+            if appliesAnthropicPolicy,
+               let validationError = AnthropicRequestBuilder.imageValidationError(data: data)
+            {
+                return "\(attachment.fileName): \(validationError)"
+            }
+
+            let validationTask = Task.detached(priority: .utility) {
+                Self.providerImageValidationError(
+                    data: data,
+                    declaredMimeType: attachment.mimeType
+                )
+            }
+            let validationError = await withTaskCancellationHandler {
+                await validationTask.value
+            } onCancel: {
+                validationTask.cancel()
+            }
+            guard !Task.isCancelled else { return nil }
+            if let validationError {
                 return "\(attachment.fileName): \(validationError)"
             }
         }
@@ -993,8 +1007,6 @@ class AIService: ObservableObject {
         in messages: [Message],
         loadAttachmentData: @Sendable (String) async -> Data?
     ) async -> String? {
-        guard usesAnthropicModel(models) else { return nil }
-
         let attachments = messages.reduce(into: [Message.FileAttachment]()) { result, message in
             guard message.role == .user else { return }
             result.append(contentsOf: message.attachments ?? [])
@@ -1014,10 +1026,65 @@ class AIService: ObservableObject {
         }
     }
 
-    private func anthropicImageAttachments(
+    private func imageAttachments(
         in attachments: [Message.FileAttachment]
     ) -> [Message.FileAttachment] {
         attachments.filter { $0.mimeType.lowercased().hasPrefix("image/") }
+    }
+
+    private nonisolated static func providerImageValidationError(
+        data: Data,
+        declaredMimeType: String
+    ) -> String? {
+        guard !Task.isCancelled,
+              !data.isEmpty,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0
+        else {
+            return "Image data is invalid or corrupted."
+        }
+
+        let decodedContentType = CGImageSourceGetType(source)
+            .flatMap { UTType($0 as String) }
+        guard let decodedContentType,
+              let decodedFormat = providerImageFormat(for: decodedContentType),
+              let declaredContentType = UTType(mimeType: declaredMimeType),
+              let declaredFormat = providerImageFormat(for: declaredContentType)
+        else {
+            return "Unsupported image format. Supported: JPEG, PNG, GIF, WebP"
+        }
+        guard decodedFormat == declaredFormat else {
+            return "Image data does not match the declared \(declaredMimeType) format."
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 64,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard !Task.isCancelled,
+              CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) != nil
+        else {
+            return Task.isCancelled ? nil : "Image data is invalid or corrupted."
+        }
+        return nil
+    }
+
+    private nonisolated static func providerImageFormat(for contentType: UTType) -> String? {
+        if contentType.conforms(to: .jpeg) {
+            return "jpeg"
+        }
+        if contentType.conforms(to: .png) {
+            return "png"
+        }
+        if contentType.conforms(to: .gif) {
+            return "gif"
+        }
+        if contentType.conforms(to: .webP) {
+            return "webp"
+        }
+        return nil
     }
 
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {

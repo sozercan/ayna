@@ -188,8 +188,8 @@ struct MacChatView: View {
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
     @State private var toolChainTimeoutTask: Task<Void, Never>?
-        @State private var sendPreparationTask: Task<Void, Never>?
-        @State private var sendPreparationID: UUID?
+        @State var sendPreparationTask: Task<Void, Never>?
+        @State var sendPreparationID: UUID?
         @State private var pendingAutoSendClaim: MacPendingAutoSendClaim?
         @State var activeAssistantMessageID: UUID?
         @State var activeMultiModelResponseGroupID: UUID?
