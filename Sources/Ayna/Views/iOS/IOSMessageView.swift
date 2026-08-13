@@ -815,8 +815,9 @@ private struct IOSMessageAttachmentView: View {
         guard !didFinishLoading else { return }
         let data = await attachment.loadContent()
         guard !Task.isCancelled else { return }
-        let thumbnail = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            guard let data,
+        let decodeTask = Task.detached(priority: .userInitiated) { () -> CGImage? in
+            guard !Task.isCancelled,
+                  let data,
                   let source = CGImageSourceCreateWithData(data as CFData, nil)
             else {
                 return nil
@@ -827,12 +828,18 @@ private struct IOSMessageAttachmentView: View {
                 kCGImageSourceThumbnailMaxPixelSize: PastedImage.maximumDimension,
                 kCGImageSourceShouldCacheImmediately: true,
             ]
-            return CGImageSourceCreateThumbnailAtIndex(
+            let thumbnail = CGImageSourceCreateThumbnailAtIndex(
                 source,
                 0,
                 options as CFDictionary
             )
-        }.value
+            return Task.isCancelled ? nil : thumbnail
+        }
+        let thumbnail = await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
         guard !Task.isCancelled else { return }
         decodedImage = thumbnail.map { UIImage(cgImage: $0) }
         didFinishLoading = true

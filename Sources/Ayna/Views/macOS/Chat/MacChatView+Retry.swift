@@ -84,7 +84,7 @@ extension MacChatView {
         }
 
         let conversationID = targetConversation.id
-        let performRetry: @MainActor @Sendable () -> Void = {
+        let retryAction: @MainActor @Sendable () -> Void = {
             performRetry(
                 beforeMessageID: beforeMessageID,
                 model: model,
@@ -93,7 +93,7 @@ extension MacChatView {
             )
         }
         guard aiService.getModelCapability(model) != .imageGeneration else {
-            performRetry()
+            retryAction()
             return
         }
 
@@ -102,7 +102,7 @@ extension MacChatView {
         preflightHistoryMutation(
             models: [model],
             messages: retryConversation.getEffectiveHistory(),
-            onSuccess: performRetry
+            onSuccess: retryAction
         )
     }
 

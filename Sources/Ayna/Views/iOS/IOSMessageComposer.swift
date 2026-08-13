@@ -738,11 +738,74 @@ private final class PasteAwareTextView: UITextView {
     }
 
     private static func loadImage(from provider: NSItemProvider) async -> PastedImage? {
-        await withCheckedContinuation { continuation in
-            _ = provider.loadTransferable(type: PastedImage.self) { result in
-                continuation.resume(returning: try? result.get())
+        let load = ItemProviderImageLoad()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                load.start(provider: provider, continuation: continuation)
             }
+        } onCancel: {
+            load.cancel()
         }
+    }
+}
+
+private final class ItemProviderImageLoad: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<PastedImage?, Never>?
+    private var progress: Progress?
+    private var isFinished = false
+
+    func start(
+        provider: NSItemProvider,
+        continuation: CheckedContinuation<PastedImage?, Never>
+    ) {
+        let shouldStart = lock.withLock {
+            guard !isFinished else { return false }
+            self.continuation = continuation
+            return true
+        }
+        guard shouldStart else {
+            continuation.resume(returning: nil)
+            return
+        }
+
+        let progress = provider.loadTransferable(type: PastedImage.self) { [self] result in
+            finish(with: try? result.get())
+        }
+        let shouldCancel = lock.withLock {
+            guard !isFinished else { return true }
+            self.progress = progress
+            return false
+        }
+        if shouldCancel {
+            progress.cancel()
+        }
+    }
+
+    func cancel() {
+        let completion = lock.withLock {
+            () -> (Progress?, CheckedContinuation<PastedImage?, Never>?)? in
+            guard !isFinished else { return nil }
+            isFinished = true
+            let completion = (progress, continuation)
+            progress = nil
+            continuation = nil
+            return completion
+        }
+        guard let completion else { return }
+        completion.0?.cancel()
+        completion.1?.resume(returning: nil)
+    }
+
+    private func finish(with image: PastedImage?) {
+        let continuation = lock.withLock { () -> CheckedContinuation<PastedImage?, Never>? in
+            guard !isFinished else { return nil }
+            isFinished = true
+            progress = nil
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(returning: image)
     }
 }
 
