@@ -122,6 +122,70 @@ struct ConversationEffectiveHistoryTests {
     }
 
     @Test
+    func `replacement response group removes failed partials for the same user turn`() {
+        let user = Message(role: .user, content: "Question")
+        let failedGroupID = UUID()
+        let failedPartial = Message(
+            role: .assistant,
+            content: "Failed partial",
+            responseGroupId: failedGroupID
+        )
+        let failedGroup = ResponseGroup(
+            id: failedGroupID,
+            userMessageId: user.id,
+            responses: [
+                .init(id: failedPartial.id, modelName: "model-a", status: .failed),
+            ]
+        )
+        let unrelatedUser = Message(role: .user, content: "Other question")
+        let unrelatedGroupID = UUID()
+        let unrelatedResponse = Message(
+            role: .assistant,
+            content: "Other answer",
+            responseGroupId: unrelatedGroupID
+        )
+        let unrelatedGroup = ResponseGroup(
+            id: unrelatedGroupID,
+            userMessageId: unrelatedUser.id,
+            responses: [
+                .init(id: unrelatedResponse.id, modelName: "model-b", status: .completed),
+            ]
+        )
+        let replacementGroupID = UUID()
+        let replacementPlaceholder = Message(
+            role: .assistant,
+            content: "",
+            responseGroupId: replacementGroupID
+        )
+        let replacementGroup = ResponseGroup(
+            id: replacementGroupID,
+            userMessageId: user.id,
+            responses: [
+                .init(id: replacementPlaceholder.id, modelName: "model-a", status: .streaming),
+            ]
+        )
+        var conversation = Conversation(
+            messages: [user, failedPartial, unrelatedUser, unrelatedResponse, replacementPlaceholder],
+            responseGroups: [failedGroup, unrelatedGroup]
+        )
+
+        conversation.addResponseGroup(replacementGroup)
+
+        #expect(conversation.responseGroups.map(\.id) == [unrelatedGroupID, replacementGroupID])
+        #expect(conversation.messages.map(\.id) == [
+            user.id,
+            unrelatedUser.id,
+            unrelatedResponse.id,
+            replacementPlaceholder.id,
+        ])
+        #expect(conversation.getEffectiveHistory().map(\.id) == [
+            user.id,
+            unrelatedUser.id,
+            unrelatedResponse.id,
+        ])
+    }
+
+    @Test
     func `failed fallback prefers the conversation model`() {
         let groupID = UUID()
         let user = Message(role: .user, content: "Question")

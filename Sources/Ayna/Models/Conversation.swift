@@ -274,6 +274,23 @@ struct Conversation: Identifiable, Equatable, Sendable {
 
     /// Add a response group for multi-model responses
     mutating func addResponseGroup(_ group: ResponseGroup) {
+        let failedGroupIDs = Set<UUID>(responseGroups.compactMap { existingGroup in
+            guard existingGroup.userMessageId == group.userMessageId,
+                  !existingGroup.responses.isEmpty,
+                  existingGroup.responses.allSatisfy({ $0.status == .failed })
+            else {
+                return nil
+            }
+            return existingGroup.id
+        })
+        if !failedGroupIDs.isEmpty {
+            messages.removeAll { message in
+                guard let responseGroupId = message.responseGroupId else { return false }
+                return failedGroupIDs.contains(responseGroupId)
+            }
+            responseGroups.removeAll { failedGroupIDs.contains($0.id) }
+        }
+
         responseGroups.append(group)
         updatedAt = Date()
     }
