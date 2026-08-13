@@ -382,7 +382,7 @@ private struct IOSPastedImageThumbnail: View {
         .accessibilityHidden(true)
         .task(id: pastedImage.id) {
             let data = pastedImage.data
-            image = await Task.detached(priority: .utility) {
+            let thumbnail = await Task.detached(priority: .utility) { () -> CGImage? in
                 guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
                     return nil
                 }
@@ -392,15 +392,14 @@ private struct IOSPastedImageThumbnail: View {
                     kCGImageSourceThumbnailMaxPixelSize: 96,
                     kCGImageSourceShouldCacheImmediately: true,
                 ]
-                guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+                return CGImageSourceCreateThumbnailAtIndex(
                     source,
                     0,
                     options as CFDictionary
-                ) else {
-                    return nil
-                }
-                return UIImage(cgImage: thumbnail)
+                )
             }.value
+            guard !Task.isCancelled, let thumbnail else { return }
+            image = UIImage(cgImage: thumbnail)
         }
     }
 }

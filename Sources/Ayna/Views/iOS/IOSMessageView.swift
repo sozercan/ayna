@@ -7,6 +7,7 @@
 //
 
 import Combine
+import ImageIO
 import os.log
 import Photos
 import SwiftUI
@@ -814,9 +815,26 @@ private struct IOSMessageAttachmentView: View {
         guard !didFinishLoading else { return }
         let data = await attachment.loadContent()
         guard !Task.isCancelled else { return }
-        decodedImage = await Task.detached(priority: .userInitiated) {
-            data.flatMap(UIImage.init(data:))
+        let thumbnail = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+            guard let data,
+                  let source = CGImageSourceCreateWithData(data as CFData, nil)
+            else {
+                return nil
+            }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: PastedImage.maximumDimension,
+                kCGImageSourceShouldCacheImmediately: true,
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                options as CFDictionary
+            )
         }.value
+        guard !Task.isCancelled else { return }
+        decodedImage = thumbnail.map { UIImage(cgImage: $0) }
         didFinishLoading = true
     }
 }
