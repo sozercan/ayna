@@ -1756,7 +1756,13 @@ extension IOSChatViewModel {
         guard validateAttachmentHistorySupport(for: payload) else { return }
         guard validateAttachmentImageLimit(for: payload) else { return }
 
-        guard !payload.attachments.isEmpty else {
+        let hasHistoricalImages = proposedMessages(for: payload).contains { message in
+            guard message.role == .user else { return false }
+            return message.attachments?.contains(where: {
+                $0.mimeType.lowercased().hasPrefix("image/")
+            }) == true
+        }
+        guard !payload.attachments.isEmpty || hasHistoricalImages else {
             sendPreparedPayload(
                 payload,
                 consuming: preparation,
@@ -1797,7 +1803,7 @@ extension IOSChatViewModel {
 
             let validationError = await aiService.attachmentImageValidationError(
                 for: requestModels(for: preparedPayload),
-                loading: preparedPayload.attachments,
+                in: proposedMessages(for: preparedPayload),
                 loadAttachmentData: { [attachmentStorage] path in
                     await attachmentStorage.loadData(path: path)
                 }
@@ -1942,6 +1948,19 @@ extension IOSChatViewModel {
         // Remove the assistant message and any subsequent messages
         let updatedMessages = Array(conversation.messages.prefix(messageIndex))
 
+        if !isImageRetry {
+            var retryConversation = conversation
+            retryConversation.messages = updatedMessages
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [retryModel],
+                messages: retryConversation.getEffectiveHistory()
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+        }
+
         // Update the conversation
         if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == targetConversationId }) {
             conversationManager.conversations[convIndex].messages = updatedMessages
@@ -2079,6 +2098,19 @@ extension IOSChatViewModel {
 
         // Remove the assistant message and any subsequent messages
         let updatedMessages = Array(conversation.messages.prefix(messageIndex))
+
+        if !isImageRetry {
+            var retryConversation = conversation
+            retryConversation.messages = updatedMessages
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [newModel],
+                messages: retryConversation.getEffectiveHistory()
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+        }
 
         // Update the conversation
         if let convIndex = conversationManager.conversations.firstIndex(where: { $0.id == targetConversationId }) {

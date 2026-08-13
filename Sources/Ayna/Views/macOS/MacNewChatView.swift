@@ -586,7 +586,7 @@ struct MacNewChatView: View {
             return conversation
         }
 
-        private func validateAttachmentImageLimit(
+        private func validateAttachments(
             for userMessage: Message,
             conversationId: UUID?,
             models: [String]
@@ -623,6 +623,17 @@ struct MacNewChatView: View {
             ) {
                 errorMessage = limitError
                 errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+                return false
+            }
+            if let validationError = await aiService.attachmentImageValidationError(
+                for: models,
+                in: proposedMessages,
+                loadAttachmentData: { path in
+                    await AttachmentStorage.shared.loadData(path: path)
+                }
+            ) {
+                errorMessage = validationError
+                errorRecoverySuggestion = "Remove the image or choose a different model."
                 return false
             }
             return true
@@ -699,20 +710,7 @@ struct MacNewChatView: View {
             let requestModels = selectedModelsToSend.isEmpty
                 ? [activeModel]
                 : Array(selectedModelsToSend)
-            let validationError = await aiService.attachmentImageValidationError(
-                for: requestModels,
-                loading: userMessage.attachments ?? [],
-                loadAttachmentData: { path in
-                    await AttachmentStorage.shared.loadData(path: path)
-                }
-            )
-            guard sendPreparationID == preparationID, !Task.isCancelled else { return }
-            if let validationError {
-                errorMessage = validationError
-                errorRecoverySuggestion = "Remove the image or choose a different model."
-                return
-            }
-            guard await validateAttachmentImageLimit(
+            guard await validateAttachments(
                 for: userMessage,
                 conversationId: currentConversationId,
                 models: requestModels

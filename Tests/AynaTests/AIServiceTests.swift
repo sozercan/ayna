@@ -71,6 +71,18 @@ extension AIServiceGlobalStateTests {
                 retried,
                 in: [retried]
             )
+            let unsupportedLabeledImages = Message(
+                role: .user,
+                content: "",
+                attachments: Array(
+                    repeating: Message.FileAttachment(
+                        fileName: "image.heic",
+                        mimeType: "image/heic",
+                        data: Data(repeating: 0, count: 12)
+                    ),
+                    count: AnthropicRequestBuilder.maxImagesPerRequest + 1
+                )
+            )
 
             #expect(service.attachmentImageLimitError(
                 for: [anthropicModel],
@@ -89,6 +101,10 @@ extension AIServiceGlobalStateTests {
                 for: [anthropicModel],
                 messages: retryHistory
             ) == nil)
+            #expect(service.attachmentImageLimitError(
+                for: [anthropicModel],
+                messages: [unsupportedLabeledImages]
+            ) == "Anthropic supports at most 20 images per request. Remove some images or start a new conversation.")
         }
 
         @Test
@@ -146,13 +162,33 @@ extension AIServiceGlobalStateTests {
                 mimeType: "image/jpeg",
                 localPath: "stored.jpg"
             )
+            let unsupportedAttachment = Message.FileAttachment(
+                fileName: "photo.heic",
+                mimeType: "image/heic",
+                data: Data(repeating: 0, count: 12)
+            )
             #expect(service.attachmentImageValidationError(
                 for: [anthropicModel],
                 inMemoryAttachments: [inlineAttachment]
             )?.contains("Image too large") == true)
+            #expect(service.attachmentImageValidationError(
+                for: [anthropicModel],
+                inMemoryAttachments: [unsupportedAttachment]
+            )?.contains("Unsupported image format") == true)
             #expect(await service.attachmentImageValidationError(
                 for: [anthropicModel],
                 loading: [storedAttachment],
+                loadAttachmentData: { path in
+                    path == "stored.jpg" ? oversizedImageData : nil
+                }
+            )?.contains("Image too large") == true)
+            #expect(await service.attachmentImageValidationError(
+                for: [anthropicModel],
+                in: [Message(
+                    role: .user,
+                    content: "Earlier image",
+                    attachments: [storedAttachment]
+                )],
                 loadAttachmentData: { path in
                     path == "stored.jpg" ? oversizedImageData : nil
                 }

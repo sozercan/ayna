@@ -1153,9 +1153,13 @@ struct MacChatView: View {
             let requestModels = selectedModelsToSend.isEmpty
                 ? [activeModel]
                 : Array(selectedModelsToSend)
+            let requestMessages = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+                userMessage,
+                in: loadedConversation.messages
+            )
             let validationError = await aiService.attachmentImageValidationError(
                 for: requestModels,
-                loading: userMessage.attachments ?? [],
+                in: requestMessages,
                 loadAttachmentData: { path in
                     await AttachmentStorage.shared.loadData(path: path)
                 }
@@ -1177,10 +1181,6 @@ struct MacChatView: View {
                 restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }
-            let requestMessages = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
-                userMessage,
-                in: loadedConversation.messages
-            )
             if let supportError = aiService.attachmentHistorySupportError(
                 for: requestModels,
                 messages: requestMessages

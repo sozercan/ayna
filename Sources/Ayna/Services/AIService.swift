@@ -934,11 +934,10 @@ class AIService: ObservableObject {
     func attachmentImageLimitError(for models: [String], messages: [Message]) -> String? {
         guard usesAnthropicModel(models) else { return nil }
 
-        let supportedTypes = Set(AnthropicRequestBuilder.supportedImageTypes)
         let imageCount = messages.reduce(into: 0) { count, message in
             guard message.role == .user else { return }
             count += message.attachments?.count(where: {
-                supportedTypes.contains($0.mimeType.lowercased())
+                $0.mimeType.lowercased().hasPrefix("image/")
             }) ?? 0
         }
         guard imageCount > AnthropicRequestBuilder.maxImagesPerRequest else { return nil }
@@ -989,6 +988,24 @@ class AIService: ObservableObject {
         return nil
     }
 
+    func attachmentImageValidationError(
+        for models: [String],
+        in messages: [Message],
+        loadAttachmentData: @Sendable (String) async -> Data?
+    ) async -> String? {
+        guard usesAnthropicModel(models) else { return nil }
+
+        let attachments = messages.reduce(into: [Message.FileAttachment]()) { result, message in
+            guard message.role == .user else { return }
+            result.append(contentsOf: message.attachments ?? [])
+        }
+        return await attachmentImageValidationError(
+            for: models,
+            loading: attachments,
+            loadAttachmentData: loadAttachmentData
+        )
+    }
+
     private func usesAnthropicModel(_ models: [String]) -> Bool {
         models.contains { model in
             let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1000,8 +1017,7 @@ class AIService: ObservableObject {
     private func anthropicImageAttachments(
         in attachments: [Message.FileAttachment]
     ) -> [Message.FileAttachment] {
-        let supportedTypes = Set(AnthropicRequestBuilder.supportedImageTypes)
-        return attachments.filter { supportedTypes.contains($0.mimeType.lowercased()) }
+        attachments.filter { $0.mimeType.lowercased().hasPrefix("image/") }
     }
 
     fileprivate func cancelTextRequest(_ flightID: RequestFlightID) {

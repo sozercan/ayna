@@ -37,6 +37,19 @@ extension MacChatView {
         guard let userIndex = userMessageIndex else { return }
         let userMessage = currentConversation.messages[userIndex]
 
+        if aiService.getModelCapability(currentConversation.model) != .imageGeneration {
+            var retryConversation = currentConversation
+            retryConversation.messages = Array(currentConversation.messages.prefix(assistantIndex))
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [currentConversation.model],
+                messages: retryConversation.getEffectiveHistory()
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+        }
+
         // Remove all messages from the assistant message onwards
         if let convIndex = conversationManager.conversations.firstIndex(where: {
             $0.id == conversation.id
@@ -81,6 +94,19 @@ extension MacChatView {
 
         guard let userIndex = userMessageIndex else { return }
         let userMessage = currentConversation.messages[userIndex]
+
+        if aiService.getModelCapability(model) != .imageGeneration {
+            var retryConversation = currentConversation
+            retryConversation.messages = Array(currentConversation.messages.prefix(assistantIndex))
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [model],
+                messages: retryConversation.getEffectiveHistory()
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+        }
 
         // Remove all messages from the assistant message onwards
         if let convIndex = conversationManager.conversations.firstIndex(where: {
