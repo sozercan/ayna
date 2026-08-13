@@ -178,14 +178,11 @@ struct MacNewChatView: View {
                                             onEdit: message.role == .user && currentConversation != nil
                                                 ? { newContent in
                                                     if let conversation = currentConversation {
-                                                        let edited = conversationManager.editMessage(
-                                                            in: conversation,
-                                                            messageId: message.id,
-                                                            newContent: newContent
-                                                    )
-                                                        if edited {
-                                                            sendMessageForConversation(conversation, model: conversation.model)
-                                                        }
+                                                        editMessageAndResend(
+                                                            message,
+                                                            newContent: newContent,
+                                                            in: conversation
+                                                        )
                                                     }
                                                 } : nil
                                         )
@@ -819,6 +816,50 @@ struct MacNewChatView: View {
                 tools: tools,
                 assistantMessageID: assistantMessage.id
         )
+    }
+
+    private func editMessageAndResend(
+        _ message: Message,
+        newContent: String,
+        in conversation: Conversation
+    ) {
+        guard let proposedHistory = ChatDraftContent.effectiveHistory(
+            byEditingUserMessage: message.id,
+            newContent: newContent,
+            in: conversation
+        ) else {
+            return
+        }
+
+        let resendModel = conversation.model
+        if aiService.getModelCapability(resendModel) != .imageGeneration {
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+            if let limitError = aiService.attachmentImageLimitError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = limitError
+                errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+                return
+            }
+        }
+
+        guard conversationManager.editMessage(
+            in: conversation,
+            messageId: message.id,
+            newContent: newContent
+        ), let updatedConversation = conversationManager.conversation(byId: conversation.id)
+        else {
+            return
+        }
+        sendMessageForConversation(updatedConversation, model: updatedConversation.model)
     }
 
     // MARK: - Image Generation

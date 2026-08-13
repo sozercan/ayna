@@ -314,14 +314,7 @@ struct MacChatView: View {
                         )
                     },
                     onEditMessage: { message, newContent in
-                        let edited = conversationManager.editMessage(
-                            in: currentConversation,
-                            messageId: message.id,
-                            newContent: newContent
-                        )
-                        if edited {
-                            resendMessage(message)
-                        }
+                        editMessageAndResend(message, newContent: newContent)
                     },
                     onAppearAction: {
                         updateTranscriptPlan()

@@ -106,4 +106,28 @@ struct ChatDraftContentTests {
         #expect(appended.map(\.id) == [assistantMessage.id, userMessage.id])
         #expect(reused.map(\.id) == [userMessage.id, assistantMessage.id])
     }
+
+    @Test
+    func `edited history changes the target and excludes later messages without mutation`() throws {
+        let userMessage = Message(role: .user, content: "Original")
+        let assistantMessage = Message(role: .assistant, content: "Old response")
+        var conversation = Conversation(model: "test-model", systemPromptMode: .disabled)
+        conversation.messages = [userMessage, assistantMessage]
+
+        let history = try #require(ChatDraftContent.effectiveHistory(
+            byEditingUserMessage: userMessage.id,
+            newContent: "Replacement",
+            in: conversation
+        ))
+
+        #expect(history.count == 1)
+        #expect(history.first?.id == userMessage.id)
+        #expect(history.first?.content == "Replacement")
+        #expect(conversation.messages == [userMessage, assistantMessage])
+        #expect(ChatDraftContent.effectiveHistory(
+            byEditingUserMessage: assistantMessage.id,
+            newContent: "Invalid",
+            in: conversation
+        ) == nil)
+    }
 }

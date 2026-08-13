@@ -875,27 +875,171 @@
             )
         }
 
-        private func configure(_ service: AIService, models: [String]) {
-            service.customModels = models
-            service.selectedModel = models[0]
-            for model in models {
-                service.modelProviders[model] = .openai
-                service.modelAPIKeys[model] = "sk-unit-test"
-            }
+    }
+
+    @Suite("iOS Chat View Model Regression Tests", .tags(.viewModel), .serialized)
+    @MainActor
+    struct IOSChatViewModelRegressionTests {
+        @Test
+        func `attachment-incompatible edit preserves the existing transcript`() {
+            let model = "apple-test"
+            let userMessage = Message(
+                role: .user,
+                content: "Original question",
+                attachments: [Message.FileAttachment(
+                    fileName: "image.png",
+                    mimeType: "image/png",
+                    data: Data([0x89, 0x50, 0x4E, 0x47])
+                )]
+            )
+            let assistantMessage = Message(role: .assistant, content: "Existing answer")
+            let conversation = Conversation(
+                messages: [userMessage, assistantMessage],
+                model: model,
+                systemPromptMode: .disabled
+            )
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            manager.conversations = [conversation]
+
+            let aiService = SendHistoryCapturingAIService()
+            configure(aiService, models: [model])
+            aiService.modelProviders[model] = .appleIntelligence
+            let viewModel = IOSChatViewModel(
+                conversationId: conversation.id,
+                conversationManager: manager,
+                aiService: aiService
+            )
+
+            viewModel.editMessageAndResend(
+                userMessage,
+                newContent: "Replacement question"
+            )
+
+            #expect(manager.conversation(byId: conversation.id)?.messages == [
+                userMessage,
+                assistantMessage,
+            ])
+            #expect(viewModel.errorMessage?.contains("does not support attachments") == true)
+            #expect(aiService.singleModelRequests.isEmpty)
+            #expect(!viewModel.isGenerating)
         }
 
-        private func waitUntil(
-            timeout: Duration = .seconds(1),
-            condition: @MainActor () -> Bool
-        ) async -> Bool {
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: timeout)
-            while !condition() {
-                guard clock.now < deadline else { return false }
-                try? await Task.sleep(for: .milliseconds(5))
-            }
-            return true
+        @Test(.timeLimit(.minutes(1)))
+        func `failed single-model new chat stays on its retry screen`() async throws {
+            let model = "model-a"
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            let aiService = ControllableErrorAIService()
+            configure(aiService, models: [model])
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let viewModel = IOSChatViewModel(
+                conversationManager: manager,
+                aiService: aiService,
+                attachmentStorage: AttachmentStorage(
+                    directoryURL: storageDirectory,
+                    dataCache: AttachmentDataCache()
+                )
+            )
+            var createdConversationID: UUID?
+            viewModel.onConversationCreated = { createdConversationID = $0 }
+            viewModel.selectedModel = model
+            viewModel.selectedModels = [model]
+            viewModel.messageText = "Retry this new chat"
+            viewModel.pastedImages = [PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47, 0x04]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )]
+
+            viewModel.sendMessage()
+            #expect(await waitUntil { aiService.requests.count == 1 })
+            aiService.failLatestRequest()
+            #expect(await waitUntil {
+                !viewModel.isGenerating && viewModel.failedMessage == "Retry this new chat"
+            })
+
+            #expect(createdConversationID == nil)
+            #expect(manager.conversations.count == 1)
+            viewModel.cancelOwnedOperations()
         }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `all-failed multi-model new chat stays on its retry screen`() async throws {
+            let models = ["model-a", "model-b"]
+            let manager = ConversationManager(
+                store: ScriptedConversationStore(),
+                saveDebounceDuration: .zero,
+                searchIndexWarmupEnabled: false,
+                startsLoadingImmediately: false
+            )
+            let aiService = ControllableMultiModelErrorAIService()
+            configure(aiService, models: models)
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let viewModel = IOSChatViewModel(
+                conversationManager: manager,
+                aiService: aiService,
+                attachmentStorage: AttachmentStorage(
+                    directoryURL: storageDirectory,
+                    dataCache: AttachmentDataCache()
+                )
+            )
+            var createdConversationID: UUID?
+            viewModel.onConversationCreated = { createdConversationID = $0 }
+            viewModel.selectedModel = models[0]
+            viewModel.selectedModels = Set(models)
+            viewModel.messageText = "Compare this new chat"
+            viewModel.pastedImages = [PastedImage(
+                data: Data([0x89, 0x50, 0x4E, 0x47, 0x05]),
+                mimeType: "image/png",
+                fileExtension: "png"
+            )]
+
+            viewModel.sendMessage()
+            #expect(await waitUntil { aiService.requests.count == 1 })
+            aiService.failAllModelsInLatestRequest()
+            #expect(await waitUntil {
+                !viewModel.isGenerating && viewModel.failedMessage == "Compare this new chat"
+            })
+
+            #expect(createdConversationID == nil)
+            #expect(viewModel.errorMessage == "All models failed")
+            #expect(manager.conversations.count == 1)
+            viewModel.cancelOwnedOperations()
+        }
+
+    }
+
+    @MainActor
+    private func configure(_ service: AIService, models: [String]) {
+        service.customModels = models
+        service.selectedModel = models[0]
+        for model in models {
+            service.modelProviders[model] = .openai
+            service.modelAPIKeys[model] = "sk-unit-test"
+        }
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition() {
+            guard clock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return true
     }
 
     private actor IOSConversationLoadGate {

@@ -45,6 +45,23 @@ enum ChatDraftContent {
         return messages + [userMessage]
     }
 
+    static func effectiveHistory(
+        byEditingUserMessage messageID: UUID,
+        newContent: String,
+        in conversation: Conversation
+    ) -> [Message]? {
+        guard let messageIndex = conversation.messages.firstIndex(where: { $0.id == messageID }),
+              conversation.messages[messageIndex].role == .user
+        else {
+            return nil
+        }
+
+        var candidateConversation = conversation
+        candidateConversation.messages = Array(conversation.messages.prefix(through: messageIndex))
+        candidateConversation.messages[messageIndex].content = newContent
+        return candidateConversation.getEffectiveHistory()
+    }
+
     static func isImageFile(_ fileURL: URL) -> Bool {
         guard !fileURL.pathExtension.isEmpty,
               let contentType = UTType(filenameExtension: fileURL.pathExtension.lowercased())

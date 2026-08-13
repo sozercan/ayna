@@ -151,7 +151,7 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `rotating the paste session discards an in-flight image import`() async throws {
+        func `rotating the paste session discards every queued image import`() async throws {
             let pasteboard = NSPasteboard.general
             let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
             defer { snapshot.restore(to: pasteboard) }
@@ -164,6 +164,7 @@
 
             let state = EditorState()
             let hostedEditor = try Self.hostEditor(state: state)
+            hostedEditor.textView.paste(nil)
             hostedEditor.textView.paste(nil)
             #expect(state.isImportingPastedImages)
 

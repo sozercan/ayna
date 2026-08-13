@@ -9,6 +9,7 @@
 // swiftlint:disable file_length
 
 import Combine
+import ImageIO
 import SwiftUI
 
 // MARK: - Design System Integration
@@ -723,15 +724,38 @@ struct MacMessageView: View {
         }
     }
 
-    /// Loads and caches an attachment image to prevent memory leaks from repeated decoding
-    /// Note: NSImage is non-Sendable so we create it on @MainActor directly
+    /// Loads and caches an attachment image to prevent memory leaks from repeated decoding.
+    /// ImageIO performs the decode off actor; NSImage remains main-actor confined.
     private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) {
         guard cachedAttachmentImages[index] == nil else { return }
         Task { @MainActor in
             guard let data = await attachment.loadContent() else { return }
-            if let image = NSImage(data: data) {
-                cachedAttachmentImages[index] = image
+            let decodeTask = Task.detached(priority: .userInitiated) { () -> CGImage? in
+                guard !Task.isCancelled,
+                      let source = CGImageSourceCreateWithData(data as CFData, nil)
+                else {
+                    return nil
+                }
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 1024,
+                    kCGImageSourceShouldCacheImmediately: true,
+                ]
+                let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+                    source,
+                    0,
+                    options as CFDictionary
+                )
+                return Task.isCancelled ? nil : thumbnail
             }
+            let thumbnail = await withTaskCancellationHandler {
+                await decodeTask.value
+            } onCancel: {
+                decodeTask.cancel()
+            }
+            guard !Task.isCancelled, let thumbnail else { return }
+            cachedAttachmentImages[index] = NSImage(cgImage: thumbnail, size: .zero)
         }
     }
 

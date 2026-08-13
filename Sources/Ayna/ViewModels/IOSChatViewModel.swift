@@ -1431,10 +1431,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 conversationManager.save(updatedConversation)
                         }
 
-            if isNewChatMode {
-                onConversationCreated?(conversationId)
-                    }
-
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,
@@ -2015,6 +2011,46 @@ extension IOSChatViewModel {
         )
     }
 
+    func editMessageAndResend(_ message: Message, newContent: String) {
+        guard !isGenerating, let conversation else { return }
+        guard let proposedHistory = ChatDraftContent.effectiveHistory(
+            byEditingUserMessage: message.id,
+            newContent: newContent,
+            in: conversation
+        ) else {
+            return
+        }
+
+        let resendModel = conversation.model
+        if aiService.getModelCapability(resendModel) != .imageGeneration {
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+            if let limitError = aiService.attachmentImageLimitError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = limitError
+                errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+                return
+            }
+        }
+
+        guard conversationManager.editMessage(
+            in: conversation,
+            messageId: message.id,
+            newContent: newContent
+        ) else {
+            return
+        }
+        resendAfterEdit()
+    }
+
     /// Re-send the last user message to get a new AI response after editing.
     func resendAfterEdit() {
         guard !isGenerating else { return }
@@ -2357,6 +2393,10 @@ extension IOSChatViewModel {
     ) {
         guard coordinator.owns(operationID, conversationID: conversationId) else { return }
 
+        let didAllResponsesFail = allResponsesFailed(
+            conversationId: conversationId,
+            responseGroupId: activeMultiModelResponseGroupId
+        )
         multiModelReasoningBuffer.finishAll()
         flushAllStreamingChunks(conversationId: conversationId)
         isGenerating = false
@@ -2367,9 +2407,23 @@ extension IOSChatViewModel {
         guard coordinator.finishOperation(operationID) else { return }
         pendingSendPayload = nil
 
-        if isNewChatMode {
+        if isNewChatMode, !didAllResponsesFail {
             onConversationCreated?(conversationId)
         }
+    }
+
+    private func allResponsesFailed(
+        conversationId: UUID,
+        responseGroupId: UUID?
+    ) -> Bool {
+        guard let responseGroupId,
+              let group = conversationManager.conversation(byId: conversationId)?
+              .getResponseGroup(responseGroupId),
+              !group.responses.isEmpty
+        else {
+            return false
+        }
+        return group.responses.allSatisfy { $0.status == .failed }
     }
 
     private func finishAndPersistMultiModelReasoning(conversationId: UUID) {
@@ -2731,10 +2785,6 @@ extension IOSChatViewModel {
                         self.conversationManager.save(conversation)
                     }
 
-                    if self.isNewChatMode {
-                        self.onConversationCreated?(conversationId)
-                    }
-
                     DiagnosticsLogger.log(
                         .chatView,
                         level: .error,
@@ -3051,18 +3101,20 @@ extension IOSChatViewModel {
     ) {
         guard imageGenerationCoordinator.finishOperation(operationID) else { return }
         isGenerating = false
+        let didAllResponsesFail = allResponsesFailed(
+            conversationId: conversationId,
+            responseGroupId: responseGroupId
+        )
         if let conversation = conversationManager.conversation(byId: conversationId) {
             conversationManager.save(conversation)
-            if let group = conversation.getResponseGroup(responseGroupId),
-               group.responses.allSatisfy({ $0.status == .failed })
-            {
+            if didAllResponsesFail {
                 errorMessage = "All models failed"
                 capturePendingSendFailure()
             } else {
                 pendingSendPayload = nil
             }
         }
-        if isNewChatMode {
+        if isNewChatMode, !didAllResponsesFail {
             onConversationCreated?(conversationId)
         }
     }

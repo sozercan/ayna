@@ -11,6 +11,48 @@ import SwiftUI
 // MARK: - Retry & Resend Methods
 
 extension MacChatView {
+    func editMessageAndResend(_ message: Message, newContent: String) {
+        guard let proposedHistory = ChatDraftContent.effectiveHistory(
+            byEditingUserMessage: message.id,
+            newContent: newContent,
+            in: currentConversation
+        ) else {
+            return
+        }
+
+        let resendModel = currentConversation.model
+        if aiService.getModelCapability(resendModel) != .imageGeneration {
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                return
+            }
+            if let limitError = aiService.attachmentImageLimitError(
+                for: [resendModel],
+                messages: proposedHistory
+            ) {
+                errorMessage = limitError
+                errorRecoverySuggestion = "Remove images from the conversation or start a new conversation."
+                return
+            }
+        }
+
+        guard conversationManager.editMessage(
+            in: currentConversation,
+            messageId: message.id,
+            newContent: newContent
+        ) else {
+            return
+        }
+
+        var editedMessage = message
+        editedMessage.content = newContent
+        resendMessage(editedMessage)
+    }
+
     /// Retry the message that came before the specified assistant message
     func retryLastMessage(beforeMessage: Message) {
         guard !isGenerating else { return }

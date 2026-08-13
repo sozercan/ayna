@@ -204,9 +204,9 @@ private final class PasteAwareTextView: NSTextView {
     var onPasteImages: (([PastedImage]) -> Void)?
     var onPasteImportStateChange: ((Bool) -> Void)?
     var remainingImageCapacity: (() -> Int)?
-    private var pasteImportTask: Task<Void, Never>?
+    private var pasteImportTail: Task<Void, Never>?
+    private var pasteImportTasks: [UUID: Task<Void, Never>] = [:]
     private var pasteImportSessionID: UUID?
-    private var activePasteImportID: UUID?
     private var reservedImageCount = 0
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
@@ -257,12 +257,11 @@ private final class PasteAwareTextView: NSTextView {
             return
         }
 
-        let previousTask = pasteImportTask
+        let previousTask = pasteImportTail
         let expectedSessionID = pasteImportSessionID
         let importID = UUID()
-        activePasteImportID = importID
         onPasteImportStateChange?(true)
-        pasteImportTask = Task { @MainActor [weak self] in
+        let importTask = Task { @MainActor [weak self] in
             await previousTask?.value
             guard let self else { return }
             defer {
@@ -270,7 +269,7 @@ private final class PasteAwareTextView: NSTextView {
                     reservationCount,
                     sessionID: expectedSessionID
                 )
-                self.finishPasteImport(importID)
+                self.finishPasteImport(importID, sessionID: expectedSessionID)
             }
             guard !Task.isCancelled,
                   pasteImportSessionID == expectedSessionID
@@ -278,17 +277,27 @@ private final class PasteAwareTextView: NSTextView {
                 return
             }
 
-            let images: [PastedImage] = await Task.detached(priority: .userInitiated) {
-                candidates.compactMap { candidate -> PastedImage? in
+            let conversionTask = Task.detached(priority: .userInitiated) {
+                var images: [PastedImage] = []
+                for candidate in candidates {
+                    guard !Task.isCancelled else { break }
                     guard let contentType = UTType(candidate.contentTypeIdentifier) else {
-                        return nil
+                        continue
                     }
-                    return try? PastedImage.importing(
+                    if let image = try? PastedImage.importing(
                         data: candidate.data,
                         contentType: contentType
-                    )
+                    ) {
+                        images.append(image)
+                    }
                 }
-            }.value
+                return images
+            }
+            let images = await withTaskCancellationHandler {
+                await conversionTask.value
+            } onCancel: {
+                conversionTask.cancel()
+            }
 
             guard !Task.isCancelled,
                   pasteImportSessionID == expectedSessionID
@@ -324,6 +333,8 @@ private final class PasteAwareTextView: NSTextView {
                 reportImageLimit(skippedImageCount: skippedImageCount)
             }
         }
+        pasteImportTasks[importID] = importTask
+        pasteImportTail = importTask
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -420,21 +431,26 @@ private final class PasteAwareTextView: NSTextView {
     }
 
     private func invalidatePasteImports() {
-        pasteImportTask?.cancel()
-        pasteImportTask = nil
+        let hadActiveImports = !pasteImportTasks.isEmpty
+        for task in pasteImportTasks.values {
+            task.cancel()
+        }
+        pasteImportTasks.removeAll()
+        pasteImportTail = nil
         reservedImageCount = 0
-        if activePasteImportID != nil {
-            activePasteImportID = nil
+        if hadActiveImports {
             onPasteImportStateChange?(false)
         }
         pasteImportSessionID = nil
     }
 
-    private func finishPasteImport(_ importID: UUID) {
-        guard activePasteImportID == importID else { return }
-        activePasteImportID = nil
-        pasteImportTask = nil
-        onPasteImportStateChange?(false)
+    private func finishPasteImport(_ importID: UUID, sessionID: UUID?) {
+        guard pasteImportSessionID == sessionID else { return }
+        pasteImportTasks[importID] = nil
+        if pasteImportTasks.isEmpty {
+            pasteImportTail = nil
+            onPasteImportStateChange?(false)
+        }
     }
 
     private func releaseImageReservation(_ count: Int, sessionID: UUID?) {
