@@ -58,6 +58,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     var conversationManager: ConversationManager
     let aiService: AIService
     private let executeBuiltInTool: IOSBuiltInToolExecutor
+    private let attachmentStorage: AttachmentStorage
     private let imageGenerationCoordinator = ImageGenerationCoordinator()
         private let toolChainCoordinator = ToolChainCoordinator()
         private let toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
@@ -183,13 +184,15 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         conversationId: UUID,
         conversationManager: ConversationManager,
         aiService: AIService? = nil,
-        executeBuiltInTool: IOSBuiltInToolExecutor? = nil
+        executeBuiltInTool: IOSBuiltInToolExecutor? = nil,
+        attachmentStorage: AttachmentStorage = .shared
     ) {
         let resolvedAIService = aiService ?? .shared
         self.conversationId = conversationId
         isNewChatMode = false
         self.conversationManager = conversationManager
         self.aiService = resolvedAIService
+        self.attachmentStorage = attachmentStorage
         self.executeBuiltInTool = executeBuiltInTool ?? { name, arguments in
             await resolvedAIService.executeBuiltInToolWithCitations(
                 name: name,
@@ -204,13 +207,15 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     init(
         conversationManager: ConversationManager,
         aiService: AIService? = nil,
-        executeBuiltInTool: IOSBuiltInToolExecutor? = nil
+        executeBuiltInTool: IOSBuiltInToolExecutor? = nil,
+        attachmentStorage: AttachmentStorage = .shared
     ) {
         let resolvedAIService = aiService ?? .shared
         conversationId = nil
         isNewChatMode = true
         self.conversationManager = conversationManager
         self.aiService = resolvedAIService
+        self.attachmentStorage = attachmentStorage
         self.executeBuiltInTool = executeBuiltInTool ?? { name, arguments in
             await resolvedAIService.executeBuiltInToolWithCitations(
                 name: name,
@@ -432,7 +437,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         failedMessage = nil
         errorMessage = nil
         errorRecoverySuggestion = nil
-        sendPreparedPayload(payload, consuming: nil)
+        prepareOrSendPayload(payload, consuming: nil)
     }
 
     /// Dismiss the current error without retrying
@@ -724,7 +729,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
-        sendPreparedPayload(
+        prepareOrSendPayload(
             payload,
             consuming: preparation,
             attachmentErrors: messageBuild.errors
@@ -735,38 +740,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         payload.selectedModels.count >= 2
             ? Array(payload.selectedModels)
             : [payload.requestModel.isEmpty ? payload.selectedModel : payload.requestModel]
-    }
-
-    private func validateAttachmentImageData(for payload: PreparedSend) -> Bool {
-        guard let validationError = aiService.attachmentImageValidationError(
-            for: requestModels(for: payload),
-            inMemoryAttachments: payload.attachments
-        ) else {
-            return true
-        }
-
-        errorMessage = validationError
-        errorRecoverySuggestion = "Remove the image or choose a different model."
-        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-        return false
-    }
-
-    private func validateAttachmentImageLimit(for payload: PreparedSend) -> Bool {
-        let proposedMessages = ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
-            payload.makeUserMessage(),
-            in: conversation?.messages ?? []
-        )
-        guard let limitError = aiService.attachmentImageLimitError(
-            for: requestModels(for: payload),
-            messages: proposedMessages
-        ) else {
-            return true
-        }
-
-        errorMessage = limitError
-        errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
-        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
-        return false
     }
 
     @discardableResult
@@ -801,7 +774,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
-        guard validateAttachmentImageData(for: payload) else { return }
+        guard validateAttachmentHistorySupport(for: payload) else { return }
         guard validateAttachmentImageLimit(for: payload) else { return }
 
         // Check for multi-model mode
@@ -1770,6 +1743,175 @@ private extension IOSChatViewModel {
                 attachments: attachments.isEmpty ? nil : attachments
             ),
             errors
+        )
+    }
+}
+
+extension IOSChatViewModel {
+    private func prepareOrSendPayload(
+        _ payload: PreparedSend,
+        consuming preparation: SendPreparation?,
+        attachmentErrors: [String] = []
+    ) {
+        guard validateAttachmentHistorySupport(for: payload) else { return }
+        guard validateAttachmentImageLimit(for: payload) else { return }
+
+        guard !payload.attachments.isEmpty else {
+            sendPreparedPayload(
+                payload,
+                consuming: preparation,
+                attachmentErrors: attachmentErrors
+            )
+            return
+        }
+
+        prepareStoredPayloadAndSend(
+            payload,
+            consuming: preparation,
+            attachmentErrors: attachmentErrors
+        )
+    }
+
+    private func prepareStoredPayloadAndSend(
+        _ payload: PreparedSend,
+        consuming preparation: SendPreparation?,
+        attachmentErrors: [String]
+    ) {
+        let preparationID = UUID()
+        sendPreparationID = preparationID
+        isGenerating = true
+
+        let task = Task { @MainActor in
+            defer { sendPreparationDidFinish?() }
+
+            let preparedPayload = preparation == nil
+                ? payload
+                : await persistAttachmentData(in: payload)
+            let newlyStoredPaths = Set(preparedPayload.attachments.compactMap(\.localPath))
+                .subtracting(payload.attachments.compactMap(\.localPath))
+
+            guard !Task.isCancelled, sendPreparationID == preparationID else {
+                await discardStoredAttachments(at: newlyStoredPaths)
+                return
+            }
+
+            let validationError = await aiService.attachmentImageValidationError(
+                for: requestModels(for: preparedPayload),
+                loading: preparedPayload.attachments,
+                loadAttachmentData: { [attachmentStorage] path in
+                    await attachmentStorage.loadData(path: path)
+                }
+            )
+            guard !Task.isCancelled, sendPreparationID == preparationID else {
+                await discardStoredAttachments(at: newlyStoredPaths)
+                return
+            }
+            if let validationError {
+                await discardStoredAttachments(at: newlyStoredPaths)
+                sendPreparationTask = nil
+                sendPreparationID = nil
+                isGenerating = false
+                errorMessage = validationError
+                errorRecoverySuggestion = "Remove the image or choose a different model."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
+
+            // Release preparation ownership before the synchronous handoff. This keeps the
+            // existing multi-model guard and stop-button semantics unchanged.
+            sendPreparationTask = nil
+            sendPreparationID = nil
+            isGenerating = false
+            sendPreparedPayload(
+                preparedPayload,
+                consuming: preparation,
+                attachmentErrors: attachmentErrors
+            )
+
+            let wasCommitted = conversationManager.conversations.contains { conversation in
+                conversation.messages.contains(where: { $0.id == preparedPayload.userMessageID })
+            }
+            if !wasCommitted {
+                await discardStoredAttachments(at: newlyStoredPaths)
+            }
+        }
+        sendPreparationTask = task
+    }
+
+    private func persistAttachmentData(in payload: PreparedSend) async -> PreparedSend {
+        let generation = attachmentStorage.currentGeneration()
+        var attachments = payload.attachments
+
+        for index in attachments.indices {
+            guard attachments[index].localPath == nil,
+                  let data = attachments[index].data
+            else {
+                continue
+            }
+            let fileExtension = (attachments[index].fileName as NSString).pathExtension
+            if let localPath = try? await attachmentStorage.saveData(
+                data: data,
+                extension: fileExtension,
+                generation: generation
+            ) {
+                attachments[index].data = nil
+                attachments[index].localPath = localPath
+            }
+        }
+
+        return PreparedSend(
+            userMessageID: payload.userMessageID,
+            text: payload.text,
+            attachments: attachments,
+            selectedModel: payload.selectedModel,
+            selectedModels: payload.selectedModels,
+            requestModel: payload.requestModel
+        )
+    }
+
+    private func discardStoredAttachments(at paths: Set<String>) async {
+        guard !paths.isEmpty else { return }
+        let storage = attachmentStorage
+        await Task.detached(priority: .utility) {
+            for path in paths {
+                storage.delete(path: path)
+            }
+        }.value
+    }
+
+    private func validateAttachmentImageLimit(for payload: PreparedSend) -> Bool {
+        let proposedMessages = proposedMessages(for: payload)
+        guard let limitError = aiService.attachmentImageLimitError(
+            for: requestModels(for: payload),
+            messages: proposedMessages
+        ) else {
+            return true
+        }
+
+        errorMessage = limitError
+        errorRecoverySuggestion = "Remove images from the draft or start a new conversation."
+        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+        return false
+    }
+
+    private func validateAttachmentHistorySupport(for payload: PreparedSend) -> Bool {
+        guard let supportError = aiService.attachmentHistorySupportError(
+            for: requestModels(for: payload),
+            messages: proposedMessages(for: payload)
+        ) else {
+            return true
+        }
+
+        errorMessage = supportError
+        errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+        restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+        return false
+    }
+
+    private func proposedMessages(for payload: PreparedSend) -> [Message] {
+        ChatDraftContent.messagesByIncludingUserMessageIfNeeded(
+            payload.makeUserMessage(),
+            in: conversation?.messages ?? []
         )
     }
 }

@@ -1155,7 +1155,10 @@ struct MacChatView: View {
                 : Array(selectedModelsToSend)
             let validationError = await aiService.attachmentImageValidationError(
                 for: requestModels,
-                loading: userMessage.attachments ?? []
+                loading: userMessage.attachments ?? [],
+                loadAttachmentData: { path in
+                    await AttachmentStorage.shared.loadData(path: path)
+                }
             )
             guard sendPreparationID == preparationID, !Task.isCancelled else {
                 discardStoredAttachments(
@@ -1178,6 +1181,19 @@ struct MacChatView: View {
                 userMessage,
                 in: loadedConversation.messages
             )
+            if let supportError = aiService.attachmentHistorySupportError(
+                for: requestModels,
+                messages: requestMessages
+            ) {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = supportError
+                errorRecoverySuggestion = "Choose a vision-capable cloud model or start a new conversation."
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+                return
+            }
             if let limitError = aiService.attachmentImageLimitError(
                 for: requestModels,
                 messages: requestMessages

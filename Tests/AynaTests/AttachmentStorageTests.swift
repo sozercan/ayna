@@ -20,6 +20,33 @@ struct AttachmentStorageTests {
     }
 
     @Test
+    func `cancelled async attachment save exits before disk I O`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let storage = AttachmentStorage(
+            directoryURL: directory,
+            dataCache: AttachmentDataCache()
+        )
+
+        let wasCancelled = await Task.detached { () -> Bool in
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try await storage.saveData(
+                    data: Data(repeating: 0xA5, count: 2 * 1_048_576),
+                    extension: "bin"
+                )
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                return false
+            }
+        }.value
+
+        #expect(wasCancelled)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+    }
+
+    @Test
     func `async message and attachment helpers load stored data`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let storage = AttachmentStorage(

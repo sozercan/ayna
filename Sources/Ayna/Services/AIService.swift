@@ -915,6 +915,21 @@ class AIService: ObservableObject {
         return nil
     }
 
+    /// Returns a user-facing reason when Apple Intelligence cannot consume attachment history.
+    func attachmentHistorySupportError(for models: [String], messages: [Message]) -> String? {
+        guard messages.contains(where: { $0.attachments?.isEmpty == false }) else { return nil }
+
+        for model in models {
+            let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedModel.isEmpty else { continue }
+            let modelProvider = modelProviders[normalizedModel] ?? provider
+            if modelProvider == .appleIntelligence {
+                return "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
+            }
+        }
+        return nil
+    }
+
     /// Returns a user-facing reason when an Anthropic request would exceed its image limit.
     func attachmentImageLimitError(for models: [String], messages: [Message]) -> String? {
         guard usesAnthropicModel(models) else { return nil }
@@ -950,13 +965,21 @@ class AIService: ObservableObject {
 
     func attachmentImageValidationError(
         for models: [String],
-        loading attachments: [Message.FileAttachment]
+        loading attachments: [Message.FileAttachment],
+        loadAttachmentData: @Sendable (String) async -> Data?
     ) async -> String? {
         guard usesAnthropicModel(models) else { return nil }
 
         for attachment in anthropicImageAttachments(in: attachments) {
             guard !Task.isCancelled else { return nil }
-            guard let data = await attachment.loadContent() else {
+            let data: Data? = if let inlineData = attachment.data {
+                inlineData
+            } else if let localPath = attachment.localPath {
+                await loadAttachmentData(localPath)
+            } else {
+                nil
+            }
+            guard let data else {
                 return "Unable to load image attachment \"\(attachment.fileName)\". Remove it and try again."
             }
             if let validationError = AnthropicRequestBuilder.imageValidationError(data: data) {

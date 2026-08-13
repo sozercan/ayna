@@ -115,8 +115,8 @@
             viewModel.cancelOwnedOperations()
         }
 
-        @Test
-        func `anthropic image limit is rejected before committing the message`() {
+        @Test(.timeLimit(.minutes(1)))
+        func `anthropic image limit is rejected before committing the message`() async throws {
             let model = "claude-test"
             let conversation = Conversation(model: model, systemPromptMode: .disabled)
             let manager = ConversationManager(
@@ -130,31 +130,38 @@
             let aiService = SendHistoryCapturingAIService()
             configure(aiService, models: [model])
             aiService.modelProviders[model] = .anthropic
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             viewModel.pastedImages = (0 ... ChatDraftContent.maximumImageCount).map { index in
                 PastedImage(
-                    data: Data([0x89, 0x50, 0x4E, UInt8(index)]),
+                    data: Data([0x89, 0x50, 0x4E, 0x47, UInt8(index), 0, 0, 0, 0, 0, 0, 0]),
                     mimeType: "image/png",
                     fileExtension: "png"
                 )
             }
 
             viewModel.sendMessage()
+            #expect(await waitUntil { viewModel.errorMessage?.contains("at most 20 images") == true })
 
             #expect(aiService.singleModelRequests.isEmpty)
             #expect(manager.conversation(byId: conversation.id)?.messages.isEmpty == true)
             #expect(viewModel.pastedImages.count == ChatDraftContent.maximumImageCount + 1)
-            #expect(viewModel.errorMessage?.contains("at most 20 images") == true)
             #expect(!viewModel.isGenerating)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: storageDirectory.path).isEmpty)
             viewModel.cancelOwnedOperations()
         }
 
-        @Test
-        func `oversized anthropic file image is rejected before committing the message`() throws {
+        @Test(.timeLimit(.minutes(1)))
+        func `oversized anthropic file image is rejected before committing the message`() async throws {
             let model = "claude-test"
             let conversation = Conversation(model: model, systemPromptMode: .disabled)
             let manager = ConversationManager(
@@ -168,10 +175,16 @@
             let aiService = SendHistoryCapturingAIService()
             configure(aiService, models: [model])
             aiService.modelProviders[model] = .anthropic
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             let directory = try TestHelpers.makeTemporaryDirectory()
             let fileURL = directory.appendingPathComponent("large.jpg")
@@ -184,12 +197,13 @@
             viewModel.attachedFiles = [fileURL]
 
             viewModel.sendMessage()
+            #expect(await waitUntil { viewModel.errorMessage?.contains("Image too large") == true })
 
             #expect(aiService.singleModelRequests.isEmpty)
             #expect(manager.conversation(byId: conversation.id)?.messages.isEmpty == true)
             #expect(viewModel.attachedFiles == [fileURL])
-            #expect(viewModel.errorMessage?.contains("Image too large") == true)
             #expect(!viewModel.isGenerating)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: storageDirectory.path).isEmpty)
             viewModel.cancelOwnedOperations()
         }
 
@@ -255,10 +269,16 @@
 
             let aiService = SendHistoryCapturingAIService()
             configure(aiService, models: models)
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             let capturedPaste = PastedImage(
                 data: Data([0x89, 0x50, 0x4E, 0x47]),
@@ -289,7 +309,9 @@
             #expect(sentMessage.attachments?.count == 1)
             #expect(attachment.fileName == capturedPaste.fileName)
             #expect(attachment.mimeType == capturedPaste.mimeType)
-            #expect(attachment.data == capturedPaste.data)
+            #expect(attachment.data == nil)
+            let localPath = try #require(attachment.localPath)
+            #expect(storage.load(path: localPath) == capturedPaste.data)
             #expect(viewModel.pastedImages == [laterPaste])
             viewModel.cancelOwnedOperations()
         }
@@ -458,10 +480,16 @@
 
             let aiService = ControllableErrorAIService()
             configure(aiService, models: [conversation.model])
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             let pastedImage = PastedImage(
                 data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]),
@@ -472,7 +500,7 @@
             viewModel.pastedImages = [pastedImage]
 
             viewModel.sendMessage()
-            #expect(aiService.requests.count == 1)
+            #expect(await waitUntil { aiService.requests.count == 1 })
             #expect(viewModel.pastedImages.isEmpty)
             let committedUserMessage = try #require(
                 manager.conversation(byId: conversation.id)?.messages.first(where: { $0.role == .user })
@@ -485,7 +513,7 @@
 
             viewModel.retryFailedMessage()
 
-            #expect(aiService.requests.count == 2)
+            #expect(await waitUntil { aiService.requests.count == 2 })
             let retriedUserMessage = try #require(
                 aiService.requests.last?.last(where: { $0.role == .user })
             )
@@ -498,7 +526,9 @@
             )
             #expect(retriedAttachment.fileName == pastedImage.fileName)
             #expect(retriedAttachment.mimeType == pastedImage.mimeType)
-            #expect(retriedAttachment.data == pastedImage.data)
+            #expect(retriedAttachment.data == nil)
+            let localPath = try #require(retriedAttachment.localPath)
+            #expect(storage.load(path: localPath) == pastedImage.data)
             #expect(persistedUserMessages.map(\.id) == [committedUserMessage.id])
             #expect(requestedUserMessages.map(\.id) == [committedUserMessage.id])
             #expect(viewModel.pastedImages.isEmpty)
@@ -519,10 +549,16 @@
 
             let aiService = ControllableErrorAIService()
             configure(aiService, models: [conversation.model])
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             let failedPaste = PastedImage(
                 data: Data([0x89, 0x50, 0x4E, 0x47, 0x01]),
@@ -538,7 +574,7 @@
             viewModel.pastedImages = [failedPaste]
 
             viewModel.sendMessage()
-            #expect(aiService.requests.count == 1)
+            #expect(await waitUntil { aiService.requests.count == 1 })
             viewModel.messageText = "Keep this newer draft"
             viewModel.pastedImages = [laterPaste]
 
@@ -551,7 +587,7 @@
 
             viewModel.retryFailedMessage()
 
-            #expect(aiService.requests.count == 2)
+            #expect(await waitUntil { aiService.requests.count == 2 })
             let retriedUserMessage = try #require(
                 aiService.requests.last?.last(where: { $0.role == .user })
             )
@@ -560,7 +596,9 @@
             #expect(retriedUserMessage.attachments?.count == 1)
             #expect(retriedAttachment.fileName == failedPaste.fileName)
             #expect(retriedAttachment.mimeType == failedPaste.mimeType)
-            #expect(retriedAttachment.data == failedPaste.data)
+            #expect(retriedAttachment.data == nil)
+            let localPath = try #require(retriedAttachment.localPath)
+            #expect(storage.load(path: localPath) == failedPaste.data)
             #expect(viewModel.messageText == "Keep this newer draft")
             #expect(viewModel.pastedImages == [laterPaste])
             #expect(viewModel.failedMessage == nil)
@@ -586,10 +624,16 @@
 
             let aiService = ControllableMultiModelErrorAIService()
             configure(aiService, models: models)
+            let storageDirectory = try TestHelpers.makeTemporaryDirectory()
+            let storage = AttachmentStorage(
+                directoryURL: storageDirectory,
+                dataCache: AttachmentDataCache()
+            )
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
                 conversationManager: manager,
-                aiService: aiService
+                aiService: aiService,
+                attachmentStorage: storage
             )
             let pastedImage = PastedImage(
                 data: Data([0x89, 0x50, 0x4E, 0x47, 0x03]),
@@ -601,7 +645,7 @@
             viewModel.pastedImages = [pastedImage]
 
             viewModel.sendMessage()
-            #expect(aiService.requests.count == 1)
+            #expect(await waitUntil { aiService.requests.count == 1 })
             #expect(viewModel.pastedImages.isEmpty)
 
             aiService.failAllModelsInLatestRequest()
@@ -612,7 +656,7 @@
 
             viewModel.retryFailedMessage()
 
-            #expect(aiService.requests.count == 2)
+            #expect(await waitUntil { aiService.requests.count == 2 })
             let retriedUserMessage = try #require(
                 aiService.requests.last?.last(where: { $0.role == .user })
             )
@@ -621,7 +665,9 @@
             #expect(retriedUserMessage.attachments?.count == 1)
             #expect(retriedAttachment.fileName == pastedImage.fileName)
             #expect(retriedAttachment.mimeType == pastedImage.mimeType)
-            #expect(retriedAttachment.data == pastedImage.data)
+            #expect(retriedAttachment.data == nil)
+            let localPath = try #require(retriedAttachment.localPath)
+            #expect(storage.load(path: localPath) == pastedImage.data)
             #expect(viewModel.failedMessage == nil)
             viewModel.cancelOwnedOperations()
         }

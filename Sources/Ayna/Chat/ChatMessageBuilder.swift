@@ -74,7 +74,7 @@
 
                 if saveToStorage {
                     let pathExtension = fileURL.pathExtension
-                    localPath = try? attachmentStorage.save(
+                    localPath = try? await attachmentStorage.saveData(
                         data: fileData,
                         extension: pathExtension,
                         generation: attachmentGeneration
@@ -93,7 +93,7 @@
             for pastedImage in pastedImages {
                 var localPath: String?
                 if saveToStorage {
-                    localPath = try? attachmentStorage.save(
+                    localPath = try? await attachmentStorage.saveData(
                         data: pastedImage.data,
                         extension: pastedImage.fileExtension,
                         generation: attachmentGeneration

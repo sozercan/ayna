@@ -92,6 +92,37 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test
+        func `Apple Intelligence attachment history is rejected before dispatch`() {
+            let service = makeService()
+            let appleModel = "apple-test"
+            let openAIModel = "openai-test"
+            service.modelProviders[appleModel] = .appleIntelligence
+            service.modelProviders[openAIModel] = .openai
+            let imageMessage = Message(
+                role: .user,
+                content: "",
+                attachments: [Message.FileAttachment(
+                    fileName: "image.png",
+                    mimeType: "image/png",
+                    data: Data([0x89, 0x50, 0x4E, 0x47])
+                )]
+            )
+
+            #expect(service.attachmentHistorySupportError(
+                for: [appleModel],
+                messages: [imageMessage, Message(role: .user, content: "Continue")]
+            ) == "Apple Intelligence does not support attachments. Choose a vision-capable cloud model.")
+            #expect(service.attachmentHistorySupportError(
+                for: [openAIModel],
+                messages: [imageMessage]
+            ) == nil)
+            #expect(service.attachmentHistorySupportError(
+                for: [appleModel],
+                messages: [Message(role: .user, content: "Text only")]
+            ) == nil)
+        }
+
+        @Test
         func `Anthropic image bytes are validated before request dispatch`() async {
             let service = makeService()
             let anthropicModel = "claude-test"
@@ -115,19 +146,16 @@ extension AIServiceGlobalStateTests {
                 mimeType: "image/jpeg",
                 localPath: "stored.jpg"
             )
-            let originalLoader = Message.attachmentAsyncLoader
-            Message.attachmentAsyncLoader = { path in
-                path == "stored.jpg" ? oversizedImageData : nil
-            }
-            defer { Message.attachmentAsyncLoader = originalLoader }
-
             #expect(service.attachmentImageValidationError(
                 for: [anthropicModel],
                 inMemoryAttachments: [inlineAttachment]
             )?.contains("Image too large") == true)
             #expect(await service.attachmentImageValidationError(
                 for: [anthropicModel],
-                loading: [storedAttachment]
+                loading: [storedAttachment],
+                loadAttachmentData: { path in
+                    path == "stored.jpg" ? oversizedImageData : nil
+                }
             )?.contains("Image too large") == true)
             #expect(service.attachmentImageValidationError(
                 for: [openAIModel],

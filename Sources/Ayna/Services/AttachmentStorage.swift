@@ -174,6 +174,28 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
+    /// Saves data off the caller's actor while preserving cleanup-generation fencing.
+    func saveData(
+        data: Data,
+        extension: String = "dat",
+        generation expectedGeneration: AttachmentStorageGeneration? = nil
+    ) async throws -> String {
+        try Task.checkCancellation()
+        let saveTask = Task.detached(priority: .utility) { [self] in
+            try Task.checkCancellation()
+            return try save(
+                data: data,
+                extension: `extension`,
+                generation: expectedGeneration
+            )
+        }
+        return try await withTaskCancellationHandler {
+            try await saveTask.value
+        } onCancel: {
+            saveTask.cancel()
+        }
+    }
+
     nonisolated static func sanitizedExtension(_ fileExtension: String) -> String {
         let components = fileExtension
             .lowercased()
