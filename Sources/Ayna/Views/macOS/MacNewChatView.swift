@@ -1201,8 +1201,7 @@ struct MacNewChatView: View {
         // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
+            messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
             // Send to all models in parallel under this view's owner-specific operation.
