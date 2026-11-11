@@ -35,7 +35,13 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     // MARK: - Published State
 
     @Published var messageText = ""
-    @Published var isGenerating = false
+    @Published var isGenerating = false {
+        didSet {
+            guard isGenerating != oldValue else { return }
+            registerGeneration()
+        }
+    }
+
     @Published var errorMessage: String?
     @Published var attachedFiles: [URL] = []
     @Published var attachedImages: [UIImage] = []
@@ -52,6 +58,22 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
     /// Recovery suggestion for the current error (if available)
     @Published var errorRecoverySuggestion: String?
+
+    /// The conversation this view model told the manager it is generating for.
+    private var generatingConversationId: UUID?
+
+    /// Keeps the manager's in-progress set in step with `isGenerating`, so a sidebar refresh
+    /// doesn't replace the conversation a reply is streaming into.
+    private func registerGeneration() {
+        if let previous = generatingConversationId {
+            conversationManager.setGenerating(false, for: previous)
+            generatingConversationId = nil
+        }
+        if isGenerating, let conversationId {
+            conversationManager.setGenerating(true, for: conversationId)
+            generatingConversationId = conversationId
+        }
+    }
 
     // MARK: - Dependencies
 
@@ -155,7 +177,13 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
     /// The conversation ID this view model is managing.
     /// For new chats, this starts as nil and gets set when first message is sent.
-    var conversationId: UUID?
+    var conversationId: UUID? {
+        didSet {
+            if isGenerating, conversationId != oldValue {
+                registerGeneration()
+            }
+        }
+    }
 
     /// Whether this is a "new chat" view model (creates conversation on first message).
     let isNewChatMode: Bool

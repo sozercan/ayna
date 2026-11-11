@@ -108,6 +108,8 @@ final class ConversationManager: ObservableObject {
     // coordinator only knows this session's saves, so Watch publication fills in the rest
     // from here. `isMetadataOnly` entries carry no message history.
     private var durableDiskBaseline: [UUID: (conversation: Conversation, isMetadataOnly: Bool)] = [:]
+    /// Conversations with a reply in progress, which a refresh must not replace.
+    private var generatingConversationIds: Set<UUID> = []
     private var fullConversationLoadTasks: [UUID: Task<Conversation?, Never>] = [:]
     private var fullConversationLoadTaskVersions: [UUID: UInt64] = [:]
     private var nextFullConversationLoadTaskVersion: UInt64 = 0
@@ -1831,15 +1833,30 @@ final class ConversationManager: ObservableObject {
         await loadConversations(preservingUnsavedChanges: true)
     }
 
-    /// Stored conversations whose fully loaded in-memory copy has changes not yet saved, such
-    /// as a reply still streaming in (streaming updates are saved when the reply finishes). A
-    /// user-requested reload keeps these instead of replacing them with the stored copy.
+    /// Marks whether a reply is being generated for a conversation. While one is, a refresh
+    /// keeps the in-memory copy so later chunks still find the reply message.
+    func isGenerating(_ conversationId: UUID) -> Bool {
+        generatingConversationIds.contains(conversationId)
+    }
+
+    func setGenerating(_ isGenerating: Bool, for conversationId: UUID) {
+        if isGenerating {
+            generatingConversationIds.insert(conversationId)
+        } else {
+            generatingConversationIds.remove(conversationId)
+        }
+    }
+
+    /// Stored conversations that a user-requested reload keeps instead of replacing with the
+    /// stored copy: one with a reply in progress, or whose fully loaded in-memory copy has
+    /// changes not yet saved (streaming updates are saved when the reply finishes).
     /// Conversations that are not on disk keep following the dirty-save rule.
     private func unsavedStoredConversationIds(in metadataFromDisk: [ConversationMetadata]) -> Set<UUID> {
         let storedIds = Set(metadataFromDisk.map(\.id))
         return Set(conversations.lazy.filter { conversation in
-            storedIds.contains(conversation.id)
-                && !self.metadataOnlyConversationIds.contains(conversation.id)
+            guard storedIds.contains(conversation.id) else { return false }
+            if self.generatingConversationIds.contains(conversation.id) { return true }
+            return !self.metadataOnlyConversationIds.contains(conversation.id)
                 && self.durableDiskBaseline[conversation.id]?.conversation != conversation
         }.map(\.id))
     }
