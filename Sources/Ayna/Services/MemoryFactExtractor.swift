@@ -23,6 +23,8 @@ final class MemoryFactExtractor {
     static let maximumFactsPerPass = 3
     static let maximumFactLength = 200
     private static let maximumPromptCharacters = 3000
+    /// Known facts listed in the prompt; deduplication still checks every fact.
+    private static let maximumKnownFactCharacters = 1500
 
     private let idleDelay: Duration
     private let generate: Generate
@@ -144,7 +146,16 @@ final class MemoryFactExtractor {
             messages = entry + messages
             included.append(message.id)
         }
-        let known = existingFacts.isEmpty ? "(none)" : existingFacts.map { "- \($0)" }.joined(separator: "\n")
+        // Bounded so a long fact list cannot push the request past a small on-device context.
+        var knownLines: [String] = []
+        var knownLength = 0
+        for fact in existingFacts {
+            let line = "- \(fact.prefix(maximumFactLength))"
+            guard knownLength + line.count <= maximumKnownFactCharacters else { break }
+            knownLines.append(line)
+            knownLength += line.count + 1
+        }
+        let known = knownLines.isEmpty ? "(none)" : knownLines.joined(separator: "\n")
         let prompt = """
         \(instructions)
 
