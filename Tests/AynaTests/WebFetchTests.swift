@@ -751,3 +751,15 @@ private final class WebFetchTestURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func stopLoading() {}
 }
+
+@Suite("WebTextExtractor Tests")
+struct WebTextExtractorTests {
+    @Test("Double-escaped entities decode only one level")
+    func doubleEscapedEntitiesDecodeOneLevel() {
+        let text = WebTextExtractor.plainTextIfNeeded(
+            from: "<html><body><p>Use &amp;lt;b&amp;gt; for bold &amp; more</p></body></html>",
+            contentType: "text/html"
+        )
+        #expect(text.contains("Use &lt;b&gt; for bold & more"))
+    }
+}

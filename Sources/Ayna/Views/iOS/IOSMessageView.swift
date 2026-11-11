@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Design System Integration
 
-// Uses Theme, Typography, Spacing, and Motion from Core/Design/
+// Uses Theme, Typography, Spacing, and Motion from Design/
 
 struct IOSMessageView: View {
     let message: Message

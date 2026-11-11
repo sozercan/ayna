@@ -1,7 +1,5 @@
 .DS_Store
 .build/
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
 DerivedData/
 .swiftpm/
 *.xcuserstate
@@ -17,8 +15,6 @@ DerivedData/
 *.dSYM
 timeline.xctimeline
 playground.xcworkspace
-.build/
-.swiftpm/
 Package.resolved
 .netrc
 xcuserdata/

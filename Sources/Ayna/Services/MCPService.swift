@@ -671,10 +671,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             method: "initialize",
             params: [
                 "protocolVersion": AnyCodable("2024-11-05"),
-                "capabilities": AnyCodable([
-                    "roots": ["list_changed": true],
-                    "sampling": [:]
-                ] as [String: Any]),
+                // Ayna does not serve roots or sampling requests, so it advertises no client capabilities.
+                "capabilities": AnyCodable([String: Any]()),
                 "clientInfo": AnyCodable([
                     "name": "ayna",
                     "version": "1.0.0"
@@ -968,11 +966,27 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
-            processJSONRPCMessage(trimmed)
+            processJSONRPCMessage(trimmed, transportID: transportID)
         }
     }
 
-    private func processJSONRPCMessage(_ json: String) {
+    /// Answers server-initiated requests: `ping` gets an empty result, anything else gets
+    /// JSON-RPC "method not found". Notifications (no `id`) need no reply.
+    private func handleServerMessage(_ object: [String: Any], method: String, transportID: UUID) {
+        guard let id = object["id"], let lifecycle = withLock({ lifecycles[transportID] }) else { return }
+        var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
+        if method == "ping" {
+            reply["result"] = [String: Any]()
+        } else {
+            reply["error"] = ["code": -32601, "message": "Method not found: \(method)"] as [String: Any]
+        }
+        guard var data = try? JSONSerialization.data(withJSONObject: reply) else { return }
+        data.append(0x0A)
+        let writer = outboundWriter
+        Task { try? await writer.writeNotification(data, lifecycle: lifecycle) }
+    }
+
+    private func processJSONRPCMessage(_ json: String, transportID: UUID) {
         guard let data = json.data(using: .utf8) else {
             DiagnosticsLogger.log(
                 .mcpService,
@@ -980,6 +994,15 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 message: "Failed to convert JSON string to data",
                 metadata: ["server": serverConfig.name]
             )
+            return
+        }
+
+        // Server-initiated requests and notifications carry a `method`. They must not be
+        // treated as responses, or a server request with id N would resolve our request N.
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let method = object["method"] as? String
+        {
+            handleServerMessage(object, method: method, transportID: transportID)
             return
         }
 

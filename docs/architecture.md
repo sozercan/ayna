@@ -242,7 +242,6 @@ open "ayna://chat?model=my-model&provider=openai&endpoint=https://api.example.co
 |---------|---------|
 | `ConversationPersistenceCoordinator` | Orchestrates save/load operations with debouncing |
 | `EncryptedConversationStore` | AES-GCM encryption for conversations at rest |
-| `CloudKitService` | Cross-device sync via iCloud |
 | `WatchConnectivityService` | iPhone ↔ Watch settings and conversation sync |
 | `AttachmentStorage` | File/image attachment persistence |
 | `KeychainStorage` | Secure API key storage |
@@ -255,8 +254,8 @@ All services must log via `DiagnosticsLogger`:
 DiagnosticsLogger.log(.serviceName, level: .info, message: "✅ Action completed", metadata: ["key": value])
 ```
 
-- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.aiService`, `.mcpServerManager`, `.cloudKit`)
-- **Levels**: `.debug`, `.info`, `.warning`, `.error`
+- **Categories**: Defined in `DiagnosticsLogger.Category` (e.g., `.aiService`, `.mcpServerManager`, `.watchConnectivity`)
+- **Levels**: `OSLogType` values (`.debug`, `.info`, `.default`, `.error`, `.fault`)
 - **Output**: Logs persist to `breadcrumbs.json` for debugging
 
 ## Error Handling

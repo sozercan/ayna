@@ -87,15 +87,6 @@ struct aynaApp: App {
                         }
                     }
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .deepLinkNeedsWindow)) { _ in
-                    // Window was created by WindowGroup, bring to front
-                    Task { @MainActor in
-                        NSApplication.shared.activate(ignoringOtherApps: true)
-                        if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
-                            window.makeKeyAndOrderFront(nil)
-                        }
-                    }
-                }
                 .onContinueUserActivity(handoffActivityType) { activity in
                     handleHandoff(activity)
                 }
@@ -583,10 +574,6 @@ private func handleWorkWithAppsSubmit(
     }
 }
 
-extension Notification.Name {
-    static let deepLinkNeedsWindow = Notification.Name("deepLinkNeedsWindow")
-}
-
 @MainActor
 private func prepareWindowsForUITests(using manager: ConversationManager) async {
     NSApplication.shared.setActivationPolicy(.regular)
@@ -660,29 +647,5 @@ private func configureWindowAppearance(_ window: NSWindow) {
     window.backgroundColor = NSColor.windowBackgroundColor
     window.title = ""
     window.makeKeyAndOrderFront(nil)
-}
-
-private struct WindowAppearanceConfigurator: NSViewRepresentable {
-    func makeNSView(context _: Context) -> NSView {
-        let view = WindowObservingView()
-        view.onWindowChange = { window in
-            guard let window else { return }
-            Task { @MainActor in
-                configureWindowAppearance(window)
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_: NSView, context _: Context) {}
-}
-
-private final class WindowObservingView: NSView {
-    var onWindowChange: ((NSWindow?) -> Void)?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        onWindowChange?(window)
-    }
 }
 #endif

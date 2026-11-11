@@ -32,25 +32,11 @@
         /// The Sparkle updater controller that manages the update lifecycle.
         private let updaterController: SPUStandardUpdaterController
 
-        /// Whether automatic update checks are enabled.
-        ///
-        /// When enabled, the app checks for updates on launch and periodically thereafter
-        /// (default: every 24 hours, configurable via `SUScheduledCheckInterval` in Info.plist).
-        var automaticChecksEnabled: Bool {
-            get { updaterController.updater.automaticallyChecksForUpdates }
-            set { updaterController.updater.automaticallyChecksForUpdates = newValue }
-        }
-
         /// Whether the updater can currently check for updates.
         ///
         /// This is `false` while an update check is already in progress or during installation.
         var canCheckForUpdates: Bool {
             updaterController.updater.canCheckForUpdates
-        }
-
-        /// The date of the last update check, or `nil` if never checked.
-        var lastUpdateCheckDate: Date? {
-            updaterController.updater.lastUpdateCheckDate
         }
 
         /// Initializes the updater service and starts the Sparkle updater.

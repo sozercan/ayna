@@ -19,7 +19,7 @@ This document covers testing strategies, commands, and best practices for Ayna.
 
 ## Test Tags
 
-Tags enable filtering tests by category. Defined in `Tests/AynaTests/Support/TestTags.swift`:
+Tags enable filtering tests by category. Defined in `Tests/AynaTests/TestTags.swift`:
 
 | Tag | Description | Example Usage |
 |-----|-------------|---------------|

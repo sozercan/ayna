@@ -38,8 +38,6 @@ struct ChatInputArea: View {
     /// True while files dropped on the screen are still loading.
     var hasPendingFileDrops = false
 
-    @ObservedObject private var aiService = AIService.shared
-
     var body: some View {
         let textHeight = calculateTextHeight()
 

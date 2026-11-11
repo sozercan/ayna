@@ -506,21 +506,4 @@ extension AnthropicStreamParser {
     static func processLine(_ line: String, parser: AnthropicStreamParser) -> AnthropicStreamResult {
         parser.processLine(line)
     }
-
-    /// Create a new parser with the standard callbacks.
-    static func createParser(
-        onChunk: @escaping ChunkCallback,
-        onComplete: @escaping CompleteCallback,
-        onError: @escaping ErrorCallback,
-        onToolCallRequested: ToolCallCallback? = nil,
-        onReasoning: ReasoningCallback? = nil
-    ) -> AnthropicStreamParser {
-        AnthropicStreamParser(
-            onChunk: onChunk,
-            onReasoning: onReasoning,
-            onToolCallRequested: onToolCallRequested,
-            onComplete: onComplete,
-            onError: onError
-        )
-    }
 }

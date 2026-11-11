@@ -37,11 +37,11 @@ final class UserMemoryService {
     private let store: any UserMemoryStoreAdapter
     private let notificationCenter: NotificationCenter
     private let saveDebounceDuration: Duration
-    private nonisolated(unsafe) var saveTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     /// Storage writes wait for this task so initial disk state cannot be overwritten before it is reconciled.
-    private nonisolated(unsafe) var initialLoadTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var initialLoadTask: Task<Void, Never>?
     /// Serializes physical writes so an older snapshot cannot finish after a newer one.
-    private nonisolated(unsafe) var persistenceTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var persistenceTask: Task<Void, Never>?
     private var factsGeneration: UInt64 = 0
     private var durableGeneration: UInt64?
     /// Prevents a load retry from replacing optimistic local or synced facts with stale disk state.

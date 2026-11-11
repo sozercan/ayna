@@ -345,23 +345,6 @@ struct IOSChatView: View {
         }
     }
 
-    private func autoSelectResponseIfNeeded() {
-        guard let conversation else { return }
-        guard let selection = ChatTranscriptPlan.autoSelectionCandidate(in: conversation) else { return }
-
-        DiagnosticsLogger.log(
-            .chatView,
-            level: .info,
-            message: "🤖 Auto-selecting response before sending new message",
-            metadata: ["messageId": selection.messageId.uuidString]
-        )
-        conversationManager.selectResponse(
-            in: conversation,
-            groupId: selection.groupId,
-            messageId: selection.messageId
-        )
-    }
-
     private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
         if let lastId = conversation.messages.last?.id {
             withAnimation {
@@ -370,47 +353,6 @@ struct IOSChatView: View {
         }
     }
 
-    private func toggleModelSelection(_ model: String, for conversation: Conversation) {
-        // Use centralized haptic engine
-        HapticEngine.selection()
-
-        let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
-
-        if !multiModelEnabled {
-            // Single-select mode: always replace selection
-            viewModel.selectedModels = [model]
-            conversationManager.updateModel(for: conversation, model: model)
-            updateConversationMultiModelState()
-            return
-        }
-
-        // Multi-select mode
-        if viewModel.selectedModels.contains(model) {
-            viewModel.selectedModels.remove(model)
-            // Keep at least one model selected
-            if viewModel.selectedModels.isEmpty {
-                viewModel.selectedModels.insert(model)
-            } else if viewModel.selectedModels.count == 1, let remaining = viewModel.selectedModels.first {
-                conversationManager.updateModel(for: conversation, model: remaining)
-            }
-        } else {
-            // Allow up to 4 models
-            if viewModel.selectedModels.count < 4 {
-                viewModel.selectedModels.insert(model)
-                if viewModel.selectedModels.count == 1 {
-                    conversationManager.updateModel(for: conversation, model: model)
-                }
-            }
-        }
-        updateConversationMultiModelState()
-    }
-
-    // MARK: - Multi-Model Message Sending
-
-    private func sendMultiModelMessage() {
-        // Delegated to ViewModel
-        viewModel.sendMessage()
-    }
 }
 
 // MARK: - Conversation System Prompt Sheet

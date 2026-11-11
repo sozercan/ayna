@@ -1,13 +1,5 @@
 # SwiftLint Configuration for ayna
 
-# Paths to exclude from linting
-excluded:
-  - ayna.xcodeproj
-  - .build
-  - .swiftpm
-  - Packages
-  - .github
-
 # Paths to include in linting (optional, defaults to all Swift files)
 included:
   - Sources/Ayna

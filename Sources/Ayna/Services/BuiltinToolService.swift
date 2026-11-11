@@ -266,8 +266,16 @@ import os.log
 
             log(.info, "read_file requested", metadata: ["path": path])
 
-            // Validate path
-            let validation = pathValidator.validate(path, operation: .read)
+            guard let resolvedURL = pathValidator.canonicalize(path) else {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
+            }
+            return try await readFile(at: resolvedURL, displayPath: path, conversationId: conversationId)
+        }
+
+        /// Validates, approves if needed, and reads an already-resolved file URL. The URL is
+        /// never re-expanded, so literal `$` or `~` in a resolved path cannot redirect the read.
+        private func readFile(at resolvedURL: URL, displayPath path: String, conversationId: UUID) async throws -> String {
+            let validation = pathValidator.validate(url: resolvedURL, operation: .read)
             switch validation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
@@ -275,7 +283,7 @@ import os.log
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.readFile,
                     description: "Read file: \(reason)",
-                    details: path,
+                    details: resolvedURL.path,
                     conversationId: conversationId
                 )
                 try Task.checkCancellation()
@@ -284,11 +292,6 @@ import os.log
                 }
             case .allowed:
                 break
-            }
-
-            // Read file
-            guard let resolvedURL = pathValidator.canonicalize(path) else {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
             }
 
             guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
@@ -357,22 +360,25 @@ import os.log
                 requiresApprovalReason = nil
             }
 
-            // Write operations always require approval unless already approved
+            // Bind the approval to the file the path resolves to now, so a symlink
+            // retargeted while approval is pending cannot redirect the write.
+            let approvedTarget = resolvedTargetURL(for: path)
+
+            // Write operations always require approval unless already approved.
+            // Approvals (including remembered ones) are keyed by the resolved target,
+            // so retargeting a symlink between calls requires fresh approval.
             let permissionLevel = permissionService.checkPermission(
                 tool: ToolName.writeFile,
-                details: path,
+                details: approvedTarget.path,
                 defaultLevel: .askOnce
             )
 
             if permissionLevel != .automatic {
                 let description = requiresApprovalReason.map { "Write file: \($0)" } ?? "Create/overwrite file"
-                print("🔧 BuiltinToolService.writeFile: Requesting approval")
-                print("   Path: \(path)")
-                print("   ConversationId: \(conversationId)")
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.writeFile,
                     description: description,
-                    details: path,
+                    details: approvedTarget.path,
                     conversationId: conversationId
                 )
                 try Task.checkCancellation()
@@ -381,32 +387,18 @@ import os.log
                 }
             }
 
-            // Resolve path with symlink resolution to prevent TOCTOU attacks
-            // Re-resolve at operation time to ensure symlink hasn't changed since validation
-            let expandedPath = (path as NSString).expandingTildeInPath
-            let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL
-            do {
-                // For new files, resolve the parent directory's symlinks
-                if FileManager.default.fileExists(atPath: expandedURL.path) {
-                    url = try expandedURL.resolvingSymlinksInPath()
-                } else {
-                    // File doesn't exist yet - resolve parent and append filename
-                    let parent = try expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
-                    url = parent.appendingPathComponent(expandedURL.lastPathComponent)
-                }
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
-            }
+            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
+            let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url.path, operation: .write)
+            let revalidation = pathValidator.validate(url: url, operation: .write)
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
-            case let .requiresApproval(reason):
+            case let .requiresApproval(reason) where requiresApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
-            case .allowed:
+            case .requiresApproval, .allowed:
+                // The target is unchanged and was approved in this category.
                 break
             }
 
@@ -427,6 +419,30 @@ import os.log
             } catch {
                 throw ToolExecutionError.fileNotWritable(path: path, underlying: error.localizedDescription)
             }
+        }
+
+        /// Resolves the file a write or edit will touch: the file itself (following symlinks)
+        /// when it exists, otherwise the parent directory's resolved path plus the filename.
+        private func resolvedTargetURL(for path: String) -> URL {
+            // Same expansion as PathValidator, so the target is the path that was validated.
+            let expandedURL = URL(fileURLWithPath: PathValidator.expandPath(path))
+            if FileManager.default.fileExists(atPath: expandedURL.path) {
+                return expandedURL.resolvingSymlinksInPath().standardized
+            }
+            return expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent(expandedURL.lastPathComponent).standardized
+        }
+
+        /// Re-resolves `path` and throws if it no longer points at the target that was approved.
+        private func requireUnchangedTarget(_ approvedTarget: URL, for path: String) throws -> URL {
+            let currentTarget = resolvedTargetURL(for: path)
+            guard currentTarget.path == approvedTarget.path else {
+                throw ToolExecutionError.invalidPath(
+                    path: path,
+                    reason: "Path target changed while awaiting approval (\(approvedTarget.path) → \(currentTarget.path))"
+                )
+            }
+            return currentTarget
         }
 
         /// Performs a search-and-replace edit on a file.
@@ -454,8 +470,18 @@ import os.log
                 return
             }
 
-            // Read current content
-            let currentContent = try await readFile(path: path, conversationId: conversationId)
+            // Bind the edit to the file the path resolves to now; the content read
+            // below and the approval both refer to this target.
+            let approvedTarget = resolvedTargetURL(for: path)
+
+            // Read through the captured target (not the mutable path), then confirm the
+            // path still points there, so the content we edit comes from the file we write.
+            let currentContent = try await readFile(
+                at: approvedTarget,
+                displayPath: path,
+                conversationId: conversationId
+            )
+            _ = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Find occurrences
             let occurrences = currentContent.ranges(of: oldText)
@@ -486,9 +512,11 @@ import os.log
                 editApprovalReason = nil
             }
 
+            // Keyed by the resolved target, like write_file, so remembered approvals
+            // cannot follow a retargeted symlink to a different file.
             let permissionLevel = permissionService.checkPermission(
                 tool: ToolName.editFile,
-                details: path,
+                details: approvedTarget.path,
                 defaultLevel: .askOnce
             )
 
@@ -497,7 +525,7 @@ import os.log
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.editFile,
                     description: description,
-                    details: path,
+                    details: approvedTarget.path,
                     diffPreview: diffPreview,
                     conversationId: conversationId
                 )
@@ -507,24 +535,18 @@ import os.log
                 }
             }
 
-            // Resolve path with symlink resolution to prevent TOCTOU attacks
-            let expandedPath = (path as NSString).expandingTildeInPath
-            let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL
-            do {
-                url = try expandedURL.resolvingSymlinksInPath()
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
-            }
+            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
+            let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url.path, operation: .write)
+            let revalidation = pathValidator.validate(url: url, operation: .write)
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
-            case let .requiresApproval(reason):
+            case let .requiresApproval(reason) where editApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
-            case .allowed:
+            case .requiresApproval, .allowed:
+                // The target is unchanged and was approved in this category.
                 break
             }
 
@@ -668,6 +690,12 @@ import os.log
                 guard resourceValues?.isRegularFile == true else { continue }
 
                 if let size = resourceValues?.fileSize, size > maxReadSize {
+                    continue
+                }
+
+                // Files that would need approval on their own (credentials, keys, protected
+                // paths) are only searched when the user already approved the search root.
+                if validation.isAllowed, !pathValidator.validate(url: fileURL, operation: .read).isAllowed {
                     continue
                 }
 

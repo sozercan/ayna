@@ -4,6 +4,28 @@ import Testing
 
 @Suite("OpenAIStreamParser Tests")
 struct OpenAIStreamParserTests {
+    @Test("Data lines without a space after the colon are parsed")
+    func dataLinesWithoutSpaceAreParsed() async {
+        let line = #"data:{"choices":[{"delta":{"content":"hi"}}]}"#
+        let stringResult = await OpenAIStreamParser.processStreamLine(
+            line,
+            toolCallBuffers: [:],
+            toolCallIds: [:],
+            onToolCall: nil,
+            onToolCallRequested: nil
+        )
+        #expect(stringResult.content == "hi")
+
+        let dataResult = await OpenAIStreamParser.processStreamLine(
+            Data(line.utf8),
+            toolCallBuffers: [:],
+            toolCallIds: [:],
+            onToolCall: nil,
+            onToolCallRequested: nil
+        )
+        #expect(dataResult.content == "hi")
+    }
+
     @Test("Tool call arguments accumulate across streamed chunks")
     func toolCallArgumentsAccumulateAcrossChunks() async {
         let recorder = ToolCallRecorder()

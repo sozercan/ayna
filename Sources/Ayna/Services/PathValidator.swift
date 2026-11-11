@@ -113,10 +113,21 @@ struct PathValidator {
         requireApprovalOutsideProject: Bool = true
     ) -> ValidationResult {
         // Step 1: Expand path (~ and environment variables)
-        let expandedPath = expandPath(path)
+        validate(
+            url: URL(fileURLWithPath: expandPath(path)),
+            operation: operation,
+            requireApprovalOutsideProject: requireApprovalOutsideProject
+        )
+    }
 
-        // Step 2: Create URL and resolve symlinks
-        let url = URL(fileURLWithPath: expandedPath)
+    /// Validates an already-expanded file URL. Unlike `validate(_:operation:)`, this never
+    /// expands `~` or `$VAR` again, so a resolved path containing a literal `$` stays literal.
+    func validate(
+        url: URL,
+        operation: FileOperation,
+        requireApprovalOutsideProject: Bool = true
+    ) -> ValidationResult {
+        // Step 2: Resolve symlinks
         let resolvedURL = url.resolvingSymlinksInPath()
 
         // Step 3: Standardize the path (removes . and ..)
@@ -142,7 +153,7 @@ struct PathValidator {
         // Check for sensitive multi-component paths (e.g., .git/config)
         if pathComponents.count >= 2 {
             for idx in 0 ..< (pathComponents.count - 1) {
-                if pathComponents[idx] == ".git", pathComponents[idx + 1] == "config" {
+                if pathComponents[idx].lowercased() == ".git", pathComponents[idx + 1].lowercased() == "config" {
                     return .requiresApproval(reason: "Sensitive file: .git/config")
                 }
             }
@@ -197,8 +208,10 @@ struct PathValidator {
             let expandedProtectedPath = Self.expandPath(protectedPath)
             let lexicalProtectedComponents = URL(fileURLWithPath: expandedProtectedPath).standardized.pathComponents
             let resolvedProtectedComponents = Self.canonicalPathComponents(forPath: expandedProtectedPath)
-            if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents)
-                || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents)
+            // Compare case-insensitively: the default macOS volume is case-insensitive,
+            // so `~/.SSH` and `~/.ssh` name the same directory.
+            if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents, caseInsensitive: true)
+                || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents, caseInsensitive: true)
             {
                 return "Protected path: \(protectedPath)"
             }
@@ -206,7 +219,9 @@ struct PathValidator {
         return nil
     }
 
-    private static func expandPath(_ path: String) -> String {
+    /// Expands `~` and `$VAR` references the same way validation does. Tools must use this
+    /// for raw input paths so the file they touch is the file that was validated.
+    static func expandPath(_ path: String) -> String {
         var expanded = path
 
         // Expand ~
@@ -242,13 +257,22 @@ struct PathValidator {
         url.resolvingSymlinksInPath().standardized.pathComponents
     }
 
-    private static func pathComponents(_ pathComponents: [String], startWith directoryComponents: [String]) -> Bool {
+    private static func pathComponents(
+        _ pathComponents: [String],
+        startWith directoryComponents: [String],
+        caseInsensitive: Bool = false
+    ) -> Bool {
         // Path must have at least as many components as directory
         guard pathComponents.count >= directoryComponents.count else {
             return false
         }
 
         // Check that all directory components match the start of path components
+        if caseInsensitive {
+            return pathComponents.starts(with: directoryComponents) {
+                $0.caseInsensitiveCompare($1) == .orderedSame
+            }
+        }
         return pathComponents.starts(with: directoryComponents)
     }
 }

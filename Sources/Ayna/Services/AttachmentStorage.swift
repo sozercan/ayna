@@ -101,6 +101,13 @@ final class AttachmentStorage: @unchecked Sendable {
     private var storageGeneration: UInt64 = 0
     private var cleanupFenceCount = 0
 
+    /// Per-environment attachments directory, so dev and UI-test builds can never
+    /// see (or clean up) production attachments.
+    static var defaultDirectoryURL: URL {
+        RuntimeEnvironment.defaultApplicationSupportDirectoryURL
+            .appendingPathComponent("Attachments", isDirectory: true)
+    }
+
     init(
         directoryURL: URL? = nil,
         dataCache: AttachmentDataCache = .shared
@@ -111,9 +118,7 @@ final class AttachmentStorage: @unchecked Sendable {
         if let directoryURL {
             attachmentsDirectory = directoryURL
         } else {
-            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-                .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-            attachmentsDirectory = appSupport.appendingPathComponent("Ayna/Attachments", isDirectory: true)
+            attachmentsDirectory = Self.defaultDirectoryURL
         }
 
         do {

@@ -48,7 +48,7 @@ import os.log
                         exitCode: Int32(statusCode),
                         stderr: "HTTP \(statusCode)"
                     )
-                case .responseToLarge:
+                case .responseTooLarge:
                     throw ToolExecutionError.resourceLimitExceeded(
                         resource: "response size",
                         limit: "\(maxReadSize / 1024 / 1024) MB"

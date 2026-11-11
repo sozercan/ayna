@@ -44,8 +44,7 @@ A native agentic AI client for macOS, iOS, and watchOS, built with SwiftUI.
 You can also install Ayna via Homebrew:
 
 ```bash
-brew tap sozercan/ayna
-brew install --cask ayna
+brew install --cask sozercan/repo/ayna
 ```
 
 ### Requirements

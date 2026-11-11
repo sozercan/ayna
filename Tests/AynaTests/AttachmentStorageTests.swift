@@ -6,6 +6,19 @@ import Testing
 @MainActor
 struct AttachmentStorageTests {
     @Test
+    func `default directories are isolated per environment, never production`() {
+        let environmentDirectory = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
+        // Unit tests resolve to the test directory, so cleanup can never reach production data.
+        #expect(environmentDirectory.lastPathComponent == RuntimeEnvironment.unitTestApplicationSupportDirectoryName)
+
+        #expect(AttachmentStorage.defaultDirectoryURL.deletingLastPathComponent().standardized == environmentDirectory.standardized)
+        #expect(AttachmentStorage.defaultDirectoryURL.lastPathComponent == "Attachments")
+        #if os(macOS)
+            #expect(MCPProcessTracker.defaultStorageURL.deletingLastPathComponent().standardized == environmentDirectory.standardized)
+        #endif
+    }
+
+    @Test
     func `saving primes the in-process attachment cache`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let storage = AttachmentStorage(

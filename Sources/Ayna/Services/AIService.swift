@@ -403,9 +403,6 @@ class AIService: ObservableObject {
             #if !os(watchOS)
                 AppPreferences.storage.set(customModels, forKey: "customModels")
                 persistModelProviders()
-                // iCloud sync disabled for free developer account
-                // NSUbiquitousKeyValueStore.default.set(customModels, forKey: "customModels")
-                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -418,9 +415,6 @@ class AIService: ObservableObject {
             }
             #if !os(watchOS)
                 persistModelProviders()
-                // iCloud sync disabled for free developer account
-                // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelProviders")
-                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -430,9 +424,6 @@ class AIService: ObservableObject {
             #if !os(watchOS)
                 let encodedDict = modelEndpointTypes.mapValues { $0.rawValue }
                 AppPreferences.storage.set(encodedDict, forKey: "modelEndpointTypes")
-                // iCloud sync disabled for free developer account
-                // NSUbiquitousKeyValueStore.default.set(encodedDict, forKey: "modelEndpointTypes")
-                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -441,9 +432,6 @@ class AIService: ObservableObject {
         didSet {
             #if !os(watchOS)
                 AppPreferences.storage.set(modelEndpoints, forKey: "modelEndpoints")
-                // iCloud sync disabled for free developer account
-                // NSUbiquitousKeyValueStore.default.set(modelEndpoints, forKey: "modelEndpoints")
-                // NSUbiquitousKeyValueStore.default.synchronize()
             #endif
         }
     }
@@ -593,7 +581,8 @@ class AIService: ObservableObject {
         } else {
             // Default all initial models to OpenAI
             loadedProviders = Dictionary(
-                uniqueKeysWithValues: loadedCustomModels.map { ($0, AIProvider.openai) }
+                loadedCustomModels.map { ($0, AIProvider.openai) },
+                uniquingKeysWith: { first, _ in first }
             )
         }
 
@@ -622,7 +611,8 @@ class AIService: ObservableObject {
         } else {
             // Default all models to Chat Completions
             loadedEndpointTypes = Dictionary(
-                uniqueKeysWithValues: loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) }
+                loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) },
+                uniquingKeysWith: { first, _ in first }
             )
         }
 
@@ -685,9 +675,6 @@ class AIService: ObservableObject {
         outputCompression =
             AppPreferences.storage.integer(forKey: "outputCompression") == 0
                 ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
-
-        // iCloud sync disabled for free developer account
-        // setupiCloudSync()
 
         // Initialize native agentic tools (macOS only)
         #if os(macOS)
@@ -1746,6 +1733,7 @@ class AIService: ObservableObject {
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
+                tools: tools,
                 conversationId: conversationId,
                 onChunk: onChunk,
                 onComplete: onComplete,
@@ -2484,6 +2472,7 @@ class AIService: ObservableObject {
     private func responsesAPIRequest(
         messages: [Message],
         model: String,
+        tools: [[String: Any]]?,
         conversationId: UUID? = nil,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
@@ -2548,9 +2537,6 @@ class AIService: ObservableObject {
             reportSetupError(AIError.invalidURL)
             return
         }
-
-        // Get available tools for the Responses API
-        let tools = getAllAvailableTools()
 
         if let tools, !tools.isEmpty {
             DiagnosticsLogger.log(
@@ -2676,6 +2662,7 @@ class AIService: ObservableObject {
                                 self.responsesAPIRequest(
                                     messages: messages,
                                     model: model,
+                                    tools: toolDefinitions.value,
                                     conversationId: conversationId,
                                     onChunk: onChunk,
                                     onComplete: onComplete,
@@ -3444,97 +3431,6 @@ class AIService: ObservableObject {
             task.cancel()
             return
         }
-    }
-
-    /// Parse Server-Sent Events data and deliver chunks (used for non-streaming fallback)
-    private func parseSSEData(_ data: Data, callbacks: StreamCallbacks) {
-        guard let text = String(data: data, encoding: .utf8) else {
-            callbacks.onComplete()
-            return
-        }
-
-        let lines = text.components(separatedBy: "\n")
-        var currentToolCallBuffer: [String: Any] = [:]
-        var toolCallId = ""
-
-        for line in lines {
-            // Skip empty lines and comments
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            if trimmedLine.isEmpty || trimmedLine.hasPrefix(":") {
-                continue
-            }
-
-            // Handle data: prefix
-            if trimmedLine.hasPrefix("data:") {
-                let jsonString = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-
-                if jsonString == "[DONE]" {
-                    callbacks.onComplete()
-                    return
-                }
-
-                guard let jsonData = jsonString.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                      let choices = json["choices"] as? [[String: Any]],
-                      let firstChoice = choices.first
-                else {
-                    continue
-                }
-
-                // Handle delta content
-                if let delta = firstChoice["delta"] as? [String: Any] {
-                    // Handle regular content
-                    if let content = delta["content"] as? String, !content.isEmpty {
-                        callbacks.onChunk(content)
-                    }
-
-                    // Handle reasoning content
-                    if let reasoning = delta["reasoning"] as? String, !reasoning.isEmpty {
-                        callbacks.onReasoning?(reasoning)
-                    } else if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
-                        callbacks.onReasoning?(reasoning)
-                    }
-
-                    // Handle tool calls
-                    if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
-                        for toolCall in toolCalls {
-                            if let id = toolCall["id"] as? String {
-                                toolCallId = id
-                                currentToolCallBuffer = [:]
-                            }
-                            if let function = toolCall["function"] as? [String: Any] {
-                                if let name = function["name"] as? String,
-                                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                {
-                                    currentToolCallBuffer["name"] = name
-                                }
-                                if let args = function["arguments"] as? String {
-                                    let existing = currentToolCallBuffer["arguments"] as? String ?? ""
-                                    currentToolCallBuffer["arguments"] = existing + args
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Check for finish_reason
-                if let finishReason = firstChoice["finish_reason"] as? String {
-                    if finishReason == "tool_calls",
-                       let name = currentToolCallBuffer["name"] as? String,
-                       !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                       let argsString = currentToolCallBuffer["arguments"] as? String
-                    {
-                        if let argsData = argsString.data(using: .utf8),
-                           let arguments = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any]
-                        {
-                            callbacks.onToolCallRequested?(toolCallId, name, arguments)
-                        }
-                    }
-                }
-            }
-        }
-
-        callbacks.onComplete()
     }
 
     private nonisolated func isStreamCancellation(_ error: Error) -> Bool {
@@ -4915,18 +4811,14 @@ extension AIService {
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard requiresAPIKey(for: provider, model: model) else { return true }
 
-        // Check for per-model key
-        if let model,
-           let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !modelKey.isEmpty
-        {
-            return true
+        // Requests only ever send the model's own key (see `getAPIKey(for:)`), so another
+        // model's key does not make this one usable.
+        guard let model,
+              let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return false
         }
-
-        // Check if any model has an API key configured
-        return modelAPIKeys.values.contains {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        return !modelKey.isEmpty
     }
 
     var isAPIKeyConfigured: Bool {
@@ -5027,39 +4919,6 @@ extension AIService {
     var textGenerationModels: [String] {
         usableModels.filter { model in
             getModelCapability(model) != .imageGeneration
-        }
-    }
-
-    private func setupiCloudSync() {
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(ubiquitousKeyValueStoreDidChange),
-            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: NSUbiquitousKeyValueStore.default
-        )
-        NSUbiquitousKeyValueStore.default.synchronize()
-    }
-
-    @objc private func ubiquitousKeyValueStoreDidChange(notification _: NSNotification) {
-        let store = NSUbiquitousKeyValueStore.default
-
-        Task { @MainActor in
-            if let models = store.array(forKey: "customModels") as? [String] {
-                self.customModels = models
-            }
-
-            if let providers = store.dictionary(forKey: "modelProviders") as? [String: String] {
-                self.modelProviders = providers.compactMapValues { AIProvider(rawValue: $0) }
-            }
-
-            if let endpointTypes = store.dictionary(forKey: "modelEndpointTypes") as? [String: String] {
-                self.modelEndpointTypes = endpointTypes.compactMapValues {
-                    APIEndpointType(rawValue: $0)
-                }
-            }
-
-            if let endpoints = store.dictionary(forKey: "modelEndpoints") as? [String: String] {
-                self.modelEndpoints = endpoints
-            }
         }
     }
 }
@@ -5292,9 +5151,6 @@ extension AIService {
             }
         #endif
     }
-
-    #if os(watchOS)
-    #endif
 }
 
 // Keychain Helper

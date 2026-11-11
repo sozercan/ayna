@@ -871,6 +871,18 @@ struct MemoryCommandPatternTests {
     }
 
     @Test
+    func `store content comes from the sentence-start occurrence`() {
+        let command = MemoryCommandPattern.detect(in: "I can't remember that password. Remember that I like tea")
+
+        if case let .store(content) = command {
+            #expect(content.lowercased().contains("tea"))
+            #expect(!content.lowercased().contains("password"))
+        } else {
+            Issue.record("Expected store command")
+        }
+    }
+
+    @Test
     func `detect none for regular message`() {
         let command = MemoryCommandPattern.detect(in: "Tell me about Swift programming")
 

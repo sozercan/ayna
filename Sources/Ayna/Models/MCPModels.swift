@@ -214,7 +214,3 @@ struct MCPToolCall: Identifiable, Codable, Equatable, Sendable {
         self.timestamp = timestamp
     }
 }
-
-// MARK: - AnyCodable
-
-// AnyCodable is now in a separate shared file: Core/Models/AnyCodable.swift
