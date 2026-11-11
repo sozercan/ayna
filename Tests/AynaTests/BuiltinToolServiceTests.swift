@@ -431,6 +431,50 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `Edit rejects a symlink swapped away and back across approval steps`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolSwapBackEdit-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let original = directory.appendingPathComponent("original.txt")
+            let other = directory.appendingPathComponent("other.txt")
+            let link = directory.appendingPathComponent("link.txt")
+            try "hello original".write(to: original, atomically: true, encoding: .utf8)
+            try "hello other".write(to: other, atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            func retarget(to destination: URL) throws {
+                try FileManager.default.removeItem(at: link)
+                try FileManager.default.createSymbolicLink(at: link, withDestinationURL: destination)
+            }
+
+            let task = Task {
+                try await service.editFile(path: link.path, oldText: "hello", newText: "bye", conversationId: UUID())
+            }
+            // Point the link at `other` while the read is pending, and back at `original`
+            // before the edit approval, so only the read step sees the other file.
+            var approvals = 0
+            while approvals < 3 {
+                await waitForPendingApproval(permissionService)
+                guard let pending = permissionService.pendingApprovals.first else { break }
+                if pending.toolName == BuiltinToolService.ToolName.readFile {
+                    try retarget(to: other)
+                } else if pending.toolName == BuiltinToolService.ToolName.editFile {
+                    try retarget(to: original)
+                }
+                permissionService.approve(pending.id, rememberForSession: false)
+                approvals += 1
+                if pending.toolName == BuiltinToolService.ToolName.editFile { break }
+            }
+
+            _ = try? await task.value
+            #expect(try String(contentsOf: original, encoding: .utf8) != "bye other")
+            #expect(try String(contentsOf: other, encoding: .utf8) == "hello other")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Edit rejects a symlink retargeted while approval is pending`() async throws {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BuiltinToolRetargetEdit-\(UUID().uuidString)")

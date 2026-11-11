@@ -470,8 +470,10 @@ import os.log
             // below and the approval both refer to this target.
             let approvedTarget = resolvedTargetURL(for: path)
 
-            // Read current content
-            let currentContent = try await readFile(path: path, conversationId: conversationId)
+            // Read through the captured target (not the mutable path), then confirm the
+            // path still points there, so the content we edit comes from the file we write.
+            let currentContent = try await readFile(path: approvedTarget.path, conversationId: conversationId)
+            _ = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Find occurrences
             let occurrences = currentContent.ranges(of: oldText)
