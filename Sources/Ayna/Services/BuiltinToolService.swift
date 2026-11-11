@@ -357,6 +357,10 @@ import os.log
                 requiresApprovalReason = nil
             }
 
+            // Bind the approval to the file the path resolves to now, so a symlink
+            // retargeted while approval is pending cannot redirect the write.
+            let approvedTarget = resolvedTargetURL(for: path)
+
             // Write operations always require approval unless already approved
             let permissionLevel = permissionService.checkPermission(
                 tool: ToolName.writeFile,
@@ -366,9 +370,6 @@ import os.log
 
             if permissionLevel != .automatic {
                 let description = requiresApprovalReason.map { "Write file: \($0)" } ?? "Create/overwrite file"
-                print("🔧 BuiltinToolService.writeFile: Requesting approval")
-                print("   Path: \(path)")
-                print("   ConversationId: \(conversationId)")
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.writeFile,
                     description: description,
@@ -381,17 +382,8 @@ import os.log
                 }
             }
 
-            // Resolve path with symlink resolution to prevent TOCTOU attacks
-            // Re-resolve at operation time to ensure symlink hasn't changed since validation
-            let expandedPath = (path as NSString).expandingTildeInPath
-            let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL = if FileManager.default.fileExists(atPath: expandedURL.path) {
-                expandedURL.resolvingSymlinksInPath()
-            } else {
-                // File doesn't exist yet - resolve the parent's symlinks and append the filename
-                expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
-                    .appendingPathComponent(expandedURL.lastPathComponent)
-            }
+            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
+            let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)
@@ -401,8 +393,7 @@ import os.log
             case let .requiresApproval(reason) where requiresApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .requiresApproval, .allowed:
-                // Already approved with this approval category; only a newly
-                // required approval (e.g. a symlink redirect) is rejected.
+                // The target is unchanged and was approved in this category.
                 break
             }
 
@@ -423,6 +414,29 @@ import os.log
             } catch {
                 throw ToolExecutionError.fileNotWritable(path: path, underlying: error.localizedDescription)
             }
+        }
+
+        /// Resolves the file a write or edit will touch: the file itself (following symlinks)
+        /// when it exists, otherwise the parent directory's resolved path plus the filename.
+        private func resolvedTargetURL(for path: String) -> URL {
+            let expandedURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            if FileManager.default.fileExists(atPath: expandedURL.path) {
+                return expandedURL.resolvingSymlinksInPath().standardized
+            }
+            return expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent(expandedURL.lastPathComponent).standardized
+        }
+
+        /// Re-resolves `path` and throws if it no longer points at the target that was approved.
+        private func requireUnchangedTarget(_ approvedTarget: URL, for path: String) throws -> URL {
+            let currentTarget = resolvedTargetURL(for: path)
+            guard currentTarget.path == approvedTarget.path else {
+                throw ToolExecutionError.invalidPath(
+                    path: path,
+                    reason: "Path target changed while awaiting approval (\(approvedTarget.path) → \(currentTarget.path))"
+                )
+            }
+            return currentTarget
         }
 
         /// Performs a search-and-replace edit on a file.
@@ -449,6 +463,10 @@ import os.log
                 log(.info, "edit_file no-op: oldText == newText", metadata: ["path": path])
                 return
             }
+
+            // Bind the edit to the file the path resolves to now; the content read
+            // below and the approval both refer to this target.
+            let approvedTarget = resolvedTargetURL(for: path)
 
             // Read current content
             let currentContent = try await readFile(path: path, conversationId: conversationId)
@@ -503,10 +521,8 @@ import os.log
                 }
             }
 
-            // Resolve path with symlink resolution to prevent TOCTOU attacks
-            let expandedPath = (path as NSString).expandingTildeInPath
-            let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url = expandedURL.resolvingSymlinksInPath()
+            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
+            let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)
@@ -516,8 +532,7 @@ import os.log
             case let .requiresApproval(reason) where editApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .requiresApproval, .allowed:
-                // Already approved with this approval category; only a newly
-                // required approval (e.g. a symlink redirect) is rejected.
+                // The target is unchanged and was approved in this category.
                 break
             }
 

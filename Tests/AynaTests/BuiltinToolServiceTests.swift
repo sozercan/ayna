@@ -323,6 +323,110 @@
             #expect(!FileManager.default.fileExists(atPath: marker.path))
         }
 
+        private func approveNextPending(_ permissionService: PermissionService) async throws {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while permissionService.pendingApprovals.isEmpty, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            let approvalID = try #require(permissionService.pendingApprovals.first?.id)
+            permissionService.approve(approvalID, rememberForSession: false)
+        }
+
+        private func waitForPendingApproval(_ permissionService: PermissionService) async {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while permissionService.pendingApprovals.isEmpty, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Approved write to an unchanged protected target succeeds`() async throws {
+            // The temporary directory lives under the protected /var path, so the write
+            // needs approval both before and after symlink resolution.
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolApprovedWrite-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let target = directory.appendingPathComponent("note.txt")
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            let task = Task {
+                try await service.writeFile(path: target.path, content: "approved", conversationId: UUID())
+            }
+            try await approveNextPending(permissionService)
+            try await task.value
+
+            #expect(try String(contentsOf: target, encoding: .utf8) == "approved")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Write rejects a symlink retargeted while approval is pending`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolRetargetWrite-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let original = directory.appendingPathComponent("original.txt")
+            let other = directory.appendingPathComponent("other.txt")
+            let link = directory.appendingPathComponent("link.txt")
+            try "original".write(to: original, atomically: true, encoding: .utf8)
+            try "other".write(to: other, atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            let task = Task {
+                try await service.writeFile(path: link.path, content: "overwritten", conversationId: UUID())
+            }
+            await waitForPendingApproval(permissionService)
+            try FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: other)
+            try await approveNextPending(permissionService)
+
+            await #expect(throws: ToolExecutionError.self) { try await task.value }
+            #expect(try String(contentsOf: original, encoding: .utf8) == "original")
+            #expect(try String(contentsOf: other, encoding: .utf8) == "other")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Edit rejects a symlink retargeted while approval is pending`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolRetargetEdit-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let original = directory.appendingPathComponent("original.txt")
+            let other = directory.appendingPathComponent("other.txt")
+            let link = directory.appendingPathComponent("link.txt")
+            try "hello world".write(to: original, atomically: true, encoding: .utf8)
+            try "other".write(to: other, atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            let task = Task {
+                try await service.editFile(path: link.path, oldText: "hello", newText: "bye", conversationId: UUID())
+            }
+            // Approve every request (read, then edit) but retarget the link before the last one.
+            var approvals = 0
+            while approvals < 3 {
+                await waitForPendingApproval(permissionService)
+                guard let pending = permissionService.pendingApprovals.first else { break }
+                if pending.toolName == BuiltinToolService.ToolName.editFile {
+                    try FileManager.default.removeItem(at: link)
+                    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: other)
+                }
+                permissionService.approve(pending.id, rememberForSession: false)
+                approvals += 1
+                if pending.toolName == BuiltinToolService.ToolName.editFile { break }
+            }
+
+            await #expect(throws: ToolExecutionError.self) { try await task.value }
+            #expect(try String(contentsOf: original, encoding: .utf8) == "hello world")
+            #expect(try String(contentsOf: other, encoding: .utf8) == "other")
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `Cancellation after approval neither grants permission nor starts the command`() async throws {
             let directory = FileManager.default.temporaryDirectory
