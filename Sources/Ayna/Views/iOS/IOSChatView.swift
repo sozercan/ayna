@@ -136,10 +136,9 @@ struct IOSChatView: View {
                         }
                     .onChange(of: conversation.messages.last?.content) {
                             updateDisplayableItems()
-                        // Only follow the stream while the user is at the bottom; scrolling up to
-                        // read earlier messages must not be undone by each chunk. The transaction
-                        // disables animations to avoid janky scrolling during rapid updates.
-                        if viewModel.isGenerating, isNearBottom, let lastId = conversation.messages.last?.id {
+                        // Only scroll during generation - use transaction to disable animations
+                        // This prevents janky scrolling during rapid streaming updates
+                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {
@@ -150,7 +149,7 @@ struct IOSChatView: View {
                     .onChange(of: conversation.messages.last?.reasoning) {
                         updateDisplayableItems()
                         // Keep reasoning-only streams pinned just like answer content.
-                        if viewModel.isGenerating, isNearBottom, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {

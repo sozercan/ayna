@@ -17,12 +17,17 @@ final class MCPProcessTracker: Sendable {
     private let storageURL: URL
     private let lock: OSAllocatedUnfairLock<[String: pid_t]>
 
+    /// Per-environment pid file, so dev and test runs never touch production state.
+    static var defaultStorageURL: URL {
+        RuntimeEnvironment.defaultApplicationSupportDirectoryURL.appendingPathComponent("mcp-processes.json")
+    }
+
     private init() {
-        let supportDir = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
+        let supportDir = Self.defaultStorageURL.deletingLastPathComponent()
         if !FileManager.default.fileExists(atPath: supportDir.path) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         }
-        storageURL = supportDir.appendingPathComponent("mcp-processes.json")
+        storageURL = Self.defaultStorageURL
 
         // Load initial state
         var initialPIDs: [String: pid_t] = [:]
