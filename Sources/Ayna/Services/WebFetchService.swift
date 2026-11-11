@@ -520,7 +520,7 @@ enum WebFetchError: Error, LocalizedError, Sendable {
     case invalidURL(url: String)
     case ssrfBlocked(url: String)
     case httpError(statusCode: Int)
-    case responseToLarge(size: Int, limit: Int)
+    case responseTooLarge(size: Int, limit: Int)
     case binaryContent
     case networkError(underlying: String)
     case serviceDisabled
@@ -533,7 +533,7 @@ enum WebFetchError: Error, LocalizedError, Sendable {
             "Access to internal addresses is not allowed: \(url)"
         case let .httpError(statusCode):
             "HTTP error: \(statusCode)"
-        case let .responseToLarge(size, limit):
+        case let .responseTooLarge(size, limit):
             "Response too large: \(size) bytes (limit: \(limit) bytes)"
         case .binaryContent:
             "Binary content not supported"
@@ -553,7 +553,7 @@ enum WebFetchError: Error, LocalizedError, Sendable {
             "ERROR: Access to internal/private addresses is not allowed: '\(url)'"
         case let .httpError(statusCode):
             "ERROR: HTTP request failed with status code \(statusCode)"
-        case let .responseToLarge(size, limit):
+        case let .responseTooLarge(size, limit):
             "ERROR: Response too large (\(size / 1024 / 1024) MB). Limit is \(limit / 1024 / 1024) MB."
         case .binaryContent:
             "ERROR: The URL returned binary content. Only text/HTML content is supported."
@@ -727,13 +727,14 @@ enum WebTextExtractor {
     private static let blockElementRegex = makeRegex("(?i)<(br|p|div|h[1-6]|li|tr)[^>]*>")
     private static let tagRegex = makeRegex("<[^>]+>")
     private static let collapsedNewlineRegex = makeRegex("\n{3,}")
+    /// `&amp;` must be decoded last so `&amp;lt;` becomes the literal text `&lt;`, not `<`.
     private static let htmlEntities: [(entity: String, replacement: String)] = [
         ("&nbsp;", " "),
-        ("&amp;", "&"),
         ("&lt;", "<"),
         ("&gt;", ">"),
         ("&quot;", "\""),
-        ("&#39;", "'")
+        ("&#39;", "'"),
+        ("&amp;", "&")
     ]
 
     static func plainTextIfNeeded(from content: String, contentType: String) -> String {
@@ -870,7 +871,7 @@ enum WebFetchRequestExecutor {
         }
 
         guard data.count <= maxResponseSize else {
-            throw WebFetchError.responseToLarge(size: data.count, limit: maxResponseSize)
+            throw WebFetchError.responseTooLarge(size: data.count, limit: maxResponseSize)
         }
 
         guard let content = String(data: data, encoding: .utf8) else {

@@ -142,7 +142,7 @@ struct PathValidator {
         // Check for sensitive multi-component paths (e.g., .git/config)
         if pathComponents.count >= 2 {
             for idx in 0 ..< (pathComponents.count - 1) {
-                if pathComponents[idx] == ".git", pathComponents[idx + 1] == "config" {
+                if pathComponents[idx].lowercased() == ".git", pathComponents[idx + 1].lowercased() == "config" {
                     return .requiresApproval(reason: "Sensitive file: .git/config")
                 }
             }
@@ -197,8 +197,10 @@ struct PathValidator {
             let expandedProtectedPath = Self.expandPath(protectedPath)
             let lexicalProtectedComponents = URL(fileURLWithPath: expandedProtectedPath).standardized.pathComponents
             let resolvedProtectedComponents = Self.canonicalPathComponents(forPath: expandedProtectedPath)
-            if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents)
-                || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents)
+            // Compare case-insensitively: the default macOS volume is case-insensitive,
+            // so `~/.SSH` and `~/.ssh` name the same directory.
+            if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents, caseInsensitive: true)
+                || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents, caseInsensitive: true)
             {
                 return "Protected path: \(protectedPath)"
             }
@@ -242,13 +244,22 @@ struct PathValidator {
         url.resolvingSymlinksInPath().standardized.pathComponents
     }
 
-    private static func pathComponents(_ pathComponents: [String], startWith directoryComponents: [String]) -> Bool {
+    private static func pathComponents(
+        _ pathComponents: [String],
+        startWith directoryComponents: [String],
+        caseInsensitive: Bool = false
+    ) -> Bool {
         // Path must have at least as many components as directory
         guard pathComponents.count >= directoryComponents.count else {
             return false
         }
 
         // Check that all directory components match the start of path components
+        if caseInsensitive {
+            return pathComponents.starts(with: directoryComponents) {
+                $0.caseInsensitiveCompare($1) == .orderedSame
+            }
+        }
         return pathComponents.starts(with: directoryComponents)
     }
 }

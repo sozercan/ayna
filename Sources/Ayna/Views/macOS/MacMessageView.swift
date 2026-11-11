@@ -14,7 +14,7 @@ import SwiftUI
 
 // MARK: - Design System Integration
 
-// Uses Theme, Typography, Spacing, and Motion from Core/Design/
+// Uses Theme, Typography, Spacing, and Motion from Design/
 
 @MainActor
 struct MacMessageView: View {
@@ -115,7 +115,7 @@ struct MacMessageView: View {
         return formatter
     }()
 
-    // Design tokens from Core/Design/
+    // Design tokens from Design/
     private let userBubbleGradient = Theme.userBubbleGradient
     private let recipientBubbleGradient = Theme.assistantBubbleGradient
     private let toolBubbleColor = Theme.toolBubble

@@ -18,12 +18,11 @@ final class MCPProcessTracker: Sendable {
     private let lock: OSAllocatedUnfairLock<[String: pid_t]>
 
     private init() {
-        let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let supportDir = urls.first?.appendingPathComponent("Ayna", isDirectory: true)
-        if let supportDir, !FileManager.default.fileExists(atPath: supportDir.path) {
+        let supportDir = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
+        if !FileManager.default.fileExists(atPath: supportDir.path) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         }
-        storageURL = supportDir?.appendingPathComponent("mcp-processes.json") ?? URL(fileURLWithPath: "")
+        storageURL = supportDir.appendingPathComponent("mcp-processes.json")
 
         // Load initial state
         var initialPIDs: [String: pid_t] = [:]

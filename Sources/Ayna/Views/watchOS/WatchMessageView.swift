@@ -13,7 +13,7 @@
 
     // MARK: - Design System Integration
 
-    // Uses Theme, Typography, Spacing from Core/Design/
+    // Uses Theme, Typography, Spacing from Design/
 
     /// Compact message bubble for Watch
     /// iMessage-style with user messages on right (blue) and assistant on left (gray)

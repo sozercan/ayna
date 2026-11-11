@@ -398,9 +398,11 @@ import os.log
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
-            case let .requiresApproval(reason):
+            case let .requiresApproval(reason) where requiresApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
-            case .allowed:
+            case .requiresApproval, .allowed:
+                // Already approved with this approval category; only a newly
+                // required approval (e.g. a symlink redirect) is rejected.
                 break
             }
 
@@ -511,9 +513,11 @@ import os.log
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
-            case let .requiresApproval(reason):
+            case let .requiresApproval(reason) where editApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
-            case .allowed:
+            case .requiresApproval, .allowed:
+                // Already approved with this approval category; only a newly
+                // required approval (e.g. a symlink redirect) is rejected.
                 break
             }
 
@@ -657,6 +661,12 @@ import os.log
                 guard resourceValues?.isRegularFile == true else { continue }
 
                 if let size = resourceValues?.fileSize, size > maxReadSize {
+                    continue
+                }
+
+                // Files that would need approval on their own (credentials, keys, protected
+                // paths) are only searched when the user already approved the search root.
+                if validation.isAllowed, !pathValidator.validate(fileURL.path, operation: .read).isAllowed {
                     continue
                 }
 

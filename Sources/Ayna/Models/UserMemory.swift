@@ -146,57 +146,57 @@ enum MemoryCommandPattern {
     /// Detects memory commands in a user message.
     /// Returns the command type and extracted content if applicable.
     static func detect(in message: String) -> CommandType {
-        let lowercased = message.lowercased()
-
         // Check store patterns (using word boundaries to avoid false positives)
-        for pattern in storePatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
-            let content = extractContent(from: message, after: pattern)
+        for pattern in storePatterns {
+            guard let matchEnd = matchEndWithWordBoundary(message, pattern: pattern) else { continue }
+            let content = extractContent(from: message, startingAt: matchEnd)
             if !content.isEmpty {
                 return .store(content: content)
             }
         }
 
         // Check remove patterns
-        for pattern in removePatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
-            let content = extractContent(from: message, after: pattern)
+        for pattern in removePatterns {
+            guard let matchEnd = matchEndWithWordBoundary(message, pattern: pattern) else { continue }
+            let content = extractContent(from: message, startingAt: matchEnd)
             if !content.isEmpty {
                 return .remove(content: content)
             }
         }
 
         // Check query patterns
-        for pattern in queryPatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
+        for pattern in queryPatterns where matchEndWithWordBoundary(message, pattern: pattern) != nil {
             return .query
         }
 
         // Check clear patterns
-        for pattern in clearPatterns where matchesWithWordBoundary(lowercased, pattern: pattern) {
+        for pattern in clearPatterns where matchEndWithWordBoundary(message, pattern: pattern) != nil {
             return .clearAll
         }
 
         return .none
     }
 
-    /// Checks if pattern matches with word boundaries to avoid false positives.
+    /// Finds the pattern at a word boundary to avoid false positives and returns the index just past it.
     /// e.g., "remember that" matches "Remember that I like tea" but not "I can't remember that password"
-    private static func matchesWithWordBoundary(_ text: String, pattern: String) -> Bool {
+    private static func matchEndWithWordBoundary(_ text: String, pattern: String) -> String.Index? {
         // For patterns that should match at the start of a sentence or after common prefixes
         // We check: start of string, after punctuation, or after "please"
         let regexPattern = "(^|[.!?]\\s*|please\\s+)\(NSRegularExpression.escapedPattern(for: pattern))"
         guard let regex = try? NSRegularExpression(pattern: regexPattern, options: .caseInsensitive) else {
-            // Fallback to simple contains if regex fails
-            return text.contains(pattern)
+            return nil
         }
         let range = NSRange(text.startIndex..., in: text)
-        return regex.firstMatch(in: text, range: range) != nil
+        guard let match = regex.firstMatch(in: text, range: range),
+              let matchRange = Range(match.range, in: text)
+        else {
+            return nil
+        }
+        return matchRange.upperBound
     }
 
-    /// Extracts content following a pattern in the message.
-    private static func extractContent(from message: String, after pattern: String) -> String {
-        let lowercased = message.lowercased()
-        guard let range = lowercased.range(of: pattern) else { return "" }
-
-        let startIndex = message.index(message.startIndex, offsetBy: lowercased.distance(from: lowercased.startIndex, to: range.upperBound))
+    /// Extracts the content that follows a matched command pattern.
+    private static func extractContent(from message: String, startingAt startIndex: String.Index) -> String {
         var content = String(message[startIndex...])
 
         // Clean up the extracted content

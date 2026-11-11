@@ -61,6 +61,16 @@ struct PathValidatorTests {
         }
     }
 
+    @Test("Protected path matching ignores case")
+    func protectedPathMatchingIgnoresCase() {
+        let result = sut.validate("~/.AWS/credentials", operation: .read)
+        if case let .requiresApproval(reason) = result {
+            #expect(reason.contains("Protected path"))
+        } else {
+            Issue.record("Expected requiresApproval for ~/.AWS on a case-insensitive volume")
+        }
+    }
+
     @Test("Requires approval for etc directory")
     func requiresApprovalForEtc() {
         let result = sut.validate("/etc/passwd", operation: .read)

@@ -111,9 +111,10 @@ final class AttachmentStorage: @unchecked Sendable {
         if let directoryURL {
             attachmentsDirectory = directoryURL
         } else {
-            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-                .first ?? URL(fileURLWithPath: NSTemporaryDirectory())
-            attachmentsDirectory = appSupport.appendingPathComponent("Ayna/Attachments", isDirectory: true)
+            // Use the per-environment directory so dev and UI-test builds can never
+            // see (or clean up) production attachments.
+            attachmentsDirectory = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
+                .appendingPathComponent("Attachments", isDirectory: true)
         }
 
         do {

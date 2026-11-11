@@ -510,22 +510,6 @@ final class PermissionService {
 
     // MARK: - Timeout Management
 
-    /// Expires stale approvals that have been pending too long.
-    func expireStaleApprovals() {
-        let now = Date()
-        let stale = pendingApprovals.filter { approval in
-            now.timeIntervalSince(approval.createdAt) > Double(approvalTimeoutSeconds)
-        }
-
-        for approval in stale {
-            deny(approval.id)
-            log(.info, "Approval expired", metadata: [
-                "tool": approval.toolName,
-                "id": approval.id.uuidString
-            ])
-        }
-    }
-
     private func handleCancelledApproval(_ approval: PendingApproval) {
         if let key = pendingSessionApprovalOwners.removeValue(forKey: approval.id),
            !committedSessionApprovalKeys.contains(key),
@@ -551,6 +535,8 @@ final class PermissionService {
 
     private func startTimeoutTask(for approvalId: UUID) {
         let timeout = approvalTimeoutSeconds
+        // 0 means "No timeout" in settings; never auto-deny in that case.
+        guard timeout > 0 else { return }
         timeoutTasks[approvalId] = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(timeout))

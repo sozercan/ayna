@@ -160,7 +160,6 @@ class MCPServerManager: ObservableObject {
     private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
     private var isToolCacheValid = false
     private var isOpenAIFunctionCacheValid = false
-    private var cacheVersion = 0
 
     init(
         serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
@@ -1055,10 +1054,6 @@ class MCPServerManager: ObservableObject {
             return services[serverName]?.service.isConnected ?? false
     }
 
-    func getServerError(_ serverName: String) -> String? {
-            serverStatuses[serverName]?.lastError ?? services[serverName]?.service.lastError
-    }
-
     func getConnectedServerCount() -> Int {
         serverStatuses.values.count(where: {
             if case .connected = $0.state {
@@ -1073,10 +1068,6 @@ class MCPServerManager: ObservableObject {
     }
 
     // MARK: - Tool Helpers
-
-    func getToolsByServer() -> [String: [MCPTool]] {
-        Dictionary(grouping: availableTools) { $0.serverName }
-    }
 
     /// Returns all tools from enabled servers (cached for performance)
     func getEnabledTools() -> [MCPTool] {
@@ -1108,7 +1099,6 @@ class MCPServerManager: ObservableObject {
         cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
         isToolCacheValid = true
         isOpenAIFunctionCacheValid = false
-        cacheVersion += 1
     }
 }
 
@@ -1133,8 +1123,9 @@ enum MCPManagerError: LocalizedError {
 private extension MCPServerManager {
     func initializeStatusEntries() {
         let now = Date()
+        // Server names are not enforced to be unique; keep the first entry instead of trapping.
         serverStatuses = Dictionary(
-            uniqueKeysWithValues: serverConfigs.map { config in
+            serverConfigs.map { config in
                 (
                     config.name,
                     MCPServerStatus(
@@ -1146,7 +1137,8 @@ private extension MCPServerManager {
                         lastUpdated: now
                     )
                 )
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
     }
 
