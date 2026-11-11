@@ -3092,8 +3092,10 @@ extension IOSChatViewModel {
         for editContext: ImageEditContext?
     ) async throws -> [OpenAIImageService.SourceImage] {
         guard let editContext else { return [] }
+        // User attachments live in the injected store; generated images are saved to the shared one.
+        let storage = editContext.origin == .attachments ? attachmentStorage : AttachmentStorage.shared
         return try await editContext.loadSourceImages { path in
-            await AttachmentStorage.shared.loadData(path: path)
+            await storage.loadData(path: path)
         }
     }
 
