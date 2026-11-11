@@ -30,6 +30,8 @@ final class MemoryContextProvider {
 
     /// Advances on "Clear All Memory", so backfill that started before it applies nothing.
     private var memoryClearGeneration: UInt64 = 0
+    /// Clears in progress; while any runs, saves neither update summaries nor schedule extraction.
+    private var activeMemoryClears = 0
 
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
@@ -246,7 +248,7 @@ final class MemoryContextProvider {
     /// Updates conversation summary when a conversation changes, and schedules automatic fact
     /// extraction for it when that is turned on.
     func updateConversationSummary(_ conversation: Conversation) {
-        guard isMemoryEnabled else { return }
+        guard isMemoryEnabled, activeMemoryClears == 0 else { return }
         summaryService.updateSummary(for: conversation)
         if isAutoExtractionEnabled {
             factExtractor.conversationDidSave(conversation)
@@ -264,6 +266,8 @@ final class MemoryContextProvider {
     /// Clears stored facts and summaries, after stopping any extraction that could refill them.
     func clearAllMemory() async throws {
         memoryClearGeneration &+= 1
+        activeMemoryClears += 1
+        defer { activeMemoryClears -= 1 }
         factExtractor.cancelAll()
         await memoryService.clearAllFacts()
         try await summaryService.clearAllSummaries()
