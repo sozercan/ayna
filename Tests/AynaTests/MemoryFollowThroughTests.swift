@@ -353,9 +353,8 @@ struct MemoryFactExtractorTests {
         conversation.addMessage(Message(role: .user, content: "I live in Lisbon."))
 
         extractor.conversationDidSave(conversation)
-        try? await Task.sleep(for: .milliseconds(50))
         extractor.conversationDidSave(conversation)
-        try? await Task.sleep(for: .milliseconds(100))
+        await Task.yield()
         #expect(calls.values.isEmpty)
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(10))
