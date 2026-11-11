@@ -105,7 +105,10 @@ struct MCPToolNaming {
         for tool in unassigned {
             let key = Self.key(server: tool.serverName, tool: tool.name)
             let alias: String
-            if rawNameCounts[tool.name] == 1, isAvailable(tool.name, for: key, taken: taken) {
+            // Raw names are kept only when function-calling APIs accept them as they are.
+            if rawNameCounts[tool.name] == 1, Self.isValidFunctionName(tool.name),
+               isAvailable(tool.name, for: key, taken: taken)
+            {
                 alias = tool.name
             } else {
                 let base = Self.sanitized("\(tool.serverName)__\(tool.name)")
@@ -128,6 +131,10 @@ struct MCPToolNaming {
 
     private func isAvailable(_ alias: String, for key: String, taken: Set<String>) -> Bool {
         !taken.contains(alias) && (keyByAlias[alias] == nil || keyByAlias[alias] == key)
+    }
+
+    static func isValidFunctionName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 64 && sanitized(name) == name
     }
 
     private static func sanitized(_ name: String) -> String {

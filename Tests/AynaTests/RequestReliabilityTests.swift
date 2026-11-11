@@ -77,6 +77,17 @@ extension AIServiceGlobalStateTests {
     @Suite("AIService status retries", .serialized)
     @MainActor
     struct AIServiceStatusRetryTests {
+        init() {
+            // Isolate persisted settings and keys from the real defaults and Keychain.
+            let suiteName = "AIServiceStatusRetryTests"
+            guard let defaults = UserDefaults(suiteName: suiteName) else {
+                fatalError("Failed to create UserDefaults suite for \(suiteName)")
+            }
+            defaults.removePersistentDomain(forName: suiteName)
+            AppPreferences.use(defaults)
+            AIService.keychain = InMemoryKeychainStorage()
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: DataFlightVariant.allCases)
         func `A 503 with Retry-After is retried and then succeeds`(variant: DataFlightVariant) async {
             let server = FlightTestURLProtocolServer()
@@ -85,6 +96,7 @@ extension AIServiceGlobalStateTests {
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [FlightTestURLProtocol.self]
             let requestedRetryAfter = FlightTestBox<Date?>(nil)
+            let firstResponseSentAt = FlightTestBox(Date.distantPast)
             let service = AIService(
                 urlSession: URLSession(configuration: config),
                 retryDelay: { _, retryAfter in requestedRetryAfter.value = retryAfter }
@@ -109,10 +121,15 @@ extension AIServiceGlobalStateTests {
             )
 
             let first = await server.exchange(at: 0)
+            firstResponseSentAt.value = Date()
             first.sendResponse(statusCode: 503, headers: ["Content-Type": "application/json", "Retry-After": "3"])
             first.send(Data("{\"error\":{\"message\":\"overloaded\"}}".utf8))
             first.finish()
 
+            // Bounded wait, so a retry regression fails here instead of hanging on the exchange.
+            let retried = await server.waitForRequestCount(2, timeout: .seconds(5))
+            #expect(retried)
+            guard retried else { return }
             let second = await server.exchange(at: 1)
             second.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
             second.send(variant.responseData)
@@ -121,8 +138,9 @@ extension AIServiceGlobalStateTests {
             #expect(await completed.wait(timeout: .seconds(5)))
             #expect(failure.value == nil)
             #expect(chunks.value == "stale")
-            let delay = requestedRetryAfter.value.map { $0.timeIntervalSinceNow } ?? -1
-            #expect(delay > 0 && delay <= 3)
+            // The deadline is three seconds after the 503 arrived.
+            let deadline = requestedRetryAfter.value.map { $0.timeIntervalSince(firstResponseSentAt.value) } ?? -1
+            #expect(deadline >= 3 && deadline <= 8)
         }
 
         @Test(.timeLimit(.minutes(1)))

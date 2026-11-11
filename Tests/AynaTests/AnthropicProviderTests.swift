@@ -492,6 +492,46 @@ struct AnthropicProviderTests {
         #expect(receivedChunks.joined() == "ok")
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func `cancelling during Retry-After backoff sends no retry`() async {
+        let backoffStarted = FlightTestSignal()
+        let releaseBackoff = FlightTestSignal()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [AnthropicMockURLProtocol.self]
+        let provider = AnthropicProvider(
+            urlSession: URLSession(configuration: config),
+            retryDelay: { _, _ in
+                backoffStarted.signal()
+                await releaseBackoff.wait()
+            }
+        )
+        let attempts = FlightTestBox(0)
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            attempts.value += 1
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 529,
+                httpVersion: nil,
+                headerFields: ["Retry-After": "5"]
+            )!
+            return (response, Data(#"{"type":"error","error":{"message":"Overloaded"}}"#.utf8))
+        }
+
+        provider.sendMessage(
+            messages: [Message(role: .user, content: "Hi")],
+            config: makeConfig(),
+            stream: false,
+            tools: nil,
+            callbacks: AIProviderStreamCallbacks(onChunk: { _ in }, onComplete: {}, onError: { _ in })
+        )
+        #expect(await backoffStarted.wait(timeout: .seconds(5)))
+        provider.cancelRequest()
+        releaseBackoff.signal()
+        try? await Task.sleep(for: .milliseconds(300))
+
+        #expect(attempts.value == 1)
+    }
+
     // MARK: - Anthropic Error Format Tests
 
     @Test(.timeLimit(.minutes(1)))
