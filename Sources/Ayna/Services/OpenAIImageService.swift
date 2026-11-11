@@ -102,6 +102,23 @@ final class OpenAIImageService: @unchecked Sendable {
         )
     }
 
+    /// One input image for the `/images/edits` endpoint.
+    struct SourceImage: Sendable, Equatable {
+        let data: Data
+        let mimeType: String
+        let fileName: String
+    }
+
+    /// MIME types accepted by the OpenAI image edit endpoint.
+    static let editableImageMIMETypes: Set<String> = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
+
+    /// GPT Image models accept at most 16 input images per edit request.
+    static let maxSourceImages = 16
+
+    static func isEditableImageMIMEType(_ mimeType: String) -> Bool {
+        editableImageMIMETypes.contains(mimeType.lowercased())
+    }
+
     struct RequestConfig {
         let model: String
         let apiKey: String
@@ -532,18 +549,18 @@ final class OpenAIImageService: @unchecked Sendable {
 
     // MARK: - Image Editing
 
-    /// Edits an image based on a prompt and source image.
+    /// Edits images based on a prompt and one or more source images.
     /// Uses the /v1/images/edits endpoint to modify existing images.
     /// - Parameters:
     ///   - prompt: The text description of the desired edit
-    ///   - sourceImage: The source image data to edit (PNG format recommended)
+    ///   - sourceImages: The source images to edit (PNG, JPEG, or WebP)
     ///   - requestConfig: Configuration for the API request (model, key, endpoint)
     ///   - imageConfig: Image generation settings (size, quality)
     ///   - onComplete: Callback with the edited image data
     ///   - onError: Callback with any error that occurred
     func editImage(
         prompt: String,
-        sourceImage: Data,
+        sourceImages: [SourceImage],
         requestConfig: RequestConfig,
         imageConfig: ImageConfig = .default,
         requestHandle: RequestHandle,
@@ -553,6 +570,11 @@ final class OpenAIImageService: @unchecked Sendable {
         // Validate provider
         guard requestConfig.provider == .openai else {
             onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
+            return
+        }
+
+        guard !sourceImages.isEmpty else {
+            onError(AynaError.invalidResponse(detail: "No source image to edit"))
             return
         }
 
@@ -600,12 +622,17 @@ final class OpenAIImageService: @unchecked Sendable {
         // Build multipart body
         var body = Data()
 
-        // Add image field
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"image[]\"; filename=\"image.png\"\r\n".utf8))
-        body.append(Data("Content-Type: image/png\r\n\r\n".utf8))
-        body.append(sourceImage)
-        body.append(Data("\r\n".utf8))
+        // Add image fields
+        for (index, sourceImage) in sourceImages.enumerated() {
+            let part = Self.multipartImagePart(for: sourceImage.mimeType)
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data(
+                "Content-Disposition: form-data; name=\"image[]\"; filename=\"image-\(index + 1).\(part.fileExtension)\"\r\n".utf8
+            ))
+            body.append(Data("Content-Type: \(part.contentType)\r\n\r\n".utf8))
+            body.append(sourceImage.data)
+            body.append(Data("\r\n".utf8))
+        }
 
         // Add prompt field
         body.append(Data("--\(boundary)\r\n".utf8))
@@ -645,6 +672,15 @@ final class OpenAIImageService: @unchecked Sendable {
             onComplete: onComplete,
             onError: onError
         )
+    }
+
+    /// Normalizes the declared MIME type into a header-safe content type and matching file extension.
+    private static func multipartImagePart(for mimeType: String) -> (contentType: String, fileExtension: String) {
+        switch mimeType.lowercased() {
+        case "image/jpeg", "image/jpg": ("image/jpeg", "jpg")
+        case "image/webp": ("image/webp", "webp")
+        default: ("image/png", "png")
+        }
     }
 
     private func executeEditRequest(

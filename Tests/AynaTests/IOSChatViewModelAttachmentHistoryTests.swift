@@ -151,7 +151,7 @@
                 userMessage.id,
                 assistantMessage.id,
             ])
-            #expect(viewModel.errorMessage?.contains("do not accept attachments") == true)
+            #expect(viewModel.errorMessage == "Describe how to edit the attached image.")
             #expect(!viewModel.isGenerating)
         }
 

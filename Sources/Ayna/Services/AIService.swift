@@ -900,14 +900,15 @@ class AIService: ObservableObject {
     }
 
     /// Returns a user-facing reason when a selected model cannot consume attachments.
+    ///
+    /// Image generation models accept image attachments as edit sources; their attachment
+    /// types are checked against the outgoing message by `attachmentHistorySupportError`.
     func attachmentSupportError(for models: [String]) -> String? {
         for model in models {
             let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalizedModel.isEmpty else { continue }
-
-            if getModelCapability(normalizedModel) == .imageGeneration {
-                return "Image generation models do not accept attachments. Remove the attachment or choose a chat model."
-            }
+            guard !normalizedModel.isEmpty,
+                  getModelCapability(normalizedModel) != .imageGeneration
+            else { continue }
 
             let modelProvider = modelProviders[normalizedModel] ?? provider
             if modelProvider == .appleIntelligence {
@@ -919,8 +920,37 @@ class AIService: ObservableObject {
 
     /// Returns a user-facing reason when a selected model cannot consume attachment history.
     func attachmentHistorySupportError(for models: [String], messages: [Message]) -> String? {
+        let normalizedModels = models
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let usesImageModel = normalizedModels.contains { getModelCapability($0) == .imageGeneration }
+        if usesImageModel,
+           let error = imageEditInputError(for: messages.last(where: { $0.role == .user }))
+        {
+            return error
+        }
+
         guard messages.contains(where: { $0.attachments?.isEmpty == false }) else { return nil }
-        return attachmentSupportError(for: models)
+        return attachmentSupportError(for: normalizedModels)
+    }
+
+    /// Image requests only send the latest user turn, so only its attachments become edit sources.
+    private func imageEditInputError(for userMessage: Message?) -> String? {
+        let attachments = userMessage?.attachments ?? []
+        guard !attachments.isEmpty else { return nil }
+
+        if let unsupported = attachments.first(where: {
+            !OpenAIImageService.isEditableImageMIMEType($0.mimeType)
+        }) {
+            return "Image generation models accept only PNG, JPEG, or WebP image attachments. Remove \"\(unsupported.fileName)\" or choose a chat model."
+        }
+        if attachments.count > OpenAIImageService.maxSourceImages {
+            return "Image generation supports at most \(OpenAIImageService.maxSourceImages) input images. Remove some images and try again."
+        }
+        if userMessage?.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            return "Describe how to edit the attached image."
+        }
+        return nil
     }
 
     /// Returns a user-facing reason when an Anthropic request would exceed its image limit.
@@ -1375,12 +1405,33 @@ class AIService: ObservableObject {
             return AIImageRequest(service: self, flightID: flightID)
         }
 
-        /// Edits an image based on a prompt and source image.
+        /// Edits `sourceImages` when present; otherwise generates a new image from the prompt.
+        @discardableResult
+        func requestImage(
+            prompt: String,
+            sourceImages: [OpenAIImageService.SourceImage],
+            model: String,
+            onComplete: @escaping @Sendable (Data) -> Void,
+            onError: @escaping @Sendable (Error) -> Void
+        ) -> AIImageRequest? {
+            if sourceImages.isEmpty {
+                return generateImage(prompt: prompt, model: model, onComplete: onComplete, onError: onError)
+            }
+            return editImage(
+                prompt: prompt,
+                sourceImages: sourceImages,
+                model: model,
+                onComplete: onComplete,
+                onError: onError
+            )
+        }
+
+        /// Edits images based on a prompt and one or more source images.
         /// Delegates to OpenAIImageService for the actual network request.
         @discardableResult
         func editImage(
             prompt: String,
-            sourceImage: Data,
+            sourceImages: [OpenAIImageService.SourceImage],
             model: String? = nil,
             onComplete: @escaping @Sendable (Data) -> Void,
             onError: @escaping @Sendable (Error) -> Void
@@ -1421,7 +1472,7 @@ class AIService: ObservableObject {
 
             imageService.editImage(
                 prompt: prompt,
-                sourceImage: sourceImage,
+                sourceImages: sourceImages,
                 requestConfig: requestConfig,
                 imageConfig: imageConfig,
                 requestHandle: requestHandle,

@@ -49,6 +49,56 @@ struct OpenAIImageServiceTests {
         #expect(body["response_format"] == nil)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func `edit requests upload every source image with its content type`() async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let errorReceived = FlightTestSignal()
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            return (response, Data(#"{"data":[{"b64_json":"aW1hZ2U="}]}"#.utf8))
+        }
+
+        service.editImage(
+            prompt: "remove the watermark",
+            sourceImages: [
+                OpenAIImageService.SourceImage(data: Data("JPEGDATA".utf8), mimeType: "image/jpg", fileName: "a\"b.jpg"),
+                OpenAIImageService.SourceImage(data: Data("WEBPDATA".utf8), mimeType: "image/webp", fileName: "c.webp"),
+            ],
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-unit-test",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { _ in
+                errorReceived.signal()
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        #expect(!errorReceived.isSignaled)
+
+        let request = try #require(ImageServiceMockURLProtocol.lastRequest)
+        #expect(request.url?.path.hasSuffix("/images/edits") == true)
+        let body = try #require(requestBody(from: request).flatMap { String(bytes: $0, encoding: .utf8) })
+        #expect(body.components(separatedBy: "name=\"image[]\"").count == 3)
+        #expect(body.contains("filename=\"image-1.jpg\"\r\nContent-Type: image/jpeg\r\n\r\nJPEGDATA"))
+        #expect(body.contains("filename=\"image-2.webp\"\r\nContent-Type: image/webp\r\n\r\nWEBPDATA"))
+        #expect(body.contains("name=\"prompt\"\r\n\r\nremove the watermark"))
+    }
+
     @Test
     func `cancelled handle cancels a URLSession task rejected during registration`() throws {
         let handle = OpenAIImageService.RequestHandle()

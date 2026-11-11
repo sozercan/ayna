@@ -11,26 +11,6 @@ import SwiftUI
 // MARK: - Image Generation & Multi-Model Messaging
 
 extension MacChatView {
-    /// Finds the storage path of the most recent generated or selected image for editing context.
-    /// Returns a path (cheap) rather than loading full image data on MainActor.
-    private func findPreviousImagePath() -> String? {
-        for message in conversation.messages.reversed() {
-            guard message.role == .assistant, message.mediaType == .image else { continue }
-
-            if let groupId = message.responseGroupId {
-                if let group = conversation.getResponseGroup(groupId),
-                   group.selectedResponseId == message.id
-                {
-                    return message.imagePath
-                }
-                continue
-            }
-
-            return message.imagePath
-        }
-        return nil
-    }
-
     func generateImage(prompt: String, model: String) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
@@ -55,14 +35,11 @@ extension MacChatView {
             }
         }
 
-        // Find previous image path (cheap, no disk I/O)
-        let previousImagePath = findPreviousImagePath()
+        // Resolve edit sources (cheap, no disk I/O): attached images, else the previous image.
+        let editContext = ImageEditContext.resolve(in: currentConversation)
 
-        // Own previous-image loading and the eventual transport under one logical request.
+        // Own source-image loading and the eventual transport under one logical request.
         let task = Task { @MainActor in
-            let previousImage = await loadImageData(at: previousImagePath)
-            guard coordinator.owns(operationID), !Task.isCancelled else { return }
-
             let onComplete: @Sendable (Data) -> Void = { imageData in
                 coordinator.schedule(for: operationID) {
                     await handleImageGenerationSuccess(
@@ -82,24 +59,25 @@ extension MacChatView {
                 }
             }
 
-            let request: AIImageRequest?
-            if let previousImage {
-                logChat("📝 Using image edit API with previous image context", level: .info)
-                request = aiService.editImage(
-                    prompt: prompt,
-                    sourceImage: previousImage,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
-            } else {
-                request = aiService.generateImage(
-                    prompt: prompt,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
+            let sourceImages: [OpenAIImageService.SourceImage]
+            do {
+                sourceImages = try await loadSourceImages(for: editContext)
+            } catch {
+                onError(error)
+                return
             }
+            guard coordinator.owns(operationID), !Task.isCancelled else { return }
+
+            if !sourceImages.isEmpty {
+                logChat("📝 Using image edit API with \(sourceImages.count) source image(s)", level: .info)
+            }
+            let request = aiService.requestImage(
+                prompt: prompt,
+                sourceImages: sourceImages,
+                model: model,
+                onComplete: onComplete,
+                onError: onError
+            )
             coordinator.track(request, for: operationID)
         }
         coordinator.track(task, for: operationID)
@@ -176,8 +154,8 @@ extension MacChatView {
             return
         }
 
-        // Find previous image path (cheap, no disk I/O)
-        let previousImagePath = findPreviousImagePath()
+        // Resolve edit sources (cheap, no disk I/O): attached images, else the previous image.
+        let editContext = ImageEditContext.resolve(in: currentConversation)
 
         let userMessageId = conversation.messages.last(where: { $0.role == .user })?.id ?? UUID()
         let responsePlan = MultiModelResponsePlan(
@@ -208,13 +186,22 @@ extension MacChatView {
         let messageIdsByModel = messageIds
         let counter = MainActorCompletionCounter(total: models.count)
 
-        // Own previous-image loading and every child transport under one batch operation.
+        // Own source-image loading and every child transport under one batch operation.
         let task = Task { @MainActor in
-            let previousImage = await loadImageData(at: previousImagePath)
+            var sourceImages: [OpenAIImageService.SourceImage] = []
+            var sourceImageError: Error?
+            do {
+                sourceImages = try await loadSourceImages(for: editContext)
+            } catch {
+                sourceImageError = error
+            }
             guard coordinator.owns(operationID), !Task.isCancelled else { return }
 
-            if previousImage != nil {
-                logChat("📝 Using image edit API with previous image context for multi-model", level: .info)
+            if !sourceImages.isEmpty {
+                logChat(
+                    "📝 Using image edit API with \(sourceImages.count) source image(s) for multi-model",
+                    level: .info
+                )
             }
 
             for model in models {
@@ -292,22 +279,17 @@ extension MacChatView {
                     }
                 }
 
-                let request: AIImageRequest? = if let previousImage {
-                    aiService.editImage(
-                        prompt: prompt,
-                        sourceImage: previousImage,
-                        model: model,
-                        onComplete: onComplete,
-                        onError: onError
-                    )
-                } else {
-                    aiService.generateImage(
-                        prompt: prompt,
-                        model: model,
-                        onComplete: onComplete,
-                        onError: onError
-                    )
+                if let sourceImageError {
+                    onError(sourceImageError)
+                    continue
                 }
+                let request = aiService.requestImage(
+                    prompt: prompt,
+                    sourceImages: sourceImages,
+                    model: model,
+                    onComplete: onComplete,
+                    onError: onError
+                )
                 coordinator.track(request, for: operationID)
             }
         }
@@ -415,15 +397,12 @@ extension MacChatView {
         conversationManager.conversations[conversationIndex].responseGroups[groupIndex].responses[entryIndex].status = status
     }
 
-    private func loadImageData(at path: String?) async -> Data? {
-        guard let path else { return nil }
-        let task = Task.detached(priority: .userInitiated) {
-            AttachmentStorage.shared.load(path: path)
-        }
-        return await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
+    private func loadSourceImages(
+        for editContext: ImageEditContext?
+    ) async throws -> [OpenAIImageService.SourceImage] {
+        guard let editContext else { return [] }
+        return try await editContext.loadSourceImages { path in
+            await AttachmentStorage.shared.loadData(path: path)
         }
     }
 

@@ -55,7 +55,11 @@ extension AIServiceTests {
         let callbackReceived = FlightTestSignal()
         service.editImage(
             prompt: "make it blue",
-            sourceImage: Data("source".utf8),
+            sourceImages: [OpenAIImageService.SourceImage(
+                data: Data("source".utf8),
+                mimeType: "image/png",
+                fileName: "source.png"
+            )],
             model: "image-model",
             onComplete: { _ in callbackReceived.signal() },
             onError: { _ in callbackReceived.signal() }
