@@ -33,6 +33,9 @@ import os.log
         /// Repository root path
         private var repoRoot: URL?
 
+        /// `-c` overrides that switch off every configured filter driver for this repository.
+        private var filterOverrides: [String] = []
+
         // MARK: - Types
 
         struct GitStatus: Sendable {
@@ -76,10 +79,19 @@ import os.log
 
         /// Loads git context from a directory
         func loadContext(from directory: URL) async {
+            filterOverrides = []
             // Find git root
             repoRoot = await findGitRoot(from: directory)
 
-            guard let root = repoRoot else {
+            guard let root = repoRoot, !Task.isCancelled else {
+                reset()
+                return
+            }
+
+            // `git status` runs a modified tracked file's clean/process filter when it rehashes
+            // it; those are commands from the repository's config, so they are switched off.
+            filterOverrides = await Self.filterDriverOverrides(in: root)
+            guard !Task.isCancelled else {
                 reset()
                 return
             }
@@ -105,6 +117,7 @@ import os.log
         /// Resets all git context
         func reset() {
             repoRoot = nil
+            filterOverrides = []
             currentBranch = nil
             status = nil
             recentCommits = []
@@ -229,7 +242,8 @@ import os.log
         }
 
         private func loadStatus(in root: URL) async -> GitStatus? {
-            let result = await runGitCommand(["status", "--porcelain"], in: root)
+            // Submodules are skipped: their own configs could name filters not switched off here.
+            let result = await runGitCommand(["status", "--porcelain", "--ignore-submodules=all"], in: root)
             guard result.exitCode == 0 else { return nil }
 
             var staged: [String] = []
@@ -282,6 +296,7 @@ import os.log
         private func detectMainBranch(in root: URL) async -> String? {
             // Check for common main branch names
             for branch in ["main", "master", "develop", "development"] {
+                guard !Task.isCancelled else { return nil }
                 let result = await runGitCommand(
                     ["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"],
                     in: root
@@ -308,14 +323,42 @@ import os.log
         /// How long a single git command may run before it is stopped.
         static let commandTimeout: Duration = .seconds(10)
 
+        /// Most output a git query may return; anything larger fails rather than being cut short.
+        nonisolated static let maximumOutputBytes = 1024 * 1024
+
         private func runGitCommand(_ arguments: [String], in directory: URL) async -> GitCommandResult {
-            await Self.runGit(arguments, in: directory, timeout: Self.commandTimeout)
+            await Self.runGit(filterOverrides + arguments, in: directory, timeout: Self.commandTimeout)
+        }
+
+        /// Empty `clean`, `smudge` and `process` commands, and `required=false`, for every filter
+        /// driver configured for the repository at `root`. Reading config never runs code.
+        nonisolated static func filterDriverOverrides(in root: URL) async -> [String] {
+            let result = await runGit(
+                ["config", "--null", "--name-only", "--get-regexp", "^filter\\..+\\.(clean|smudge|process|required)$"],
+                in: root,
+                timeout: commandTimeout
+            )
+            guard result.exitCode == 0 else { return [] }
+            var drivers: [String] = []
+            for key in result.stdout.split(separator: "\0") {
+                let name = key.dropFirst("filter.".count)
+                guard let dot = name.lastIndex(of: ".") else { continue }
+                let driver = String(name[..<dot])
+                if !driver.isEmpty, !drivers.contains(driver) {
+                    drivers.append(driver)
+                }
+            }
+            return drivers.flatMap { driver in
+                ["clean=", "smudge=", "process=", "required=false"].flatMap { ["-c", "filter.\(driver).\($0)"] }
+            }
         }
 
         /// Runs git in its own process group (`CommandSubprocess`), with hooks, credential
-        /// helpers and fsmonitor disabled so a repository's configuration cannot run code. On
-        /// timeout the whole group is stopped (TERM, then KILL); completion waits for git itself,
-        /// not for EOF, so a helper that keeps a pipe open cannot hold the call.
+        /// helpers, fsmonitor and signature verification disabled so a repository's
+        /// configuration cannot run code. On timeout or task cancellation the whole group is
+        /// stopped (TERM, then KILL); completion waits for git itself, not for EOF, so a helper
+        /// that keeps a pipe open cannot hold the call. Output past `maximumOutputBytes` is
+        /// drained but not kept, and the call fails.
         nonisolated static func runGit(
             _ arguments: [String],
             in directory: URL,
@@ -329,53 +372,81 @@ import os.log
                 "/usr/bin/git",
                 "-c", "core.hooksPath=/dev/null",
                 "-c", "credential.helper=",
-                "-c", "core.fsmonitor=false"
+                "-c", "core.fsmonitor=false",
+                "-c", "log.showSignature=false"
             ] + arguments
             let command = words.map(shellQuoted).joined(separator: " ")
+            let run = GitRun()
 
-            return await Task.detached { () -> GitCommandResult in
-                let process: CommandSubprocess
-                do {
-                    process = try CommandSubprocess.start(command: command, workingDirectory: directory)
-                } catch {
-                    return GitCommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
-                }
-                let stdout = GitOutputBuffer()
-                let stderr = GitOutputBuffer()
-                process.standardOutput.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if data.isEmpty { handle.readabilityHandler = nil } else { stdout.append(data) }
-                }
-                process.standardError.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    if data.isEmpty { handle.readabilityHandler = nil } else { stderr.append(data) }
-                }
-                let timedOut = GitOutputBuffer()
-                let timer = Task.detached {
-                    try? await Task.sleep(for: timeout)
-                    guard !Task.isCancelled else { return }
-                    timedOut.append(Data([1]))
-                    process.terminate()
-                    try? await Task.sleep(for: .milliseconds(500))
-                    process.forceKill()
-                }
+            return await withTaskCancellationHandler {
+                await Task.detached { () -> GitCommandResult in
+                    await execute(command, in: directory, timeout: timeout, run: run)
+                }.value
+            } onCancel: {
+                run.cancel()
+            }
+        }
 
-                let status = process.waitUntilExit()
-                timer.cancel()
-                process.standardOutput.readabilityHandler = nil
-                process.standardError.readabilityHandler = nil
-                let remaining = process.drainAvailableOutput()
-                stdout.append(remaining.stdout)
-                stderr.append(remaining.stderr)
-                process.closeOutput()
+        private nonisolated static func execute(
+            _ command: String,
+            in directory: URL,
+            timeout: Duration,
+            run: GitRun
+        ) async -> GitCommandResult {
+            let process: CommandSubprocess
+            do {
+                guard !run.isCancelled else { throw CancellationError() }
+                process = try CommandSubprocess.start(command: command, workingDirectory: directory)
+            } catch {
+                return GitCommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
+            }
+            run.attach(process)
+            let stdout = GitOutputBuffer(limit: maximumOutputBytes)
+            let stderr = GitOutputBuffer(limit: maximumOutputBytes)
+            process.standardOutput.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty { handle.readabilityHandler = nil } else { stdout.append(data) }
+            }
+            process.standardError.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty { handle.readabilityHandler = nil } else { stderr.append(data) }
+            }
+            let timedOut = GitOutputBuffer()
+            let timer = Task.detached {
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                timedOut.append(Data([1]))
+                process.terminate()
+                try? await Task.sleep(for: .milliseconds(500))
+                process.forceKill()
+            }
 
-                let didTimeOut = !timedOut.data.isEmpty
-                return GitCommandResult(
-                    exitCode: status,
-                    stdout: String(data: stdout.data, encoding: .utf8) ?? "",
-                    stderr: didTimeOut ? "git timed out" : String(data: stderr.data, encoding: .utf8) ?? ""
-                )
-            }.value
+            let status = process.waitUntilExit()
+            timer.cancel()
+            process.standardOutput.readabilityHandler = nil
+            process.standardError.readabilityHandler = nil
+            let remaining = process.drainAvailableOutput()
+            stdout.append(remaining.stdout)
+            stderr.append(remaining.stderr)
+            process.closeOutput()
+
+            let failure: String? = if !timedOut.data.isEmpty {
+                "git timed out"
+            } else if run.isCancelled {
+                "git was cancelled"
+            } else if stdout.isTruncated || stderr.isTruncated {
+                "git output exceeded \(maximumOutputBytes / 1024) KB"
+            } else {
+                nil
+            }
+            if let failure {
+                return GitCommandResult(exitCode: -1, stdout: "", stderr: failure)
+            }
+            return GitCommandResult(
+                exitCode: status,
+                stdout: String(data: stdout.data, encoding: .utf8) ?? "",
+                stderr: String(data: stderr.data, encoding: .utf8) ?? ""
+            )
         }
 
         private nonisolated static func shellQuoted(_ word: String) -> String {
@@ -387,18 +458,76 @@ import os.log
         }
     }
 
-    /// Output collected from a pipe's readability handler.
+    /// Output collected from a pipe's readability handler, keeping at most `limit` bytes.
     private final class GitOutputBuffer: @unchecked Sendable {
         private let lock = NSLock()
+        private let limit: Int
         private var storage = Data()
+        private var truncated = false
+
+        init(limit: Int = .max) {
+            self.limit = limit
+        }
 
         var data: Data {
             lock.withLock { storage }
         }
 
+        var isTruncated: Bool {
+            lock.withLock { truncated }
+        }
+
         func append(_ data: Data) {
             guard !data.isEmpty else { return }
-            lock.withLock { storage.append(data) }
+            lock.withLock {
+                let room = limit - storage.count
+                if data.count > room {
+                    truncated = true
+                    storage.append(data.prefix(max(room, 0)))
+                } else {
+                    storage.append(data)
+                }
+            }
+        }
+    }
+
+    /// One git invocation that its caller's task cancellation can stop.
+    private final class GitRun: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: CommandSubprocess?
+        private var cancelled = false
+
+        var isCancelled: Bool {
+            lock.withLock { cancelled }
+        }
+
+        /// Records the started process; if the run was cancelled meanwhile, stops it now.
+        func attach(_ process: CommandSubprocess) {
+            let stopNow = lock.withLock {
+                self.process = process
+                return cancelled
+            }
+            if stopNow {
+                Self.stop(process)
+            }
+        }
+
+        func cancel() {
+            let process = lock.withLock {
+                cancelled = true
+                return self.process
+            }
+            if let process {
+                Self.stop(process)
+            }
+        }
+
+        private static func stop(_ process: CommandSubprocess) {
+            process.terminate()
+            Task.detached {
+                try? await Task.sleep(for: .milliseconds(500))
+                process.forceKill()
+            }
         }
     }
 #endif
