@@ -65,6 +65,87 @@ import Testing
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `A detached HEAD still reports status and commits`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            for arguments in [
+                ["init", "-b", "trunk"],
+                ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "first"],
+                ["checkout", "--detach"]
+            ] {
+                _ = await GitContextService.runGit(arguments, in: root, timeout: .seconds(10))
+            }
+            let service = makeService(root: root)
+
+            let output = await service.executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID())
+
+            #expect(output.contains("(detached HEAD)"))
+            #expect(output.contains("first"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A repository's fsmonitor command never runs`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let marker = root.appendingPathComponent("fsmonitor-ran")
+            _ = await GitContextService.runGit(["init"], in: root, timeout: .seconds(10))
+            _ = await GitContextService.runGit(
+                ["config", "core.fsmonitor", "touch \(marker.path); false"],
+                in: root,
+                timeout: .seconds(10)
+            )
+            let service = makeService(root: root)
+
+            _ = await service.executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID())
+
+            #expect(!FileManager.default.fileExists(atPath: marker.path))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A helper that keeps a pipe open cannot hold the git runner`() async {
+            let clock = ContinuousClock()
+            let start = clock.now
+            let result = await GitContextService.runGit(
+                ["-c", "alias.linger=!(sleep 30 &) ; echo started", "linger"],
+                in: URL(fileURLWithPath: "/tmp"),
+                timeout: .seconds(20)
+            )
+            #expect(result.stdout.contains("started"))
+            #expect(clock.now - start < .seconds(10))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A context file that links to a sensitive file asks before it is read`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let secrets = root.appendingPathComponent("outside")
+            try FileManager.default.createDirectory(at: secrets, withIntermediateDirectories: true)
+            let key = secrets.appendingPathComponent("id_rsa")
+            try "PRIVATE KEY".write(to: key, atomically: true, encoding: .utf8)
+            try "// swift-tools-version:6.0".write(to: root.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("AGENTS.md"), withDestinationURL: key)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+            var settings = AgentSettings.default
+            settings.projectRootPath = root.path
+            service.apply(settings)
+
+            let call = Task {
+                await service.executeToolCall(toolName: "project_context", arguments: [:], conversationId: UUID())
+            }
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while permissionService.pendingApprovals.isEmpty, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            let pending = try #require(permissionService.pendingApprovals.first)
+            #expect(pending.details.hasSuffix("id_rsa"))
+            permissionService.deny(pending.id)
+
+            #expect(await !call.value.contains("PRIVATE KEY"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `project_context returns the project type and context files`() async throws {
             let root = try makeRoot()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -141,6 +222,10 @@ import Testing
             let function = HotkeyCombination(keyCode: UInt32(kVK_F5), modifiers: UInt32(cmdKey))
             #expect(HotkeyCombination(string: function.displayString) == function)
             #expect(HotkeyCombination(string: "⌘Nonsense") == nil)
+            // Keys without a name (keypad, F13+) round-trip through their numeric fallback.
+            let keypad = HotkeyCombination(keyCode: 105, modifiers: UInt32(cmdKey))
+            #expect(keypad.displayString == "⌘Key 105")
+            #expect(HotkeyCombination(string: keypad.displayString) == keypad)
         }
 
         @Test

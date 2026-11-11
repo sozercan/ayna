@@ -29,6 +29,7 @@ struct HotkeyRecorderView: View {
                 .accessibilityIdentifier("settings.attachFromApp.hotkeyRecorder")
 
                 Button("Reset") {
+                    stopRecording()
                     apply(.default)
                 }
                 .disabled(current == .default && !isRecording)
@@ -74,7 +75,9 @@ struct HotkeyRecorderView: View {
 
     private func apply(_ combination: HotkeyCombination) {
         let previous = current
-        if GlobalHotkeyService.shared.isRegistered {
+        // Register whenever the feature is on, even if the saved hotkey failed to register, and
+        // save the new one only once it is live.
+        if AppPreferences.attachFromAppEnabled {
             do {
                 try GlobalHotkeyService.shared.replaceHotkey(with: combination, previous: previous)
             } catch {

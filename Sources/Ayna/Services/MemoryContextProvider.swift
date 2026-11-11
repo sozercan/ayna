@@ -28,6 +28,9 @@ final class MemoryContextProvider {
     /// Summaries kept for recent conversations (the backfill target).
     static let backfillLimit = 10
 
+    /// Advances on "Clear All Memory", so backfill that started before it applies nothing.
+    private var memoryClearGeneration: UInt64 = 0
+
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
         didSet {
@@ -144,7 +147,9 @@ final class MemoryContextProvider {
         else {
             return
         }
+        let generation = memoryClearGeneration
         let loaded = await conversationSource.recentConversationsWithHistory(limit: Self.backfillLimit)
+        guard memoryClearGeneration == generation else { return }
         // Conversations deleted (or cleared) while their history loaded must not regain summaries.
         let currentIds = Set(conversationSource.conversations.map(\.id))
         let recent = loaded.filter { currentIds.contains($0.id) }
@@ -258,6 +263,7 @@ final class MemoryContextProvider {
 
     /// Clears stored facts and summaries, after stopping any extraction that could refill them.
     func clearAllMemory() async throws {
+        memoryClearGeneration &+= 1
         factExtractor.cancelAll()
         await memoryService.clearAllFacts()
         try await summaryService.clearAllSummaries()
