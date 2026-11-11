@@ -61,6 +61,7 @@
                         .accessibilityIdentifier(TestIdentifiers.Watch.conversationRow(for: conversation.id))
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
+                                HapticEngine.deleteAction()
                                 conversationStore.deleteConversation(conversation.id)
                             } label: {
                                 Label("Delete", systemImage: "trash")

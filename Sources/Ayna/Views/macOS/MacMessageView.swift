@@ -1686,42 +1686,11 @@ struct ThinkingIndicatorDots: View {
     }
 }
 
-/// Typing indicator for text responses - iMessage style wave animation
+/// Typing indicator for text responses: the shared wave dots with vertical padding
 struct TypingIndicatorView: View {
-    @State private var animatingDot = 0
-
-    let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
-
     var body: some View {
-        HStack(spacing: Spacing.xs) {
-            ForEach(0 ..< 3, id: \.self) { index in
-                Circle()
-                    .fill(Theme.textSecondary.opacity(0.6))
-                    .frame(width: 8, height: 8)
-                    // Wave animation: Y offset for iMessage feel
-                    .offset(y: offsetForDot(at: index))
-                    .animation(.easeInOut(duration: 0.3), value: animatingDot)
-            }
-        }
-        .padding(.vertical, Spacing.sm)
-        .onReceive(timer) { _ in
-            animatingDot = (animatingDot + 1) % 6
-        }
-    }
-
-    /// Calculate Y offset for wave effect
-    private func offsetForDot(at index: Int) -> CGFloat {
-        let activeIndex: Int = switch animatingDot {
-        case 0, 5:
-            0
-        case 1, 4:
-            1
-        case 2, 3:
-            2
-        default:
-            -1
-        }
-        return index == activeIndex ? -4 : 0
+        TypingDotsView()
+            .padding(.vertical, Spacing.sm)
     }
 }
 #endif

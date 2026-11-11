@@ -51,7 +51,7 @@
                                 Image(systemName: "gearshape.fill")
                                     .font(.system(size: 17, weight: .medium))
                                     .foregroundStyle(.primary)
-                                    .frame(width: 36, height: 36)
+                                    .frame(width: Spacing.Component.iconButton, height: Spacing.Component.iconButton)
                             }
                             .accessibilityIdentifier(TestIdentifiers.Sidebar.settingsButton)
                         }
@@ -141,9 +141,7 @@
                                 .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
                                 .swipeActions {
                                     Button(role: .destructive) {
-                                        // Warning haptic for delete
-                                        let generator = UINotificationFeedbackGenerator()
-                                        generator.notificationOccurred(.warning)
+                                        HapticEngine.deleteAction()
                                         DiagnosticsLogger.log(
                                             .conversationManager,
                                             level: .info,
@@ -180,6 +178,11 @@
                     .accessibilityHidden(true)
             }
             .listStyle(.plain)
+            .refreshable {
+                // Reload from disk, e.g. after the Watch changed conversations.
+                HapticEngine.pullToRefresh()
+                await conversationManager.reloadConversations()
+            }
             .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
             .overlay {
                 if conversationManager.conversations.isEmpty {
@@ -331,6 +334,9 @@
                 message: "🗑️ Bulk deleting conversations",
                 metadata: ["count": "\(selectedConversations.count)"]
             )
+            if !selectedConversations.isEmpty {
+                HapticEngine.deleteAction()
+            }
             for id in selectedConversations {
                 if let conversation = conversationManager.conversations.first(where: { $0.id == id }) {
                     conversationManager.deleteConversation(conversation)
@@ -350,9 +356,7 @@
                 return
             }
 
-            // Light haptic for new conversation
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
+            HapticEngine.newConversation()
 
             // Set selection to new conversation ID
             conversationManager.selectedConversationId = ConversationManager.newConversationId

@@ -82,6 +82,7 @@
 
                 // Create the conversation only now
                 guard let newId = viewModel.createNewConversation() else { return }
+                HapticEngine.newConversation()
                 createdConversationId = newId
                 conversationStore.selectedConversationId = newId
 

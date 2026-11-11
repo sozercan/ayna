@@ -67,6 +67,9 @@ xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-watchOS \
 
 New iOS-only test files must be added to the `Ayna-iOSTests` target in `AynaMobile.xcodeproj`.
 
+In UI-test mode (`--ui-testing`), a message starting with `[long-stream]` gets a mock reply that
+streams 150 lines over about 12 seconds, for checking scrolling while a reply grows.
+
 ### UI Tests (Views/Interactions)
 
 ```bash

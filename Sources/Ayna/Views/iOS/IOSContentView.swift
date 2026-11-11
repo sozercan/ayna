@@ -150,6 +150,9 @@ struct IOSNewChatView: View {
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
+    /// Whether the streaming first reply keeps its newest text in view (see StreamingFollowScroll).
+    @State private var followsLatest = true
+    @State private var isAwayFromEnd = false
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showSettings = false
@@ -191,7 +194,7 @@ struct IOSNewChatView: View {
                 // Show messages while generating (before navigating away)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: Spacing.messageSpacing) {
                             ForEach(cachedDisplayableItems) { item in
                                 switch item {
                                 case let .message(transcriptMessage):
@@ -243,9 +246,12 @@ struct IOSNewChatView: View {
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
+                    .followsStreamingContent($followsLatest, isAwayFromEnd: $isAwayFromEnd)
                     .onChange(of: conversation.messages.count) {
                         updateDisplayableItems()
-                        scrollToBottom(proxy: proxy, conversation: conversation)
+                        if followsLatest {
+                            scrollToBottom(proxy: proxy, conversation: conversation)
+                        }
                     }
                         .onChange(of: conversation.updatedAt) {
                             // Message content, tool metadata, citations, and response status can change
@@ -254,13 +260,13 @@ struct IOSNewChatView: View {
                         }
                     .onChange(of: conversation.messages.last?.content) {
                             updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
                     .onChange(of: conversation.messages.last?.reasoning) {
                         updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }

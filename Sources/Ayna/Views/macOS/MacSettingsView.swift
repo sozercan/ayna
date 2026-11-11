@@ -230,7 +230,7 @@ struct WebSearchSettingsSection: View {
                             Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
                                 .font(.system(size: Typography.Size.sm))
                                 .foregroundStyle(Theme.textSecondary)
-                                .frame(width: 32, height: 32)
+                                .frame(width: Spacing.Component.avatarSmall, height: Spacing.Component.avatarSmall)
                                 .background(Color.secondary.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
@@ -443,7 +443,7 @@ struct WebSearchToolRow: View {
 
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 8, height: 8)
+                    .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
 
                 VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text("Web Search")
@@ -532,7 +532,7 @@ struct WebSearchToolRow: View {
                             Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
                                 .font(.system(size: Typography.Size.sm))
                                 .foregroundStyle(Theme.textSecondary)
-                                .frame(width: 32, height: 32)
+                                .frame(width: Spacing.Component.avatarSmall, height: Spacing.Component.avatarSmall)
                                 .background(Color.secondary.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }
@@ -591,7 +591,7 @@ struct AgenticToolsRow: View {
 
             Circle()
                 .fill(statusColor)
-                .frame(width: 8, height: 8)
+                .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
 
             VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text("Agentic Tools")
@@ -763,7 +763,7 @@ struct MCPServerRow: View {
 
             Circle()
                 .fill(statusColor)
-                .frame(width: 8, height: 8)
+                .frame(width: Spacing.Component.statusDot, height: Spacing.Component.statusDot)
 
             VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text(config.name)
@@ -1136,7 +1136,7 @@ struct APISettingsView: View {
                                                 Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
                                                     .font(.system(size: Typography.Size.sm))
                                                     .foregroundStyle(Theme.textSecondary)
-                                                    .frame(width: 32, height: 32)
+                                                    .frame(width: Spacing.Component.avatarSmall, height: Spacing.Component.avatarSmall)
                                                     .background(Color.secondary.opacity(0.1))
                                                     .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                                             }
@@ -1805,7 +1805,7 @@ struct AnthropicConfigurationView: View {
                             Image(systemName: showAPIKey ? "eye.slash.fill" : "eye.fill")
                                 .font(.system(size: Typography.Size.sm))
                                 .foregroundStyle(Theme.textSecondary)
-                                .frame(width: 32, height: 32)
+                                .frame(width: Spacing.Component.avatarSmall, height: Spacing.Component.avatarSmall)
                                 .background(Color.secondary.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.sm))
                         }

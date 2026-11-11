@@ -153,17 +153,6 @@ public enum Theme {
         #endif
     }
 
-    /// Elevated surface background (cards, popovers) - follows Apple's elevation model
-    public static var backgroundElevated: Color {
-        #if os(macOS)
-            Color(nsColor: .controlBackgroundColor)
-        #elseif os(watchOS)
-            Color(white: 0.12)
-        #else
-            Color(uiColor: .secondarySystemBackground)
-        #endif
-    }
-
     // MARK: - Interactive Elements
 
     /// Primary action color (buttons, links)
@@ -200,11 +189,6 @@ public enum Theme {
     /// Separator/divider color
     public static var separator: Color {
         Color.secondary.opacity(0.2)
-    }
-
-    /// Focused element border
-    public static var borderFocused: Color {
-        Color.accentColor.opacity(0.5)
     }
 
     // MARK: - Text Colors
@@ -248,11 +232,6 @@ public enum Theme {
         .black.opacity(0.15)
     }
 
-    /// Elevated shadow color (for floating elements)
-    public static var shadowElevated: Color {
-        .black.opacity(0.25)
-    }
-
     // MARK: - Code Blocks
 
     /// Code block background
@@ -273,46 +252,11 @@ public enum Theme {
 
     // MARK: - Provider-Specific Colors
 
-    /// OpenAI brand color
-    public static var providerOpenAI: Color {
-        Color(red: 0.0, green: 0.65, blue: 0.52) // Teal-ish green
-    }
-
-    /// Azure brand color
-    public static var providerAzure: Color {
-        Color(red: 0.0, green: 0.47, blue: 0.84) // Azure blue
-    }
-
-    /// Apple Intelligence brand color
-    public static var providerApple: Color {
-        Color.accentColor
-    }
 }
 
 // MARK: - Convenience Extensions
 
 public extension Color {
-    /// Creates a color that adapts between light and dark mode
-    /// - Parameters:
-    ///   - light: Color to use in light mode
-    ///   - dark: Color to use in dark mode
-    static func adaptive(light: Color, dark: Color) -> Color {
-        #if os(macOS)
-            Color(nsColor: NSColor(name: nil) { appearance in
-                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                    ? NSColor(dark)
-                    : NSColor(light)
-            })
-        #elseif os(watchOS)
-            dark // watchOS is always dark
-        #else
-            Color(uiColor: UIColor { traitCollection in
-                traitCollection.userInterfaceStyle == .dark
-                    ? UIColor(dark)
-                    : UIColor(light)
-            })
-        #endif
-    }
 }
 
 // MARK: - Status Color Helper for MCPServerStatus

@@ -68,6 +68,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
         private var activeAssistantMessageId: UUID?
+        /// The reply whose first text already played the response-started haptic.
+        private var responseStartedMessageID: UUID?
         private var activeMultiModelResponseGroupId: UUID?
         private var pendingAutoSendTask: Task<Void, Never>?
         private var pendingAutoSendID: UUID?
@@ -1012,6 +1014,10 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                             )
                         }
                         self.currentToolName = nil
+                        if !chunk.isEmpty, self.responseStartedMessageID != assistantMessageId {
+                            self.responseStartedMessageID = assistantMessageId
+                            HapticEngine.responseStarted()
+                        }
                         self.enqueueStreamingChunk(
                             conversationId: conversationId,
                             messageId: assistantMessageId,
@@ -1363,6 +1369,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             toolCallDepth = 0
             pendingSendPayload = nil
             SoundEngine.messageReceived()
+            HapticEngine.responseCompleted()
 
             if let finalConversation = conversationManager.conversation(byId: conversationId) {
                 conversationManager.save(finalConversation)
@@ -1425,6 +1432,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
             isGenerating = false
             SoundEngine.error()
+            HapticEngine.messageFailed()
             currentToolName = nil
             toolCallDepth = 0
             errorMessage = ErrorPresenter.userMessage(for: error)
