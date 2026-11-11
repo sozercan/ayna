@@ -266,8 +266,16 @@ import os.log
 
             log(.info, "read_file requested", metadata: ["path": path])
 
-            // Validate path
-            let validation = pathValidator.validate(path, operation: .read)
+            guard let resolvedURL = pathValidator.canonicalize(path) else {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
+            }
+            return try await readFile(at: resolvedURL, displayPath: path, conversationId: conversationId)
+        }
+
+        /// Validates, approves if needed, and reads an already-resolved file URL. The URL is
+        /// never re-expanded, so literal `$` or `~` in a resolved path cannot redirect the read.
+        private func readFile(at resolvedURL: URL, displayPath path: String, conversationId: UUID) async throws -> String {
+            let validation = pathValidator.validate(url: resolvedURL, operation: .read)
             switch validation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
@@ -275,7 +283,7 @@ import os.log
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.readFile,
                     description: "Read file: \(reason)",
-                    details: path,
+                    details: resolvedURL.path,
                     conversationId: conversationId
                 )
                 try Task.checkCancellation()
@@ -284,11 +292,6 @@ import os.log
                 }
             case .allowed:
                 break
-            }
-
-            // Read file
-            guard let resolvedURL = pathValidator.canonicalize(path) else {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
             }
 
             guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
@@ -388,7 +391,7 @@ import os.log
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url.path, operation: .write)
+            let revalidation = pathValidator.validate(url: url, operation: .write)
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
@@ -421,7 +424,8 @@ import os.log
         /// Resolves the file a write or edit will touch: the file itself (following symlinks)
         /// when it exists, otherwise the parent directory's resolved path plus the filename.
         private func resolvedTargetURL(for path: String) -> URL {
-            let expandedURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            // Same expansion as PathValidator, so the target is the path that was validated.
+            let expandedURL = URL(fileURLWithPath: PathValidator.expandPath(path))
             if FileManager.default.fileExists(atPath: expandedURL.path) {
                 return expandedURL.resolvingSymlinksInPath().standardized
             }
@@ -472,7 +476,11 @@ import os.log
 
             // Read through the captured target (not the mutable path), then confirm the
             // path still points there, so the content we edit comes from the file we write.
-            let currentContent = try await readFile(path: approvedTarget.path, conversationId: conversationId)
+            let currentContent = try await readFile(
+                at: approvedTarget,
+                displayPath: path,
+                conversationId: conversationId
+            )
             _ = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Find occurrences
@@ -531,7 +539,7 @@ import os.log
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url.path, operation: .write)
+            let revalidation = pathValidator.validate(url: url, operation: .write)
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
@@ -687,7 +695,7 @@ import os.log
 
                 // Files that would need approval on their own (credentials, keys, protected
                 // paths) are only searched when the user already approved the search root.
-                if validation.isAllowed, !pathValidator.validate(fileURL.path, operation: .read).isAllowed {
+                if validation.isAllowed, !pathValidator.validate(url: fileURL, operation: .read).isAllowed {
                     continue
                 }
 

@@ -113,10 +113,21 @@ struct PathValidator {
         requireApprovalOutsideProject: Bool = true
     ) -> ValidationResult {
         // Step 1: Expand path (~ and environment variables)
-        let expandedPath = expandPath(path)
+        validate(
+            url: URL(fileURLWithPath: expandPath(path)),
+            operation: operation,
+            requireApprovalOutsideProject: requireApprovalOutsideProject
+        )
+    }
 
-        // Step 2: Create URL and resolve symlinks
-        let url = URL(fileURLWithPath: expandedPath)
+    /// Validates an already-expanded file URL. Unlike `validate(_:operation:)`, this never
+    /// expands `~` or `$VAR` again, so a resolved path containing a literal `$` stays literal.
+    func validate(
+        url: URL,
+        operation: FileOperation,
+        requireApprovalOutsideProject: Bool = true
+    ) -> ValidationResult {
+        // Step 2: Resolve symlinks
         let resolvedURL = url.resolvingSymlinksInPath()
 
         // Step 3: Standardize the path (removes . and ..)
@@ -208,7 +219,9 @@ struct PathValidator {
         return nil
     }
 
-    private static func expandPath(_ path: String) -> String {
+    /// Expands `~` and `$VAR` references the same way validation does. Tools must use this
+    /// for raw input paths so the file they touch is the file that was validated.
+    static func expandPath(_ path: String) -> String {
         var expanded = path
 
         // Expand ~

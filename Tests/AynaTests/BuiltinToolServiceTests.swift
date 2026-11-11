@@ -474,6 +474,69 @@
             #expect(try String(contentsOf: other, encoding: .utf8) == "hello other")
         }
 
+        private func approveAllUntilDone(_ permissionService: PermissionService, task: Task<Void, Error>) async throws {
+            while true {
+                await waitForPendingApproval(permissionService)
+                guard let pending = permissionService.pendingApprovals.first else { break }
+                permissionService.approve(pending.id, rememberForSession: false)
+                if pending.toolName == BuiltinToolService.ToolName.editFile { break }
+            }
+            try await task.value
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Edit expands environment variables in the input path like validation does`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolEnvEdit-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let note = directory.appendingPathComponent("note.txt")
+            try "hello env".write(to: note, atomically: true, encoding: .utf8)
+            let variable = "AYNA_TEST_EDIT_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            setenv(variable, directory.path, 1)
+            defer { unsetenv(variable) }
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            let task = Task {
+                try await service.editFile(
+                    path: "$\(variable)/note.txt",
+                    oldText: "hello",
+                    newText: "bye",
+                    conversationId: UUID()
+                )
+            }
+            try await approveAllUntilDone(permissionService, task: task)
+
+            #expect(try String(contentsOf: note, encoding: .utf8) == "bye env")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Edit does not re-expand a literal dollar component in the resolved target`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolLiteralDollar-\(UUID().uuidString)")
+            let unsetName = "AYNA_UNSET_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let literalDirectory = directory.appendingPathComponent("$\(unsetName)")
+            try FileManager.default.createDirectory(at: literalDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let real = literalDirectory.appendingPathComponent("note.txt")
+            let decoy = directory.appendingPathComponent("note.txt")
+            let link = directory.appendingPathComponent("link.txt")
+            try "hello real".write(to: real, atomically: true, encoding: .utf8)
+            try "hello decoy".write(to: decoy, atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            let task = Task {
+                try await service.editFile(path: link.path, oldText: "hello", newText: "bye", conversationId: UUID())
+            }
+            try await approveAllUntilDone(permissionService, task: task)
+
+            #expect(try String(contentsOf: real, encoding: .utf8) == "bye real")
+            #expect(try String(contentsOf: decoy, encoding: .utf8) == "hello decoy")
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `Edit rejects a symlink retargeted while approval is pending`() async throws {
             let directory = FileManager.default.temporaryDirectory
