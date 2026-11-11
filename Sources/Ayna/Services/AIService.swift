@@ -859,6 +859,16 @@ class AIService: ObservableObject {
         return try OpenAIEndpointResolver.responsesURL(for: config)
     }
 
+    #if !os(watchOS)
+        /// Whether any configured image model accepts output format and compression options.
+        var hasImageModelWithOutputOptions: Bool {
+            customModels.contains { model in
+                getModelCapability(model) == .imageGeneration
+                    && OpenAIImageService.supportsOutputOptions(model: model)
+            }
+        }
+    #endif
+
     func getModelCapability(_ model: String) -> ModelCapability {
         // Check the endpoint type setting for this model
         if let endpointType = modelEndpointTypes[model] {
@@ -2603,7 +2613,7 @@ class AIService: ObservableObject {
                 }
             }
 
-            let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
+            let task = urlSession.dataTask(with: request) { [weak self] data, response, transportError in
                 let selfRef = self
                 Task { @MainActor in
                     guard let self = selfRef else { return }
@@ -2615,6 +2625,12 @@ class AIService: ObservableObject {
                     )
                     self.requestFlightObserver.record(.dataCallback, ownsFlight)
                     guard ownsFlight else { return }
+                    // A non-2xx status is an error too, so it can be retried like a network failure.
+                    let error = transportError ?? self.httpStatusError(
+                        response: response,
+                        data: data,
+                        requestURL: request.url
+                    )
 
                     if let error {
                         // Don't report error if it was cancelled
@@ -2637,7 +2653,7 @@ class AIService: ObservableObject {
                             )
                             Task { @MainActor [weak self] in
                                 guard let self else { return }
-                                await self.delay(for: attempt)
+                                await self.delay(for: attempt, retryAfterDate: AIRetryPolicy.retryAfterDate(for: error))
                                 let ownsFlight = self.ownsDataFlight(
                                     flightID,
                                     requestLane: requestLane,
@@ -2813,6 +2829,25 @@ class AIService: ObservableObject {
     // swiftlint:enable superfluous_disable_command
 
     // MARK: - Helper Methods for streamResponse
+
+    /// Builds an error for a non-2xx response; nil for success or a non-HTTP response.
+    private nonisolated func httpStatusError(
+        response: URLResponse?,
+        data: Data?,
+        requestURL: URL?
+    ) -> HTTPStatusError? {
+        guard let httpResponse = response as? HTTPURLResponse,
+              !(200 ... 299).contains(httpResponse.statusCode)
+        else {
+            return nil
+        }
+        let message = if let data, !data.isEmpty {
+            extractAPIErrorMessage(from: data, statusCode: httpResponse.statusCode)
+        } else {
+            getHTTPErrorMessage(statusCode: httpResponse.statusCode, requestURL: requestURL)
+        }
+        return HTTPStatusError(statusCode: httpResponse.statusCode, message: message, response: httpResponse)
+    }
 
     private nonisolated func getHTTPErrorMessage(statusCode: Int, requestURL: URL?) -> String {
         switch statusCode {
@@ -3131,7 +3166,11 @@ class AIService: ObservableObject {
                                 "url": request.url?.absoluteString ?? "unknown"
                             ]
                         )
-                        throw AIError.apiError(errorMessage)
+                        throw HTTPStatusError(
+                            statusCode: httpResponse.statusCode,
+                            message: errorMessage,
+                            response: httpResponse
+                        )
                     }
 
                     var buffer = Data()
@@ -3474,7 +3513,7 @@ class AIService: ObservableObject {
                 message: "⚠️ Retrying stream request (attempt \(attempt + 1))",
                 metadata: ["error": error.localizedDescription]
             )
-            await delay(for: attempt, retryAfterDate: nil)
+            await delay(for: attempt, retryAfterDate: AIRetryPolicy.retryAfterDate(for: error))
             let ownsFlight = ownsStreamFlight(
                 flightID,
                 requestLane: requestLane,
@@ -3645,7 +3684,7 @@ class AIService: ObservableObject {
             }
         }
 
-        let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
+        let task = urlSession.dataTask(with: request) { [weak self] data, response, transportError in
             let selfRef = self
             Task { @MainActor in
                 guard let self = selfRef else { return }
@@ -3657,6 +3696,12 @@ class AIService: ObservableObject {
                 )
                 self.requestFlightObserver.record(.dataCallback, ownsFlight)
                 guard ownsFlight else { return }
+                // A non-2xx status is an error too, so it can be retried like a network failure.
+                let error = transportError ?? self.httpStatusError(
+                    response: response,
+                    data: data,
+                    requestURL: request.url
+                )
 
                 if let error {
                     if self.shouldRetry(error: error, attempt: attempt) {
@@ -3668,7 +3713,7 @@ class AIService: ObservableObject {
                         )
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            await self.delay(for: attempt)
+                            await self.delay(for: attempt, retryAfterDate: AIRetryPolicy.retryAfterDate(for: error))
                             let ownsFlight = self.ownsDataFlight(
                                 flightID,
                                 requestLane: requestLane,

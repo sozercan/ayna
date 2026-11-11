@@ -8,6 +8,37 @@
 import Foundation
 import os
 
+/// Output-length defaults for Anthropic requests.
+enum AnthropicOutputLimits {
+    /// Streaming has no HTTP timeout pressure, so give the model room; non-streaming stays
+    /// small enough to finish within the request timeout.
+    static let streamingDefault = 64000
+    static let nonStreamingDefault = 16000
+
+    /// Shown at the end of a reply that stopped because it hit `max_tokens`.
+    static let cutoffNotice = "\n\n*[Response cut off: the model reached its output limit.]*"
+
+    static func defaultMaxTokens(model: String, stream: Bool) -> Int {
+        let requested = stream ? streamingDefault : nonStreamingDefault
+        return min(requested, outputCap(for: model) ?? requested)
+    }
+
+    /// Lower output caps of retired models that custom endpoints may still serve. Every model
+    /// on the Claude API today allows at least 64K output tokens.
+    private static func outputCap(for model: String) -> Int? {
+        let model = model.lowercased()
+        if model.contains("claude-3-7") || model.contains("claude-3.7") { return 64000 }
+        if model.contains("claude-3-5") || model.contains("claude-3.5") { return 8192 }
+        if model.contains("claude-3") { return 4096 }
+        if model.contains("claude-opus-4-0") || model.contains("claude-opus-4-1")
+            || model.contains("claude-opus-4-2025") || model.contains("claude-4-opus")
+        {
+            return 32000
+        }
+        return nil
+    }
+}
+
 /// Configuration for Anthropic API requests
 struct AnthropicRequestConfig: Sendable {
     let model: String

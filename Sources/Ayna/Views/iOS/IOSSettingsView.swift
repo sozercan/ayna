@@ -305,20 +305,24 @@ struct IOSImageGenerationSettingsView: View {
                 }
                 .accessibilityIdentifier("settings.imageGeneration.qualitySelector")
 
-                Picker("Output Format", selection: $aiService.outputFormat) {
-                    Text("PNG").tag("png")
-                    Text("JPEG").tag("jpeg")
-                }
-                .accessibilityIdentifier("settings.imageGeneration.formatSelector")
+                if aiService.hasImageModelWithOutputOptions {
+                    Picker("Output Format", selection: $aiService.outputFormat) {
+                        Text("PNG").tag("png")
+                        Text("JPEG").tag("jpeg")
+                    }
+                    .accessibilityIdentifier("settings.imageGeneration.formatSelector")
 
-                VStack(alignment: .leading) {
-                    Text("Compression: \(aiService.outputCompression)%")
-                    Slider(value: Binding(
-                        get: { Double(aiService.outputCompression) },
-                        set: { aiService.outputCompression = Int($0) }
-                    ), in: 0 ... 100, step: 10)
-                        .accessibilityLabel("Compression")
-                        .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
+                    if aiService.outputFormat != "png" {
+                        VStack(alignment: .leading) {
+                            Text("Compression: \(aiService.outputCompression)%")
+                            Slider(value: Binding(
+                                get: { Double(aiService.outputCompression) },
+                                set: { aiService.outputCompression = Int($0) }
+                            ), in: 0 ... 100, step: 10)
+                                .accessibilityLabel("Compression")
+                                .accessibilityIdentifier("settings.imageGeneration.compressionSlider")
+                        }
+                    }
                 }
             } footer: {
                 Text("These settings apply when using image generation models.")

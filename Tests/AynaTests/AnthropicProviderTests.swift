@@ -11,6 +11,7 @@ import Testing
 
 @Suite("AnthropicProvider Tests", .serialized)
 @MainActor
+// swiftlint:disable:next type_body_length
 struct AnthropicProviderTests {
     init() {
         AnthropicMockURLProtocol.reset()
@@ -21,7 +22,7 @@ struct AnthropicProviderTests {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AnthropicMockURLProtocol.self]
         let session = URLSession(configuration: config)
-        return AnthropicProvider(urlSession: session)
+        return AnthropicProvider(urlSession: session, retryDelay: { _, _ in })
     }
 
     private func makeConfig(
@@ -401,6 +402,94 @@ struct AnthropicProviderTests {
         #expect(receivedError != nil)
         let errorMessage = (receivedError as? AynaError)?.errorDescription ?? receivedError?.localizedDescription ?? ""
         #expect(errorMessage.contains("Anthropic") || errorMessage.contains("500") || errorMessage.contains("server"))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `a reply cut off at max_tokens says so and the default limit is 16000`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(model: "claude-opus-5-5")
+        let sentMaxTokens = FlightTestBox<Int?>(nil)
+
+        AnthropicMockURLProtocol.requestHandler = { request in
+            var body = request.httpBody ?? Data()
+            if body.isEmpty, let stream = request.httpBodyStream {
+                stream.open()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count > 0 else { break }
+                    body.append(buffer, count: count)
+                }
+                stream.close()
+            }
+            let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+            sentMaxTokens.value = json?["max_tokens"] as? Int
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let reply = #"{"content":[{"type":"text","text":"Partial"}],"stop_reason":"max_tokens"}"#
+            return (response, Data(reply.utf8))
+        }
+
+        let receivedChunks = ChunkCollector()
+        let callbackWaiter = TestCallbackWaiter()
+        provider.sendMessage(
+            messages: [Message(role: .user, content: "Write a lot")],
+            config: config,
+            stream: false,
+            tools: nil,
+            callbacks: AIProviderStreamCallbacks(
+                onChunk: { receivedChunks.append($0) },
+                onComplete: { callbackWaiter.signal() },
+                onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+            )
+        )
+        await callbackWaiter.wait()
+
+        #expect(sentMaxTokens.value == 16000)
+        #expect(receivedChunks.joined() == "Partial" + AnthropicOutputLimits.cutoffNotice)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `a retryable status is retried before the reply arrives`() async {
+        let provider = makeProvider()
+        let attempts = FlightTestBox(0)
+
+        AnthropicMockURLProtocol.requestHandler = { _ in
+            attempts.value += 1
+            let status = attempts.value == 1 ? 529 : 200
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: ["Retry-After": "1"]
+            )!
+            let body = status == 200
+                ? #"{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}"#
+                : #"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#
+            return (response, Data(body.utf8))
+        }
+
+        let receivedChunks = ChunkCollector()
+        let callbackWaiter = TestCallbackWaiter()
+        provider.sendMessage(
+            messages: [Message(role: .user, content: "Hi")],
+            config: makeConfig(),
+            stream: false,
+            tools: nil,
+            callbacks: AIProviderStreamCallbacks(
+                onChunk: { receivedChunks.append($0) },
+                onComplete: { callbackWaiter.signal() },
+                onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+            )
+        )
+        await callbackWaiter.wait()
+
+        #expect(attempts.value == 2)
+        #expect(receivedChunks.joined() == "ok")
     }
 
     // MARK: - Anthropic Error Format Tests

@@ -36,8 +36,16 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         let shouldComplete: Bool
     }
 
-    init(urlSession: URLSession) {
+    private let retryDelay: @Sendable (Int, Date?) async -> Void
+
+    init(
+        urlSession: URLSession,
+        retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfter in
+            await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfter)
+        }
+    ) {
         self.urlSession = urlSession
+        self.retryDelay = retryDelay
     }
 
     deinit {
@@ -94,7 +102,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             model: config.model,
             apiKey: config.apiKey,
             customEndpoint: config.customEndpoint,
-            maxTokens: config.maxTokens ?? 4096,
+            maxTokens: config.maxTokens
+                ?? AnthropicOutputLimits.defaultMaxTokens(model: config.model, stream: stream),
             budgetTokens: config.thinkingBudget,
             betaHeaders: betaHeaders
         )
@@ -134,7 +143,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             self.currentRequestBuildTask = nil
 
             var timedRequest = request
-            timedRequest.timeoutInterval = 120
+            // Streaming: maximum gap between bytes. Non-streaming waits for the whole reply.
+            timedRequest.timeoutInterval = stream ? 120 : 600
 
             DiagnosticsLogger.log(
                 .aiService,
@@ -249,7 +259,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
                 NetworkCircuitBreaker.recordFailure(key: circuitKey)
             }
-            throw AynaError.apiError(message: errorMessage)
+            throw HTTPStatusError(statusCode: httpResponse.statusCode, message: errorMessage, response: httpResponse)
         }
 
         NetworkCircuitBreaker.recordSuccess(key: circuitKey)
@@ -346,6 +356,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         if result.shouldComplete {
+            if parser.stopReason == "max_tokens" {
+                contentBuffer += AnthropicOutputLimits.cutoffNotice
+            }
             await flushBuffers(contentBuffer: contentBuffer, reasoningBuffer: reasoningBuffer, callbacks: callbacks)
             return true
         }
@@ -414,12 +427,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             if NetworkCircuitBreaker.shouldRecordFailure(error: error) {
                 NetworkCircuitBreaker.recordFailure(key: circuitKey)
             }
-            if shouldRetry(error: error, attempt: attempt) {
-                await delay(for: attempt)
-                nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
-                return
-            }
-            callbacks.onError(error)
+            await retryOrReport(error, request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt)
             return
         }
 
@@ -434,7 +442,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
 
         guard httpResponse.statusCode == 200 else {
-            handleNonStreamHTTPError(data: data, statusCode: httpResponse.statusCode, circuitKey: circuitKey, callbacks: callbacks)
+            let error = nonStreamHTTPError(data: data, response: httpResponse, circuitKey: circuitKey)
+            await retryOrReport(error, request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt)
             return
         }
 
@@ -442,12 +451,27 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         parseNonStreamResponse(data: data, callbacks: callbacks)
     }
 
-    private func handleNonStreamHTTPError(
-        data: Data,
-        statusCode: Int,
+    private func retryOrReport(
+        _ error: Error,
+        request: URLRequest,
+        callbacks: AIProviderStreamCallbacks,
         circuitKey: String,
-        callbacks: AIProviderStreamCallbacks
-    ) {
+        attempt: Int
+    ) async {
+        guard shouldRetry(error: error, attempt: attempt) else {
+            callbacks.onError(error)
+            return
+        }
+        await delay(for: attempt, retryAfter: AIRetryPolicy.retryAfterDate(for: error))
+        nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
+    }
+
+    private func nonStreamHTTPError(
+        data: Data,
+        response: HTTPURLResponse,
+        circuitKey: String
+    ) -> HTTPStatusError {
+        let statusCode = response.statusCode
         if NetworkCircuitBreaker.shouldRecordFailure(statusCode: statusCode) {
             NetworkCircuitBreaker.recordFailure(key: circuitKey)
         }
@@ -459,7 +483,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             message: "❌ Anthropic API error (non-stream)",
             metadata: ["statusCode": "\(statusCode)", "error": message, "rawBody": String(rawBody.prefix(500))]
         )
-        callbacks.onError(AynaError.apiError(message: message))
+        return HTTPStatusError(statusCode: statusCode, message: message, response: response)
     }
 
     private func parseNonStreamResponse(data: Data, callbacks: AIProviderStreamCallbacks) {
@@ -475,6 +499,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
             if let content = json?["content"] as? [[String: Any]] {
                 parseContentBlocks(content, callbacks: callbacks)
+            }
+            if json?["stop_reason"] as? String == "max_tokens" {
+                callbacks.onChunk(AnthropicOutputLimits.cutoffNotice)
             }
 
             callbacks.onComplete()
@@ -596,7 +623,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
-            await delay(for: attempt)
+            await delay(for: attempt, retryAfter: AIRetryPolicy.retryAfterDate(for: error))
             await MainActor.run {
                 streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
             }
@@ -639,7 +666,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         AIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)
     }
 
-    private func delay(for attempt: Int) async {
-        await AIRetryPolicy.wait(for: attempt)
+    private func delay(for attempt: Int, retryAfter: Date? = nil) async {
+        await retryDelay(attempt, retryAfter)
     }
 }

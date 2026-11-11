@@ -124,25 +124,29 @@ struct GeneralSettingsView: View {
                 }
                 .help("Quality level affects generation time and cost")
 
-                Picker("Output Format", selection: $aiService.outputFormat) {
-                    Text("PNG").tag("png")
-                    Text("JPEG").tag("jpeg")
-                }
-                .help("Image file format")
+                if aiService.hasImageModelWithOutputOptions {
+                    Picker("Output Format", selection: $aiService.outputFormat) {
+                        Text("PNG").tag("png")
+                        Text("JPEG").tag("jpeg")
+                    }
+                    .help("Image file format (GPT Image models)")
 
-                HStack {
-                    Text("Compression")
-                    Spacer()
-                    Slider(value: Binding(
-                        get: { Double(aiService.outputCompression) },
-                        set: { aiService.outputCompression = Int($0) }
-                    ), in: 0 ... 100, step: 10)
-                        .frame(width: 150)
-                    Text("\(aiService.outputCompression)%")
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 45, alignment: .trailing)
+                    if aiService.outputFormat != "png" {
+                        HStack {
+                            Text("Compression")
+                            Spacer()
+                            Slider(value: Binding(
+                                get: { Double(aiService.outputCompression) },
+                                set: { aiService.outputCompression = Int($0) }
+                            ), in: 0 ... 100, step: 10)
+                                .frame(width: 150)
+                            Text("\(aiService.outputCompression)%")
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 45, alignment: .trailing)
+                        }
+                        .help("JPEG compression level (100 = no compression)")
+                    }
                 }
-                .help("Image compression level (100 = no compression)")
             } header: {
                 Text("Image Generation")
             } footer: {

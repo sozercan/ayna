@@ -264,6 +264,53 @@ enum NetworkCircuitBreaker {
     }
 }
 
+// MARK: - HTTP Status Error
+
+/// A non-success HTTP status from a provider, carrying the server's retry hint.
+struct HTTPStatusError: LocalizedError, Sendable {
+    let statusCode: Int
+    let message: String
+    /// When the server asked us to retry (`retry-after-ms` or `Retry-After`), if it said.
+    let retryAfter: Date?
+
+    init(statusCode: Int, message: String, response: HTTPURLResponse? = nil, now: Date = Date()) {
+        self.statusCode = statusCode
+        self.message = message
+        retryAfter = response.flatMap { Self.retryAfterDate(from: $0, now: now) }
+    }
+
+    var errorDescription: String? {
+        message
+    }
+
+    /// Request timeout, conflict, rate limit, and server errors are worth another attempt.
+    var isRetryable: Bool {
+        [408, 409, 429].contains(statusCode) || (500 ... 599).contains(statusCode)
+    }
+
+    /// Reads `retry-after-ms` (milliseconds), then `Retry-After` (seconds or an HTTP date).
+    static func retryAfterDate(from response: HTTPURLResponse, now: Date = Date()) -> Date? {
+        if let milliseconds = response.value(forHTTPHeaderField: "retry-after-ms").flatMap(Double.init),
+           milliseconds >= 0
+        {
+            return now.addingTimeInterval(milliseconds / 1000)
+        }
+        guard let value = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespaces), !value.isEmpty
+        else {
+            return nil
+        }
+        if let seconds = Double(value), seconds >= 0 {
+            return now.addingTimeInterval(seconds)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter.date(from: value)
+    }
+}
+
 /// Stateless helper that determines retry behavior for API requests.
 /// Implements exponential backoff with jitter for transient failures.
 enum AIRetryPolicy {
@@ -305,6 +352,10 @@ enum AIRetryPolicy {
         // Don't retry cancellations
         if isCancellationError(error) { return false }
 
+        if let statusError = error as? HTTPStatusError {
+            return statusError.isRetryable
+        }
+
         // Check for retryable URL errors
         if let urlError = error as? URLError {
             return isRetryableURLError(urlError)
@@ -321,6 +372,11 @@ enum AIRetryPolicy {
         }
 
         return false
+    }
+
+    /// The server's requested retry time for an error, if it sent one.
+    static func retryAfterDate(for error: Error) -> Date? {
+        (error as? HTTPStatusError)?.retryAfter
     }
 
     /// Calculates the delay before the next retry attempt.
@@ -408,7 +464,7 @@ enum AIRetryPolicy {
         case .rateLimited:
             return true
         case let .httpError(statusCode, _):
-            return statusCode >= 500 || statusCode == 429
+            return [408, 409, 429].contains(statusCode) || (500 ... 599).contains(statusCode)
         case .timeout:
             return true
         default:
