@@ -219,7 +219,7 @@
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Session metadata includes device type, timezone, and app version. No personal data is collected.")
+                Text("Session metadata includes device type, timezone, and app version. Automatic fact extraction uses Apple Intelligence on this device when available, otherwise the conversation's model; extracted facts are marked as inferred and can be edited or deleted.")
             }
         }
 

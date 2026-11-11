@@ -66,6 +66,7 @@ struct aynaApp: App {
         Task { @MainActor in
             // Store reference to conversation manager for window creation
             AynaAppDelegate.attachConversationManager(manager)
+            MemoryContextProvider.shared.attachConversationSource(manager)
             setupWorkWithApps(conversationManager: manager)
         }
     }
@@ -197,10 +198,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         GlobalHotkeyService.shared.unregister()
         AccessibilityService.shared.stopMonitoring()
 
-        // Save memory data immediately to prevent data loss
-        Task { @MainActor in
-            await MemoryContextProvider.shared.saveAll()
-        }
+        // Memory is saved in applicationShouldTerminate: a task started here never runs.
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -209,6 +207,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
                     await Self.conversationManager?.flushPendingSaves()
+                    await MemoryContextProvider.shared.saveAll()
                 }
                 group.addTask {
                     try? await Task.sleep(for: .seconds(5))

@@ -22,6 +22,8 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     var lastMessagePreview: String
     var searchableText: String
     var requiresBackfill: Bool
+    /// Attachment files this conversation owns; nil in sidecars written before it was recorded.
+    var attachmentPaths: [String]?
 
     init(
         id: UUID,
@@ -37,7 +39,8 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         responseGroupCount: Int,
         lastMessagePreview: String = "",
         searchableText: String = "",
-        requiresBackfill: Bool = false
+        requiresBackfill: Bool = false,
+        attachmentPaths: [String]? = nil
     ) {
         self.id = id
         self.title = title
@@ -53,6 +56,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         self.lastMessagePreview = lastMessagePreview
         self.searchableText = searchableText
         self.requiresBackfill = requiresBackfill
+        self.attachmentPaths = attachmentPaths
     }
 
     init(conversation: Conversation) {
@@ -69,7 +73,8 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
             messageCount: conversation.messages.count,
             responseGroupCount: conversation.responseGroups.count,
             lastMessagePreview: Self.previewText(from: conversation),
-            searchableText: Self.searchText(from: conversation)
+            searchableText: Self.searchText(from: conversation),
+            attachmentPaths: conversation.attachmentPaths
         )
     }
 
@@ -77,6 +82,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         case id, title, createdAt, updatedAt, model
         case systemPromptMode, temperature, multiModelEnabled, activeModels
         case messageCount, responseGroupCount, lastMessagePreview, searchableText
+        case attachmentPaths
     }
 
     init(from decoder: Decoder) throws {
@@ -97,6 +103,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         lastMessagePreview = decodedPreview ?? ""
         searchableText = decodedSearchText ?? title
         requiresBackfill = messageCount > 0 && (decodedPreview == nil || decodedSearchText == nil)
+        attachmentPaths = try container.decodeIfPresent([String].self, forKey: .attachmentPaths)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -114,6 +121,7 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         try container.encode(responseGroupCount, forKey: .responseGroupCount)
         try container.encode(lastMessagePreview, forKey: .lastMessagePreview)
         try container.encode(searchableText, forKey: .searchableText)
+        try container.encodeIfPresent(attachmentPaths, forKey: .attachmentPaths)
     }
 
     private static func previewText(from conversation: Conversation) -> String {

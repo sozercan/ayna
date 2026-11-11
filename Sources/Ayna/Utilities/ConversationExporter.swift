@@ -33,7 +33,8 @@ enum ConversationExporter {
         markdown += "Model: \(conversation.model)\n\n"
         markdown += "---\n\n"
 
-        for message in conversation.messages {
+        // Multi-model turns export only the chosen response, as the conversation reads.
+        for message in conversation.getEffectiveHistory() {
             guard message.role != .system, message.role != .tool else { continue }
 
             let roleName = message.role == .user ? "User" : "Assistant"
@@ -122,7 +123,8 @@ enum ConversationExporter {
         fullContent.append(NSAttributedString(string: metaText, attributes: headerAttributes))
 
         // Messages
-        for message in conversation.messages {
+        // Multi-model turns export only the chosen response, as the conversation reads.
+        for message in conversation.getEffectiveHistory() {
             guard message.role != .system, message.role != .tool else { continue }
 
             // Role

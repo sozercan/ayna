@@ -385,3 +385,21 @@ extension Message {
 }
 
 extension Conversation: Codable {}
+
+extension Conversation {
+    /// Relative AttachmentStorage paths of the files this conversation's messages own.
+    var attachmentPaths: [String] {
+        var paths: Set<String> = []
+        for message in messages {
+            if let imagePath = message.imagePath {
+                paths.insert(imagePath)
+            }
+            for attachment in message.attachments ?? [] {
+                if let localPath = attachment.localPath {
+                    paths.insert(localPath)
+                }
+            }
+        }
+        return paths.sorted()
+    }
+}
