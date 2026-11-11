@@ -10,6 +10,7 @@ on:
     paths:
       - '**.swift'
       - 'Package.swift'
+      - 'Package.resolved'
       - 'Sources/**'
       - 'Tests/**'
       - 'Scripts/**'
@@ -20,6 +21,7 @@ on:
     paths:
       - '**.swift'
       - 'Package.swift'
+      - 'Package.resolved'
       - 'Sources/**'
       - 'Tests/**'
       - 'Scripts/**'

@@ -33,24 +33,31 @@ jobs:
       with:
         fetch-depth: 0  # Full history for changelog generation
 
-    # A manual run publishes a release and an appcast update, so it must build an existing
-    # release tag, from that tag.
-    - name: Guard manual releases
-      if: github.event_name == 'workflow_dispatch'
+    # The tag becomes step outputs that later steps put into shell source and version.env, so it
+    # must be a plain release version before anything uses it. A manual run also publishes a
+    # release and an appcast update, so it must name an existing tag and run from it.
+    - name: Validate release tag
       env:
-        TAG: ${{ inputs.tag }}
+        INPUT_TAG: ${{ inputs.tag }}
       run: |
-        if [ -z "$TAG" ]; then
-          echo "Error: manual release runs need the tag to release (for example v1.2.3)"
+        if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          TAG="$INPUT_TAG"
+        else
+          TAG="$GITHUB_REF_NAME"
+        fi
+        if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z]+([.][0-9A-Za-z]+)*)?$'; then
+          echo "Error: '$TAG' is not a release tag like v1.2.3 or v1.2.3-beta.1"
           exit 1
         fi
-        if ! TAG_COMMIT=$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}"); then
-          echo "Error: tag $TAG does not exist"
-          exit 1
-        fi
-        if [ "$TAG_COMMIT" != "$(git rev-parse HEAD)" ]; then
-          echo "Error: run this workflow from the $TAG tag, not ${GITHUB_REF_NAME}"
-          exit 1
+        if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          if ! TAG_COMMIT=$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}"); then
+            echo "Error: tag $TAG does not exist"
+            exit 1
+          fi
+          if [ "$TAG_COMMIT" != "$(git rev-parse HEAD)" ]; then
+            echo "Error: run this workflow from the $TAG tag, not ${GITHUB_REF_NAME}"
+            exit 1
+          fi
         fi
 
     - name: Select Xcode version
