@@ -32,6 +32,28 @@
             #expect(harness.recordedMessages(method: "notifications/cancelled").isEmpty)
         }
 
+        @Test("Server ping sharing a pending request id is answered, not treated as the response", .timeLimit(.minutes(1)))
+        func serverPingIsAnsweredWithoutResolvingPendingRequest() async throws {
+            let harness = try MockMCPServerHarness(mode: .serverPingDuringCall)
+            defer { harness.cleanup() }
+
+            let service = harness.makeService(requestTimeoutSeconds: 5.0)
+            try await service.connect()
+            defer { service.disconnect() }
+
+            let result = try await service.callTool(name: "echo", arguments: [:])
+            #expect(result == "ok")
+
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            var pingReply: RecordedMCPMessage?
+            while pingReply == nil, clock.now < deadline {
+                pingReply = harness.recordedMessages(method: nil).first { $0.hasResult && $0.id != nil }
+                if pingReply == nil { try? await Task.sleep(for: .milliseconds(5)) }
+            }
+            #expect(pingReply != nil)
+        }
+
         @Test("List tools request times out and clears pending continuation", .timeLimit(.minutes(1)))
         func listToolsRequestTimesOut() async throws {
             let harness = try MockMCPServerHarness(mode: .listTimeout)
@@ -373,6 +395,7 @@
             case callTimeout = "call-timeout"
             case lateResponseAfterCancellation = "late-response-after-cancellation"
             case termResistant = "term-resistant"
+            case serverPingDuringCall = "server-ping-during-call"
         }
 
         let directory: URL
@@ -450,7 +473,7 @@
             return recordedContents.contains("SERVER_EVENT \(event)")
         }
 
-        func recordedMessages(method: String) -> [RecordedMCPMessage] {
+        func recordedMessages(method: String?) -> [RecordedMCPMessage] {
             recordedContents
                 .split(separator: "\n")
                 .compactMap(RecordedMCPMessage.init)
@@ -513,6 +536,9 @@
                     :
                   else
                     id=$(request_id "$line")
+                    if [ "$mode" = "server-ping-during-call" ]; then
+                      printf '{"jsonrpc":"2.0","id":%s,"method":"ping"}\n' "$id"
+                    fi
                     printf '{"jsonrpc":"2.0","id":%s,"result":{"content":"ok"}}\n' "$id"
                   fi
                   ;;
@@ -675,6 +701,7 @@
         let method: String?
         let requestId: Int?
         let reason: String?
+        let hasResult: Bool
 
         init?(line: Substring) {
             guard let data = line.data(using: .utf8),
@@ -690,6 +717,7 @@
             method = message["method"] as? String
             requestId = jsonInteger(params?["requestId"])
             reason = params?["reason"] as? String
+            hasResult = message["result"] != nil
         }
     }
 

@@ -970,36 +970,20 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         }
     }
 
-    /// Answers server-initiated requests: `ping` gets an empty result, anything else
-    /// gets JSON-RPC "method not found". Notifications (no `id`) need no reply.
+    /// Answers server-initiated requests: `ping` gets an empty result, anything else gets
+    /// JSON-RPC "method not found". Notifications (no `id`) need no reply.
     private func handleServerMessage(_ object: [String: Any], method: String, transportID: UUID) {
-        guard let id = object["id"] else { return }
-
+        guard let id = object["id"], let lifecycle = withLock({ lifecycles[transportID] }) else { return }
         var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
         if method == "ping" {
             reply["result"] = [String: Any]()
         } else {
             reply["error"] = ["code": -32601, "message": "Method not found: \(method)"] as [String: Any]
         }
-
-        guard let lifecycle = withLock({ lifecycles[transportID] }),
-              var data = try? JSONSerialization.data(withJSONObject: reply)
-        else { return }
+        guard var data = try? JSONSerialization.data(withJSONObject: reply) else { return }
         data.append(0x0A)
-
         let writer = outboundWriter
-        Task {
-            do {
-                try await writer.writeNotification(data, lifecycle: lifecycle)
-            } catch {
-                DiagnosticsLogger.log(
-                    .mcpService,
-                    level: .error,
-                    message: "Failed to answer MCP server request",
-                    metadata: ["server": self.serverConfig.name, "method": method, "error": error.localizedDescription]
-                )
-            }
-        }
+        Task { try? await writer.writeNotification(data, lifecycle: lifecycle) }
     }
 
     private func processJSONRPCMessage(_ json: String, transportID: UUID) {
