@@ -85,8 +85,9 @@ import os.log
 
         // MARK: - Context Detection
 
-        /// Detects project from a given path
-        func detectProject(from path: URL) async {
+        /// Detects project from a given path. With `loadingContent: false` it only finds the
+        /// context files, so the caller can validate each one before reading it.
+        func detectProject(from path: URL, loadingContent: Bool = true) async {
             // Find project root by walking up from path
             projectRoot = await findProjectRoot(from: path)
 
@@ -104,7 +105,7 @@ import os.log
             contextFiles = await findContextFiles(in: root)
 
             // Load context content
-            contextContent = await loadContextContent()
+            contextContent = loadingContent ? await loadContextContent() : nil
 
             log(.info, "Project detected", metadata: [
                 "root": root.path,

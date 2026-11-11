@@ -111,10 +111,16 @@
             }
             let aliases = ["enter": "return", "esc": "escape"]
             let target = aliases[keyPart] ?? keyPart
-            guard let keyCode = Self.keyNames.first(where: { $0.value.lowercased() == target })?.key else {
-                return nil
+            if let keyCode = Self.keyNames.first(where: { $0.value.lowercased() == target })?.key {
+                self.init(keyCode: keyCode, modifiers: modifiers)
+                return
             }
-            self.init(keyCode: keyCode, modifiers: modifiers)
+            // Keys without a name (keypad, F13+, ...) are saved as "Key <code>".
+            if target.hasPrefix("key "), let keyCode = UInt32(target.dropFirst(4)) {
+                self.init(keyCode: keyCode, modifiers: modifiers)
+                return
+            }
+            return nil
         }
 
         init(keyCode: UInt32, modifiers: UInt32) {
