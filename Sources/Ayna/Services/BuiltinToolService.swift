@@ -343,6 +343,13 @@ import os.log
             guard approved else {
                 throw ToolExecutionError.permissionDenied(tool: tool, reason: "User denied")
             }
+            // Settings may have changed while the card was waiting.
+            guard isEnabled else {
+                throw ToolExecutionError.serviceDisabled
+            }
+            guard (toolPermissions[tool] ?? .askAlways) != .denied else {
+                throw ToolExecutionError.permissionDenied(tool: tool, reason: "Set to Denied in Agent settings")
+            }
             if level == .askOnce, remembersApproval {
                 permissionService.recordSessionApproval(tool: tool, details: details)
             }
@@ -392,7 +399,9 @@ import os.log
                 try await authorize(
                     tool: tool,
                     description: tool == ToolName.readFile ? "Read file" : "Read file before editing",
-                    details: resolvedURL.path,
+                    // The pre-read gets its own approval identity, so "Allow & Remember" on it
+                    // can never stand in for approving the edit.
+                    details: tool == ToolName.readFile ? resolvedURL.path : "\(resolvedURL.path) (read before editing)",
                     riskReason: riskReason,
                     // Approving this read must not count as approving the edit itself.
                     remembersApproval: tool == ToolName.readFile,
@@ -675,9 +684,13 @@ import os.log
             log(.info, "list_directory requested", metadata: ["path": path])
             let path = anchoredPath(path)
 
-            // Validate path
+            // Validate and approve the resolved directory, then list that same directory, so a
+            // symlink retargeted after approval cannot reuse it.
+            guard let resolvedURL = pathValidator.canonicalize(path) else {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
+            }
             let riskReason: String?
-            switch pathValidator.validate(path, operation: .read) {
+            switch pathValidator.validate(url: resolvedURL, operation: .read) {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
             case let .requiresApproval(reason):
@@ -688,15 +701,10 @@ import os.log
             try await authorize(
                 tool: ToolName.listDirectory,
                 description: "List directory",
-                details: path,
+                details: resolvedURL.path,
                 riskReason: riskReason,
                 conversationId: conversationId
             )
-
-            // Resolve path
-            guard let resolvedURL = pathValidator.canonicalize(path) else {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
-            }
 
             // List contents
             do {
@@ -740,8 +748,11 @@ import os.log
             log(.info, "search_files requested", metadata: ["pattern": pattern, "path": path])
             let path = anchoredPath(path)
 
-            // Validate path
-            let validation = pathValidator.validate(path, operation: .read)
+            // Approve and search the resolved root, so a retargeted symlink cannot reuse it.
+            guard let resolvedURL = pathValidator.canonicalize(path) else {
+                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
+            }
+            let validation = pathValidator.validate(url: resolvedURL, operation: .read)
             let riskReason: String?
             switch validation {
             case let .denied(reason):
@@ -754,15 +765,10 @@ import os.log
             try await authorize(
                 tool: ToolName.searchFiles,
                 description: "Search files",
-                details: "Pattern: \(pattern) in \(path)",
+                details: "Pattern: \(pattern) in \(resolvedURL.path)",
                 riskReason: riskReason,
                 conversationId: conversationId
             )
-
-            // Resolve path
-            guard let resolvedURL = pathValidator.canonicalize(path) else {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
-            }
 
             // Create regex
             let regex: NSRegularExpression

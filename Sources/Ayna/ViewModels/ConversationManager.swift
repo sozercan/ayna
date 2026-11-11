@@ -865,6 +865,7 @@ final class ConversationManager: ObservableObject {
         metadataAttachmentPathsById.removeValue(forKey: conversationID)
         metadataOnlyConversationIds.remove(conversationID)
         metadataSearchTextById.removeValue(forKey: conversationID)
+        durableDiskBaseline.removeValue(forKey: conversationID)
         if selectedConversationId == conversationID {
             selectedConversationId = nil
         }
@@ -1687,7 +1688,9 @@ final class ConversationManager: ObservableObject {
     func loadFullHistoryBeforeEdit(_ conversationId: UUID) async -> Bool {
         guard metadataOnlyConversationIds.contains(conversationId) else { return true }
         _ = await ensureConversationLoaded(conversationId)
-        return !metadataOnlyConversationIds.contains(conversationId)
+        // A delete or clear during the load also clears the marker; that is not a success.
+        return conversationSnapshot(byId: conversationId) != nil
+            && !metadataOnlyConversationIds.contains(conversationId)
     }
 
     private func loadFullConversation(
@@ -1986,6 +1989,7 @@ final class ConversationManager: ObservableObject {
             if clearConversationsGeneration == generation {
                 switch clearResult {
                 case .cleared, .committedWithCleanupFailure:
+                    durableDiskBaseline.removeAll()
                     discardManagerReconciliationVersions(
                         through: reconciliationVersionAtClearStart
                     )
@@ -2523,6 +2527,7 @@ final class ConversationManager: ObservableObject {
             switch result {
             case .deleted:
                 self.finishDestructivePersistenceOperation()
+                self.durableDiskBaseline.removeValue(forKey: id)
                 self.metadataAttachmentPathsById.removeValue(forKey: id)
                 self.attachmentDeleteOperation(attachmentPaths)
                 #if !os(watchOS)
