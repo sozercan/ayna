@@ -1670,6 +1670,7 @@ class AIService: ObservableObject {
             responsesAPIRequest(
                 messages: messages,
                 model: requestModel,
+                tools: tools,
                 conversationId: conversationId,
                 onChunk: onChunk,
                 onComplete: onComplete,
@@ -2408,6 +2409,7 @@ class AIService: ObservableObject {
     private func responsesAPIRequest(
         messages: [Message],
         model: String,
+        tools: [[String: Any]]?,
         conversationId: UUID? = nil,
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
@@ -2472,9 +2474,6 @@ class AIService: ObservableObject {
             reportSetupError(AIError.invalidURL)
             return
         }
-
-        // Get available tools for the Responses API
-        let tools = getAllAvailableTools()
 
         if let tools, !tools.isEmpty {
             DiagnosticsLogger.log(
@@ -2600,6 +2599,7 @@ class AIService: ObservableObject {
                                 self.responsesAPIRequest(
                                     messages: messages,
                                     model: model,
+                                    tools: toolDefinitions.value,
                                     conversationId: conversationId,
                                     onChunk: onChunk,
                                     onComplete: onComplete,
@@ -4748,18 +4748,14 @@ extension AIService {
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard requiresAPIKey(for: provider, model: model) else { return true }
 
-        // Check for per-model key
-        if let model,
-           let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !modelKey.isEmpty
-        {
-            return true
+        // Requests only ever send the model's own key (see `getAPIKey(for:)`), so another
+        // model's key does not make this one usable.
+        guard let model,
+              let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return false
         }
-
-        // Check if any model has an API key configured
-        return modelAPIKeys.values.contains {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        return !modelKey.isEmpty
     }
 
     var isAPIKeyConfigured: Bool {

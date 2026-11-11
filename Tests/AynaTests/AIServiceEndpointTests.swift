@@ -26,6 +26,18 @@ extension AIServiceGlobalStateTests {
             return service
         }
 
+        @Test
+        func `another model's API key does not configure a keyless model`() {
+            let service = makeService()
+            service.customModels = ["gpt-4o", "gpt-4.1"]
+            service.modelProviders["gpt-4.1"] = .openai
+            service.modelAPIKeys["gpt-4o"] = "sk-test"
+            service.modelAPIKeys["gpt-4.1"] = ""
+
+            #expect(service.isModelConfigured("gpt-4o"))
+            #expect(!service.isModelConfigured("gpt-4.1"))
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `custom OpenAI-compatible endpoint can send without API key`() async throws {
             let service = makeService()

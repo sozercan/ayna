@@ -86,7 +86,8 @@ enum OpenAIStreamParser {
     ) async -> StreamLineResult {
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard trimmedLine.hasPrefix("data: ") else {
+        // SSE allows `data:` with or without a single space before the value.
+        guard trimmedLine.hasPrefix("data:") else {
             return StreamLineResult(
                 shouldComplete: false,
                 toolCallBuffers: toolCallBuffers,
@@ -96,8 +97,12 @@ enum OpenAIStreamParser {
             )
         }
 
+        var payload = trimmedLine.dropFirst(5)
+        if payload.first == " " {
+            payload = payload.dropFirst()
+        }
         return await processDataLine(
-            Data(trimmedLine.dropFirst(6).utf8),
+            Data(payload.utf8),
             toolCallBuffers: toolCallBuffers,
             toolCallIds: toolCallIds,
             onToolCall: onToolCall,
@@ -249,7 +254,7 @@ enum OpenAIStreamParser {
         )
     }
 
-    private static let dataLinePrefix: [UInt8] = Array("data: ".utf8)
+    private static let dataLinePrefix: [UInt8] = Array("data:".utf8)
     private static let doneMarkerData = Data("[DONE]".utf8)
 
     private static func dataPayload(in lineData: Data) -> Data? {
@@ -259,7 +264,11 @@ enum OpenAIStreamParser {
             return nil
         }
 
-        let payloadStart = trimmedRange.lowerBound + dataLinePrefix.count
+        var payloadStart = trimmedRange.lowerBound + dataLinePrefix.count
+        // SSE allows `data:` with or without a single space before the value.
+        if payloadStart < trimmedRange.upperBound, lineData[payloadStart] == 0x20 {
+            payloadStart += 1
+        }
         return lineData[payloadStart ..< trimmedRange.upperBound]
     }
 
