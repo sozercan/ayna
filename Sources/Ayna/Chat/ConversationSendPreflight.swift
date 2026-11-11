@@ -93,6 +93,29 @@ enum ConversationSendPreflight {
         )
     }
 
+    /// Image edits operate on the attachments themselves, so a selected file that could not be
+    /// read must stop the send instead of silently editing a different image or none at all.
+    static func unreadableAttachmentFailure(
+        models: [String],
+        selectedAttachmentCount: Int,
+        builtAttachmentCount: Int,
+        aiService: AIService
+    ) -> Failure? {
+        let unreadableCount = selectedAttachmentCount - builtAttachmentCount
+        guard unreadableCount > 0,
+              models.contains(where: { aiService.getModelCapability($0) == .imageGeneration })
+        else {
+            return nil
+        }
+
+        return Failure(
+            message: unreadableCount == 1
+                ? "Unable to read an attached file, so the image request was not sent."
+                : "Unable to read \(unreadableCount) attached files, so the image request was not sent.",
+            recoverySuggestion: "Remove the file or attach it again."
+        )
+    }
+
     static func hasImageAttachments(in messages: [Message]) -> Bool {
         messages.contains { message in
             guard message.role == .user else { return false }

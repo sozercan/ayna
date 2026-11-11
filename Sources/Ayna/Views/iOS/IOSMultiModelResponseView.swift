@@ -376,7 +376,7 @@ struct IOSMultiModelResponseCard: View {
             // Image loaded successfully
             Image(uiImage: image)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         } else if isStreaming {

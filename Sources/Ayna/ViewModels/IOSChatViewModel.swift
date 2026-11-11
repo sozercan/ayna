@@ -729,6 +729,22 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
+        if let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+            models: requestModels(for: payload),
+            selectedAttachmentCount: preparation.attachedFiles.count
+                + preparation.attachedImages.count
+                + preparation.pastedImages.count,
+            builtAttachmentCount: payload.attachments.count,
+            aiService: aiService
+        ) {
+            errorMessage = messageBuild.errors.isEmpty
+                ? failure.message
+                : ([failure.message] + messageBuild.errors).joined(separator: "\n")
+            errorRecoverySuggestion = failure.recoverySuggestion
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+            return
+        }
+
         prepareOrSendPayload(
             payload,
             consuming: preparation,
@@ -2628,26 +2644,6 @@ extension IOSChatViewModel {
             activeMultiModelResponseGroupId = nil
         }
 
-    /// Finds the most recent generated or selected image reference in the conversation for editing context.
-    private func previousImageSource(in conversation: Conversation) -> (data: Data?, path: String?)? {
-        for message in conversation.messages.reversed() {
-            guard message.role == .assistant, message.mediaType == .image else { continue }
-            guard message.imageData != nil || message.imagePath != nil else { continue }
-
-            if let groupId = message.responseGroupId {
-                if let group = conversation.getResponseGroup(groupId),
-                   group.selectedResponseId == message.id
-                {
-                    return (message.imageData, message.imagePath)
-                }
-                continue
-            }
-
-            return (message.imageData, message.imagePath)
-        }
-        return nil
-    }
-
     /// Handles image generation or editing for a single model
     func generateImage(
         text: String,
@@ -2661,7 +2657,7 @@ extension IOSChatViewModel {
 
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
-        let previousImageSource = previousImageSource(in: conversation)
+        let editContext = ImageEditContext.resolve(in: conversation)
         let model = requestedModel ?? conversation.model
         let assistantMessageId = assistantMessage.id
 
@@ -2678,14 +2674,20 @@ extension IOSChatViewModel {
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let previousImage = await self.loadImageData(from: previousImageSource)
+            var sourceImages: [OpenAIImageService.SourceImage] = []
+            var sourceImageError: Error?
+            do {
+                sourceImages = try await self.loadSourceImages(for: editContext)
+            } catch {
+                sourceImageError = error
+            }
             guard coordinator.owns(operationID), !Task.isCancelled else { return }
 
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
-                message: previousImage != nil ? "📝 Starting image edit" : "🎨 Starting image generation",
-                metadata: ["prompt": text, "hasContext": "\(previousImage != nil)"]
+                message: sourceImages.isEmpty ? "🎨 Starting image generation" : "📝 Starting image edit",
+                metadata: ["prompt": text, "sourceImageCount": "\(sourceImages.count)"]
             )
 
             let onComplete: @Sendable (Data) -> Void = { [weak self] data in
@@ -2756,22 +2758,17 @@ extension IOSChatViewModel {
                 }
             }
 
-            let request: AIImageRequest? = if let previousImage {
-                self.aiService.editImage(
-                    prompt: text,
-                    sourceImage: previousImage,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
-            } else {
-                self.aiService.generateImage(
-                    prompt: text,
-                    model: model,
-                    onComplete: onComplete,
-                    onError: onError
-                )
+            if let sourceImageError {
+                onError(sourceImageError)
+                return
             }
+            let request = self.aiService.requestImage(
+                prompt: text,
+                sourceImages: sourceImages,
+                model: model,
+                onComplete: onComplete,
+                onError: onError
+            )
             coordinator.track(request, for: operationID)
         }
         coordinator.track(task, for: operationID)
@@ -2794,7 +2791,7 @@ extension IOSChatViewModel {
         }
 
         let conversationId = conversation.id
-        let previousImageSource = previousImageSource(in: conversation)
+        let editContext = ImageEditContext.resolve(in: conversation, userMessage: userMessage)
 
         if !conversation.messages.contains(where: { $0.id == userMessage.id }) {
             conversationManager.addMessage(to: conversation, message: userMessage)
@@ -2859,17 +2856,25 @@ extension IOSChatViewModel {
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let previousImage = await self.loadImageData(from: previousImageSource)
+            var sourceImages: [OpenAIImageService.SourceImage] = []
+            var sourceImageError: Error?
+            do {
+                sourceImages = try await self.loadSourceImages(for: editContext)
+            } catch {
+                sourceImageError = error
+            }
             guard coordinator.owns(operationID), !Task.isCancelled else { return }
 
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
-                message: previousImage != nil ? "📝 Starting multi-model image edit" : "🎨 Starting multi-model image generation",
+                message: sourceImages.isEmpty
+                    ? "🎨 Starting multi-model image generation"
+                    : "📝 Starting multi-model image edit",
                 metadata: [
                     "prompt": prompt,
                     "models": models.joined(separator: ", "),
-                    "hasContext": "\(previousImage != nil)",
+                    "sourceImageCount": "\(sourceImages.count)",
                 ]
             )
 
@@ -2905,22 +2910,17 @@ extension IOSChatViewModel {
                     }
                 }
 
-                let request: AIImageRequest? = if let previousImage {
-                    self.aiService.editImage(
-                        prompt: prompt,
-                        sourceImage: previousImage,
-                        model: model,
-                        onComplete: onComplete,
-                        onError: onError
-                    )
-                } else {
-                    self.aiService.generateImage(
-                        prompt: prompt,
-                        model: model,
-                        onComplete: onComplete,
-                        onError: onError
-                    )
+                if let sourceImageError {
+                    onError(sourceImageError)
+                    continue
                 }
+                let request = self.aiService.requestImage(
+                    prompt: prompt,
+                    sourceImages: sourceImages,
+                    model: model,
+                    onComplete: onComplete,
+                    onError: onError
+                )
                 coordinator.track(request, for: operationID)
             }
         }
@@ -3088,12 +3088,15 @@ extension IOSChatViewModel {
         }
     }
 
-    private func loadImageData(from source: (data: Data?, path: String?)?) async -> Data? {
-        if let data = source?.data {
-            return data
+    private func loadSourceImages(
+        for editContext: ImageEditContext?
+    ) async throws -> [OpenAIImageService.SourceImage] {
+        guard let editContext else { return [] }
+        // User attachments live in the injected store; generated images are saved to the shared one.
+        let storage = editContext.origin == .attachments ? attachmentStorage : AttachmentStorage.shared
+        return try await editContext.loadSourceImages { path in
+            await storage.loadData(path: path)
         }
-        guard let path = source?.path else { return nil }
-        return await AttachmentStorage.shared.loadData(path: path)
     }
 
     private func saveImageData(_ imageData: Data) async -> String? {

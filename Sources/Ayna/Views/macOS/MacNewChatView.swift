@@ -59,6 +59,7 @@ struct MacNewChatView: View {
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
     @State private var isImportingPastedImages = false
+    @State private var pendingFileDropCount = 0
     @State var isGenerating = false
     @State var currentConversationId: UUID?
     @State private var selectedModel = AIService.shared.selectedModel
@@ -255,6 +256,12 @@ struct MacNewChatView: View {
                 }
             }
         }
+        .chatAttachmentDropTarget(
+            attachedFiles: $attachedFiles,
+            pastedImages: $pastedImages,
+            importSessionID: $pasteImportSessionID,
+            pendingDropCount: $pendingFileDropCount
+        )
         .onAppear {
             syncSelectedModelState()
         }
@@ -310,7 +317,8 @@ struct MacNewChatView: View {
                 selectedModel = aiService.selectedModel
             },
             onRemoveFile: removeFile,
-            onRemoveAppContent: { attachedAppContent = nil }
+            onRemoveAppContent: { attachedAppContent = nil },
+            hasPendingFileDrops: pendingFileDropCount > 0
         )
     }
 
@@ -426,6 +434,15 @@ struct MacNewChatView: View {
         }
     }
 
+    private func loadSourceImages(
+        for editContext: ImageEditContext?
+    ) async throws -> [OpenAIImageService.SourceImage] {
+        guard let editContext else { return [] }
+        return try await editContext.loadSourceImages { path in
+            await AttachmentStorage.shared.loadData(path: path)
+        }
+    }
+
     private func saveImageData(_ imageData: Data) async -> String? {
         let task = Task.detached(priority: .userInitiated) {
             try? AttachmentStorage.shared.save(data: imageData, extension: "png")
@@ -454,7 +471,7 @@ struct MacNewChatView: View {
             isComposerFocused = true
             return
         }
-        guard !isImportingPastedImages, ChatDraftContent.isSendable(text: messageText, fileURLs: attachedFiles, inMemoryImageCount: pastedImages.count) else {
+        guard !isImportingPastedImages, pendingFileDropCount == 0, ChatDraftContent.isSendable(text: messageText, fileURLs: attachedFiles, inMemoryImageCount: pastedImages.count) else {
             isComposerFocused = true
             return
         }
@@ -682,6 +699,18 @@ struct MacNewChatView: View {
                 uncommittedUserMessage = userMessage
             }
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+            if preparation.prebuiltUserMessage == nil,
+               let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+                   models: selectedModelsToSend.isEmpty ? [activeModel] : Array(selectedModelsToSend),
+                   selectedAttachmentCount: filesToSend.count + pastedImagesToSend.count,
+                   builtAttachmentCount: userMessage.attachments?.count ?? 0,
+                   aiService: aiService
+               )
+            {
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
+                return
+            }
             guard ChatDraftContent.isSendable(
                 text: userMessage.content,
                 attachments: userMessage.attachments ?? []
@@ -974,13 +1003,30 @@ struct MacNewChatView: View {
             }
         }
 
-        let request = aiService.generateImage(
-            prompt: prompt,
-            model: model,
-            onComplete: onComplete,
-            onError: onError
+        // Resolve edit sources from the committed user message before loading them off the actor.
+        let editContext = ImageEditContext.resolve(
+            in: conversationManager.conversation(byId: conversation.id) ?? conversation
         )
-        coordinator.track(request, for: operationID)
+        let task = Task { @MainActor in
+            let sourceImages: [OpenAIImageService.SourceImage]
+            do {
+                sourceImages = try await loadSourceImages(for: editContext)
+            } catch {
+                onError(error)
+                return
+            }
+            guard coordinator.owns(operationID), !Task.isCancelled else { return }
+
+            let request = aiService.requestImage(
+                prompt: prompt,
+                sourceImages: sourceImages,
+                model: model,
+                onComplete: onComplete,
+                onError: onError
+            )
+            coordinator.track(request, for: operationID)
+        }
+        coordinator.track(task, for: operationID)
     }
 
     /// Generates images from multiple models in parallel for comparison
@@ -1021,41 +1067,63 @@ struct MacNewChatView: View {
         )
 
         let counter = MainActorCompletionCounter(total: models.count)
-        for model in models {
-            guard let messageId = messageIds[model] else { continue }
+        let editContext = ImageEditContext.resolve(
+            in: conversationManager.conversation(byId: conversation.id) ?? conversation
+        )
+        let task = Task { @MainActor in
+            var sourceImages: [OpenAIImageService.SourceImage] = []
+            var sourceImageError: Error?
+            do {
+                sourceImages = try await loadSourceImages(for: editContext)
+            } catch {
+                sourceImageError = error
+            }
+            guard coordinator.owns(operationID), !Task.isCancelled else { return }
 
-            let onComplete: @Sendable (Data) -> Void = { imageData in
-                coordinator.schedule(for: operationID) {
-                    let imagePath = await saveImageData(imageData)
-                    guard coordinator.owns(operationID), !Task.isCancelled else {
-                        await deleteImageData(at: imagePath)
-                        return
-                    }
+            for model in models {
+                guard let messageId = messageIds[model] else { continue }
 
-                    updateResponseGroupStatus(
-                        conversationId: conversation.id,
-                        responseGroupId: responseGroupId,
-                        messageId: messageId,
-                        status: .completed
-                    )
-                    let messageUpdated = conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = ""
-                        if let imagePath {
-                            message.imagePath = imagePath
-                            message.imageData = nil
-                        } else {
-                            message.imageData = imageData
-                            message.imagePath = nil
+                let onComplete: @Sendable (Data) -> Void = { imageData in
+                    coordinator.schedule(for: operationID) {
+                        let imagePath = await saveImageData(imageData)
+                        guard coordinator.owns(operationID), !Task.isCancelled else {
+                            await deleteImageData(at: imagePath)
+                            return
                         }
-                    }
-                    guard messageUpdated else {
-                        await deleteImageData(at: imagePath)
+
                         updateResponseGroupStatus(
                             conversationId: conversation.id,
                             responseGroupId: responseGroupId,
                             messageId: messageId,
-                            status: .failed
+                            status: .completed
                         )
+                        let messageUpdated = conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = ""
+                            if let imagePath {
+                                message.imagePath = imagePath
+                                message.imageData = nil
+                            } else {
+                                message.imageData = imageData
+                                message.imagePath = nil
+                            }
+                        }
+                        guard messageUpdated else {
+                            await deleteImageData(at: imagePath)
+                            updateResponseGroupStatus(
+                                conversationId: conversation.id,
+                                responseGroupId: responseGroupId,
+                                messageId: messageId,
+                                status: .failed
+                            )
+                            counter.increment()
+                            finishNewChatImageBatchIfComplete(
+                                counter: counter,
+                                coordinator: coordinator,
+                                operationID: operationID,
+                                conversationID: conversation.id
+                            )
+                            return
+                        }
                         counter.increment()
                         finishNewChatImageBatchIfComplete(
                             counter: counter,
@@ -1063,51 +1131,49 @@ struct MacNewChatView: View {
                             operationID: operationID,
                             conversationID: conversation.id
                         )
-                        return
                     }
-                    counter.increment()
-                    finishNewChatImageBatchIfComplete(
-                        counter: counter,
-                        coordinator: coordinator,
-                        operationID: operationID,
-                        conversationID: conversation.id
-                    )
                 }
-            }
-            let onError: @Sendable (Error) -> Void = { error in
-                coordinator.schedule(for: operationID) {
-                logNewChat(
-                        "❌ Image generation failed for \(model): \(error.localizedDescription)",
-                        level: .error,
-                        metadata: ["model": model]
-                    )
-                    updateResponseGroupStatus(
-                        conversationId: conversation.id,
-                        responseGroupId: responseGroupId,
-                        messageId: messageId,
-                        status: .failed
-                    )
-                    conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
-                        message.content = "Image generation failed: \(error.localizedDescription)"
+                let onError: @Sendable (Error) -> Void = { error in
+                    coordinator.schedule(for: operationID) {
+                    logNewChat(
+                            "❌ Image generation failed for \(model): \(error.localizedDescription)",
+                            level: .error,
+                            metadata: ["model": model]
+                        )
+                        updateResponseGroupStatus(
+                            conversationId: conversation.id,
+                            responseGroupId: responseGroupId,
+                            messageId: messageId,
+                            status: .failed
+                        )
+                        conversationManager.updateMessage(in: conversation, messageId: messageId) { message in
+                            message.content = "Image generation failed: \(error.localizedDescription)"
+                        }
+                        counter.increment()
+                        finishNewChatImageBatchIfComplete(
+                            counter: counter,
+                            coordinator: coordinator,
+                            operationID: operationID,
+                            conversationID: conversation.id
+                        )
                     }
-                    counter.increment()
-                    finishNewChatImageBatchIfComplete(
-                        counter: counter,
-                        coordinator: coordinator,
-                        operationID: operationID,
-                        conversationID: conversation.id
-                    )
                 }
-            }
 
-            let request = aiService.generateImage(
-                prompt: prompt,
-                model: model,
-                onComplete: onComplete,
-                onError: onError
-            )
-            coordinator.track(request, for: operationID)
+                if let sourceImageError {
+                    onError(sourceImageError)
+                    continue
+                }
+                let request = aiService.requestImage(
+                    prompt: prompt,
+                    sourceImages: sourceImages,
+                    model: model,
+                    onComplete: onComplete,
+                    onError: onError
+                )
+                coordinator.track(request, for: operationID)
+            }
         }
+        coordinator.track(task, for: operationID)
     }
 
     private func registerNewChatImageBatchCancellation(

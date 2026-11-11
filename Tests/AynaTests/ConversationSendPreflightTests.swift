@@ -22,9 +22,18 @@ struct ConversationSendPreflightTests {
             )]
         )
 
+        let storedDocument = Message(
+            role: .user,
+            content: "Document",
+            attachments: [Message.FileAttachment(
+                fileName: "notes.pdf",
+                mimeType: "application/pdf",
+                localPath: "notes.pdf"
+            )]
+        )
         let policyFailure = await ConversationSendPreflight.attachmentFailure(
             models: [imageModel],
-            messages: [storedImage],
+            messages: [storedDocument],
             aiService: service,
             loadAttachmentData: { _ in Data() }
         )
@@ -35,8 +44,114 @@ struct ConversationSendPreflightTests {
             loadAttachmentData: { _ in Data([0x89, 0x50, 0x4E, 0x47]) }
         )
 
-        #expect(policyFailure?.message.contains("do not accept attachments") == true)
+        #expect(policyFailure?.message.contains("accept only PNG, JPEG, or WebP") == true)
         #expect(dataFailure?.message.contains("invalid or corrupted") == true)
+    }
+
+    @Test
+    func `image models accept image attachments on the outgoing prompt`() {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        let photo = Message.FileAttachment(fileName: "photo.jpg", mimeType: "image/jpeg", localPath: "photo.jpg")
+        let document = Message.FileAttachment(fileName: "notes.pdf", mimeType: "application/pdf", localPath: "notes.pdf")
+
+        let editPrompt = Message(role: .user, content: "Remove the watermark", attachments: [photo])
+        #expect(service.attachmentSupportError(for: [imageModel]) == nil)
+        #expect(service.attachmentHistorySupportError(for: [imageModel], messages: [editPrompt]) == nil)
+
+        let promptless = Message(role: .user, content: "  ", attachments: [photo])
+        #expect(service.attachmentHistorySupportError(for: [imageModel], messages: [promptless])
+            == "Describe how to edit the attached image.")
+
+        let gif = Message(
+            role: .user,
+            content: "Animate",
+            attachments: [Message.FileAttachment(fileName: "a.gif", mimeType: "image/gif", localPath: "a.gif")]
+        )
+        #expect(service.attachmentHistorySupportError(for: [imageModel], messages: [gif])?
+            .contains("\"a.gif\"") == true)
+
+        let tooMany = Message(
+            role: .user,
+            content: "Combine",
+            attachments: Array(repeating: photo, count: OpenAIImageService.maxSourceImages + 1)
+        )
+        #expect(service.attachmentHistorySupportError(for: [imageModel], messages: [tooMany])?
+            .contains("at most \(OpenAIImageService.maxSourceImages)") == true)
+
+        // Image requests only send the latest user turn, so older attachments do not block them.
+        let earlierDocument = Message(role: .user, content: "Summarize", attachments: [document])
+        #expect(service.attachmentHistorySupportError(
+            for: [imageModel],
+            messages: [earlierDocument, Message(role: .user, content: "Draw a cat")]
+        ) == nil)
+    }
+
+    @Test
+    func `image sends stop when a selected attachment could not be read`() {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        let chatModel = "chat-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        service.modelProviders[chatModel] = .openai
+
+        let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [imageModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 1,
+            aiService: service
+        )
+        #expect(failure?.message == "Unable to read an attached file, so the image request was not sent.")
+
+        #expect(ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [imageModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 2,
+            aiService: service
+        ) == nil)
+        #expect(ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [chatModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 1,
+            aiService: service
+        ) == nil)
+    }
+
+    @Test
+    func `image-only requests ignore corrupted images in earlier turns`() async {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        let chatModel = "chat-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        service.modelProviders[chatModel] = .openai
+        let corruptedHistory = Message(
+            role: .user,
+            content: "Earlier",
+            attachments: [Message.FileAttachment(
+                fileName: "broken.png",
+                mimeType: "image/png",
+                localPath: "broken.png"
+            )]
+        )
+        let messages = [corruptedHistory, Message(role: .user, content: "Draw a cat")]
+        let corruptedData: @Sendable (String) async -> Data? = { _ in Data([0x89, 0x50, 0x4E, 0x47]) }
+
+        let imageFailure = await ConversationSendPreflight.attachmentDataFailure(
+            models: [imageModel],
+            messages: messages,
+            aiService: service,
+            loadAttachmentData: corruptedData
+        )
+        let chatFailure = await ConversationSendPreflight.attachmentDataFailure(
+            models: [chatModel],
+            messages: messages,
+            aiService: service,
+            loadAttachmentData: corruptedData
+        )
+
+        #expect(imageFailure == nil)
+        #expect(chatFailure?.message.contains("invalid or corrupted") == true)
     }
 
     @Test(.timeLimit(.minutes(1)))

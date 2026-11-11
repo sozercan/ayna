@@ -183,6 +183,7 @@ struct MacChatView: View {
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
     @State private var isImportingPastedImages = false
+    @State private var pendingFileDropCount = 0
     @State private var failedSendPayload: FailedSendPayload?
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
@@ -383,10 +384,17 @@ struct MacChatView: View {
                         selectedModel = aiService.selectedModel
                     },
                     onRemoveFile: removeFile,
-                    onRemoveAppContent: { attachedAppContent = nil }
+                    onRemoveAppContent: { attachedAppContent = nil },
+                    hasPendingFileDrops: pendingFileDropCount > 0
                 )
             }
         }
+        .chatAttachmentDropTarget(
+            attachedFiles: $attachedFiles,
+            pastedImages: $pastedImages,
+            importSessionID: $pasteImportSessionID,
+            pendingDropCount: $pendingFileDropCount
+        )
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Spacer()
@@ -878,6 +886,7 @@ struct MacChatView: View {
         }
 
         guard !isImportingPastedImages,
+              pendingFileDropCount == 0,
               ChatDraftContent.isSendable(
                   text: messageText,
                   fileURLs: attachedFiles,
@@ -1083,6 +1092,24 @@ struct MacChatView: View {
                     in: userMessage,
                     ifOwnedByPreparation: ownsStoredAttachments
                 )
+                return
+            }
+
+            if preparation.prebuiltUserMessage == nil,
+               let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+                   models: selectedModelsToSend.isEmpty ? [activeModel] : Array(selectedModelsToSend),
+                   selectedAttachmentCount: filesToSend.count + pastedImagesToSend.count,
+                   builtAttachmentCount: userMessage.attachments?.count ?? 0,
+                   aiService: aiService
+               )
+            {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }
 

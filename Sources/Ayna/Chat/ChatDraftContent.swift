@@ -37,6 +37,30 @@ enum ChatDraftContent {
         return max(0, maximumImageCount - imageFileCount - max(0, inMemoryImageCount))
     }
 
+    /// Selects dropped files to attach: skips files already attached or dropped twice, and
+    /// images beyond the per-request image limit. Other files are always accepted, like the picker.
+    static func filesToAttach(
+        _ droppedFiles: [URL],
+        existing: [URL],
+        inMemoryImageCount: Int
+    ) -> (accepted: [URL], skippedImageCount: Int) {
+        var seen = Set(existing.map(\.standardizedFileURL))
+        var imageCapacity = remainingImageCapacity(fileURLs: existing, inMemoryImageCount: inMemoryImageCount)
+        var accepted: [URL] = []
+        var skippedImageCount = 0
+        for fileURL in droppedFiles where seen.insert(fileURL.standardizedFileURL).inserted {
+            if isImageFile(fileURL) {
+                guard imageCapacity > 0 else {
+                    skippedImageCount += 1
+                    continue
+                }
+                imageCapacity -= 1
+            }
+            accepted.append(fileURL)
+        }
+        return (accepted, skippedImageCount)
+    }
+
     static func messagesByIncludingUserMessageIfNeeded(
         _ userMessage: Message,
         in messages: [Message]

@@ -19,6 +19,40 @@ struct ChatDraftContentTests {
     }
 
     @Test
+    func `dropped files skip duplicates and keep non-image files`() {
+        let existing = [URL(fileURLWithPath: "/tmp/photo.png")]
+        let dropped = [
+            URL(fileURLWithPath: "/tmp/photo.png"),
+            URL(fileURLWithPath: "/tmp/./notes.txt"),
+            URL(fileURLWithPath: "/tmp/other.jpg"),
+            URL(fileURLWithPath: "/tmp/notes.txt"),
+        ]
+
+        let selection = ChatDraftContent.filesToAttach(dropped, existing: existing, inMemoryImageCount: 0)
+
+        #expect(selection.accepted.map(\.lastPathComponent) == ["notes.txt", "other.jpg"])
+        #expect(selection.skippedImageCount == 0)
+    }
+
+    @Test
+    func `dropped images beyond the image limit are skipped`() {
+        let existing = (0 ..< ChatDraftContent.maximumImageCount - 2).map {
+            URL(fileURLWithPath: "/tmp/existing-\($0).png")
+        }
+        let dropped = [
+            URL(fileURLWithPath: "/tmp/a.png"),
+            URL(fileURLWithPath: "/tmp/report.pdf"),
+            URL(fileURLWithPath: "/tmp/b.jpg"),
+            URL(fileURLWithPath: "/tmp/c.webp"),
+        ]
+
+        let selection = ChatDraftContent.filesToAttach(dropped, existing: existing, inMemoryImageCount: 1)
+
+        #expect(selection.accepted.map(\.lastPathComponent) == ["a.png", "report.pdf"])
+        #expect(selection.skippedImageCount == 2)
+    }
+
+    @Test
     func `image attachment alone is sendable`() {
         #expect(ChatDraftContent.isSendable(
             text: "",

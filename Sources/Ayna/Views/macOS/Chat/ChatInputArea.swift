@@ -35,6 +35,8 @@ struct ChatInputArea: View {
     let onClearMultiSelection: () -> Void
     let onRemoveFile: (URL) -> Void
     var onRemoveAppContent: (() -> Void)?
+    /// True while files dropped on the screen are still loading.
+    var hasPendingFileDrops = false
 
     @ObservedObject private var aiService = AIService.shared
 
@@ -102,7 +104,7 @@ struct ChatInputArea: View {
             if let icon = appContent.appIcon {
                 Image(nsImage: icon)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(width: 20, height: 20)
             } else {
                 Image(systemName: "app.fill")
@@ -171,6 +173,13 @@ struct ChatInputArea: View {
                 },
                 onPasteImages: { images in
                     pastedImages.append(contentsOf: images)
+                },
+                onDropFiles: { fileURLs in
+                    ChatAttachmentDrop.attach(
+                        fileURLs,
+                        to: $attachedFiles,
+                        pastedImageCount: pastedImages.count
+                    )
                 },
                 accessibilityIdentifier: textEditorIdentifier
             )
@@ -313,7 +322,7 @@ struct ChatInputArea: View {
     }
 
     private var canSend: Bool {
-        hasSendableContent && !isImportingPastedImages
+        hasSendableContent && !isImportingPastedImages && !hasPendingFileDrops
     }
 
     private var remainingImageCapacity: Int {
@@ -361,7 +370,7 @@ struct AttachedFileRow: View {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
             } else if isImageFile {
@@ -436,7 +445,7 @@ private struct PastedImageRow: View {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
             } else {

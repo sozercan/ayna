@@ -182,7 +182,7 @@
                         if let icon = group.appIcon {
                             Image(nsImage: icon)
                                 .resizable()
-                                .aspectRatio(contentMode: .fit)
+                                .scaledToFit()
                                 .frame(width: 20, height: 20)
                         } else {
                             Image(systemName: "app.fill")
