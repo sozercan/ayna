@@ -84,18 +84,56 @@ import Foundation
                 conversationId: conversationId
             )
             let project = ProjectContextService()
-            await project.detectProject(from: directory)
+            await project.detectProject(from: directory, loadingContent: false)
             guard let summary = project.briefSummary() else {
                 return "No project found at or above \(directory.path)"
             }
             var output = summary
-            if let context = project.systemPromptContext() {
-                output += "\n\n" + context
+            // Each context file is resolved and checked like a read_file target: a symlinked
+            // AGENTS.md pointing at a key or credentials file asks before it is read.
+            for file in project.contextFiles {
+                guard output.count < Self.maximumContextCharacters,
+                      let content = try await readContextFile(file, conversationId: conversationId)
+                else {
+                    continue
+                }
+                output += "\n\n## \(file.lastPathComponent)\n\n\(content)"
             }
             if output.count > Self.maximumContextCharacters {
                 output = String(output.prefix(Self.maximumContextCharacters)) + "\n[Truncated]"
             }
             return output
+        }
+
+        private func readContextFile(_ file: URL, conversationId: UUID) async throws -> String? {
+            let resolved = file.resolvingSymlinksInPath().standardized
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory),
+                  !isDirectory.boolValue,
+                  let size = try? FileManager.default.attributesOfItem(atPath: resolved.path)[.size] as? Int,
+                  size <= 100 * 1024
+            else {
+                return nil
+            }
+            let riskReason: String?
+            switch pathValidator.validate(url: resolved, operation: .read) {
+            case .denied:
+                return nil
+            case let .requiresApproval(reason):
+                riskReason = reason
+            case .allowed:
+                riskReason = nil
+            }
+            if let riskReason {
+                try await authorize(
+                    tool: ToolName.projectContext,
+                    description: "Read project context file",
+                    details: resolved.path,
+                    riskReason: riskReason,
+                    conversationId: conversationId
+                )
+            }
+            return try? String(contentsOf: resolved, encoding: .utf8)
         }
 
         /// Replaces the conversation's task list. Tasks keep their identity when their text is unchanged.

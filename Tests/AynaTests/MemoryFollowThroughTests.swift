@@ -106,6 +106,26 @@ struct ConversationSummaryStorageTests {
         #expect(try !JSONDecoder().decode(ConversationMetadata.self, from: JSONEncoder().encode(current)).requiresBackfill)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func `A conversation received from the Watch gets a summary`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let updated = Recorder<UUID>()
+        let manager = ConversationManager(
+            store: TestHelpers.makeTestStore(directory: directory),
+            saveDebounceDuration: .milliseconds(0),
+            searchIndexWarmupEnabled: false,
+            conversationSummaryUpdateOperation: { updated.record($0.id) }
+        )
+        _ = await manager.loadingTask?.value
+        let received = TestHelpers.sampleConversation(title: "From the Watch")
+
+        // The Watch path saves first, then commits the conversation into the manager.
+        #expect(await manager.persistProposedConversation(received).value == .saved)
+        manager.commitPersistedConversation(received)
+
+        #expect(updated.values.contains(received.id))
+    }
+
     @Test
     func `Summaries of deleted conversations are dropped when the digest loads`() async {
         let kept = ConversationSummary(id: UUID(), title: "Kept")
@@ -319,6 +339,18 @@ struct MemoryFactExtractorTests {
         #expect(prompts.values.first?.contains("newer ") == true)
         #expect(prompts.values.first?.contains("older ") == false)
         #expect(prompts.values.last?.contains("older ") == true)
+    }
+
+    @Test
+    func `A long fact list does not overflow the prompt`() {
+        let facts = (0 ..< 200).map { "Fact number \($0) " + String(repeating: "x", count: 150) }
+        let message = Message(role: .user, content: "I moved to Porto.")
+
+        let request = MemoryFactExtractor.prompt(userMessages: [message], existingFacts: facts)
+
+        #expect(request.prompt.count < 6000)
+        #expect(request.prompt.contains("I moved to Porto."))
+        #expect(request.includedMessageIDs == [message.id])
     }
 
     @Test

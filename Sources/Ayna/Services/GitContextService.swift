@@ -113,7 +113,8 @@ import os.log
 
         /// Returns context to inject into system prompts
         func systemPromptContext() -> String? {
-            guard let branch = currentBranch else { return nil }
+            guard repoRoot != nil else { return nil }
+            let branch = currentBranch ?? "(detached HEAD)"
 
             var context = """
             # Git Context
@@ -311,62 +312,93 @@ import os.log
             await Self.runGit(arguments, in: directory, timeout: Self.commandTimeout)
         }
 
-        /// Runs git off the main actor. Both pipes are drained concurrently (reading one to the
-        /// end first deadlocks once git fills the other), and the process is stopped on timeout.
+        /// Runs git in its own process group (`CommandSubprocess`), with hooks, credential
+        /// helpers and fsmonitor disabled so a repository's configuration cannot run code. On
+        /// timeout the whole group is stopped (TERM, then KILL); completion waits for git itself,
+        /// not for EOF, so a helper that keeps a pipe open cannot hold the call.
         nonisolated static func runGit(
             _ arguments: [String],
             in directory: URL,
             timeout: Duration
         ) async -> GitCommandResult {
-            let process = Process()
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            // Security: disable hooks and credential helpers so a repository cannot run code.
-            process.arguments = [
+            let words = [
+                "/usr/bin/env",
+                "GIT_CONFIG_NOSYSTEM=1",
+                "GIT_TERMINAL_PROMPT=0",
+                "GIT_OPTIONAL_LOCKS=0", // Read-only queries never take the index lock
+                "/usr/bin/git",
                 "-c", "core.hooksPath=/dev/null",
-                "-c", "credential.helper="
+                "-c", "credential.helper=",
+                "-c", "core.fsmonitor=false"
             ] + arguments
-            process.currentDirectoryURL = directory
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
-            process.standardInput = FileHandle.nullDevice
-            var environment = ProcessInfo.processInfo.environment
-            environment["GIT_CONFIG_NOSYSTEM"] = "1"
-            environment["GIT_TERMINAL_PROMPT"] = "0"
-            environment["GIT_OPTIONAL_LOCKS"] = "0" // Read-only queries never take the index lock
-            process.environment = environment
+            let command = words.map(shellQuoted).joined(separator: " ")
 
-            do {
-                try process.run()
-            } catch {
-                return GitCommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
-            }
-
-            let stdoutHandle = stdoutPipe.fileHandleForReading
-            let stderrHandle = stderrPipe.fileHandleForReading
-            async let stdoutData = Task.detached { stdoutHandle.readDataToEndOfFile() }.value
-            async let stderrData = Task.detached { stderrHandle.readDataToEndOfFile() }.value
-            let timeoutTask = Task.detached {
-                try? await Task.sleep(for: timeout)
-                if !Task.isCancelled, process.isRunning {
-                    process.terminate()
+            return await Task.detached { () -> GitCommandResult in
+                let process: CommandSubprocess
+                do {
+                    process = try CommandSubprocess.start(command: command, workingDirectory: directory)
+                } catch {
+                    return GitCommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
                 }
-            }
-            let (output, errors) = await (stdoutData, stderrData)
-            process.waitUntilExit()
-            let timedOut = process.terminationReason == .uncaughtSignal && !timeoutTask.isCancelled
-            timeoutTask.cancel()
+                let stdout = GitOutputBuffer()
+                let stderr = GitOutputBuffer()
+                process.standardOutput.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty { handle.readabilityHandler = nil } else { stdout.append(data) }
+                }
+                process.standardError.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty { handle.readabilityHandler = nil } else { stderr.append(data) }
+                }
+                let timedOut = GitOutputBuffer()
+                let timer = Task.detached {
+                    try? await Task.sleep(for: timeout)
+                    guard !Task.isCancelled else { return }
+                    timedOut.append(Data([1]))
+                    process.terminate()
+                    try? await Task.sleep(for: .milliseconds(500))
+                    process.forceKill()
+                }
 
-            return GitCommandResult(
-                exitCode: process.terminationStatus,
-                stdout: String(data: output, encoding: .utf8) ?? "",
-                stderr: timedOut ? "git timed out" : String(data: errors, encoding: .utf8) ?? ""
-            )
+                let status = process.waitUntilExit()
+                timer.cancel()
+                process.standardOutput.readabilityHandler = nil
+                process.standardError.readabilityHandler = nil
+                let remaining = process.drainAvailableOutput()
+                stdout.append(remaining.stdout)
+                stderr.append(remaining.stderr)
+                process.closeOutput()
+
+                let didTimeOut = !timedOut.data.isEmpty
+                return GitCommandResult(
+                    exitCode: status,
+                    stdout: String(data: stdout.data, encoding: .utf8) ?? "",
+                    stderr: didTimeOut ? "git timed out" : String(data: stderr.data, encoding: .utf8) ?? ""
+                )
+            }.value
+        }
+
+        private nonisolated static func shellQuoted(_ word: String) -> String {
+            "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
 
         private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
             DiagnosticsLogger.log(.builtinTools, level: level, message: "🔀 Git: \(message)", metadata: metadata)
+        }
+    }
+
+    /// Output collected from a pipe's readability handler.
+    private final class GitOutputBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage = Data()
+
+        var data: Data {
+            lock.withLock { storage }
+        }
+
+        func append(_ data: Data) {
+            guard !data.isEmpty else { return }
+            lock.withLock { storage.append(data) }
         }
     }
 #endif

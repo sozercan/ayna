@@ -755,6 +755,9 @@ final class ConversationManager: ObservableObject {
         }
         metadataOnlyConversationIds.remove(conversation.id)
         metadataSearchTextById.removeValue(forKey: conversation.id)
+        // A conversation new to the manager was saved before this insert, so the durable-save
+        // observer skipped it; refresh its summary now that it is in the list.
+        conversationSummaryUpdateOperation(conversation)
         #if !os(watchOS)
             indexConversation(conversation)
         #endif
