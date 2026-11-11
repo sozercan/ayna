@@ -2679,10 +2679,11 @@ final class ConversationManager: ObservableObject {
         else {
             return false
         }
-        var message = conversations[convIndex].messages[msgIndex]
-        update(&message)
-        conversations[convIndex].messages[msgIndex] = message
-        conversations[convIndex].updatedAt = Date()
+        // One write per update: every write to `conversations` re-renders every observer.
+        modifyConversation(at: convIndex) { conversation in
+            update(&conversation.messages[msgIndex])
+            conversation.updatedAt = Date()
+        }
         save(conversations[convIndex])
         return true
     }
@@ -2713,10 +2714,10 @@ final class ConversationManager: ObservableObject {
         else {
             return false
         }
-        var message = conversations[convIndex].messages[msgIndex]
-        update(&message)
-        conversations[convIndex].messages[msgIndex] = message
-        conversations[convIndex].updatedAt = Date()
+        modifyConversation(at: convIndex) { conversation in
+            update(&conversation.messages[msgIndex])
+            conversation.updatedAt = Date()
+        }
         return true
     }
 
@@ -2732,9 +2733,18 @@ final class ConversationManager: ObservableObject {
         else {
             return false
         }
-        conversations[convIndex].messages[msgIndex].content += chunk
-        conversations[convIndex].updatedAt = Date()
+        // Streaming calls this every flush; a single in-place write publishes one change.
+        modifyConversation(at: convIndex) { conversation in
+            conversation.messages[msgIndex].content += chunk
+            conversation.updatedAt = Date()
+        }
         return true
+    }
+
+    /// Mutates one conversation in place with a single write to `conversations`, so observers
+    /// see one change instead of one per modified property.
+    private func modifyConversation(at index: Int, _ body: (inout Conversation) -> Void) {
+        body(&conversations[index])
     }
 
     /// Safely remove a message by IDs. Returns true if removal succeeded.

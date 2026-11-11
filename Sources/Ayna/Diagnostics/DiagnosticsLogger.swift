@@ -60,30 +60,18 @@ struct Breadcrumb: Codable, Identifiable {
     }
 }
 
+/// Recent diagnostics kept in memory only. Metadata can hold file paths, commands, and error
+/// text, so it is never written to disk.
 actor BreadcrumbStore {
     static let shared = BreadcrumbStore()
 
     private let maxEntries = 200
-    private let persistDebounce: Duration = .seconds(1)
-    private let storageURL: URL
     private var entries: [Breadcrumb] = []
-    private var persistTask: Task<Void, Never>?
 
     private init(fileManager: FileManager = .default) {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let directory = appSupport.appendingPathComponent("Ayna", isDirectory: true)
-
-        if !fileManager.fileExists(atPath: directory.path) {
-            try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-
-        storageURL = directory.appendingPathComponent("breadcrumbs.json")
-
-        if let data = try? Data(contentsOf: storageURL),
-           let decoded = try? JSONDecoder().decode([Breadcrumb].self, from: data)
-        {
-            entries = Array(decoded.suffix(maxEntries))
+        // Earlier versions rewrote this file in plaintext as the app logged; remove it.
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? fileManager.removeItem(at: appSupport.appendingPathComponent("Ayna/breadcrumbs.json"))
         }
     }
 
@@ -98,8 +86,6 @@ actor BreadcrumbStore {
         if entries.count > maxEntries {
             entries.removeFirst(entries.count - maxEntries)
         }
-
-        schedulePersist()
     }
 
     func latest(limit: Int? = nil) -> [Breadcrumb] {
@@ -107,29 +93,6 @@ actor BreadcrumbStore {
             return Array(entries.suffix(limit))
         }
         return entries
-    }
-
-    // MARK: - Private
-
-    private func schedulePersist() {
-        persistTask?.cancel()
-        persistTask = Task { [storageURL, persistDebounce] in
-            do {
-                try await Task.sleep(for: persistDebounce)
-            } catch {
-                return
-            }
-            await BreadcrumbStore.shared.persistNow(storageURL: storageURL)
-        }
-    }
-
-    private func persistNow(storageURL: URL) {
-        do {
-            let data = try JSONEncoder().encode(entries)
-            try data.write(to: storageURL, options: .atomic)
-        } catch {
-            os_log("Failed to persist breadcrumbs: %{public}@", log: .default, type: .error, error.localizedDescription)
-        }
     }
 }
 
@@ -182,7 +145,8 @@ enum DiagnosticsLogger {
             let metaString = metadata
                 .map { "\($0.key)=\($0.value)" }
                 .joined(separator: " ")
-            logger.log(level: level, "\(message, privacy: .public) [\(metaString, privacy: .public)]")
+            // Metadata carries paths, commands, and error text: redacted unless a debugger is attached.
+            logger.log(level: level, "\(message, privacy: .public) [\(metaString, privacy: .private)]")
         }
 
         // Persisting high-frequency logs (e.g. streaming debug) can be noisy and expensive.

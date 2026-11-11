@@ -3104,7 +3104,9 @@ class AIService: ObservableObject {
             metadata: ["url": request.url?.absoluteString ?? "unknown"]
         )
 
-        let task = Task { [weak self] in
+        // Read and parse the byte stream off the main actor; ownership checks and delivery hop
+        // back with MainActor.run, so the UI thread only sees batched chunks.
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             var hasReceivedData = false
 
